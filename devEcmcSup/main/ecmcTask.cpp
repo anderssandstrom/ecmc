@@ -36,7 +36,7 @@ void f_worker(void *obj) {
  *    - invalid_argument
  *    - runtime_error
 */
-ecmcThread::ecmcThread(ecmcAsynPortDriver *asynPortDriver,
+ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
                        int threadIndex,
                        int threadPriority,
                        int threadAffinity,
@@ -53,6 +53,14 @@ ecmcThread::ecmcThread(ecmcAsynPortDriver *asynPortDriver,
   threadSampleTimeMs_ = threadSampleTimeMs_;
   asynPortDriver_     = asynPortDriver;
 
+  threadDiag_.latency_min_ns  = 0xffffffff;
+  threadDiag_.latency_max_ns  = 0;
+  threadDiag_.period_min_ns   = 0xffffffff;
+  threadDiag_.period_max_ns   = 0;
+  threadDiag_.exec_min_ns     = 0xffffffff;
+  threadDiag_.exec_max_ns     = 0;
+  threadDiag_.send_min_ns     = 0xffffffff;
+  threadDiag_.send_max_ns     = 0;
 
   doneLock_.test_and_set();   // make sure only one sdo is accessing the bus at the same time
   doneLock_.clear();
@@ -68,13 +76,13 @@ ecmcThread::ecmcThread(ecmcAsynPortDriver *asynPortDriver,
   initAsyn();
 }
 
-ecmcThread::~ecmcThread() {
+ecmcTask::~ecmcTask() {
   
   doWorkEvent_.signal();
 
 }
 
-void ecmcThread::workThread() {
+void ecmcTask::workThread() {
 
   while(true) {
     
@@ -92,7 +100,7 @@ void ecmcThread::workThread() {
   }
 }
 
-void ecmcThread::doWork() {
+void ecmcTask::doWork() {
 
   // Do work here
   
@@ -101,18 +109,18 @@ void ecmcThread::doWork() {
 }
 
 // Let main thread trigg work
-void ecmcThread::triggWork() {
+void ecmcTask::triggWork() {
   threadReady_ = false;
   doWorkEvent_.signal();
 }
 
 // let main thread know if work is done
-bool ecmcThread::getReady() {
+bool ecmcTask::getReady() {
   // hmm, this is probbaly bad..
   return threadReady_.load()
 }
 
-void ecmcThread::initAsyn() {
+void ecmcTask::initAsyn() {
 
   //ecmcAsynPortDriver *ecmcAsynPort = (ecmcAsynPortDriver *)getEcmcAsynPortDriver();
   //if(!ecmcAsynPort) {
@@ -159,11 +167,45 @@ void ecmcThread::initAsyn() {
   //ecmcAsynPort->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST, ECMC_ASYN_DEFAULT_ADDR); 
 }
 
-// only refresh from "execute" thread
-void ecmcThread::refreshAsynParams() {
-//  if(refreshNeeded_) {
-//    connectedParam_->refreshParamRT(1); // read once into asyn param lib
-//    errorParam_->refreshParamRT(1); // read once into asyn param lib
-//  }
-//  refreshNeeded_ = 0;
+// TODO!!! Fel namn nedan
+void ecmcTask::refreshAsynParams(int force) {
+  
+  if(!asynPort->getAllowRtThreadCom()){
+    return;
+  }
+
+  int errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MIN_ID]->refreshParamRT(force);
+  if(errorCode==0){ //Reset after successfull write      
+    threadDiag.latency_min_ns  = 0xffffffff;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MAX_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.latency_max_ns  = 0;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MIN_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.period_min_ns  = 0xffffffff;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MAX_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.period_max_ns  = 0;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MIN_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.exec_min_ns  = 0xffffffff;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MAX_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.exec_max_ns  = 0;
+  }
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MIN_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.send_min_ns  = 0xffffffff;
+  }    
+  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MAX_ID]->refreshParamRT(force);
+  if(errorCode==0){
+    threadDiag.send_max_ns  = 0;    
+  }
+  
+  controllerErrorOld = controllerError;
 }

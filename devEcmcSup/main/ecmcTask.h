@@ -9,34 +9,35 @@
 *      Author: anderssandstrom
 *
 \*************************************************************************/
-#ifndef ECMC_THREAD_H_
-#define ECMC_THREAD_H_
+#ifndef ECMC_TASK_H_
+#define ECMC_TASK_H_
 
 #include <stdexcept>
 #include "ecmcDataItem.h"
 #include "ecmcAsynPortDriver.h"
+#include "ecmcDefinitions.h"
 #include "inttypes.h"
 #include <string>
 #include <atomic>
 
-class ecmcThread {
+class ecmcTask {
  public:
 
-  /** ecmc ecmcThread class
+  /** ecmc ecmcTask class
    * This object can throw: 
    *    - bad_alloc
    *    - invalid_argument
    *    - runtime_error
    *    - out_of_range
   */
-  ecmcThread(ecmcAsynPortDriver *asynPortDriver,
-             int threadIndex,
-             int threadPriority,
-             int threadAffinity,
-             int threadStacksize,
-             char* threadName,
-             double exeSampelTimeMs);
-  ~ecmcThread();
+  ecmcTask(ecmcAsynPortDriver *asynPortDriver,
+           int threadIndex,
+           int threadPriority,
+           int threadAffinity,
+           int threadStacksize,
+           char* threadName,
+           double exeSampelTimeMs);
+  ~ecmcTask();
   // trigg new execution for linked objects (in doWork())
   void triggWork();
   
@@ -63,8 +64,10 @@ class ecmcThread {
   int                   threadStacksize_;
   char*                 threadName_;
   double                threadSampleTimeMs_;
-  epicsEvent            doWorkEvent_;  
+  epicsEvent            doWorkEvent_;  // Need to have on for each consumer..
   std::atomic<bool>     threadReady_;
+  ecmcMainThreadDiag    threadDiag_;
+
   //ASYN
   void initAsyn();
   void refreshAsynParams();
@@ -73,4 +76,4 @@ class ecmcThread {
   ecmcAsynDataItem *connectedParam_;
 };
 
-#endif  /* ECMC_THREAD_H_ */
+#endif  /* ECMC_TASK_H_ */
