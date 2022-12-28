@@ -30,7 +30,7 @@ void f_worker(void *obj) {
   threadObj->workThread();
 }
 
-/** ecmc ecmcThread class
+/** ecmc ecmcTask class
  * This object can throw: 
  *    - bad_alloc
  *    - invalid_argument

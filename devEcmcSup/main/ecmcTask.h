@@ -8,6 +8,11 @@
 *  Created on: Dec 27, 2022
 *      Author: anderssandstrom
 *
+*
+* Class that implements a task (thread) that can execute ecmc objects:
+* - axis
+* - plc
+*
 \*************************************************************************/
 #ifndef ECMC_TASK_H_
 #define ECMC_TASK_H_
@@ -68,7 +73,7 @@ class ecmcTask {
   std::atomic<bool>     threadReady_;
   ecmcMainThreadDiag    threadDiag_;
 
-  //ASYN
+  // asyn
   void initAsyn();
   void refreshAsynParams();
   ecmcAsynPortDriver *asynPortDriver_;
