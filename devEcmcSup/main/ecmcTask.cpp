@@ -10,11 +10,7 @@
 *
 \*************************************************************************/
 
-// Needed to get headers in ecmc right...
-#define ECMC_IS_PLUGIN
-
 #include <sstream>
-#include "ecmcPluginClient.h"
 #include "ecmcAsynPortDriver.h"
 #include "ecmcAsynPortDriverUtils.h"
 #include "epicsThread.h"
@@ -37,21 +33,32 @@ void f_worker(void *obj) {
  *    - runtime_error
 */
 ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
-                       int threadIndex,
-                       int threadPriority,
-                       int threadAffinity,
-                       int threadStacksize,
-                       double threadSampleTimeMs_,
-                       char* threadName) {
+                   int                 threadIndex,
+                   int                 threadPriority,
+                   int                 threadAffinity,
+                   int                 threadStacksize,
+                   int                 threadOffsetMasterCycles,
+                   int                 threadSampleTimeMicroS,
+                   int                 masterSampleTimeMicroS,
+                   char*               threadName) {
 
   // Init
-  threadIndex_        = threadIndex;
-  threadName_         = threadName;
-  threadPriority_     = threadPrio;
-  threadAffinity_     = threadAffinity;
-  threadStacksize_    = threadStacksize;
-  threadSampleTimeMs_ = threadSampleTimeMs_;
-  asynPortDriver_     = asynPortDriver;
+  threadIndex_              = threadIndex;
+  threadName_               = threadName;
+  threadPriority_           = threadPrio;
+  threadAffinity_           = threadAffinity;
+  threadStacksize_          = threadStacksize;
+  threadOffsetMasterCycles_ = threadOffsetMasterCycles;
+  threadSampleTimeMicroS_   = threadSampleTimeMicroS;
+  masterSampleTimeMicroS_   = masterSampleTimeMicroS;
+  asynPortDriver_           = asynPortDriver;
+  triggCounter_             = threadOffsetMasterCycles_;
+  exeThreadAtMasterCycles_  = threadSampleTimeMicroS/masterSampleTimeMicroS;
+  threadReady_              = 1;
+
+  if(masterSampleTimeMicroS>threadSampleTimeMicroS){
+    throw std::invalid_argument("Error: thread sample rate cannot be faster than master sample rate.");    
+  }
 
   threadDiag_.latency_min_ns  = 0xffffffff;
   threadDiag_.latency_max_ns  = 0;
@@ -61,19 +68,16 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   threadDiag_.exec_max_ns     = 0;
   threadDiag_.send_min_ns     = 0xffffffff;
   threadDiag_.send_max_ns     = 0;
-
-  doneLock_.test_and_set();   // make sure only one sdo is accessing the bus at the same time
-  doneLock_.clear();
-
+  
   // Create worker thread
   if(epicsThreadCreate(threadName_, threadPriority_, threadStacksize_, f_worker, this) == NULL) {
-    LOGERR("ERROR: Can't create high priority thread, fallback to low priority\n");    
+    LOGERR("ERROR: Can't create thread.\n");    
     throw std::runtime_error("Error: Failed create  worker thread.");    
   }
 
   // TODO implement affinity
 
-  initAsyn();
+  //initAsyn();
 }
 
 ecmcTask::~ecmcTask() {
@@ -90,7 +94,7 @@ void ecmcTask::workThread() {
       return;
     }
 
-    // wait for new trigg
+    // wait for new trigg event
     doWorkEvent_.wait();
 
     doWork();
@@ -110,17 +114,21 @@ void ecmcTask::doWork() {
 
 // Let main thread trigg work
 void ecmcTask::triggWork() {
-  threadReady_ = false;
-  doWorkEvent_.signal();
+  if(triggCounter_ == 0) {
+    threadReady_ = false;
+    doWorkEvent_.signal();  // need one event per thread since only one thread is released at every signal
+    triggCounter_ = exeThreadAtMasterCycles_;
+  }
+  triggCounter_--;
 }
 
 // let main thread know if work is done
-bool ecmcTask::getReady() {
+bool ecmcTask::isReady() {
   // hmm, this is probbaly bad..
   return threadReady_.load()
 }
 
-void ecmcTask::initAsyn() {
+//void ecmcTask::initAsyn() {
 
   //ecmcAsynPortDriver *ecmcAsynPort = (ecmcAsynPortDriver *)getEcmcAsynPortDriver();
   //if(!ecmcAsynPort) {
@@ -165,47 +173,47 @@ void ecmcTask::initAsyn() {
   //connectedParam_->setAllowWriteToEcmc(false);  // need to callback here
   //connectedParam_->refreshParam(1); // read once into asyn param lib
   //ecmcAsynPort->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST, ECMC_ASYN_DEFAULT_ADDR); 
-}
+//}
 
 // TODO!!! Fel namn nedan
-void ecmcTask::refreshAsynParams(int force) {
-  
-  if(!asynPort->getAllowRtThreadCom()){
-    return;
-  }
-
-  int errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MIN_ID]->refreshParamRT(force);
-  if(errorCode==0){ //Reset after successfull write      
-    threadDiag.latency_min_ns  = 0xffffffff;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MAX_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.latency_max_ns  = 0;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MIN_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.period_min_ns  = 0xffffffff;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MAX_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.period_max_ns  = 0;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MIN_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.exec_min_ns  = 0xffffffff;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MAX_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.exec_max_ns  = 0;
-  }
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MIN_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.send_min_ns  = 0xffffffff;
-  }    
-  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MAX_ID]->refreshParamRT(force);
-  if(errorCode==0){
-    threadDiag.send_max_ns  = 0;    
-  }
-  
-  controllerErrorOld = controllerError;
-}
+//void ecmcTask::refreshAsynParams(int force) {
+//  
+//  if(!asynPort->getAllowRtThreadCom()){
+//    return;
+//  }
+//
+//  int errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MIN_ID]->refreshParamRT(force);
+//  if(errorCode==0){ //Reset after successfull write      
+//    threadDiag.latency_min_ns  = 0xffffffff;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_LATENCY_MAX_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.latency_max_ns  = 0;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MIN_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.period_min_ns  = 0xffffffff;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_PERIOD_MAX_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.period_max_ns  = 0;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MIN_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.exec_min_ns  = 0xffffffff;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_EXECUTE_MAX_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.exec_max_ns  = 0;
+//  }
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MIN_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.send_min_ns  = 0xffffffff;
+//  }    
+//  errorCode=mainAsynParams[ECMC_ASYN_MAIN_PAR_SEND_MAX_ID]->refreshParamRT(force);
+//  if(errorCode==0){
+//    threadDiag.send_max_ns  = 0;    
+//  }
+//  
+//  controllerErrorOld = controllerError;
+//}

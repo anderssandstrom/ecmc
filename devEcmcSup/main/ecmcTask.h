@@ -36,16 +36,20 @@ class ecmcTask {
    *    - out_of_range
   */
   ecmcTask(ecmcAsynPortDriver *asynPortDriver,
-           int threadIndex,
-           int threadPriority,
-           int threadAffinity,
-           int threadStacksize,
-           char* threadName,
-           double exeSampelTimeMs);
+           int                 threadIndex,
+           int                 threadPriority,
+           int                 threadAffinity,
+           int                 threadStacksize,
+           int                 threadOffsetMasterCycles,
+           int                 threadSampleTimeMicroS,
+           int                 masterSampleTimeMicroS,
+           char*               threadName);
+  
   ~ecmcTask();
   // trigg new execution for linked objects (in doWork())
   void triggWork();
-  
+  bool isReady();
+
   // main of work thread (calls doWork())
   void workThread();
   
@@ -62,23 +66,27 @@ class ecmcTask {
   static std::string    to_string(int value);
   void                  doWork();
 
-  
   int                   threadIndex_;
   int                   threadPriority_;
   int                   threadAffinity_;
   int                   threadStacksize_;
+  int                   threadOffsetMasterCycles_;
+  int                   threadSampleTimeMicroS_;
+  int                   masterSampleTimeMicroS_;
+  int                   exeThreadAtMasterCycles_;
   char*                 threadName_;
-  double                threadSampleTimeMs_;
+
+
   epicsEvent            doWorkEvent_;  // Need to have on for each consumer..
   std::atomic<bool>     threadReady_;
   ecmcMainThreadDiag    threadDiag_;
 
   // asyn
-  void initAsyn();
-  void refreshAsynParams();
+  //void initAsyn();
+  //void refreshAsynParams();
   ecmcAsynPortDriver *asynPortDriver_;
-  ecmcAsynDataItem *errorParam_;
-  ecmcAsynDataItem *connectedParam_;
+  //ecmcAsynDataItem *errorParam_;
+  //ecmcAsynDataItem *connectedParam_;
 };
 
 #endif  /* ECMC_TASK_H_ */
