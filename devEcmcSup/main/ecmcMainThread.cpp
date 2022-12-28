@@ -226,6 +226,13 @@ struct timespec timespec_sub(struct timespec time1, struct timespec time2) {
 }
 
 void cyclic_task(void *usr) {
+
+  // slask
+  tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,100000,1000,"lurvig");
+  tasks[1]= new ecmcTask(asynPort,1,0,0,1000000,0,100000,1000,"ylvar");
+
+
+  // slask
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   int i = 0;
   int ecStat = 0;
@@ -310,6 +317,14 @@ void cyclic_task(void *usr) {
       ec->checkDomainState();
     }
     ecStat = ec->statusOK() || !ec->getInitDone();
+
+    // Tasks
+    for (i = 0; i < ECMC_MAX_TASKS; i++) {
+      if (tasks[i] != NULL) {        
+        tasks[i]->execute(controllerError,ecStat);        
+      }
+    }
+
     // Motion
     for (i = 0; i < ECMC_MAX_AXES; i++) {
       if (axes[i] != NULL) {
@@ -390,6 +405,10 @@ int ecmcInitThread(void) {
 
   for (int i = 0; i < ECMC_MAX_AXES; i++) {
     axes[i] = NULL;
+  }
+
+  for (int i = 0; i < ECMC_MAX_TASKS; i++) {
+    tasks[i] = NULL;
   }
 
   for (int i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {

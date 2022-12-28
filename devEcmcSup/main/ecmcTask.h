@@ -47,14 +47,14 @@ class ecmcTask {
   
   ~ecmcTask();
   // trigg new execution for linked objects (in doWork())
-  void triggWork();
+  void execute(int ecmcError, int ecOK);
   bool isReady();
+  int  getErrorCode();
 
   // main of work thread (calls doWork())
   void workThread();
   
-  // here all linked objectes are executed (called by workThread())
-  void doWork();
+  
 
   //virtual asynStatus    writeInt32(asynUser *pasynUser, epicsInt32 value);
   //virtual asynStatus    readInt32(asynUser *pasynUser, epicsInt32 *value);
@@ -64,7 +64,8 @@ class ecmcTask {
 
  private:
   static std::string    to_string(int value);
-  void                  doWork();
+  // here all linked objectes are executed (called by workThread())
+  int                  doWork();
 
   int                   threadIndex_;
   int                   threadPriority_;
@@ -74,6 +75,9 @@ class ecmcTask {
   int                   threadSampleTimeMicroS_;
   int                   masterSampleTimeMicroS_;
   int                   exeThreadAtMasterCycles_;
+  int                   triggCounter_;
+  int                   errorCode_;
+  int                   destructs_;
   char*                 threadName_;
 
 

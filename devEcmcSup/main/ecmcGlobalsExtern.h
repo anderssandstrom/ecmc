@@ -26,10 +26,12 @@
 #include "../ethercat/ecmcEthercat.h"
 #include "../motor/ecmcMotorRecordController.h"
 #include "../plugin/ecmcPluginLib.h"
+#include "../main/ecmcTask.h"
 #include "epicsMutex.h"
 
-extern ecmcAxisBase              *axes[ECMC_MAX_AXES];
 extern ecmcEc                    *ec;
+extern ecmcTask                  *tasks[ECMC_MAX_TASKS];
+extern ecmcAxisBase              *axes[ECMC_MAX_AXES];
 extern ecmcEvent                 *events[ECMC_MAX_EVENT_OBJECTS];
 extern ecmcDataRecorder          *dataRecorders[ECMC_MAX_DATA_RECORDERS_OBJECTS];
 extern ecmcDataStorage           *dataStorages[ECMC_MAX_DATA_STORAGE_OBJECTS];

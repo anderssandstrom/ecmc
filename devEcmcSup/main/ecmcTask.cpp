@@ -13,6 +13,7 @@
 #include <sstream>
 #include "ecmcAsynPortDriver.h"
 #include "ecmcAsynPortDriverUtils.h"
+#include "ecmcTask.h"
 #include "epicsThread.h"
 
 // Start worker for socket read()
@@ -22,8 +23,8 @@ void f_worker(void *obj) {
             __FILE__, __FUNCTION__, __LINE__);
     return;
   }
-  ecmcThread * threadObj = (ecmcThread*)obj;
-  threadObj->workThread();
+  ecmcTask * taskObj = (ecmcTask*)obj;
+  taskObj->workThread();
 }
 
 /** ecmc ecmcTask class
@@ -45,7 +46,7 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   // Init
   threadIndex_              = threadIndex;
   threadName_               = threadName;
-  threadPriority_           = threadPrio;
+  threadPriority_           = threadPriority;
   threadAffinity_           = threadAffinity;
   threadStacksize_          = threadStacksize;
   threadOffsetMasterCycles_ = threadOffsetMasterCycles;
@@ -55,6 +56,8 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   triggCounter_             = threadOffsetMasterCycles_;
   exeThreadAtMasterCycles_  = threadSampleTimeMicroS/masterSampleTimeMicroS;
   threadReady_              = 1;
+  errorCode_                = 0;
+  destructs_                = 0;
 
   if(masterSampleTimeMicroS>threadSampleTimeMicroS){
     throw std::invalid_argument("Error: thread sample rate cannot be faster than master sample rate.");    
@@ -71,7 +74,7 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   
   // Create worker thread
   if(epicsThreadCreate(threadName_, threadPriority_, threadStacksize_, f_worker, this) == NULL) {
-    LOGERR("ERROR: Can't create thread.\n");    
+    printf("ERROR: Can't create thread.\n");    
     throw std::runtime_error("Error: Failed create  worker thread.");    
   }
 
@@ -81,7 +84,7 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
 }
 
 ecmcTask::~ecmcTask() {
-  
+  destructs_ = 1;
   doWorkEvent_.signal();
 
 }
@@ -95,25 +98,24 @@ void ecmcTask::workThread() {
     }
 
     // wait for new trigg event
+    threadReady_ = true;
     doWorkEvent_.wait();
 
-    doWork();
+    errorCode_ = doWork();
 
     // work done
-    threadReady_ = true;
   }
 }
 
-void ecmcTask::doWork() {
+int ecmcTask::doWork() {
 
-  // Do work here
-  
-  // obj->execute()..
-
+  epicsThreadSleep(0.0005);
+  printf("Thread %s (%d) executed\n",threadName_,threadIndex_);
+  return 0;
 }
 
 // Let main thread trigg work
-void ecmcTask::triggWork() {
+void ecmcTask::execute(int ecmcError, int ecOK) {
   if(triggCounter_ == 0) {
     threadReady_ = false;
     doWorkEvent_.signal();  // need one event per thread since only one thread is released at every signal
@@ -125,7 +127,11 @@ void ecmcTask::triggWork() {
 // let main thread know if work is done
 bool ecmcTask::isReady() {
   // hmm, this is probbaly bad..
-  return threadReady_.load()
+  return threadReady_.load();
+}
+
+int ecmcTask::getErrorCode() {
+  return errorCode_;
 }
 
 //void ecmcTask::initAsyn() {

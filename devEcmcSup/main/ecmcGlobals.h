@@ -23,10 +23,12 @@
 #include "../com/ecmcAsynDataItem.h"
 #include "../motor/ecmcMotorRecordController.h"
 #include "../plugin/ecmcPluginLib.h"
+#include "../main/ecmcTask.h"
 #include "epicsMutex.h"
 
-ecmcAxisBase *axes[ECMC_MAX_AXES];
 ecmcEc                    *ec;
+ecmcTask                  *tasks[ECMC_MAX_TASKS];
+ecmcAxisBase              *axes[ECMC_MAX_AXES];
 ecmcEvent                 *events[ECMC_MAX_EVENT_OBJECTS];
 ecmcDataRecorder          *dataRecorders[ECMC_MAX_DATA_RECORDERS_OBJECTS];
 ecmcDataStorage           *dataStorages[ECMC_MAX_DATA_STORAGE_OBJECTS];
