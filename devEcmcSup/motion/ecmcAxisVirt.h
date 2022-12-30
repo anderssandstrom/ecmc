@@ -30,7 +30,7 @@ public:
                double sampleTime,
                ecmcTrajTypes  trajType);
   ~ecmcAxisVirt();
-  void execute(bool masterOK);
+  void exeRTFunc(bool masterOK);
   ecmcDriveBase *getDrv();
   ecmcPIDController *getCntrl();
   int validate();  

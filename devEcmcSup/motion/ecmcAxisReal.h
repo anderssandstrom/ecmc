@@ -26,7 +26,7 @@ class ecmcAxisReal : public ecmcAxisBase {
                ecmcDriveTypes drvType,
                ecmcTrajTypes  trajType);
   ~ecmcAxisReal();
-  void               execute(bool masterOK);
+  void               exeRTFunc(bool masterOK);
   ecmcDriveBase    * getDrv();
   ecmcPIDController* getCntrl();
   int                validate();

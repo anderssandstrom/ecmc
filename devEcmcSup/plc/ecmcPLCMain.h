@@ -64,8 +64,8 @@ class ecmcPLCMain : public ecmcError {
                              int              index);
   int  setPluginPointer(ecmcPluginLib *plugin, 
                         int            index);
-  int  execute(bool ecOK);
-  int  execute(int   plcIndex, bool ecOK);
+  int  exeRTFunc(bool ecOK);
+  int  exeRTFunc(int   plcIndex, bool ecOK);
   int  setExpr(int   plcIndex,
                char *expr);
   int  parseExpr(int         plcIndex,

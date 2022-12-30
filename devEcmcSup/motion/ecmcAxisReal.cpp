@@ -67,7 +67,7 @@ void ecmcAxisReal::initVars() {
   temporaryLocalTrajSource_       = false;
 }
 
-void ecmcAxisReal::execute(bool masterOK) {
+void ecmcAxisReal::exeRTFunc(bool masterOK) {
 
   ecmcAxisBase::preExecute(masterOK);
 

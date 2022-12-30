@@ -245,7 +245,7 @@ int ecmcEvent::setDataSampleTime(int sampleTime) {
   return 0;
 }
 
-int ecmcEvent::execute(int masterOK) {
+int ecmcEvent::exeRTFunc(int masterOK) {
   if (!masterOK) {
     return setErrorID(__FILE__,
                       __FUNCTION__,

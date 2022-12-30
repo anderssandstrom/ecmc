@@ -40,7 +40,7 @@ class ecmcEvent : public ecmcEcEntryLink {
   int  setDataSampleTime(int sampleTime);
   int  setEnable(int enable);
   int  getEnabled(int *enabled);
-  int  execute(int masterOK);
+  int  exeRTFunc(int masterOK);
   int  setEnableArmSequence(int enable);
   int  linkEventConsumer(ecmcEventConsumer *consumer,
                          int                index);

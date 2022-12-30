@@ -341,15 +341,15 @@ void cyclic_task(void *usr) {
     // Motion
     for (i = 0; i < ECMC_MAX_AXES; i++) {
       if (axes[i] != NULL) {
-        plcs->execute(AXIS_PLC_ID_TO_PLC_ID(i),ecStat);
-        axes[i]->execute(ecStat);        
+        plcs->exeRTFunc(AXIS_PLC_ID_TO_PLC_ID(i),ecStat);
+        axes[i]->exeRTFunc(ecStat);        
       }
     }
 
     // Data events
     for (i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {
       if (events[i] != NULL) {
-        events[i]->execute(ecStat);
+        events[i]->exeRTFunc(ecStat);
       }
     }
 
@@ -362,7 +362,7 @@ void cyclic_task(void *usr) {
 
     // PLCs
     if (plcs) {
-      plcs->execute(ecStat);
+      plcs->exeRTFunc(ecStat);
     }
 
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &multithreadwakeup, NULL);     

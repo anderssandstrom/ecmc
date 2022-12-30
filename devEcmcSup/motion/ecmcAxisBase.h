@@ -164,7 +164,7 @@ class ecmcAxisBase : public ecmcError {
   virtual ecmcDriveBase    * getDrv()               = 0;
   virtual ecmcPIDController* getCntrl()             = 0;
   virtual int                validate()             = 0;
-  virtual void               execute(bool masterOK) = 0;
+  virtual void               exeRTFunc(bool masterOK) = 0;
   int                        getCntrlError(double *error);
   int                        setEnable(bool enable);
   bool                       getEnable();

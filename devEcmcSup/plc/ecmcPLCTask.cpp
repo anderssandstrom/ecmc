@@ -164,7 +164,7 @@ bool ecmcPLCTask::getCompiled() {
   return compiled_;
 }
 
-int ecmcPLCTask::execute(bool ecOK) {
+int ecmcPLCTask::exeRTFunc(bool ecOK) {
   if (!compiled_ || (skipCyclesCounter_ < skipCycles_)) {
     skipCyclesCounter_++;
     return 0;

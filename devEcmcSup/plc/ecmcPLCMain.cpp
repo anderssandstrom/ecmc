@@ -178,7 +178,7 @@ int ecmcPLCMain::validate() {
   return 0;
 }
 
-int ecmcPLCMain::execute(bool ecOK) {
+int ecmcPLCMain::exeRTFunc(bool ecOK) {
   //refresh ec<id>.masterstatus
   if(ecStatus_){
     ecStatus_->setData((double)ecOK);
@@ -189,7 +189,7 @@ int ecmcPLCMain::execute(bool ecOK) {
     if (plcs_[plcIndex] != NULL) {
       if (plcEnable_[plcIndex]) {
         if (plcEnable_[plcIndex]->getData()) {
-          plcs_[plcIndex]->execute(ecOK);
+          plcs_[plcIndex]->exeRTFunc(ecOK);
           if (ecOK) {
             if (plcFirstScan_[plcIndex]) {
               plcFirstScan_[plcIndex]->setData(plcs_[plcIndex]->getFirstScanDone()==0); // First scan
@@ -211,11 +211,11 @@ int ecmcPLCMain::execute(bool ecOK) {
   return 0;
 }
 
-int ecmcPLCMain::execute(int plcIndex, bool ecOK) {
+int ecmcPLCMain::exeRTFunc(int plcIndex, bool ecOK) {
   if (plcs_[plcIndex] != NULL) {
     if (plcEnable_[plcIndex]) {
       if (plcEnable_[plcIndex]->getData()) {
-        plcs_[plcIndex]->execute(ecOK);
+        plcs_[plcIndex]->exeRTFunc(ecOK);
          if (ecOK) {
           if (plcFirstScan_[plcIndex]) {
             plcFirstScan_[plcIndex]->setData(plcs_[plcIndex]->getFirstScanDone()==0); // First scan
