@@ -24,6 +24,7 @@
 #include "inttypes.h"
 #include <string>
 #include <atomic>
+#include <time.h>
 
 class ecmcTask {
  public:
@@ -49,13 +50,12 @@ class ecmcTask {
   // trigg new execution for linked objects (in doWork())
   void execute(int ecmcError, int ecOK);
   bool isReady();
+  bool isNextCycleNewExe();
   int  getErrorCode();
 
   // main of work thread (calls doWork())
   void workThread();
   
-  
-
   //virtual asynStatus    writeInt32(asynUser *pasynUser, epicsInt32 value);
   //virtual asynStatus    readInt32(asynUser *pasynUser, epicsInt32 *value);
   //virtual asynStatus    readInt8Array(asynUser *pasynUser, epicsInt8 *value, 
@@ -66,6 +66,7 @@ class ecmcTask {
   static std::string    to_string(int value);
   // here all linked objectes are executed (called by workThread())
   int                  doWork();
+  struct timespec timespecAdd(struct timespec time1, struct timespec time2);
 
   int                   threadIndex_;
   int                   threadPriority_;
@@ -80,7 +81,7 @@ class ecmcTask {
   int                   destructs_;
   char*                 threadName_;
 
-
+  int                   exceedCounter_;
   epicsEvent            doWorkEvent_;  // Need to have on for each consumer..
   std::atomic<bool>     threadReady_;
   ecmcMainThreadDiag    threadDiag_;

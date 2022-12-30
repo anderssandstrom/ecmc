@@ -228,7 +228,17 @@ struct timespec timespec_sub(struct timespec time1, struct timespec time2) {
 void cyclic_task(void *usr) {
 
   // slask
-  tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,100000,1000,"lurvig");
+  //  ecmcTask(ecmcAsynPortDriver *asynPortDriver,
+  //           int                 threadIndex,
+  //           int                 threadPriority,
+  //           int                 threadAffinity,
+  //           int                 threadStacksize,
+  //           int                 threadOffsetMasterCycles,
+  //           int                 threadSampleTimeMicroS,
+  //           int                 masterSampleTimeMicroS,
+  //           char*               threadName);
+  //  
+  tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,1000,1000,"lurvig");
   tasks[1]= new ecmcTask(asynPort,1,0,0,1000000,0,100000,1000,"ylvar");
 
 
@@ -236,11 +246,13 @@ void cyclic_task(void *usr) {
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   int i = 0;
   int ecStat = 0;
-  struct timespec wakeupTime, sendTime, lastSendTime = {};
+  struct timespec wakeupTime, sendTime, lastSendTime, multithreadwakeup = {};
   struct timespec startTime, endTime, lastStartTime = {};
   struct timespec offsetStartTime = {};
   const struct timespec  cycletime = {0, (long int)mcuPeriod};
-
+  // Define 0.3*period as allowed multi task time
+  const struct timespec  multithreadtime = {0, (long int)(0.3*mcuPeriod)};
+  
   offsetStartTime.tv_nsec = MCU_NSEC_PER_SEC / 10;
   offsetStartTime.tv_sec  = 0;
 
@@ -263,6 +275,7 @@ void cyclic_task(void *usr) {
     // Mutex for motor record access
     if(ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeupTime, NULL);
+    multithreadwakeup = timespec_add(wakeupTime, multithreadtime);
 
     if (appModeStat == ECMC_MODE_RUNTIME) {      
       if (asynPort) {
@@ -352,6 +365,19 @@ void cyclic_task(void *usr) {
       plcs->execute(ecStat);
     }
 
+    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &multithreadwakeup, NULL);     
+    // now check ecmcTasks after 30% of cycletime
+
+    for (i = 0; i < ECMC_MAX_TASKS; i++) {
+      if (tasks[i] != NULL) {        
+        // check that time is up and if ready (not all threads must finlaize in the same master cycle)
+        if(tasks[i]->isNextCycleNewExe() && !tasks[i]->isReady()) {
+          printf("ERROR: Task %d did not finalize in time\n",i);
+        }
+      }
+    }
+
+    // TDOD what is needed of the below, i.e. is the slow execute for axes needed?
     if (counter) {
       counter--;
     } else {    // Lower freq      
