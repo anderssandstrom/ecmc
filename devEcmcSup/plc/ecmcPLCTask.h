@@ -18,6 +18,7 @@
 #include "../com/ecmcAsynPortDriver.h"
 #include "exprtkWrap.h"
 #include "../main/ecmcDefinitions.h"
+#include "../main/ecmcExeObjWrapper.h"
 #include "../motion/ecmcAxisBase.h"
 #include "../ethercat/ecmcEc.h"
 #include "../ethercat/ecmcEcEntry.h"  // Bit macros
@@ -45,7 +46,7 @@
 #define ERROR_PLC_PLUGIN_INDEX_OUT_OF_RANGE 0x2050F
 
 
-class ecmcPLCTask : public ecmcError {
+class ecmcPLCTask : public ecmcError , public ecmcExeObjWrapper {
  public:
   explicit ecmcPLCTask(int plcIndex,
                        int skipCycles,

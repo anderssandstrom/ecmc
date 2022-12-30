@@ -67,7 +67,7 @@ void ecmcAxisReal::initVars() {
   temporaryLocalTrajSource_       = false;
 }
 
-void ecmcAxisReal::exeRTFunc(bool masterOK) {
+int ecmcAxisReal::exeRTFunc(bool masterOK) {
 
   ecmcAxisBase::preExecute(masterOK);
 
@@ -194,6 +194,7 @@ void ecmcAxisReal::exeRTFunc(bool masterOK) {
   }
 
   ecmcAxisBase::postExecute(masterOK);
+  return getErrorID();
 }
 
 ecmcPIDController * ecmcAxisReal::getCntrl() {

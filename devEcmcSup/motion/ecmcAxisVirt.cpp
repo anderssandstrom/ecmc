@@ -34,7 +34,7 @@ void ecmcAxisVirt::initVars() {
   temporaryLocalTrajSource_ = false;
 }
 
-void ecmcAxisVirt::exeRTFunc(bool masterOK) {
+int ecmcAxisVirt::exeRTFunc(bool masterOK) {
 
   ecmcAxisBase::preExecute(masterOK);
 
@@ -124,6 +124,7 @@ void ecmcAxisVirt::exeRTFunc(bool masterOK) {
   data_.status_.enabled              = data_.command_.enable;
 
   ecmcAxisBase::postExecute(masterOK);
+  return getErrorID();
 }
 
 ecmcPIDController * ecmcAxisVirt::getCntrl() {

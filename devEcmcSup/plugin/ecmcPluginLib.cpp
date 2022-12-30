@@ -18,7 +18,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-ecmcPluginLib::ecmcPluginLib(int index) {
+ecmcPluginLib::ecmcPluginLib(int index) : ecmcExeObjWrapper(ECMC_PLUGIN) {
   initVars();
   index_ = index;
 }

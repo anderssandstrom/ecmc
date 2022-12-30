@@ -13,6 +13,7 @@
 #define ECMC_PLUGIN_LIB_H_
 
 #include "../main/ecmcError.h"
+#include "../main/ecmcExeObjWrapper.h"
 #include "ecmcPluginDefs.h"
 
 #define ERROR_PLUGIN_FLIE_NOT_FOUND 0x231000
@@ -24,7 +25,7 @@
 #define ERROR_PLUGIN_DATA_NULL 0x231006
 #define ERROR_PLUGIN_DATA_ARG_VS_FUNC_MISSMATCH 0x231007
 
-class ecmcPluginLib : public ecmcError {
+class ecmcPluginLib : public ecmcError, public ecmcExeObjWrapper {
  public:
   explicit ecmcPluginLib(int index);
   ~ecmcPluginLib();

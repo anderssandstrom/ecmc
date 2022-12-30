@@ -16,6 +16,7 @@
 #define __STDC_FORMAT_MACROS  // To "reinclude" inttypes
 #include "../main/ecmcDefinitions.h"
 #include "../main/ecmcError.h"
+#include "../main/ecmcExeObjWrapper.h"
 #include "../com/ecmcAsynPortDriver.h"
 #include "ecmcDriveBase.h"
 #include "ecmcDriveStepper.h"
@@ -154,7 +155,7 @@ typedef struct {
   int                        spareBitsCmd       : 22;
  } ecmcAsynAxisControlType;
 
-class ecmcAxisBase : public ecmcError {
+class ecmcAxisBase : public ecmcError , public ecmcExeObjWrapper {
  public:
   ecmcAxisBase(ecmcAsynPortDriver *asynPortDriver,
                int    axisID,
@@ -164,7 +165,7 @@ class ecmcAxisBase : public ecmcError {
   virtual ecmcDriveBase    * getDrv()               = 0;
   virtual ecmcPIDController* getCntrl()             = 0;
   virtual int                validate()             = 0;
-  virtual void               exeRTFunc(bool masterOK) = 0;
+  virtual int                exeRTFunc(bool masterOK) = 0;
   int                        getCntrlError(double *error);
   int                        setEnable(bool enable);
   bool                       getEnable();

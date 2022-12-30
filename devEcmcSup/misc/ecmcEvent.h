@@ -16,6 +16,7 @@
 #include "stdio.h"
 #include "../main/ecmcDefinitions.h"
 #include "../main/ecmcError.h"
+#include "../main/ecmcExeObjWrapper.h"
 #include "../ethercat/ecmcEcEntry.h"
 #include "../ethercat/ecmcEcEntryLink.h"
 #include "ecmcDataStorage.h"
@@ -30,7 +31,7 @@
 #define ERROR_EVENT_HARDWARE_STATUS_NOT_OK 0x20306
 #define ERROR_EVENT_ARM_NOT_ENABLED 0x20307
 
-class ecmcEvent : public ecmcEcEntryLink {
+class ecmcEvent : public ecmcEcEntryLink, public ecmcExeObjWrapper {
  public:
   ecmcEvent(double sampleTime,
             int    index);

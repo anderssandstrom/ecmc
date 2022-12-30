@@ -82,7 +82,8 @@ asynStatus asynWriteCmdData(void* data, size_t bytes, asynParamType asynParType,
 ecmcAxisBase::ecmcAxisBase(ecmcAsynPortDriver *asynPortDriver,
                            int axisID, 
                            double sampleTime,
-                           ecmcTrajTypes  trajType) {
+                           ecmcTrajTypes  trajType) :
+                           ecmcExeObjWrapper(ECMC_AXIS) {
   initVars();
   asynPortDriver_                 = asynPortDriver;
   data_.axisId_                   = axisID;

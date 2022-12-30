@@ -19,17 +19,31 @@
 
 #include "ecmcDefinitions.h"
 
+// Motion
+enum appExeObjType {
+  ECMC_AXIS  = 0,
+  ECMC_PLC = 1,
+  ECMC_EVENT = 2,
+  ECMC_PLUGIN = 3
+};
 
-class ECMC_EXEOBJWRAPPER_H_ {
+class ecmcExeObjWrapper {
  public:
 
   /** ecmc ecmcExeObjWrapper class
    */
-  
-  ecmcExeObjWrapper();
+
+  ecmcExeObjWrapper(appExeObjType objType);
   ~ecmcExeObjWrapper();
+  
+  // The function call in derived class that executes rt code
+  virtual int exeRTFunc(int arg);
+
   // trigg new execution for linked objects 
   void execute(int ecmcError, int ecOK);
+
+private:
+  appExeObjType objType_;
 };
 
 #endif  /* ECMC_EXEOBJWRAPPER_H_ */

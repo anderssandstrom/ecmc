@@ -28,7 +28,8 @@
 ecmcPLCTask::ecmcPLCTask(int plcIndex, 
                          int skipCycles,
                          double mcuFreq,
-                         ecmcAsynPortDriver *asynPortDriver) {
+                         ecmcAsynPortDriver *asynPortDriver) : 
+                         ecmcExeObjWrapper(ECMC_PLC) {
   initVars();
   plcIndex_          = plcIndex;
   skipCycles_        = skipCycles;
