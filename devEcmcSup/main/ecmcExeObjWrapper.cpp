@@ -33,3 +33,7 @@ void ecmcExeObjWrapper::execute(int ecmcError, int ecOK) {
     exeRTFunc(ecOK);
   }
 }
+
+appExeObjType ecmcExeObjWrapper::getObjectType() {
+  return objType_;
+}

@@ -24,6 +24,17 @@
 #include <string>
 #include <atomic>
 #include <time.h>
+#include <vector>
+#include "../main/ecmcExeObjWrapper.h"
+
+/**
+ * TODO
+ *  - Add affinity
+ *  - Add validation method
+ *  - Add report function that list all info about the task and the objects it handles.
+ *  - Add process image handling
+ *  - ....
+*/
 
 class ecmcTask {
  public:
@@ -52,6 +63,9 @@ class ecmcTask {
   bool isNextCycleNewExe();
   int  getErrorCode();
 
+  // Add object to task execution vector (can throw exceptions)
+  void  appendObjToExeVector(ecmcExeObjWrapper *obj);
+  
   // main of work thread (calls doWork())
   void workThread();
   
@@ -78,12 +92,15 @@ class ecmcTask {
   int                   errorCode_;
   int                   destructs_;
   char*                 threadName_;
+  int                   ecmcError_;
+  int                   ecOK_;
 
   int                   exceedCounter_;
   epicsEvent            doWorkEvent_;  // Need to have on for each consumer..
   std::atomic<bool>     threadReady_;
   ecmcMainThreadDiag    threadDiag_;
-
+  std::vector<ecmcExeObjWrapper*> exeVector_;
+  
   // asyn
   //void initAsyn();
   //void refreshAsynParams();

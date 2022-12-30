@@ -62,7 +62,9 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   errorCode_                = 0;
   destructs_                = 0;
   exceedCounter_            = 0;
-
+  ecOK_                     = 0;
+  ecmcError_                = 0;
+  
   if(masterSampleTimeMicroS>threadSampleTimeMicroS){
     throw std::invalid_argument("Error: thread sample rate cannot be faster than master sample rate.");    
   }
@@ -81,6 +83,8 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
     printf("ERROR: Can't create thread.\n");    
     throw std::runtime_error("Error: Failed create  worker thread.");    
   }
+
+  exeVector_.clear();
 
   // TODO implement affinity
 
@@ -114,6 +118,11 @@ void ecmcTask::workThread() {
 int ecmcTask::doWork() {
   struct timespec  delayTime = {0,200000};
   
+  // use iterator with for loop
+  for (int i = 0; exeVector_.size(); ++i) {
+    exeVector_[i]->execute(ecmcError_,ecOK_);
+  }
+
   clock_nanosleep(CLOCK_MONOTONIC, 0, &delayTime, NULL);
 
   printf("Thread %s (%d) executed, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
@@ -123,6 +132,8 @@ int ecmcTask::doWork() {
 // Let main thread trigg work
 // Only call method from main thread
 void ecmcTask::execute(int ecmcError, int ecOK) {
+  ecmcError_ = ecmcError;
+  ecOK_      = ecOK;
   if(triggCounter_ == 0) {
     if(threadReady_.load()) {
       threadReady_ = false;
@@ -155,6 +166,10 @@ bool ecmcTask::isNextCycleNewExe() {
 
 int ecmcTask::getErrorCode() {
   return errorCode_;
+}
+
+void ecmcTask::appendObjToExeVector(ecmcExeObjWrapper *obj) {
+  exeVector_.push_back(obj);
 }
 
 //void ecmcTask::initAsyn() {

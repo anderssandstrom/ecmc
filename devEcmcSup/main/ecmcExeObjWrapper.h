@@ -38,6 +38,8 @@ class ecmcExeObjWrapper {
   
   // The function call in derived class that executes rt code
   virtual int exeRTFunc(int arg);
+  appExeObjType getObjectType();
+  //int getObjectIndex()
 
   // trigg new execution for linked objects 
   void execute(int ecmcError, int ecOK);
