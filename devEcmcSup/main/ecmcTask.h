@@ -18,7 +18,6 @@
 #define ECMC_TASK_H_
 
 #include <stdexcept>
-#include "ecmcDataItem.h"
 #include "ecmcAsynPortDriver.h"
 #include "ecmcDefinitions.h"
 #include "inttypes.h"
@@ -66,8 +65,7 @@ class ecmcTask {
   static std::string    to_string(int value);
   // here all linked objectes are executed (called by workThread())
   int                  doWork();
-  struct timespec timespecAdd(struct timespec time1, struct timespec time2);
-
+  
   int                   threadIndex_;
   int                   threadPriority_;
   int                   threadAffinity_;

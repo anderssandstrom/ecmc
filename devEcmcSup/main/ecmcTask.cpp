@@ -121,16 +121,16 @@ int ecmcTask::doWork() {
 }
 
 // Let main thread trigg work
+// Only call method from main thread
 void ecmcTask::execute(int ecmcError, int ecOK) {
   if(triggCounter_ == 0) {
     if(threadReady_.load()) {
       threadReady_ = false;
       doWorkEvent_.signal();  // need one event per thread since only one thread is released at every signal
-    }
+      // if not ready then one cycle is skipped... This is registered by increment of exceedCounter_
+    }    
     triggCounter_ = exeThreadAtMasterCycles_;
-  }
-  
-  if(triggCounter_ > 0) {
+  } else if(triggCounter_ > 0) {
     triggCounter_--;
   }
 }
@@ -246,17 +246,3 @@ int ecmcTask::getErrorCode() {
 //  
 //  controllerErrorOld = controllerError;
 //}
-
-struct timespec ecmcTask::timespecAdd(struct timespec time1, struct timespec time2) {
-  struct timespec result;
-
-  if ((time1.tv_nsec + time2.tv_nsec) >= MCU_NSEC_PER_SEC) {
-    result.tv_sec  = time1.tv_sec + time2.tv_sec + 1;
-    result.tv_nsec = time1.tv_nsec + time2.tv_nsec - MCU_NSEC_PER_SEC;
-  } else {
-    result.tv_sec  = time1.tv_sec + time2.tv_sec;
-    result.tv_nsec = time1.tv_nsec + time2.tv_nsec;
-  }
-  return result;
-}
-
