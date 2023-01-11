@@ -55,7 +55,7 @@ class ecmcPLCTask : public ecmcError , public ecmcExeObjWrapper {
   ~ecmcPLCTask();
   bool         getCompiled();
   int          validate();
-  int          exeRTFunc(bool ecOK);
+  int          exeRTFunc(int ecOK);
   std::string* getExpr();
   std::string* getRawExpr();
   int          appendRawExpr(const char *exprStr);

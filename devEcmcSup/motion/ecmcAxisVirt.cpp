@@ -34,7 +34,7 @@ void ecmcAxisVirt::initVars() {
   temporaryLocalTrajSource_ = false;
 }
 
-int ecmcAxisVirt::exeRTFunc(bool masterOK) {
+int ecmcAxisVirt::exeRTFunc(int masterOK) {
 
   ecmcAxisBase::preExecute(masterOK);
 

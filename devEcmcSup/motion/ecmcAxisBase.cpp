@@ -2175,5 +2175,8 @@ int ecmcAxisBase::setAllowSourceChangeWhenEnabled(bool allow) {
   return 0;
 }
 
-
+int ecmcAxisBase::exeRTFunc(int masterOK) {
+  printf("NOT GOOD\n");
+  return 0;
+}
 

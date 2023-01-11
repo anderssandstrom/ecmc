@@ -162,10 +162,10 @@ class ecmcAxisBase : public ecmcError , public ecmcExeObjWrapper {
                double sampleTime,
                ecmcTrajTypes  trajType);
   virtual ~ecmcAxisBase();
-  virtual ecmcDriveBase    * getDrv()               = 0;
-  virtual ecmcPIDController* getCntrl()             = 0;
-  virtual int                validate()             = 0;
-  virtual int                exeRTFunc(bool masterOK) = 0;
+  virtual ecmcDriveBase    * getDrv()                = 0;
+  virtual ecmcPIDController* getCntrl()              = 0;
+  virtual int                validate()              = 0;
+  virtual int                exeRTFunc(int masterOK);
   int                        getCntrlError(double *error);
   int                        setEnable(bool enable);
   bool                       getEnable();

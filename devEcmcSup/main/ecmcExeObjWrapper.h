@@ -37,7 +37,7 @@ class ecmcExeObjWrapper {
   ~ecmcExeObjWrapper();
   
   // The function call in derived class that executes rt code
-  virtual int exeRTFunc(int arg);
+  virtual int exeRTFunc(int arg) = 0;
   appExeObjType getObjectType();
   //int getObjectIndex()
 
