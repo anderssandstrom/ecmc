@@ -116,16 +116,19 @@ void ecmcTask::workThread() {
 }
 
 int ecmcTask::doWork() {
-  struct timespec  delayTime = {0,200000};
+  //struct timespec  delayTime = {0,200000};
+  printf("Thread %s (%d) start execute, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
   
   // use iterator with for loop
-  for (int i = 0; exeVector_.size(); ++i) {
-    exeVector_[i]->execute(ecmcError_,ecOK_);
+  for (int i = 0; i < (int)exeVector_.size(); ++i) {
+    if(exeVector_[i] != NULL) {
+      exeVector_[i]->execute(ecmcError_,ecOK_);
+    }
   }
+  
+  printf("Thread %s (%d) end execute, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
+  //clock_nanosleep(CLOCK_MONOTONIC, 0, &delayTime, NULL);
 
-  clock_nanosleep(CLOCK_MONOTONIC, 0, &delayTime, NULL);
-
-  printf("Thread %s (%d) executed, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
   return 0;
 }
 

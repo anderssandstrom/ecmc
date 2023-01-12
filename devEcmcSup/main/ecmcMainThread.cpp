@@ -241,6 +241,8 @@ void cyclic_task(void *usr) {
   tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,1000,1000,"lurvig");
   tasks[1]= new ecmcTask(asynPort,1,0,0,1000000,0,100000,1000,"ylvar");
 
+  tasks[1]->appendObjToExeVector(plcs->getPLCTask(0));
+
 
   // slask
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
@@ -342,7 +344,7 @@ void cyclic_task(void *usr) {
     for (i = 0; i < ECMC_MAX_AXES; i++) {
       if (axes[i] != NULL) {
         plcs->exeRTFunc(AXIS_PLC_ID_TO_PLC_ID(i),ecStat);
-        axes[i]->exeRTFunc(ecStat);        
+        axes[i]->exeRTFunc(ecStat);
       }
     }
 
@@ -362,7 +364,7 @@ void cyclic_task(void *usr) {
 
     // PLCs
     if (plcs) {
-      plcs->exeRTFunc(ecStat);
+      //plcs->exeRTFunc(ecStat);
     }
 
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &multithreadwakeup, NULL);     

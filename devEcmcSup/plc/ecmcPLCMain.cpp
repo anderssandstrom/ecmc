@@ -1243,6 +1243,18 @@ ecmcPLCTask* ecmcPLCMain::getPLCTaskForAxis(int axisId) {
 
   return plcs_[index];
 }
+ecmcPLCTask* ecmcPLCMain::getPLCTask(int plcId) {
+  
+  if (plcId >= ECMC_MAX_PLCS  || plcId < 0) {
+    LOGERR("%s/%s:%d: ERROR:  PLC index out of range.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);    
+    return NULL;
+  }
+  
+  return plcs_[plcId];
+}
 
 int ecmcPLCMain::addPLCDefaultVariable(int plcIndex, const char *suffix, ecmcPLCDataIF **dataIFOut) {
   char varName[EC_MAX_OBJECT_PATH_CHAR_LENGTH];

@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcExeObjWrapper.h"
+#include "stdio.h"
 
 
 /** ecmc ecmcExeObjWrapper class
@@ -25,7 +26,7 @@ ecmcExeObjWrapper::~ecmcExeObjWrapper() {
 }
 
 void ecmcExeObjWrapper::execute(int ecmcError, int ecOK) {
-
+  printf("HEHEHEHHEHEHEHEHEHEHEHE");
   // Most exe functions take ecOK as arg except for plugins taking ecmcError
   if(objType_==ECMC_PLUGIN) {
     exeRTFunc(ecmcError);
