@@ -1932,6 +1932,26 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20055:
+    return "ERROR_MAIN_BUILD_EXE_VECTOR_EXCPTION";
+
+    break;
+
+  case 0x20056:
+    return "ERROR_MAIN_ADD_TASK_EXCPTION";
+
+    break;
+
+  case 0x20057:
+    return "ERROR_MAIN_TASK_INDEX_OUT_OF_RANGE";
+
+    break;
+
+  case 0x20058:
+    return "ERROR_MAIN_OBJECT_FORMAT_UNKOWN";
+
+    break;
+
   case 0x20100:   // Data Recorder
     return "ERROR_DATA_RECORDER_BUFFER_NULL";
 

@@ -101,6 +101,7 @@ class ecmcPLCMain : public ecmcError {
   void errorReset();
   ecmcPLCTask* getPLCTaskForAxis(int axisId);
   ecmcPLCTask* getPLCTask(int plcId);
+    
  private:
   void initVars();
   int  createNewGlobalDataIF(char              *varName,

@@ -700,7 +700,6 @@ static int handleCfgCommand(const char *myarg_1) {
     return createAxis(iValue, iValue2, iValue3, iValue4);
   }
 
-
   /// "Cfg.CreateAxis(axisIndex, axisType, drvType)"
   nvals = sscanf(myarg_1, "CreateAxis(%d,%d,%d)", &iValue, &iValue2,&iValue3);
 
@@ -730,6 +729,21 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 1) {
     return createAxis(iValue, 1,0,0);
+  }
+
+  /// "Cfg.LinkObjectToTask(objname,taskIndex)"
+  cIdBuffer[0]  = '\0';
+  nvals = sscanf(myarg_1, "LinkObjectToTask(%[^,],%d)", cIdBuffer,&iValue);
+
+  if (nvals == 2) {
+    return linkObjToTask(cIdBuffer,iValue);
+  }
+
+  /// "Cfg.AddTask(priority,affinity,stacksize,offsetMasterCycles,sampleTimeMasterCycles)"
+  nvals = sscanf(myarg_1, "AddTask(%d,%d,%d,%d,%d)", &iValue,&iValue2,&iValue3,&iValue4,&iValue5);
+
+  if (nvals == 5) {
+    return addTask(iValue,iValue2,iValue3,iValue4,iValue5);
   }
 
   /// "Cfg.CreatePLC(int index, double cycleTimeMs)"

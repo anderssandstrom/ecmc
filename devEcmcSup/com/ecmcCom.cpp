@@ -59,6 +59,7 @@ int ecmcInit(void *asynPortObject) {
     return errorCode;
   }
 
+  exeVector.clear();
   return 0;
 }
 

@@ -47,14 +47,13 @@ class ecmcTask {
    *    - out_of_range
   */
   ecmcTask(ecmcAsynPortDriver *asynPortDriver,
-           int                 threadIndex,
-           int                 threadPriority,
-           int                 threadAffinity,
-           int                 threadStacksize,
-           int                 threadOffsetMasterCycles,
-           int                 threadSampleTimeMicroS,
-           int                 masterSampleTimeMicroS,
-           char*               threadName);
+           int                 index,
+           int                 priority,
+           int                 affinity,
+           int                 stacksize,
+           int                 offsetTimeInMasterCycles,
+           int                 sampleTimeInMasterCycles,
+           int                 masterSampleTimeInNanoS);
   
   ~ecmcTask();
   // trigg new execution for linked objects (in doWork())
@@ -80,21 +79,21 @@ class ecmcTask {
   // here all linked objectes are executed (called by workThread())
   int                  doWork();
   
-  int                   threadIndex_;
-  int                   threadPriority_;
-  int                   threadAffinity_;
-  int                   threadStacksize_;
-  int                   threadOffsetMasterCycles_;
-  int                   threadSampleTimeMicroS_;
-  int                   masterSampleTimeMicroS_;
-  int                   exeThreadAtMasterCycles_;
+  int                   index_;
+  int                   priority_;
+  int                   affinity_;
+  int                   stacksize_;
+  int                   offsetTimeInMasterCycles_;
+  int                   sampleTimeInNanoS_;
+  int                   masterSampleTimeInNanoS_;
+  int                   sampleTimeInMasterCycles_;
   int                   triggCounter_;
   int                   errorCode_;
   int                   destructs_;
-  char*                 threadName_;
+  char*                 name_;
   int                   ecmcError_;
   int                   ecOK_;
-
+  int                   exceedCounterold_;
   int                   exceedCounter_;
   epicsEvent            doWorkEvent_;  // Need to have on for each consumer..
   std::atomic<bool>     threadReady_;
@@ -107,6 +106,7 @@ class ecmcTask {
   ecmcAsynPortDriver *asynPortDriver_;
   //ecmcAsynDataItem *errorParam_;
   //ecmcAsynDataItem *connectedParam_;
+  char nameBuffer_[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
 };
 
 #endif  /* ECMC_TASK_H_ */

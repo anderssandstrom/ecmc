@@ -43,9 +43,12 @@ class ecmcExeObjWrapper {
 
   // trigg new execution for linked objects 
   void execute(int ecmcError, int ecOK);
+  int getTaskIndex();
+  int setTaskIndex(int index);
 
 private:
   appExeObjType objType_;
+  int taskIndex_;  // taskIndex_ == 0 is the main task
 };
 
 #endif  /* ECMC_EXEOBJWRAPPER_H_ */

@@ -37,7 +37,7 @@
 #include "ecmcDefinitions.h"
 #include "ecmcErrorsList.h"
 #include "ecmcGlobals.h"
-#include "../com/ecmcOctetIF.h" 
+#include "../com/ecmcOctetIF.h"
 #include "../ethercat/ecmcEthercat.h"
 #include "../motion/ecmcMotion.h"
 #include "../plc/ecmcPLC.h"
@@ -59,6 +59,63 @@ void printStatus() {
       (axisDiagIndex >= 0)) {
     if (axes[axisDiagIndex] != NULL) {
       axes[axisDiagIndex]->printAxisStatus();
+    }
+  }
+}
+
+// Build execution array for main ec thread (taskId 0)
+void buildMasterThreadExeVector() {
+
+  // testing slask
+  //  ecmcTask(ecmcAsynPortDriver *asynPortDriver,
+  //           int                 threadIndex,
+  //           int                 threadPriority,
+  //           int                 threadAffinity,
+  //           int                 threadStacksize,
+  //           int                 threadOffsetMasterCycles,
+  //           int                 threadSampleTimeMicroS,
+  //           int                 masterSampleTimeMicroS,
+  //           char*               threadName);
+  //  
+  //tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,1000,1000,"lurvig");
+  //tasks[1]= new ecmcTask(asynPort,1,0,0,1000000,0,100000,1000,"ylvar");
+  //tasks[1]->appendObjToExeVector(plcs->getPLCTask(0));
+  // slask
+
+  int i = 0;
+  exeVector.clear();
+  // Motion
+  for (i = 0; i < ECMC_MAX_AXES; i++) {
+    if (axes[i] != NULL) {
+      if(axes[i]->getTaskIndex() == -1){
+        // sync PLC first
+        exeVector.push_back(plcs->getPLCTaskForAxis(i));          
+        exeVector.push_back(axes[i]);
+      }
+    }
+  }
+  // Data events
+  for (i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {
+    if (events[i] != NULL) {
+      if(events[i]->getTaskIndex() == -1){
+        exeVector.push_back(events[i]);
+      }
+    }
+  }
+  // Plugins
+  for (i = 0; i < ECMC_MAX_PLUGINS; i++) {
+    if (plugins[i] != NULL) {
+      if(plugins[i]->getTaskIndex() == -1){
+        exeVector.push_back(plugins[i]);
+      }
+    }
+  }
+  // PLCs
+  for (i = 0; i < ECMC_MAX_PLCS; i++) {
+    if (plcs->getPLCTask(i) != NULL) {
+      if(plcs->getPLCTask(i)->getTaskIndex() == -1){
+        exeVector.push_back(plcs->getPLCTask(i));
+      }
     }
   }
 }
@@ -227,25 +284,6 @@ struct timespec timespec_sub(struct timespec time1, struct timespec time2) {
 
 void cyclic_task(void *usr) {
 
-  // slask
-  //  ecmcTask(ecmcAsynPortDriver *asynPortDriver,
-  //           int                 threadIndex,
-  //           int                 threadPriority,
-  //           int                 threadAffinity,
-  //           int                 threadStacksize,
-  //           int                 threadOffsetMasterCycles,
-  //           int                 threadSampleTimeMicroS,
-  //           int                 masterSampleTimeMicroS,
-  //           char*               threadName);
-  //  
-  tasks[0]= new ecmcTask(asynPort,0,0,0,1000000,0,1000,1000,"lurvig");
-  tasks[1]= new ecmcTask(asynPort,1,0,0,1000000,0,100000,1000,"ylvar");
-
-  tasks[1]->appendObjToExeVector(plcs->getPLCTask(0));
-
-
-  // slask
-  LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   int i = 0;
   int ecStat = 0;
   struct timespec wakeupTime, sendTime, lastSendTime, multithreadwakeup = {};
@@ -334,43 +372,51 @@ void cyclic_task(void *usr) {
     ecStat = ec->statusOK() || !ec->getInitDone();
 
     // Tasks
-    for (i = 0; i < ECMC_MAX_TASKS; i++) {
+    for (i = 0; i < (int)tasks.size(); i++) {
       if (tasks[i] != NULL) {        
         tasks[i]->execute(controllerError,ecStat);        
       }
     }
 
-    // Motion
-    for (i = 0; i < ECMC_MAX_AXES; i++) {
-      if (axes[i] != NULL) {
-        plcs->exeRTFunc(AXIS_PLC_ID_TO_PLC_ID(i),ecStat);
-        axes[i]->exeRTFunc(ecStat);
+    // execute all objects that's allocated to master thread (default)
+    for (i = 0; i < (int)exeVector.size(); ++i) {
+      if(exeVector[i] != NULL) {
+        exeVector[i]->execute(controllerError,ecStat);
       }
     }
 
-    // Data events
-    for (i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {
-      if (events[i] != NULL) {
-        events[i]->exeRTFunc(ecStat);
-      }
-    }
-
-    // Plugins
-    for (i = 0; i < ECMC_MAX_PLUGINS; i++) {
-      if (plugins[i] != NULL) {
-        pluginsError=plugins[i]->exeRTFunc(controllerError);
-      }
-    }
-
-    // PLCs
-    if (plcs) {
-      //plcs->exeRTFunc(ecStat);
-    }
+//    // Motion
+//    for (i = 0; i < ECMC_MAX_AXES; i++) {
+//      if (axes[i] != NULL) {
+//        plcs->exeRTFunc(AXIS_PLC_ID_TO_PLC_ID(i),ecStat);
+//        axes[i]->exeRTFunc(ecStat);
+//      }
+//    }
+//
+//    // Data events
+//    for (i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {
+//      if (events[i] != NULL) {
+//        events[i]->exeRTFunc(ecStat);
+//      }
+//    }
+//
+//    // Plugins
+//    for (i = 0; i < ECMC_MAX_PLUGINS; i++) {
+//      if (plugins[i] != NULL) {
+//        pluginsError=plugins[i]->exeRTFunc(controllerError);
+//      }
+//    }
+//
+//    // PLCs
+//    if (plcs) {
+//      //plcs->exeRTFunc(ecStat);
+//    }
 
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &multithreadwakeup, NULL);     
     // now check ecmcTasks after 30% of cycletime
 
-    for (i = 0; i < ECMC_MAX_TASKS; i++) {
+    // Tasks
+    for (i = 0; i < (int)tasks.size(); i++) {
       if (tasks[i] != NULL) {        
         // check that time is up and if ready (not all threads must finlaize in the same master cycle)
         if(tasks[i]->isNextCycleNewExe() && !tasks[i]->isReady()) {
@@ -435,10 +481,6 @@ int ecmcInitThread(void) {
     axes[i] = NULL;
   }
 
-  for (int i = 0; i < ECMC_MAX_TASKS; i++) {
-    tasks[i] = NULL;
-  }
-
   for (int i = 0; i < ECMC_MAX_EVENT_OBJECTS; i++) {
     events[i] = NULL;
   }
@@ -460,6 +502,9 @@ int ecmcInitThread(void) {
   }
   
   plcs = NULL;
+
+  exeVector.clear();
+  tasks.clear();
 
   return 0;
 }
@@ -619,6 +664,20 @@ int setAppModeRun(int mode) {
     if (axes[i] != NULL) {
       axes[i]->setInStartupPhase(true);
     }
+  }
+
+  try {
+    buildMasterThreadExeVector();
+  } catch(std::exception& ex) {
+      LOGERR(
+        "%s/%s:%d: ERROR: Exeception building execution vector (0x%x).\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        ERROR_MAIN_BUILD_EXE_VECTOR_EXCPTION
+        );
+
+    return ERROR_MAIN_BUILD_EXE_VECTOR_EXCPTION;
   }
 
   errorCode = validateConfig();
@@ -849,3 +908,156 @@ int validateConfig() {
   
   return 0;
 }
+
+int addTask(int   priority,
+            int   affinity,
+            int   stacksize,
+            int   offsetMasterCycles,
+            int   sampleTimeMasterCycles) {
+
+  LOGINFO("%s/%s:%d: priority=%d,affinity=%d, stacksize=%d," 
+          "offsetcycles=%d, sampletimemastercycles=%d\n",
+          __FILE__, __FUNCTION__, __LINE__, priority,affinity,
+          stacksize,offsetMasterCycles,sampleTimeMasterCycles);
+
+  if(asynPort == NULL) {
+    LOGERR("ERROR: Asyn port driver NULL 0x%x.",
+             ERROR_MAIN_ASYN_PORT_DRIVER_NULL);
+    return ERROR_MAIN_ASYN_PORT_DRIVER_NULL;
+  }
+
+  try{
+    int index=tasks.size();
+    ecmcTask *task = new ecmcTask(asynPort,
+                                 index,
+                                 priority,
+                                 affinity,
+                                 stacksize,
+                                 offsetMasterCycles,
+                                 sampleTimeMasterCycles,
+                                 mcuPeriod);                                 
+    tasks.push_back(task);
+
+  } catch(std::exception &ex) {
+    LOGERR("ERROR: Add task failed with exception 0x%x.",
+             ERROR_MAIN_ADD_TASK_EXCPTION);
+    return ERROR_MAIN_ADD_TASK_EXCPTION;
+  }
+  return 0;
+}
+
+int linkObjToTask(char *objName,
+                  int   taskIndex) {
+
+  LOGINFO("%s/%s:%d: objectname=%s,taskindex=%d\n",
+           __FILE__, __FUNCTION__, __LINE__, objName,taskIndex);
+
+  int nvals = 0;
+  int index = 0;
+
+  if(taskIndex < 0 || taskIndex >= (int)tasks.size()) {
+    LOGERR("ERROR: Task index out of range (0x%x).",
+             ERROR_MAIN_TASK_INDEX_OUT_OF_RANGE);
+    return ERROR_MAIN_TASK_INDEX_OUT_OF_RANGE;
+  }
+  
+  // check if axis then link
+  nvals = sscanf(objName,
+                 "ax%d",
+                 &index);
+
+  if (nvals == 1) {
+    if(index < 0 || index >= ECMC_MAX_AXES) {
+      LOGERR("ERROR: Axis index out of range (0x%x).",
+               ERROR_MAIN_AXIS_OBJECT_NULL);
+      return ERROR_MAIN_AXIS_OBJECT_NULL;
+    }
+    
+    if(axes[index] == NULL) {
+      LOGERR("ERROR: Axis index NULL (0x%x).",
+               ERROR_MAIN_AXIS_OBJECT_NULL);
+      return ERROR_MAIN_AXIS_OBJECT_NULL;
+    }
+    // sync PLC (always before axis)
+    tasks[taskIndex]->appendObjToExeVector(plcs->getPLCTaskForAxis(index));
+    // axis
+    tasks[taskIndex]->appendObjToExeVector(axes[index]);
+
+    return 0;
+  }
+
+  // check if plc then link
+  nvals = sscanf(objName,
+                 "plc%d",
+                 &index);
+
+  if (nvals == 1) {
+    if(index < 0 || index >= ECMC_MAX_PLCS) {
+      LOGERR("ERROR: PLC index out of range (0x%x).",
+               ERROR_MAIN_PLC_OBJECT_NULL);
+      return ERROR_MAIN_PLC_OBJECT_NULL;
+    }
+    
+    if(plcs->getPLCTask(index) == NULL) {
+      LOGERR("ERROR: PLC index NULL (0x%x).",
+               ERROR_MAIN_PLC_OBJECT_NULL);
+      return ERROR_MAIN_PLC_OBJECT_NULL;
+    }
+
+    tasks[taskIndex]->appendObjToExeVector(plcs->getPLCTask(index));
+
+    return 0;
+  }
+
+  // check if plugin then link
+  nvals = sscanf(objName,
+                 "plugin%d",
+                 &index);
+
+  if (nvals == 1) {
+    if(index < 0 || index >= ECMC_MAX_PLUGINS) {
+      LOGERR("ERROR: Plugin index out of range (0x%x).",
+               ERROR_MAIN_PLUGIN_INDEX_OUT_OF_RANGE);
+      return ERROR_MAIN_PLUGIN_INDEX_OUT_OF_RANGE;
+    }
+    
+    if(plugins[index] == NULL) {
+      LOGERR("ERROR: Plugin index NULL (0x%x).",
+               ERROR_MAIN_PLUGIN_OBJECT_NULL);
+      return ERROR_MAIN_PLUGIN_OBJECT_NULL;
+    }
+
+    tasks[taskIndex]->appendObjToExeVector(plugins[index]);
+
+    return 0;
+  }
+
+  // check if event then link
+  nvals = sscanf(objName,
+                 "event%d",
+                 &index);
+
+  if (nvals == 1) {
+    if(index < 0 || index >= ECMC_MAX_EVENT_OBJECTS) {
+      LOGERR("ERROR: Event index out of range (0x%x).",
+               ERROR_MAIN_EVENT_INDEX_OUT_OF_RANGE);
+      return ERROR_MAIN_EVENT_INDEX_OUT_OF_RANGE;
+    }
+    
+    if(plugins[index] == NULL) {
+      LOGERR("ERROR: Plugin index NULL (0x%x).",
+               ERROR_MAIN_EVENT_NULL);
+      return ERROR_MAIN_EVENT_NULL;
+    }
+
+    tasks[taskIndex]->appendObjToExeVector(events[index]);
+
+    return 0;
+  }
+
+  LOGERR("ERROR: Failed to decode object name(0x%x).",
+               ERROR_MAIN_OBJECT_FORMAT_UNKOWN);
+
+  return ERROR_MAIN_OBJECT_FORMAT_UNKOWN;
+}
+

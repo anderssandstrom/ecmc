@@ -25,9 +25,10 @@
 #include "../plugin/ecmcPluginLib.h"
 #include "../main/ecmcTask.h"
 #include "epicsMutex.h"
+#include <vector>
 
 ecmcEc                    *ec;
-ecmcTask                  *tasks[ECMC_MAX_TASKS];
+std::vector<ecmcTask*>    tasks;
 ecmcAxisBase              *axes[ECMC_MAX_AXES];
 ecmcEvent                 *events[ECMC_MAX_EVENT_OBJECTS];
 ecmcDataRecorder          *dataRecorders[ECMC_MAX_DATA_RECORDERS_OBJECTS];
@@ -40,6 +41,8 @@ ecmcMainThreadDiag         threadDiag={0};
 app_mode_type              appModeCmd, appModeCmdOld, appModeStat;
 ecmcMotorRecordController *asynPortMotorRecord;
 ecmcPluginLib             *plugins[ECMC_MAX_PLUGINS];
+std::vector<ecmcExeObjWrapper*> exeVector;
+
 
 // Mutex for motor record access
 epicsMutexId               ecmcRTMutex;

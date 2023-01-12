@@ -19,6 +19,7 @@
 ecmcExeObjWrapper::ecmcExeObjWrapper(appExeObjType objType) {
 
   objType_ = objType;
+  taskIndex_ = -1;
 }
 
 ecmcExeObjWrapper::~ecmcExeObjWrapper() {
@@ -26,7 +27,7 @@ ecmcExeObjWrapper::~ecmcExeObjWrapper() {
 }
 
 void ecmcExeObjWrapper::execute(int ecmcError, int ecOK) {
-  printf("HEHEHEHHEHEHEHEHEHEHEHE");
+    
   // Most exe functions take ecOK as arg except for plugins taking ecmcError
   if(objType_==ECMC_PLUGIN) {
     exeRTFunc(ecmcError);
@@ -37,4 +38,12 @@ void ecmcExeObjWrapper::execute(int ecmcError, int ecOK) {
 
 appExeObjType ecmcExeObjWrapper::getObjectType() {
   return objType_;
+}
+
+int ecmcExeObjWrapper::getTaskIndex() {
+  return taskIndex_;
+}
+
+int ecmcExeObjWrapper::setTaskIndex(int index) {
+  taskIndex_ = index;
 }

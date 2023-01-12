@@ -15,6 +15,7 @@
 #include "ecmcAsynPortDriverUtils.h"
 #include "ecmcTask.h"
 #include "epicsThread.h"
+#include "../com/ecmcOctetIF.h"  // LOG macros
 
 // Start worker for socket read()
 void f_worker(void *obj) {
@@ -34,30 +35,26 @@ void f_worker(void *obj) {
  *    - runtime_error
 */
 ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
-                   int                 threadIndex,
-                   int                 threadPriority,
-                   int                 threadAffinity,
-                   int                 threadStacksize,
-                   int                 threadOffsetMasterCycles,
-                   int                 threadSampleTimeMicroS,
-                   int                 masterSampleTimeMicroS,
-                   char*               threadName) {
+                   int                 index,
+                   int                 priority,
+                   int                 affinity,
+                   int                 stacksize,
+                   int                 offsetTimeInMasterCycles,
+                   int                 sampleTimeInMasterCycles,
+                   int                 masterSampleTimeInNanoS) {
 
   // Init
-  threadIndex_              = threadIndex;
-  threadName_               = threadName;
-  threadPriority_           = threadPriority;
-  threadAffinity_           = threadAffinity;
-  threadStacksize_          = threadStacksize;
-  threadOffsetMasterCycles_ = threadOffsetMasterCycles;
-  threadSampleTimeMicroS_   = threadSampleTimeMicroS;
-  masterSampleTimeMicroS_   = masterSampleTimeMicroS;
+  index_                    = index;  
+  priority_                 = priority;
+  affinity_                 = affinity;
+  stacksize_                = stacksize;
+  offsetTimeInMasterCycles_ = offsetTimeInMasterCycles;
+  masterSampleTimeInNanoS_  = masterSampleTimeInNanoS;
   asynPortDriver_           = asynPortDriver;
-  triggCounter_             = threadOffsetMasterCycles_;
-  exeThreadAtMasterCycles_  = threadSampleTimeMicroS/masterSampleTimeMicroS-1;
-  if(exeThreadAtMasterCycles_<0) {
-    exeThreadAtMasterCycles_ = 0;
-  }
+  triggCounter_             = offsetTimeInMasterCycles_;
+  sampleTimeInMasterCycles_ = sampleTimeInMasterCycles;
+  sampleTimeInNanoS_        = sampleTimeInMasterCycles_ * masterSampleTimeInNanoS; // overflow?! Only valid for up to approx 5 seks
+  exceedCounterold_         = 0;
   threadReady_              = 1;
   errorCode_                = 0;
   destructs_                = 0;
@@ -65,10 +62,6 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   ecOK_                     = 0;
   ecmcError_                = 0;
   
-  if(masterSampleTimeMicroS>threadSampleTimeMicroS){
-    throw std::invalid_argument("Error: thread sample rate cannot be faster than master sample rate.");    
-  }
-
   threadDiag_.latency_min_ns  = 0xffffffff;
   threadDiag_.latency_max_ns  = 0;
   threadDiag_.period_min_ns   = 0xffffffff;
@@ -77,11 +70,41 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   threadDiag_.exec_max_ns     = 0;
   threadDiag_.send_min_ns     = 0xffffffff;
   threadDiag_.send_max_ns     = 0;
+
+  if(sampleTimeInMasterCycles_ < 0) {
+    sampleTimeInMasterCycles_ = 0;
+  }
+
+  if(priority_ < 0) {
+    priority_= ECMC_PRIO_HIGH-1;
+  }
+
+  if(stacksize_ < 0) {
+    stacksize_= ECMC_STACK_SIZE;
+  }
+
+  memset(nameBuffer_,0,sizeof(nameBuffer_));  
+  unsigned int charCount = 0;  
+  
+  charCount = snprintf(nameBuffer_,
+                       sizeof(nameBuffer_),
+                       ECMC_RT_THREAD_NAME"_w%d",
+                       index_);
+  if (charCount >= sizeof(nameBuffer_) - 1) {
+    LOGERR("ERROR: Failed to create thread name, buffer to small.\n");
+    throw std::runtime_error("Error: Failed create thread name, buffer to small.");    
+  }
+
+  name_ = nameBuffer_;
   
   // Create worker thread
-  if(epicsThreadCreate(threadName_, threadPriority_, threadStacksize_, f_worker, this) == NULL) {
-    printf("ERROR: Can't create thread.\n");    
-    throw std::runtime_error("Error: Failed create  worker thread.");    
+  if(epicsThreadCreate(name_, priority_, stacksize_, f_worker, this) == NULL) {    
+    LOGERR(
+      "ERROR: Can't create high priority thread, fallback to low priority.\n");
+    priority_ = ECMC_PRIO_LOW;
+    if(epicsThreadCreate(name_, priority_, stacksize_, f_worker, this) == NULL) {
+      throw std::runtime_error("Error: Failed create  worker thread.");    
+    }    
   }
 
   exeVector_.clear();
@@ -98,6 +121,8 @@ ecmcTask::~ecmcTask() {
 }
 
 void ecmcTask::workThread() {
+
+  LOGINFO("INFO: Task %s (%d) started. Waiting for work...\n", name_, index_);
 
   while(true) {
     
@@ -116,19 +141,18 @@ void ecmcTask::workThread() {
 }
 
 int ecmcTask::doWork() {
-  //struct timespec  delayTime = {0,200000};
-  printf("Thread %s (%d) start execute, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
   
-  // use iterator with for loop
   for (int i = 0; i < (int)exeVector_.size(); ++i) {
     if(exeVector_[i] != NULL) {
       exeVector_[i]->execute(ecmcError_,ecOK_);
     }
   }
   
-  printf("Thread %s (%d) end execute, exceed counter %d\n",threadName_,threadIndex_,exceedCounter_);
-  //clock_nanosleep(CLOCK_MONOTONIC, 0, &delayTime, NULL);
+  if(exceedCounterold_ != exceedCounter_) {
+    printf(" Thread %s (%d) did not finish in time, exceed counter %d\n",name_,index_,exceedCounter_);
+  }
 
+  exceedCounterold_ = exceedCounter_;
   return 0;
 }
 
@@ -143,7 +167,7 @@ void ecmcTask::execute(int ecmcError, int ecOK) {
       doWorkEvent_.signal();  // need one event per thread since only one thread is released at every signal
       // if not ready then one cycle is skipped... This is registered by increment of exceedCounter_
     }    
-    triggCounter_ = exeThreadAtMasterCycles_;
+    triggCounter_ = sampleTimeInMasterCycles_;
   } else if(triggCounter_ > 0) {
     triggCounter_--;
   }
@@ -172,7 +196,14 @@ int ecmcTask::getErrorCode() {
 }
 
 void ecmcTask::appendObjToExeVector(ecmcExeObjWrapper *obj) {
+  if(obj == NULL) {
+    return;
+  }
+
+  obj->setTaskIndex(index_);
+  // queue object for execution
   exeVector_.push_back(obj);
+
 }
 
 //void ecmcTask::initAsyn() {

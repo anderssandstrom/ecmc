@@ -97,6 +97,49 @@ int setSampleRate(double sampleRate);
  */
 int setSamplePeriodMs(double samplePeriodMs);
 
+/** \brief Adds a new task (thread)
+ *  The task can be used to execute ecmc objects, axes, plcs,plugins and events\n
+ *  in paralell.\n
+ *  
+ * \param[in] priority priority of thread (if set to -1 then deafults\n
+ *                     to 1 unit less than main ethercat thread)\n
+ * \param[in] affinity affinity of thread (if set -1 n affinity will be set)\n
+ * \param[in] stacksize stacksize of thread\n (if set to -1 the default stacksize will be used)
+ * \param[in] offsetMasterCycles offset in cycles in relation to master thread\n
+ * \param[in] sampleTimeMasterCycles Sample time for thread defined as number of master cycles\n
+ * 
+ * \return 0 if success or otherwise an error code.\n
+ * 
+ * \note Example: Add a task (default prio, affinity and stacksize, no offset and same sample rate as master):\n
+ * "Cfg.AddTask(-1,-1,-1,0,1)" //Command string to ecmcCmdParser.c
+ */
+int addTask(int   priority,
+            int   affinity,
+            int   stacksize,
+            int   offsetMasterCycles,
+            int   sampleTimeMasterCycles);
+
+
+/** \brief Adds a new task (thread)
+ *  The task can be used to execute ecmc objects, axes, plcs,plugins and events\n
+ *  in paralell.\n
+ *  
+ * \param[in] objName name of object to link:\n
+ *                    ax<index>
+ *                    plc<index>
+ *                    event<index>
+ *                    plugin<index>
+ * 
+ * \param[in] taskIndex index of task to which to link object\n
+ * 
+ * \return 0 if success or otherwise an error code.\n
+ *
+ * \note Example: Link plc 0 to task 1:\n
+ * "Cfg.LinkObjectToTask(plc0,1)" //Command string to ecmcCmdParser.c
+ */
+int linkObjToTask(char *objName,
+                  int   taskIndex);
+
 /** \brief Update main asyn parameters
  *
  * \param[in] force Force update\n
