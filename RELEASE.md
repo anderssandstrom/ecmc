@@ -1,6 +1,20 @@
 
 Release Notes
 ===
+# multi_thread branch
+
+## Add support for multi tasking WIP
+
+A task can be added with:
+```
+"Cfg.AddTask(<priority>,<affinity>,<stacksize>,<offsetMasterCycles>,<sampleTimeMasterCycles>)"
+```
+
+An object can be linked to a task with:
+```
+"Cfg.LinkObjectToTask(<objectname>,<taskindex>)"
+```
+
 # master
 * Add command "Cfg.EcApplyConfig()" without master index as parameter. ecmc only allows one master per ioc.
 * Return error if cmddata is not valid for the current motion command (at execution).

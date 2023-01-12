@@ -52,7 +52,7 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   masterSampleTimeInNanoS_  = masterSampleTimeInNanoS;
   asynPortDriver_           = asynPortDriver;
   triggCounter_             = offsetTimeInMasterCycles_;
-  sampleTimeInMasterCycles_ = sampleTimeInMasterCycles;
+  sampleTimeInMasterCycles_ = sampleTimeInMasterCycles-1;
   sampleTimeInNanoS_        = sampleTimeInMasterCycles_ * masterSampleTimeInNanoS; // overflow?! Only valid for up to approx 5 seks
   exceedCounterold_         = 0;
   threadReady_              = 1;
