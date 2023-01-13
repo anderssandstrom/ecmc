@@ -865,7 +865,7 @@ int validateConfig() {
   // check master task
   printf("####################################################\n");
   printf("Validation of Master Task (" ECMC_RT_THREAD_NAME "):\n");
-  printf(" objects count to execute: %d\n",exeVector.size());
+  printf(" object count to execute: %d\n",exeVector.size());
   for(int i = 0; i < (int)exeVector.size(); i++) {
     errorCode = exeVector[i]->validate();
     if(errorCode) {
@@ -897,6 +897,8 @@ int validateConfig() {
       tempExe[j]->printProcessImage();
     }
   }
+  printf("####################################################\n");
+
   return 0;
 
   for (int i = 0; i < ECMC_MAX_AXES; i++) {
