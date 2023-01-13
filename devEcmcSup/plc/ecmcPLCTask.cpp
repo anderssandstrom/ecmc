@@ -29,7 +29,7 @@ ecmcPLCTask::ecmcPLCTask(int plcIndex,
                          int skipCycles,
                          double mcuFreq,
                          ecmcAsynPortDriver *asynPortDriver) : 
-                         ecmcExeObjWrapper(ECMC_PLC) {
+                         ecmcExeObjWrapper(ECMC_PLC,plcIndex) {
   initVars();
   plcIndex_          = plcIndex;
   skipCycles_        = skipCycles;
@@ -317,7 +317,8 @@ int ecmcPLCTask::globalVarExist(const char *varName) {
   return 0;
 }
 
-int ecmcPLCTask::validate() {
+int ecmcPLCTask::validate() {  
+
   if(exprStr_.length()==0) {
     return 0;  // Not used.. return OK
   }
@@ -354,8 +355,11 @@ int ecmcPLCTask::validate() {
           globalArray_[i]->getVarName(),
           i,
           errorCode);
-        return errorCode;
+        return errorCode;        
       }
+      // add to processimage of this object
+      processImage_.push_back(globalArray_[i]);
+
     } else {
       LOGERR(
         "%s/%s:%d: Error: Validation of Global PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
@@ -371,7 +375,7 @@ int ecmcPLCTask::validate() {
   for (int i = 0; i < localVariableCount_; i++) {
     if (localArray_[i]) {
       errorCode = localArray_[i]->validate();
-
+      
       if (errorCode) {
         LOGERR(
           "%s/%s:%d: Error: Validation of Global PLCDataIF  %s at index %d  failed (0x%x).\n",
@@ -383,6 +387,9 @@ int ecmcPLCTask::validate() {
           errorCode);
         return errorCode;
       }
+      // add to processimage of this object
+      processImage_.push_back(localArray_[i]);
+
     } else {
       LOGERR(
         "%s/%s:%d: Error: Validation of Local PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
@@ -394,6 +401,7 @@ int ecmcPLCTask::validate() {
     }
   }
 
+  printProcessImage();
   return 0;
 }
 
@@ -966,4 +974,9 @@ int ecmcPLCTask::setPluginPointer(ecmcPluginLib *plugin, int index) {
 
   plugins_[index] = plugin;
   return 0;
+}
+
+void ecmcPLCTask::buildProcessImage() {  
+  // process image build during validation sequence
+  return;
 }

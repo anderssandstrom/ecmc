@@ -18,7 +18,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-ecmcPluginLib::ecmcPluginLib(int index) : ecmcExeObjWrapper(ECMC_PLUGIN) {
+ecmcPluginLib::ecmcPluginLib(int index) : ecmcExeObjWrapper(ECMC_PLUGIN,index) {
   initVars();
   index_ = index;
 }
@@ -357,4 +357,8 @@ int ecmcPluginLib::findArgCount(ecmcOnePlcFunc &func){
   }
 
   return -1;
+}
+
+void ecmcPluginLib::buildProcessImage() {  
+  return;
 }

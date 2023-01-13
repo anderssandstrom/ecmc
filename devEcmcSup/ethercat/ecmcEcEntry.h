@@ -22,6 +22,7 @@
 #include "../main/ecmcError.h"
 #include "../com/ecmcOctetIF.h"
 #include "../com/ecmcAsynPortDriver.h"
+#include "../main/ecmcTaskProcessImageItemWrapper.h"
 #include "alarm.h"  //EPICS alarms
 
 #include "asynPortDriver.h"
@@ -52,7 +53,8 @@
 #define ERROR_EC_ENTRY_VALUE_OUT_OF_RANGE 0x2100C
 #define ERROR_EC_ENTRY_SET_ALARM_STATE_FAIL 0x2100D
 
-class ecmcEcEntry : public ecmcError {
+class ecmcEcEntry : public ecmcError,
+                    public ecmcTaskProcessImageItemWrapper {
  public:
   ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
               int masterId,
@@ -75,6 +77,9 @@ class ecmcEcEntry : public ecmcError {
               ecmcEcDataType     dt,
               std::string        id);
   ~ecmcEcEntry();
+  // override from ecmcTaskProcessImageItemWrapper
+  char*               getObjectName();
+  
   void        initVars();
   uint16_t    getEntryIndex();
   uint8_t     getEntrySubIndex();
@@ -105,6 +110,7 @@ class ecmcEcEntry : public ecmcError {
   int         validate();
   int         setComAlarm(bool alarm);
   int         getSlaveId();
+  void        generateObjectName();
   
  private:
   int                 initAsyn();
@@ -140,5 +146,8 @@ class ecmcEcEntry : public ecmcError {
   float              *float32Ptr_;
   double             *float64Ptr_;
   size_t              usedSizeBytes_;
+
+  char nameBuffer_[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  char *name_;
 };
 #endif  /* ECMCECENTRY_H_ */

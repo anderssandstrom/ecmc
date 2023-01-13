@@ -327,7 +327,12 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
     return "ERROR_AXIS_SWITCH_PRIMARY_ENC_NOT_ALLOWED_WHEN_BUSY";
 
     break;
-    
+
+  case 0x14329:
+    return "ERROR_AXIS_BUILD_PROCESS_IMAGE_FAILED";
+
+    break;
+
   case 0x14600:   // DRIVE
     return "ERROR_DRV_DRIVE_INTERLOCKED";
 

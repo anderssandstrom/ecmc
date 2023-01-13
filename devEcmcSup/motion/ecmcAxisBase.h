@@ -17,6 +17,7 @@
 #include "../main/ecmcDefinitions.h"
 #include "../main/ecmcError.h"
 #include "../main/ecmcExeObjWrapper.h"
+#include "../main/ecmcTaskProcessImageItemWrapper.h"
 #include "../com/ecmcAsynPortDriver.h"
 #include "ecmcDriveBase.h"
 #include "ecmcDriveStepper.h"
@@ -75,6 +76,7 @@
 #define ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE 0x14326
 #define ERROR_AXIS_PRIMARY_ENC_ID_OUT_OF_RANGE 0x14327
 #define ERROR_AXIS_SWITCH_PRIMARY_ENC_NOT_ALLOWED_WHEN_BUSY 0x14328
+#define ERROR_AXIS_BUILD_PROCESS_IMAGE_FAILED 0x14329
 
 enum axisState {
   ECMC_AXIS_STATE_STARTUP  = 0,
@@ -165,7 +167,10 @@ class ecmcAxisBase : public ecmcError , public ecmcExeObjWrapper {
   virtual ecmcDriveBase    * getDrv()                = 0;
   virtual ecmcPIDController* getCntrl()              = 0;
   virtual int                validate()              = 0;
+  // from ecmcExeObjWrapper
   virtual int                exeRTFunc(int masterOK);
+  void                       buildProcessImage();  // throws exceptions
+
   int                        getCntrlError(double *error);
   int                        setEnable(bool enable);
   bool                       getEnable();

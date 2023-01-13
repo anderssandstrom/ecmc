@@ -41,7 +41,11 @@ class ecmcEvent : public ecmcEcEntryLink, public ecmcExeObjWrapper {
   int  setDataSampleTime(int sampleTime);
   int  setEnable(int enable);
   int  getEnabled(int *enabled);
+  
+  // from ecmcExeObjWrapper
   int  exeRTFunc(int masterOK);
+  void buildProcessImage();
+
   int  setEnableArmSequence(int enable);
   int  linkEventConsumer(ecmcEventConsumer *consumer,
                          int                index);

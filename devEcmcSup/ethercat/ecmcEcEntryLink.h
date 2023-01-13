@@ -14,6 +14,9 @@
 #define ECMCECENTRYLINK_H_
 
 #include "ecmcEcEntry.h"
+#include "../main/ecmcTaskProcessImageItemWrapper.h"
+#include "ecmcEcEntry.h"
+#include <vector>
 
 #define ECMC_EC_ENTRY_LINKS_MAX 20
 
@@ -41,6 +44,7 @@ class ecmcEcEntryLink : public ecmcError {
                                double value);
 
   bool checkEntryExist(int entryIndex);
+  std::vector<ecmcTaskProcessImageItemWrapper*> getProcessImage();
 
  protected:
   int  validateEntryBit(int index);
@@ -52,7 +56,9 @@ class ecmcEcEntryLink : public ecmcError {
   int            getSlaveId(int index);
 
  private:
+  
   entryInfo entryInfoArray_[ECMC_EC_ENTRY_LINKS_MAX];
+  std::vector<ecmcTaskProcessImageItemWrapper*> processImageDataItems_;
 };
 
 #endif  /* ECMCECENTRYLINK_H_ */

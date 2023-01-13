@@ -963,7 +963,7 @@ int linkObjToTask(char *objName,
   
   // check if axis then link
   nvals = sscanf(objName,
-                 "ax%d",
+                 ECMC_AX_STR "%d",
                  &index);
 
   if (nvals == 1) {
@@ -980,15 +980,19 @@ int linkObjToTask(char *objName,
     }
     // sync PLC (always before axis)
     tasks[taskIndex]->appendObjToExeVector(plcs->getPLCTaskForAxis(index));
+    
     // axis
     tasks[taskIndex]->appendObjToExeVector(axes[index]);
+
+    LOGINFO("%s/%s:%d: Linked " ECMC_AX_STR "%d to " ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d\n",
+          __FILE__, __FUNCTION__, __LINE__, index,taskIndex);
 
     return 0;
   }
 
   // check if plc then link
   nvals = sscanf(objName,
-                 "plc%d",
+                 ECMC_PLC_DATA_STR "%d",
                  &index);
 
   if (nvals == 1) {
@@ -1005,6 +1009,9 @@ int linkObjToTask(char *objName,
     }
 
     tasks[taskIndex]->appendObjToExeVector(plcs->getPLCTask(index));
+
+    LOGINFO("%s/%s:%d: Linked " ECMC_PLC_DATA_STR "%d to " ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d\n",
+          __FILE__, __FUNCTION__, __LINE__, index,taskIndex);
 
     return 0;
   }
@@ -1029,12 +1036,15 @@ int linkObjToTask(char *objName,
 
     tasks[taskIndex]->appendObjToExeVector(plugins[index]);
 
+    LOGINFO("%s/%s:%d: Linked " ECMC_PLUGIN_STR "%d to " ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d\n",
+          __FILE__, __FUNCTION__, __LINE__, index,taskIndex);
+
     return 0;
   }
 
   // check if event then link
   nvals = sscanf(objName,
-                 "event%d",
+                 ECMC_EVENT_STR "%d",
                  &index);
 
   if (nvals == 1) {
@@ -1044,18 +1054,21 @@ int linkObjToTask(char *objName,
       return ERROR_MAIN_EVENT_INDEX_OUT_OF_RANGE;
     }
     
-    if(plugins[index] == NULL) {
-      LOGERR("ERROR: Plugin index NULL (0x%x).",
+    if(events[index] == NULL) {
+      LOGERR("ERROR: Event index NULL (0x%x).",
                ERROR_MAIN_EVENT_NULL);
       return ERROR_MAIN_EVENT_NULL;
     }
 
     tasks[taskIndex]->appendObjToExeVector(events[index]);
 
+    LOGINFO("%s/%s:%d: Linked " ECMC_EVENT_STR "%d to " ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d\n",
+          __FILE__, __FUNCTION__, __LINE__, index,taskIndex);
+
     return 0;
   }
 
-  LOGERR("ERROR: Failed to decode object name(0x%x).",
+  LOGERR("ERROR: Failed to decode object name %s (0x%x).",objName,
                ERROR_MAIN_OBJECT_FORMAT_UNKOWN);
 
   return ERROR_MAIN_OBJECT_FORMAT_UNKOWN;

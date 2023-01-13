@@ -16,6 +16,7 @@ ecmcEcEntryLink::ecmcEcEntryLink() {
   for (int i = 0; i < ECMC_EC_ENTRY_LINKS_MAX; i++) {
     entryInfoArray_[i].entry     = NULL;
     entryInfoArray_[i].bitNumber = -1;
+    processImageDataItems_.clear();
   }
 }
 
@@ -28,6 +29,7 @@ int ecmcEcEntryLink::setEntryAtIndex(ecmcEcEntry *entry,
   if ((entry != NULL) && (index < ECMC_EC_ENTRY_LINKS_MAX) && (index >= 0)) {
     entryInfoArray_[index].entry     = entry;
     entryInfoArray_[index].bitNumber = bitIndex;
+    processImageDataItems_.push_back(entry);
     return 0;
   } else {
     LOGERR(
@@ -216,3 +218,7 @@ int ecmcEcEntryLink::getSlaveId(int index) {
   return entryInfoArray_[index].entry->getSlaveId();
 }
 
+std::vector<ecmcTaskProcessImageItemWrapper*> 
+               ecmcEcEntryLink::getProcessImage() {
+  return processImageDataItems_;
+}

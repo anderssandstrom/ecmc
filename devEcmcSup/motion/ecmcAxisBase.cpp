@@ -83,7 +83,7 @@ ecmcAxisBase::ecmcAxisBase(ecmcAsynPortDriver *asynPortDriver,
                            int axisID, 
                            double sampleTime,
                            ecmcTrajTypes  trajType) :
-                           ecmcExeObjWrapper(ECMC_AXIS) {
+                           ecmcExeObjWrapper(ECMC_AXIS, axisID) {
   initVars();
   asynPortDriver_                 = asynPortDriver;
   data_.axisId_                   = axisID;
@@ -189,7 +189,7 @@ void ecmcAxisBase::initVars() {
     encArray_[i]=NULL;
   }
   data_.command_.cfgEncIndex = 0;
-  allowSourceChangeWhenEnbaled_ = false;
+  allowSourceChangeWhenEnbaled_ = false;  
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
@@ -641,6 +641,18 @@ void ecmcAxisBase::errorReset() {
 }
 
 int ecmcAxisBase::validateBase() {
+  try {
+    buildProcessImage();
+    printProcessImage();
+  } catch(std::exception &e) {
+        LOGERR("%s/%s:%d: ERROR (axis %d): Build of process image failed (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           data_.axisId_,
+           ERROR_AXIS_BUILD_PROCESS_IMAGE_FAILED);
+    return ERROR_AXIS_BUILD_PROCESS_IMAGE_FAILED;
+  }
   return 0;
 }
 
@@ -2180,3 +2192,44 @@ int ecmcAxisBase::exeRTFunc(int masterOK) {
   return 0;
 }
 
+void ecmcAxisBase::buildProcessImage() {
+
+  std::vector<ecmcTaskProcessImageItemWrapper*> tempImage;
+  // Encoders
+  for(int i = 0; i < data_.status_.encoderCount; i++) {
+
+    if(encArray_[i]==NULL) {
+
+      LOGERR("%s/%s:%d: ERROR (axis %d): Encoder %d NULL (0x%x).\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        data_.axisId_, i, ERROR_AXIS_ENC_OBJECT_NULL);
+
+      throw std::runtime_error("ecmcAxisBase::buildProcessImage: Encoder object NULL");
+    }
+    tempImage = encArray_[i]->getProcessImage();
+    processImage_.insert(processImage_.end(), 
+                         tempImage.begin(), 
+                         tempImage.end());
+  }  
+
+  // Collect for drive
+  ecmcDriveBase *drv = getDrv();
+  if(drv) {
+    tempImage =drv->getProcessImage();
+    processImage_.insert(processImage_.end(), 
+                         tempImage.begin(), 
+                         tempImage.end());
+  }
+
+  // Collect for monitor
+  ecmcMonitor *mon = getMon();
+  if(mon) {
+    tempImage = mon->getProcessImage();
+    processImage_.insert(processImage_.end(), 
+                         tempImage.begin(), 
+                         tempImage.end());
+  }
+
+}

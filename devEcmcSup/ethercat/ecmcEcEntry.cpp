@@ -53,8 +53,9 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          ec_direction_t     direction,
                          ecmcEcDataType     dt,
                          std::string        id,
-                         int useInRealtime) {
-  initVars();
+                         int useInRealtime) : 
+             ecmcTaskProcessImageItemWrapper(ECMC_EC_ENTRY_DATA_ITEM) {
+  initVars();  
   asynPortDriver_ = asynPortDriver;
   masterId_=masterId;
   slaveId_=slaveId;
@@ -65,6 +66,7 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   sim_           = false;
   idString_      = id;
   idStringChar_  = strdup(idString_.c_str());
+  generateObjectName();
   domain_        = domain;
   pdoIndex_      = pdoIndex;
   slave_         = slave;
@@ -108,7 +110,8 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          int                 slaveId,                                                  
                          uint8_t            *domainAdr,
                          ecmcEcDataType      dt,
-                         std::string         id) {
+                         std::string         id) :
+             ecmcTaskProcessImageItemWrapper(ECMC_EC_ENTRY_DATA_ITEM) {
   initVars();
   asynPortDriver_ = asynPortDriver;
   masterId_       = masterId;
@@ -118,6 +121,7 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   direction_      = EC_DIR_OUTPUT;
   idString_       = id;
   idStringChar_   = strdup(idString_.c_str());
+  generateObjectName();
   adr_            = 0;
   dataType_       = dt;
   bitLength_      = getEcDataTypeBits(dt);
@@ -125,7 +129,7 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
 }
 
 void ecmcEcEntry::initVars() {
-  errorReset();
+  errorReset();  
   asynPortDriver_         = NULL;
   masterId_               = -1;
   slaveId_                = -1;
@@ -827,4 +831,17 @@ ecmcEcDataType ecmcEcEntry::getDataType() {
 
 int ecmcEcEntry::getSlaveId() {
   return slaveId_;
+}
+
+char* ecmcEcEntry::getObjectName() {
+  return name_;
+}
+
+void ecmcEcEntry::generateObjectName() {
+  memset(nameBuffer_,0,sizeof(nameBuffer_));
+    snprintf(nameBuffer_,
+           sizeof(nameBuffer_),
+           ECMC_EC_STR "%d." ECMC_SLAVE_CHAR "%d.%s",
+           masterId_,slaveId_,idStringChar_);
+  name_ = nameBuffer_;  
 }

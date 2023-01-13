@@ -55,7 +55,10 @@ class ecmcPLCTask : public ecmcError , public ecmcExeObjWrapper {
   ~ecmcPLCTask();
   bool         getCompiled();
   int          validate();
+  // overrides from ecmcExeObjWrapper
   int          exeRTFunc(int ecOK);
+  void         buildProcessImage();
+
   std::string* getExpr();
   std::string* getRawExpr();
   int          appendRawExpr(const char *exprStr);

@@ -17,6 +17,7 @@
 #include <sstream>
 #include "../main/ecmcDefinitions.h"
 #include "../main/ecmcError.h"
+#include "../main/ecmcTaskProcessImageItemWrapper.h"
 #include "../motion/ecmcAxisBase.h"
 #include "../misc/ecmcDataStorage.h"
 #include "../ethercat/ecmcEc.h"
@@ -41,7 +42,8 @@
 #define ERROR_PLC_DATA_STORAGE_NULL 0x2060B
 
 
-class ecmcPLCDataIF : public ecmcEcEntryLink {
+class ecmcPLCDataIF : public ecmcEcEntryLink,
+                      public ecmcTaskProcessImageItemWrapper {
  public:
   ecmcPLCDataIF(int          plcIndex,
                 double       plcSampleRateMs,
@@ -64,6 +66,9 @@ class ecmcPLCDataIF : public ecmcEcEntryLink {
                 ecmcDataSourceType  dataSource,
                 ecmcAsynPortDriver *asynPortDriver);
   ~ecmcPLCDataIF();
+  // override from ecmcTaskProcessImageItemWrapper
+  char*               getObjectName();
+
   int                 read();
   int                 write();
   double            & getDataRef();

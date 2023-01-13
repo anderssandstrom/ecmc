@@ -47,6 +47,7 @@
 #define ECMC_PRE_ALLOCATION_SIZE (10*1024*1024) /* 1MB pagefault free buffer */
 
 #define ECMC_RT_THREAD_NAME "ecmc_rt" 
+#define ECMC_RT_WORK_THREAD_SUFFIX "_w" 
 
 // Buffer size
 #define EC_MAX_OBJECT_PATH_CHAR_LENGTH 256
@@ -113,9 +114,11 @@
 #define ECMC_MAX_EVENT_CONSUMERS 10
 #define ECMC_MAX_COMMANDS_LISTS 10
 #define ECMC_MAX_COMMANDS_IN_COMMANDS_LISTS 100
+#define ECMC_EVENT_STR "event"
 
 // Plugins
 #define ECMC_MAX_PLUGINS 16
+#define ECMC_PLUGIN_STR "plugin"
 
 // ECMC iocsh config command
 #define ECMC_IOCSH_CFG_CMD "ecmcConfigOrDie"

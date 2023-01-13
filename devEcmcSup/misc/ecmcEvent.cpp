@@ -12,7 +12,9 @@
 
 #include "ecmcEvent.h"
 
-ecmcEvent::ecmcEvent(double sampleTime, int index) : ecmcEcEntryLink(), ecmcExeObjWrapper(ECMC_EVENT) {
+ecmcEvent::ecmcEvent(double sampleTime, int index) : 
+           ecmcEcEntryLink(),
+           ecmcExeObjWrapper(ECMC_EVENT,index) {
   PRINT_ERROR_PATH("event[%d].error", index);
   initVars();
   sampleTime_ = sampleTime;
@@ -534,4 +536,8 @@ int ecmcEvent::arm() {
             index_);
   armSequence();
   return 0;
+}
+
+void ecmcEvent::buildProcessImage() {
+
 }

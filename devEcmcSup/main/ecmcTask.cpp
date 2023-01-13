@@ -88,7 +88,7 @@ ecmcTask::ecmcTask(ecmcAsynPortDriver *asynPortDriver,
   
   charCount = snprintf(nameBuffer_,
                        sizeof(nameBuffer_),
-                       ECMC_RT_THREAD_NAME"_w%d",
+                       ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d",
                        index_);
   if (charCount >= sizeof(nameBuffer_) - 1) {
     LOGERR("ERROR: Failed to create thread name, buffer to small.\n");

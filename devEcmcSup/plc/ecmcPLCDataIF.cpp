@@ -16,7 +16,8 @@ ecmcPLCDataIF::ecmcPLCDataIF(int plcIndex,
                              double plcSampleRateMs,
                              ecmcAxisBase *axis,
                              char *axisVarName,
-                             ecmcAsynPortDriver *asynPortDriver) {
+                             ecmcAsynPortDriver *asynPortDriver) :
+               ecmcTaskProcessImageItemWrapper(ECMC_PLC_DATA_ITEM) {
   errorReset();
   initVars();
   plcIndex_        = plcIndex;
@@ -43,7 +44,8 @@ ecmcPLCDataIF::ecmcPLCDataIF(int plcIndex,
                              double plcSampleRateMs,
                              ecmcDataStorage *ds,
                              char *dsVarName,
-                             ecmcAsynPortDriver *asynPortDriver) {
+                             ecmcAsynPortDriver *asynPortDriver) :
+               ecmcTaskProcessImageItemWrapper(ECMC_PLC_DATA_ITEM) {
   errorReset();
   initVars();
   plcIndex_        = plcIndex;
@@ -70,7 +72,8 @@ ecmcPLCDataIF::ecmcPLCDataIF(int plcIndex,
                              double plcSampleRateMs,
                              ecmcEc *ec,
                              char *ecVarName,
-                             ecmcAsynPortDriver *asynPortDriver) {
+                             ecmcAsynPortDriver *asynPortDriver) :
+               ecmcTaskProcessImageItemWrapper(ECMC_PLC_DATA_ITEM) {
   errorReset();
   initVars();
   plcIndex_        = plcIndex;
@@ -89,7 +92,8 @@ ecmcPLCDataIF::ecmcPLCDataIF(int plcIndex,
                              double plcSampleRateMs,
                              char *varName,
                              ecmcDataSourceType dataSource,
-                             ecmcAsynPortDriver *asynPortDriver) {
+                             ecmcAsynPortDriver *asynPortDriver) :
+               ecmcTaskProcessImageItemWrapper(ECMC_PLC_DATA_ITEM) {
   errorReset();
   initVars();  
   plcIndex_        = plcIndex; 
@@ -1475,3 +1479,6 @@ int ecmcPLCDataIF::updateAsyn(int force) {
   return 0;
 }
   
+char* ecmcPLCDataIF::getObjectName() {
+  return (char*)varName_.c_str();
+}
