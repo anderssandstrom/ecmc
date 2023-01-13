@@ -206,6 +206,10 @@ void ecmcTask::appendObjToExeVector(ecmcExeObjWrapper *obj) {
 
 }
 
+std::vector<ecmcExeObjWrapper*> ecmcTask::getExeVector() {
+  return exeVector_;
+}
+
 //void ecmcTask::initAsyn() {
 
   //ecmcAsynPortDriver *ecmcAsynPort = (ecmcAsynPortDriver *)getEcmcAsynPortDriver();

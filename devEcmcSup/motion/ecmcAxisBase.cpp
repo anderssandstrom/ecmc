@@ -642,8 +642,7 @@ void ecmcAxisBase::errorReset() {
 
 int ecmcAxisBase::validateBase() {
   try {
-    buildProcessImage();
-    printProcessImage();
+    buildProcessImage();    
   } catch(std::exception &e) {
         LOGERR("%s/%s:%d: ERROR (axis %d): Build of process image failed (0x%x).\n",
            __FILE__,
@@ -1349,10 +1348,10 @@ int ecmcAxisBase::setEnable(bool enable) {
     setExecute(false);
   }
   
-  if (enable && validate()) {
-    setExecute(false);
-    return getErrorID();
-  }
+  //if (enable && validate()) {
+  //  setExecute(false);
+  //  return getErrorID();
+  //}
 
   int error = setEnableLocal(enable);
 
@@ -2188,8 +2187,23 @@ int ecmcAxisBase::setAllowSourceChangeWhenEnabled(bool allow) {
 }
 
 int ecmcAxisBase::exeRTFunc(int masterOK) {
-  printf("NOT GOOD\n");
-  return 0;
+  LOGERR("%s/%s:%d: ERROR (axis %d): This method should never be called (0x%x).\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        data_.axisId_, ERROR_AXIS_METHOD_FAILURE);
+        exit(ERROR_AXIS_METHOD_FAILURE);
+  return ERROR_AXIS_METHOD_FAILURE;
+}
+
+int ecmcAxisBase::validate() {
+  LOGERR("%s/%s:%d: ERROR (axis %d): This method should never be called (0x%x).\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        data_.axisId_, ERROR_AXIS_METHOD_FAILURE);
+        exit(ERROR_AXIS_METHOD_FAILURE);
+  return ERROR_AXIS_METHOD_FAILURE;
 }
 
 void ecmcAxisBase::buildProcessImage() {

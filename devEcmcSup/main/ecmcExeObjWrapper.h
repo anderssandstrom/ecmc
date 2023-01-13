@@ -45,8 +45,11 @@ class ecmcExeObjWrapper {
   
   // Collect all ec entries and PLC data objects in an exe object
   virtual void buildProcessImage() = 0;
+  virtual int validate() = 0;
   
   appExeObjType getObjectType();
+  char* getObjectName();
+
   //int getObjectIndex()
 
   // trigg new execution for linked objects 

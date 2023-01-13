@@ -64,7 +64,7 @@ class ecmcTask {
 
   // Add object to task execution vector (can throw exceptions)
   void  appendObjToExeVector(ecmcExeObjWrapper *obj);
-  
+  std::vector<ecmcExeObjWrapper*> getExeVector();
   // main of work thread (calls doWork())
   void workThread();
   

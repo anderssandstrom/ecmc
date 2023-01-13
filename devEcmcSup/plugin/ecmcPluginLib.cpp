@@ -362,3 +362,7 @@ int ecmcPluginLib::findArgCount(ecmcOnePlcFunc &func){
 void ecmcPluginLib::buildProcessImage() {  
   return;
 }
+
+int ecmcPluginLib::validate() {
+  return 0;
+}

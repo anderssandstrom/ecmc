@@ -855,6 +855,50 @@ int validateConfig() {
       return errorCode;
     }
   }
+
+  // prepare PLCs (compile and more)
+  errorCode = plcs->preparePLCsForRT();
+  if(errorCode) {
+    return errorCode;
+  }
+
+  // check master task
+  printf("####################################################\n");
+  printf("Validation of Master Task (" ECMC_RT_THREAD_NAME "):\n");
+  printf(" objects count to execute: %d\n",exeVector.size());
+  for(int i = 0; i < (int)exeVector.size(); i++) {
+    errorCode = exeVector[i]->validate();
+    if(errorCode) {
+        LOGERR("ERROR: Validation failed for object %d on master thread with error code %x.",
+               i,
+               errorCode);
+      return errorCode;
+    }
+    printf("  object %d, %s:\n",i,exeVector[i]->getObjectName());
+    exeVector[i]->printProcessImage();
+  }
+  printf("\n");
+  printf("####################################################\n");
+  for(int i = 0;i < (int)tasks.size(); i++) {
+    printf("Validation of Work Task %d (" ECMC_RT_THREAD_NAME ECMC_RT_WORK_THREAD_SUFFIX "%d):\n",i,i);
+    std::vector<ecmcExeObjWrapper*> tempExe = tasks[i]->getExeVector();
+
+    printf(" object count to execute: %d\n",tempExe.size());
+    for(int j = 0;j < (int)tempExe.size();j++) {
+      
+      errorCode = tempExe[j]->validate();
+      if(errorCode) {
+        LOGERR("ERROR: Validation failed object %d on thread %d with error code %x.",
+               j,i,
+               errorCode);
+        return errorCode;
+      }
+      printf("  object %d, %s:\n",j,tempExe[j]->getObjectName());
+      tempExe[j]->printProcessImage();
+    }
+  }
+  return 0;
+
   for (int i = 0; i < ECMC_MAX_AXES; i++) {
     if (axes[i] != NULL) {
       axisCount++;

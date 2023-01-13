@@ -96,12 +96,13 @@ class ecmcPLCMain : public ecmcError {
                          double      data);
   int  validate();
   int  validate(int plcIndex);
+  int  preparePLCsForRT();
   int  getErrorID();
   bool getError();
   void errorReset();
   ecmcPLCTask* getPLCTaskForAxis(int axisId);
-  ecmcPLCTask* getPLCTask(int plcId);
-    
+  ecmcPLCTask* getPLCTask(int plcId);  
+
  private:
   void initVars();
   int  createNewGlobalDataIF(char              *varName,

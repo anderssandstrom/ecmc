@@ -318,7 +318,7 @@ int ecmcPLCTask::globalVarExist(const char *varName) {
 }
 
 int ecmcPLCTask::validate() {  
-
+  
   if(exprStr_.length()==0) {
     return 0;  // Not used.. return OK
   }
@@ -399,9 +399,7 @@ int ecmcPLCTask::validate() {
         ERROR_PLC_PLC_DATA_IF_NULL);
       return ERROR_PLC_PLC_DATA_IF_NULL;
     }
-  }
-
-  printProcessImage();
+  }  
   return 0;
 }
 

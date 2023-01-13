@@ -32,6 +32,11 @@ ecmcExeObjWrapper::ecmcExeObjWrapper(appExeObjType objType,int index) {
     break;
     case ECMC_PLC:
       prefix=ECMC_PLC_DATA_STR;
+      // Special for axes plc:s
+      if(index>=ECMC_MAX_PLCS) {
+        prefix=ECMC_AX_STR ECMC_PLC_DATA_STR;
+        objIndex_=objIndex_-ECMC_MAX_PLCS;
+      }
     break;
     case ECMC_EVENT:
       prefix=ECMC_EVENT_STR;
@@ -67,6 +72,10 @@ appExeObjType ecmcExeObjWrapper::getObjectType() {
   return objType_;
 }
 
+char* ecmcExeObjWrapper::getObjectName() {
+  return name_;
+}
+
 int ecmcExeObjWrapper::getTaskIndex() {
   return taskIndex_;
 }
@@ -76,10 +85,13 @@ int ecmcExeObjWrapper::setTaskIndex(int index) {
   return 0;
 }
 
-void ecmcExeObjWrapper::printProcessImage() {
-  printf("Process image for object %s:\n",name_);
-  for(int i=0; i<(int)processImage_.size();++i) {    
-    printf("    %s\n",processImage_[i]->getObjectName());
+void ecmcExeObjWrapper::printProcessImage() {  
+  if(processImage_.size()==0) {
+    printf("   empty\n");
+  } else {
+    for(int i=0; i<(int)processImage_.size();++i) {    
+     printf("   %s\n",processImage_[i]->getObjectName());
+    }
   }
 }
 

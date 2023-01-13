@@ -132,6 +132,27 @@ int ecmcPLCMain::setDataStoragePointer(ecmcDataStorage *ds, int index) {
   return 0;
 }
 
+int ecmcPLCMain::preparePLCsForRT() {
+  int errorCode = 0;
+  for (int i = 0; i < ECMC_MAX_PLCS + ECMC_MAX_AXES; i++) {
+    if(plcs_[i]) {
+      if(!getCompiled(i)) {      
+        errorCode = addExprLine(i,plcs_[i]->getRawExpr()->c_str());
+        if (errorCode) {
+          return errorCode;
+        }
+      }
+    }
+  }
+  // Set scantime
+  errorCode = updateAllScanTimeVars();
+
+  if (errorCode) {
+    return errorCode;
+  }
+  return 0;
+}
+
 int ecmcPLCMain::validate(int plcIndex) {
   
   if (plcs_[plcIndex] != NULL) {

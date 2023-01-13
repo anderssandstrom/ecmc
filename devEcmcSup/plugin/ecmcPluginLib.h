@@ -33,10 +33,11 @@ class ecmcPluginLib : public ecmcError, public ecmcExeObjWrapper {
   void unload();
   void report();
   ecmcPluginData *getData();
-  
+
   // overrides from ecmcExeObjWrapper
   int  exeRTFunc(int ecmcErrorCode);
-  void         buildProcessImage();
+  void buildProcessImage();
+  int validate(); 
 
   void exeDestructFunc();
   int  exeEnterRTFunc();
