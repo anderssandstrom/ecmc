@@ -2363,7 +2363,7 @@ static int handleCfgCommand(const char *myarg_1) {
                  cExprBuffer);
 
   if (nvals == 2) {
-    loadPLCFunction(iValue,cExprBuffer);
+    return loadPLCFunction(iValue,cExprBuffer);
   }
 
   /*int Cfg.ClearPLCExpr(int plcIndex);*/

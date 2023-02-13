@@ -1382,21 +1382,21 @@ int ecmcPLCMain::loadPLCFunction(int plcIndex,
         continue;
       }
   
-      std::string functionName = lineNoComments.substr(0, pos);
+      functionName = lineNoComments.substr(0, pos);
       lineNoComments.erase(0,pos);
   
       unsigned first = lineNoComments.find("(");
       unsigned last = lineNoComments.find(")");
-      if(first > last) {
+      if(last-first-1 <= 0) {
         // look of other row that match
         continue;
       }
-      std::string variableList = lineNoComments.substr(first,last-first);
+      variableList = lineNoComments.substr(first+1,last-first-1);
 
       functionHeaderOK = true; // function header found and OK. Add rest of file to expression
     } else {
       // function name and vars found, then add all to expression
-      functionExpression+=line;
+      functionExpression+=line + "\n";
     }
   }
 
@@ -1409,8 +1409,10 @@ int ecmcPLCMain::loadPLCFunction(int plcIndex,
            ERROR_PLCS_PLC_FUNCTION_FORMAT_ERROR);
     return ERROR_PLCS_PLC_FUNCTION_FORMAT_ERROR;
   }
-  printf("Adding plc function: \n %s \n %s",functionName.c_str(),functionExpression.c_str());
-
+  printf("Adding plc function:\n" 
+         "%s(%s)\n"
+         "%s",functionName.c_str(),variableList.c_str(),functionExpression.c_str());
+         
   return plcs_[plcIndex]->addCompFunction(functionName,
                                           functionExpression,
                                           variableList);

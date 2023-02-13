@@ -978,8 +978,8 @@ int ecmcPLCTask::addCompFunction(std::string functionName,
   std::string str;
   while (getline(ss, str, ',')) {
     varVector.push_back(str);
+    printf("Adding variable %s\n",str.c_str());
   }
-
   
   return exprtk_->addCompositionFunction(functionName,functionExpression,varVector);
 }
