@@ -1313,3 +1313,105 @@ int ecmcPLCMain::setPluginPointer(ecmcPluginLib *plugin, int index) {
   plugins_[index] = plugin;
   return 0;
 }
+
+int ecmcPLCMain::loadPLCFunction(int plcIndex, 
+                                 const char *fileName) {
+  
+  if (plcIndex >= ECMC_MAX_PLCS + ECMC_MAX_AXES || plcIndex < 0) {
+    LOGERR("%s/%s:%d: ERROR: PLC index out of range (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           ERROR_PLCS_INDEX_OUT_OF_RANGE);    
+    return ERROR_PLCS_INDEX_OUT_OF_RANGE;
+  }
+
+  if(!plcs_[plcIndex]) {
+    LOGERR("%s/%s:%d: ERROR: PLC %d NULL (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           plcIndex,
+           ERROR_PLCS_PLC_NULL);    
+    return ERROR_PLCS_PLC_NULL;
+  }
+  
+  std::ifstream plcFile;
+  plcFile.open(fileName);
+  if (!plcFile.good()) {
+    LOGERR("%s/%s:%d: ERROR PLC%d: File not found: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           plcIndex,
+           fileName,
+           ERROR_PLCS_FILE_NOT_FOUND);
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_PLCS_FILE_NOT_FOUND);
+  }
+
+  std::string line, lineNoComments;
+  std::string functionName,variableList, functionExpression;
+  /*
+  function test(x,t,yyyy)
+   var t=x*t;
+   t*x*t+yyyy;
+  */
+  bool functionHeaderOK = false;
+  while (std::getline(plcFile, line)) {
+    // Remove Comments (everything after #)
+    lineNoComments = line.substr(0, line.find(ECMC_PLC_FILE_COMMENT_CHAR));
+
+    if (!functionHeaderOK) {
+      // wait for "function <name>(var1, var2,..)"
+      if (!(lineNoComments.rfind("function ", 0) == 0) || 
+          !lineNoComments.find("(", 0) || 
+          !lineNoComments.find(")", 0)) { 
+        continue;
+      }
+  
+      //remove "function "
+      lineNoComments.erase(0,8);
+      
+      std::string::size_type pos = lineNoComments.find('(');
+      if (pos == std::string::npos)
+      {
+        // look of other row that match
+        continue;
+      }
+  
+      std::string functionName = lineNoComments.substr(0, pos);
+      lineNoComments.erase(0,pos);
+  
+      unsigned first = lineNoComments.find("(");
+      unsigned last = lineNoComments.find(")");
+      if(first > last) {
+        // look of other row that match
+        continue;
+      }
+      std::string variableList = lineNoComments.substr(first,last-first);
+
+      functionHeaderOK = true; // function header found and OK. Add rest of file to expression
+    } else {
+      // function name and vars found, then add all to expression
+      functionExpression+=line;
+    }
+  }
+
+  if (!functionHeaderOK || functionExpression.size()==0) {
+       LOGERR("%s/%s:%d: ERROR PLC%d: Function format error (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           plcIndex,
+           ERROR_PLCS_PLC_FUNCTION_FORMAT_ERROR);
+    return ERROR_PLCS_PLC_FUNCTION_FORMAT_ERROR;
+  }
+  printf("Adding plc function: \n %s \n %s",functionName.c_str(),functionExpression.c_str());
+
+  return plcs_[plcIndex]->addCompFunction(functionName,
+                                          functionExpression,
+                                          variableList);
+}

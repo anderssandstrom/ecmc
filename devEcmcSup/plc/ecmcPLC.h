@@ -428,6 +428,21 @@ int appendPLCExpr(int   index,
 int loadPLCFile(int   index,
                 char *fileName);
 
+/** \brief Load PLC function to PLC.\n
+ *
+ * Load file with PLC function code to PLC.\n
+ *
+ * \param[in] index     PLC index.\n
+ * \param[in] fileName  File name.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ *
+ * \note Example: Load plc fil with code to PLC 5\n
+ * "Cfg.LoadPLCFunction(5,/home/iocuser/dummyPLC.plcfunc)" //Command string to ecmcCmdParser.c.\n
+ */
+int loadPLCFunction(int   index,
+                    char *fileName);
+
 /** \brief Write to PLC variable.\n
  * \note: Only static variables are supported.\n
  *

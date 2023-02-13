@@ -16,6 +16,8 @@
 #include "ecmcPLCTask_libEc.inc"
 #include "ecmcPLCTask_libMc.inc"
 #include "ecmcPLCTask_libFileIO.inc"
+#include <vector>
+#include <sstream>
 
 #define ecmcPLCTaskAddFunction(cmd, func) {          \
     errorCode = exprtk_->addFunction(cmd, func); \
@@ -965,4 +967,19 @@ int ecmcPLCTask::setPluginPointer(ecmcPluginLib *plugin, int index) {
 
   plugins_[index] = plugin;
   return 0;
+}
+
+int ecmcPLCTask::addCompFunction(std::string functionName,
+                                 std::string functionExpression,
+                                 std::string variableList) {
+  // get comma separated variable list
+  std::vector<std::string> varVector;  
+  std::stringstream  ss(variableList);
+  std::string str;
+  while (getline(ss, str, ',')) {
+    varVector.push_back(str);
+  }
+
+  
+  return exprtk_->addCompositionFunction(functionName,functionExpression,varVector);
 }

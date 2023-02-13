@@ -64,6 +64,9 @@ class ecmcPLCTask : public ecmcError {
   int          compile();
   int          addAndReisterGlobalVar(ecmcPLCDataIF *dataIF);
   int          addAndRegisterLocalVar(char *localVarStr);
+  int          addCompFunction(std::string functionName,
+                               std::string functionExpression,
+                               std::string variableList);
   int          setAxisArrayPointer(ecmcAxisBase *axis,
                                    int           index);
   int          setDataStoragePointer(ecmcDataStorage *ds,

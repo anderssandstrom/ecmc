@@ -36,6 +36,7 @@
 #define ERROR_PLCS_PLC_NULL 0x20707
 #define ERROR_PLCS_EC_VAR_BIT_ACCESS_NOT_ALLOWED 0x20708
 #define ERROR_PLCS_PLUGIN_INDEX_OUT_OF_RANGE 0x20709
+#define ERROR_PLCS_PLC_FUNCTION_FORMAT_ERROR 0x2070A
 
 
 #define CHECK_PLC_RETURN_IF_ERROR(index) {                        \
@@ -100,6 +101,8 @@ class ecmcPLCMain : public ecmcError {
   bool getError();
   void errorReset();
   ecmcPLCTask* getPLCTaskForAxis(int axisId);
+  int  loadPLCFunction      (int plcIndex, 
+                             const char *filename);
 
  private:
   void initVars();
@@ -113,9 +116,9 @@ class ecmcPLCMain : public ecmcError {
   int  getDsIndex(char *varName);
   int  addPLCDefaultVariables(int plcIndex,
                               int skipCycles);
-  int addPLCDefaultVariable(int plcIndex, 
-                            const char *suffix,
-                            ecmcPLCDataIF **dataIFOut);
+  int  addPLCDefaultVariable(int plcIndex, 
+                             const char *suffix,
+                             ecmcPLCDataIF **dataIFOut);
   int  addMainDefaultVariables();
   int  updateAllScanTimeVars();
   int  updateAllScanTimeVars(int plcIndex);
