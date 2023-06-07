@@ -119,7 +119,7 @@ void ecmcAxisReal::execute(bool masterOK) {
   }
   // CSP Write raw actpos  and actpos to drv obj
   drv_->setCspActPos(encArray_[data_.command_.primaryEncIndex]->getRawPosRegister(), data_.status_.currentPositionActual);
-  if (getEnabled() && masterOK) {         
+  if (getEnabled() && masterOK) {
     // Calc position error
     data_.status_.cntrlError = ecmcMotionUtils::getPosErrorModWithSign(data_.status_.currentPositionSetpoint,
                                                                        data_.status_.currentPositionSetpointOld,
@@ -152,9 +152,9 @@ void ecmcAxisReal::execute(bool masterOK) {
     }
     // Only update if enable cmd is low to avoid change of setpoint 
     // during between enable and enabled
-    if (!getEnable() && !beforeFirstEnable_ && masterOK) {
-      data_.status_.currentPositionSetpoint =
-        data_.status_.currentPositionActual;
+    if (!getEnable() && beforeFirstEnable_ && masterOK) {
+      //data_.status_.currentPositionSetpoint =
+      //  data_.status_.currentPositionActual;
       traj_->setStartPos(data_.status_.currentPositionSetpoint);        
     }
     if (data_.status_.enabledOld && !data_.status_.enabled &&

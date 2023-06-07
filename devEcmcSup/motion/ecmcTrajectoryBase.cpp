@@ -154,6 +154,9 @@ void ecmcTrajectoryBase::initTraj() {
 
 void ecmcTrajectoryBase::setStartPos(double pos) {
   startPosition_ = checkModuloPos(pos);
+  if(!enable_) {
+    currentPositionSetpoint_ = pos;
+  }
 }
 
 void ecmcTrajectoryBase::setMotionMode(motionMode mode) {

@@ -98,9 +98,9 @@ void ecmcAxisVirt::execute(bool masterOK) {
         setExecute(false);
       }
 
-      if(!beforeFirstEnable_ && masterOK){
-        data_.status_.currentPositionSetpoint =
-          data_.status_.currentPositionActual;
+      if(beforeFirstEnable_ && masterOK){
+        //data_.status_.currentPositionSetpoint =
+        //  data_.status_.currentPositionActual;
         traj_->setStartPos(data_.status_.currentPositionSetpoint);        
       }
     }

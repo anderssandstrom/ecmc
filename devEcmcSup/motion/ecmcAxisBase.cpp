@@ -153,7 +153,7 @@ ecmcAxisBase::~ecmcAxisBase() {
 
 void ecmcAxisBase::initVars() {
   // errorReset();  //THIS IS NONO..
-  beforeFirstEnable_                    = 0;
+  beforeFirstEnable_           = 1;
   data_.axisType_              = ECMC_AXIS_TYPE_BASE;
   data_.command_.reset         = false;
   allowCmdFromOtherPLC_        = true;
@@ -227,18 +227,23 @@ void ecmcAxisBase::preExecute(bool masterOK) {
   switch (axisState_) {
   case ECMC_AXIS_STATE_STARTUP:
     setEnable(false);
-    data_.status_.busy       = false;
+    data_.status_.busy       = true;
     data_.status_.distToStop = 0;
-
+     
     if (masterOK) {
       // Auto reset hardware error if starting up
       if ((getErrorID() == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) &&
           data_.status_.inStartupPhase) {
         errorReset();
         setInStartupPhase(false);
-        initEncoders();
+        initEncoders();        
       }
       axisState_ = ECMC_AXIS_STATE_DISABLED;
+      // make sure actpos is OK before going into DISABLED state
+      data_.status_.currentPositionActual = encArray_[data_.command_.primaryEncIndex]->getActPos();
+      data_.status_.currentVelocityActual = encArray_[data_.command_.primaryEncIndex]->getActVel();
+      data_.status_.currentPositionSetpoint = data_.status_.currentPositionActual;
+      traj_->setStartPos(data_.status_.currentPositionSetpoint);
     }
     break;
 
@@ -438,7 +443,8 @@ void ecmcAxisBase::setInStartupPhase(bool startup) {
   if(!data_.status_.inStartupPhase && startup) {
     data_.command_.cfgEncIndex = data_.command_.primaryEncIndex;
   }
-
+  data_.status_.currentPositionSetpoint =
+        data_.status_.currentPositionActual;
   data_.status_.inStartupPhase = startup;
 }
 
@@ -547,7 +553,7 @@ int ecmcAxisBase::setEnableLocal(bool enable) {
     data_.status_.currentPositionSetpoint = data_.status_.currentPositionActual;
     data_.status_.currentPositionSetpointOld = data_.status_.currentPositionSetpoint;
     data_.status_.currentVelocitySetpoint = 0;
-    beforeFirstEnable_ = true;
+    beforeFirstEnable_ = false;
   }
   traj_->setEnable(enable);
 
