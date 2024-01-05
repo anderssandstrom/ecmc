@@ -80,7 +80,6 @@ public:
   ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
               int                 masterId,
               int                 slaveId,
-              uint8_t            *domainAdr,
               ecmcEcDataType      dt,
               std::string         id);
   virtual ~ecmcEcEntry();

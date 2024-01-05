@@ -74,7 +74,8 @@ public:
     uint16_t            alias, /**< Slave alias. */
     int32_t             position, /**< Slave position. */
     uint32_t            vendorId, /**< Expected vendor ID. */
-    uint32_t            productCode /**< Expected product code. */);
+    uint32_t            productCode, /**< Expected product code. */
+    int                 simSlave = 0); /**< Simulation slave. */
   ~ecmcEcSlave();
   int                addSyncManager(ec_direction_t direction,
                                     uint8_t        syncMangerIndex);

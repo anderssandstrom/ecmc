@@ -110,14 +110,13 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
 ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          int                 masterId,
                          int                 slaveId,
-                         uint8_t            *domainAdr,
                          ecmcEcDataType      dt,
                          std::string         id) {
   initVars();
   asynPortDriver_ = asynPortDriver;
   masterId_       = masterId;
   slaveId_        = slaveId;
-  domainAdr_      = domainAdr;
+  domainAdr_      = &buffer_;
   sim_            = true;
   direction_      = EC_DIR_OUTPUT;
   idString_       = id;

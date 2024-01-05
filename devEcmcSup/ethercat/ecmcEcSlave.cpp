@@ -21,7 +21,9 @@ ecmcEcSlave::ecmcEcSlave(
   uint16_t            alias, /**< Slave alias. */
   int32_t             position, /**< Slave position. */
   uint32_t            vendorId, /**< Expected vendor ID. */
-  uint32_t            productCode /**< Expected product code. */) {
+  uint32_t            productCode, /**< Expected product code. */
+  int                 simSlave) { /** Simulation slave. */
+
   initVars();
   asynPortDriver_ = asynPortDriver;
   masterId_       = masterId;
@@ -30,33 +32,33 @@ ecmcEcSlave::ecmcEcSlave(
   slavePosition_  = position;  /**< Slave position. */
   vendorId_       = vendorId; /**< Expected vendor ID. */
   productCode_    = productCode; /**< Expected product code. */
-
+  simSlave_       = simSlave;
+  
   // Simulation entries
   simEntries_[0] = new ecmcEcEntry(asynPortDriver_,
                                    masterId_,
                                    slavePosition_,
-                                   &simBuffer_[0],
                                    ECMC_EC_U32,
                                    "ZERO");
   simEntries_[1] = new ecmcEcEntry(asynPortDriver_,
                                    masterId_,
                                    slavePosition_,
-                                   &simBuffer_[8],
                                    ECMC_EC_U32,
                                    "ONE");
   simEntries_[0]->writeValue(0);  // Default 0
   simEntries_[1]->writeValue(0xFFFFFFFF);  // Default 1 (32 bits)
 
-  if ((alias == 0) && (position == -1) && (vendorId == 0) &&
-      (productCode == 0)) {
-    simSlave_ = true;
-    return;
-  }
-
   // Add simulation entries as first two entries
   appendEntryToList(simEntries_[0], 1);
   appendEntryToList(simEntries_[1], 1);
 
+  initAsyn();
+
+  if (simSlave_) {
+    return;
+  }
+
+  // Do below only for "real" slaves
   domain_ = domain;
 
   if (!(slaveConfig_ =
@@ -83,7 +85,6 @@ ecmcEcSlave::ecmcEcSlave(
     vendorId_,
     productCode_);
 
-  initAsyn();
 }
 
 void ecmcEcSlave::initVars() {
@@ -104,6 +105,8 @@ void ecmcEcSlave::initVars() {
   statusWord_        = 0;
   statusWordOld_     = 0;
   asyncSDOCounter_   = 0;
+  domain_            = NULL;
+  asynPortDriver_    = NULL;
 
   for (int i = 0; i < EC_MAX_SYNC_MANAGERS; i++) {
     syncManagerArray_[i] = NULL;
@@ -126,10 +129,9 @@ void ecmcEcSlave::initVars() {
     slaveAsynParams_[i] = NULL;
   }
 
-  domain_ = NULL;
   memset(&slaveState_,    0, sizeof(slaveState_));
   memset(&slaveStateOld_, 0, sizeof(slaveStateOld_));
-  asynPortDriver_ = NULL;
+
 }
 
 ecmcEcSlave::~ecmcEcSlave() {
