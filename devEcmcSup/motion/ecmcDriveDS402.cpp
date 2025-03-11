@@ -50,6 +50,8 @@ void ecmcDriveDS402::initVars() {
   localEnabled_          = 0;
   localEnableAmpCmdOld_  = 0;
   startupFaultCleared_   = 0;
+  hwReady_               = 0;
+  controlWordOld_        = 0;
 }
 
 int ecmcDriveDS402::validate() {
@@ -163,7 +165,7 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
     controlWord_  = 0;
     cycleCounter_ = 0;
 
-    if (enableAmpCmd_ && !localEnableAmpCmdOld_) {
+    if(BIT_CHECK(statusWord_, ECMC_DS402_SWITCH_ON_DISABLED_BIT)) {
       enableStateMachine_ = ECMC_DS402_STARTUP_RESET;
     }
     break;
@@ -171,7 +173,11 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
   case ECMC_DS402_STARTUP_RESET:
     controlWord_        = 128;
     cycleCounter_       = 0;
-    enableStateMachine_ = ECMC_DS402_SWITCH_ON_DISABLED_STATE;
+    //enableStateMachine_ = ECMC_DS402_SWITCH_ON_DISABLED_STATE;
+    if (!ds402Fault) {
+      cycleCounter_       = 0;
+      enableStateMachine_ = ECMC_DS402_SWITCH_ON_DISABLED_STATE;
+    }
     break;
 
   case ECMC_DS402_SWITCH_ON_DISABLED_STATE:
@@ -182,26 +188,34 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
       enableStateMachine_ = ECMC_DS402_READY_TO_SWITCH_ON_STATE;
     }
 
-    if (!enableAmpCmd_) {
-      enableStateMachine_ = ECMC_DS402_IDLE_STATE;
+    if (ds402Fault) {
+      cycleCounter_       = 0;
+      enableStateMachine_ = ECMC_DS402_FAULT_STATE;
     }
+    //if (!enableAmpCmd_) {
+    //  enableStateMachine_ = ECMC_DS402_IDLE_STATE;
+    //}
     break;
 
-  case ECMC_DS402_READY_TO_SWITCH_ON_STATE:
-    controlWord_ = 7;
+  case ECMC_DS402_READY_TO_SWITCH_ON_STATE:    
 
     if (ds402Fault) {
       cycleCounter_       = 0;
       enableStateMachine_ = ECMC_DS402_FAULT_STATE;
     }
+    hwReady_ = BIT_CHECK(statusWord_, ECMC_DS402_READY_TO_SWITCH_ON_BIT);
 
-    if (BIT_CHECK(statusWord_, ECMC_DS402_SWITCHED_ON_BIT)) {
-      cycleCounter_       = 0;
+    //rest in this state
+    cycleCounter_       = 0;
+
+    //if (BIT_CHECK(statusWord_, ECMC_DS402_SWITCHED_ON_BIT)) {
+    //  cycleCounter_       = 0;
+    //  enableStateMachine_ = ECMC_DS402_SWITCHED_ON_STATE;
+    //}
+
+    if (enableAmpCmd_ && !localEnableAmpCmdOld_ && BIT_CHECK(statusWord_, ECMC_DS402_READY_TO_SWITCH_ON_BIT)) {
+      controlWord_ = 7;
       enableStateMachine_ = ECMC_DS402_SWITCHED_ON_STATE;
-    }
-
-    if (!enableAmpCmd_) {
-      enableStateMachine_ = ECMC_DS402_IDLE_STATE;
     }
     break;
 
@@ -243,6 +257,7 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
     enableAmpCmd_          = false;
     data_->command_.enable = false;
     setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_DRV_DS402_FAULT_STATE);
+    hwReady_ = 0;
     break;
 
   case ECMC_DS402_RESET_STATE:
@@ -256,7 +271,11 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
     break;
   }
 
+  if(controlWord_ != controlWordOld_) {
+    printf("DS402: New control word %x\n", (uint)controlWord_);
+  }
   localEnableAmpCmdOld_ = enableAmpCmd_;
+  controlWordOld_ = controlWord_;
 }
 
 void ecmcDriveDS402::errorReset() {
@@ -274,6 +293,5 @@ bool ecmcDriveDS402::getEnabledLocal() {
 
 int ecmcDriveDS402::hwReady() {
   // Consider also checking that CSP encoder is OK..   
-  return !BIT_CHECK(statusWord_, ECMC_DS402_FAULT_BIT) &&
-         masterOK_;
+  return hwReady_ && masterOK_;
 }

@@ -90,5 +90,7 @@ private:
   bool localEnabled_;
   bool localEnableAmpCmdOld_;
   bool startupFaultCleared_;
+  bool hwReady_;
+  uint64_t controlWordOld_;
 };
 #endif  // ifndef ECMCDRIVEDS402_H_
