@@ -33,7 +33,6 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   asynInitOk_               = false;  
   status_                   = 0;
   state_                    = ECMC_MST_SLV_STATE_IDLE;    
-  idleCounter_              = 0;
   memset(&control_,0,sizeof(control_));
   memset(&controlOld_,0,sizeof(controlOld_));
 
@@ -83,15 +82,12 @@ void ecmcMasterSlaveStateMachine::execute(){
       stateIdle();
       break;
     case ECMC_MST_SLV_STATE_SLAVES:
-      idleCounter_ = 0;
       stateSlave();
       break;
     case ECMC_MST_SLV_STATE_MASTERS:
-      idleCounter_ = 0;
       stateMaster();
       break;
     case ECMC_MST_SLV_STATE_RESET:
-      idleCounter_ = 0;
       stateReset();
       break;
   };
@@ -99,12 +95,7 @@ void ecmcMasterSlaveStateMachine::execute(){
 };
 
 int ecmcMasterSlaveStateMachine::stateIdle(){
-  
-  // Slaved axis busy will stay high for 2 cycles after traj source change.
-  // Needed in case stop ramp for the slaves is needed.
-  // TODO: Fix.. Need better solution here
-  if(idleCounter_ < 3) {
-    idleCounter_++;
+  if(slaveGrp_->isTrajSrcChangeInProgress()) {
     return 0;
   }
 

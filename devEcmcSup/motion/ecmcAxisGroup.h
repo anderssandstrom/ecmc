@@ -54,6 +54,8 @@ class ecmcAxisGroup : public ecmcError {
     int setEnable(bool enable);
     // set traj source of all axes in group
     int setTrajSrc(dataSource trajSource);
+    // check if recent traj source change still settling
+    bool isTrajSrcChangeInProgress();
     // set allow traj source change when enabled
     void setAllowSrcChangeWhenEnabled(int allow);
     // get all traj src in extern
@@ -99,6 +101,10 @@ class ecmcAxisGroup : public ecmcError {
     std::vector<ecmcAxisBase*>  axes_;
     size_t axesCounter_;
     std::vector<int> axesIds_;
+    bool trajSrcChangePending_;
+    dataSource lastTrajSrcCommand_;
+
+    void tryClearTrajSrcChangeFlag();
 };
 
 #endif  /* ECMCAXISGROUP_H_ */

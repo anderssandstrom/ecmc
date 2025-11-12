@@ -11,11 +11,14 @@
 \*************************************************************************/
 #include "ecmcAxisGroup.h"
 #include "ecmcErrorsList.h"
+#include <utility>
 
 ecmcAxisGroup::ecmcAxisGroup(int index, const char *name){
   name_ = name;
   axesCounter_ = 0;
   index_ = index;
+  trajSrcChangePending_ = false;
+  lastTrajSrcCommand_   = ECMC_DATA_SOURCE_INTERNAL;
   printf("ecmcAxisGroup: Created axis group[%d] %s.\n", index_, name_.c_str());
 };
 
@@ -127,30 +130,70 @@ int ecmcAxisGroup::getAnyErrorId(){
 
 // Set enable of all axes in group
 int ecmcAxisGroup::setEnable(bool enable){
-  int error = 0;
+  std::vector<std::pair<ecmcAxisBase*, bool>> appliedChanges;
+
   for(std::vector<ecmcAxisBase*>::iterator axis = axes_.begin(); axis != axes_.end(); ++axis) {
-    if((*axis)) {
-      error = (*axis)->setEnable(enable);
-      if(error) {
-        return error;
-      }
+    if(!(*axis)) {
+      continue;
     }
+
+    bool previousState = (*axis)->getEnable();
+    if(previousState == enable) {
+      continue;
+    }
+
+    int error = (*axis)->setEnable(enable);
+    if(error) {
+      for(auto revert = appliedChanges.rbegin(); revert != appliedChanges.rend(); ++revert) {
+        if(revert->first) {
+          int revertError = revert->first->setEnable(revert->second);
+          if(revertError) {
+            printf("ecmcAxisGroup: Failed to revert axis %d to previous enable state (%d). Error=0x%x\n",
+                   revert->first->getAxisID(),
+                   revert->second,
+                   revertError);
+          }
+        }
+      }
+      return error;
+    }
+
+    appliedChanges.push_back(std::make_pair(*axis, previousState));
   }
-  return error;
+
+  return 0;
 }
 
 // set traj source of all axes in group
 int ecmcAxisGroup::setTrajSrc(dataSource trajSource){
-  int error = 0;
+  int  error            = 0;
+  bool changeRequested  = false;
+
   for(std::vector<ecmcAxisBase*>::iterator axis = axes_.begin(); axis != axes_.end(); ++axis) {
-    if((*axis)) {
-      error = (*axis)->getSeq()->setTrajDataSourceType(trajSource);
-      if(error) {
-        return error;
-      }
+    if(!(*axis)) {
+      continue;
+    }
+
+    if((*axis)->getTrajDataSourceType() != trajSource) {
+      changeRequested = true;
+    }
+
+    error = (*axis)->getSeq()->setTrajDataSourceType(trajSource);
+    if(error) {
+      trajSrcChangePending_ = false;
+      return error;
     }
   }
-  return error;
+
+  if(changeRequested) {
+    lastTrajSrcCommand_  = trajSource;
+    trajSrcChangePending_ = true;
+  } else if(lastTrajSrcCommand_ == trajSource) {
+    trajSrcChangePending_ = false;
+  }
+
+  tryClearTrajSrcChangeFlag();
+  return 0;
 }
 
 // set enc source of all axes in group
@@ -165,6 +208,33 @@ int ecmcAxisGroup::setEncSrc(dataSource encSource){
     }
   }
   return error;
+}
+
+bool ecmcAxisGroup::isTrajSrcChangeInProgress(){
+  tryClearTrajSrcChangeFlag();
+  return trajSrcChangePending_;
+}
+
+void ecmcAxisGroup::tryClearTrajSrcChangeFlag(){
+  if(!trajSrcChangePending_) {
+    return;
+  }
+
+  for(std::vector<ecmcAxisBase*>::iterator axis = axes_.begin(); axis != axes_.end(); ++axis) {
+    if(!(*axis)) {
+      continue;
+    }
+
+    if((*axis)->getTrajDataSourceType() != lastTrajSrcCommand_) {
+      return;
+    }
+
+    if((*axis)->getTrajBusy()) {
+      return;
+    }
+  }
+
+  trajSrcChangePending_ = false;
 }
 
 void ecmcAxisGroup::setErrorReset(){
