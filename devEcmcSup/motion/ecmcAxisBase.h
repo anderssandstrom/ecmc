@@ -274,6 +274,9 @@ protected:
   void initEncoders();  
   void autoEnableSM();
   void autoDisableSM();
+  bool isAsynInitialized() const;
+  int  getAsynInitError() const;
+  void refreshAsynParamRT(int paramIndex, int refreshArgument);
   void refreshAsynTargetValue();
   bool commandValid(motionCommandTypes command);
 
@@ -316,6 +319,8 @@ protected:
   bool enableAutoEnable_;
   bool enableAutoDisable_;
   double positionTargetAsyn_;
+  bool  asynInitOk_;
+  int   asynInitError_;
 };
 
 #endif  /* ECMCAXISBASE_H_ */
