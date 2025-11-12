@@ -13,12 +13,18 @@
 #ifndef ECMCAXISGROUP_H_
 #define ECMCAXISGROUP_H_
 
-#include "ecmcError.h"
-#include "ecmcAxisBase.h"
-#include "ecmcDefinitions.h"
 #include <stdexcept>
 #include <vector>
 #include <string>
+
+#ifndef ECMC_TEST_STUBS
+#include "ecmcError.h"
+#include "ecmcAxisBase.h"
+#include "ecmcDefinitions.h"
+#else
+#include "../../tests/mocks/EcmcTestStubs.h"
+#include "ecmcDefinitions.h"
+#endif
 
 class ecmcAxisGroup : public ecmcError {
   public:

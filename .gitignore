@@ -28,4 +28,4 @@ lib/
 .cvsignore
 *linux-arm/
 ecmc.Makefile
-
+.tmp_*

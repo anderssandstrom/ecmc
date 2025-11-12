@@ -17,7 +17,6 @@
 #include <cmath>
 #include "ecmcDefinitions.h"
 #include "ecmcError.h"
-#include "ecmcEncoder.h"
 #include "ecmcAxisData.h"
 
 enum ecmcTrajTypes {

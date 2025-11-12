@@ -17,16 +17,23 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#ifdef ECMC_TEST_STUBS
+#include "../../tests/mocks/EcmcTestStubs.h"
+#else
 #include <ecrt.h>
+#endif
 #include <string.h>
 #include <cmath>
 #include <vector>
 #include "ecmcDefinitions.h"
 #include "ecmcErrorsList.h"
 #include "ecmcError.h"
+#ifndef ECMC_TEST_STUBS
 #include "ecmcEcEntry.h"
 #include "ecmcEcEntryLink.h"
 #include "ecmcEcPdo.h"
+#include "ecmcAsynPortDriver.h"
+#endif
 #include "ecmcFilter.h"
 #include "ecmcAxisData.h"
 #include "ecmcMotionUtils.h"
@@ -237,6 +244,7 @@ protected:
   ecmcAsynDataItem *encPosAct_;
   ecmcAsynDataItem *encVelAct_;
   ecmcAsynDataItem *encErrId_;
+  bool asynInitOk_;
 
   int hwReadyInvert_;
   int index_; // Index of this encoder (im axis object)

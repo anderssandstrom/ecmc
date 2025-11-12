@@ -8,6 +8,10 @@
 #include "devEcmcSup/motion/ecmcMasterSlaveStateMachine.h"
 #include "devEcmcSup/main/ecmcErrorsList.h"
 
+asynUser *pPrintOutAsynUser = nullptr;
+unsigned int debug_print_flags = 0;
+unsigned int die_on_error_flags = 0;
+
 namespace {
 
 std::unique_ptr<ecmcAxisBase> makeAxis(int id) {

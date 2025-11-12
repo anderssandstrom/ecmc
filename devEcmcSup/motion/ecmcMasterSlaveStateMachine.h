@@ -36,10 +36,19 @@
 #define ERROR_MST_SLV_SM_GRP_NULL 0x17000
 #define ERROR_MST_SLV_SM_GRP_INIT_ASYN_FAILED 0x17001
 
-#include "ecmcError.h"
+#ifdef ECMC_TEST_STUBS
+#include "../../tests/mocks/EcmcTestStubs.h"
+#endif
+
 #include "ecmcAxisGroup.h"
+
+#ifndef ECMC_TEST_STUBS
 #include "ecmcDefinitions.h"
 #include "ecmcAsynPortDriver.h"
+#else
+#include "ecmcDefinitions.h"
+#endif
+
 #include <string>
 #include <iostream>
 
@@ -72,6 +81,7 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     const char* getName();
     void execute();
     int validate();
+    masterSlaveStates getState() const;
 
   private:
     int stateIdle();

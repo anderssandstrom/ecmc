@@ -11,10 +11,7 @@
 #include <vector>
 
 #include "../../devEcmcSup/main/ecmcDefinitions.h"
-
-#ifndef LOGERR
-#define LOGERR(...) std::printf(__VA_ARGS__)
-#endif
+#include "../../devEcmcSup/main/ecmcError.h"
 
 enum asynStatus {
   asynSuccess = 0,
@@ -27,35 +24,117 @@ enum asynParamType {
   asynParamUInt32Digital = 2,
 };
 
-class ecmcError {
+#ifndef ECMC_EC_ENTRY_LINKS_MAX
+#define ECMC_EC_ENTRY_LINKS_MAX 20
+#endif
+
+class ecmcEcEntry : public ecmcError {
 public:
-  ecmcError() : errorId_(0) {}
-  virtual ~ecmcError() = default;
-  virtual int setErrorID(int errorID) {
-    errorId_ = errorID;
-    return errorID;
+  ecmcEcEntry() : value_(0) {}
+  int readValue(uint64_t *value) {
+    if (!value) {
+      return -1;
+    }
+    *value = value_;
+    return 0;
   }
-  virtual int setErrorID(const char*,
-                         const char*,
-                         int,
-                         int errorID) {
-    return setErrorID(errorID);
+  int writeValue(uint64_t value) {
+    value_ = value;
+    return 0;
   }
-  virtual void errorReset() {
-    errorId_ = 0;
+  int readBits(int startBit, int bits, uint64_t *result) {
+    if (!result || bits <= 0 || startBit < 0 || startBit + bits > 64) {
+      return -1;
+    }
+    uint64_t mask = bits == 64 ? UINT64_MAX : ((1ULL << bits) - 1ULL);
+    *result = (value_ >> startBit) & mask;
+    return 0;
   }
-  virtual bool getError() const {
-    return errorId_ != 0;
-  }
-  virtual int getErrorID() const {
-    return errorId_;
-  }
-  virtual int setWarningID(int) {
+  int writeBits(int startBit, int bits, uint64_t value) {
+    if (bits <= 0 || startBit < 0 || startBit + bits > 64) {
+      return -1;
+    }
+    uint64_t mask = bits == 64 ? UINT64_MAX : ((1ULL << bits) - 1ULL);
+    value_ &= ~(mask << startBit);
+    value_ |= (value & mask) << startBit;
     return 0;
   }
 
 private:
-  int errorId_;
+  uint64_t value_;
+};
+
+class ecmcEcEntryLink : public ecmcError {
+public:
+  ecmcEcEntryLink() = default;
+  ecmcEcEntryLink(int*, int*) {}
+
+  int setEntryAtIndex(ecmcEcEntry *entry, int index, int) {
+    if (index < 0 || index >= ECMC_EC_ENTRY_LINKS_MAX) {
+      return -1;
+    }
+    entries_[index] = entry;
+    return 0;
+  }
+
+  int validateEntry(int index) {
+    if (index < 0 || index >= ECMC_EC_ENTRY_LINKS_MAX) {
+      return -1;
+    }
+    return entries_[index] ? 0 : -1;
+  }
+
+  int readEcEntryValue(int index, uint64_t *value) {
+    if (validateEntry(index)) {
+      return -1;
+    }
+    return entries_[index]->readValue(value);
+  }
+
+  int readEcEntryValueDouble(int index, double *value) {
+    uint64_t temp = 0;
+    int ret       = readEcEntryValue(index, &temp);
+    if (ret == 0 && value) {
+      *value = static_cast<double>(temp);
+    }
+    return ret;
+  }
+
+  int writeEcEntryValue(int index, uint64_t value) {
+    if (validateEntry(index)) {
+      return -1;
+    }
+    return entries_[index]->writeValue(value);
+  }
+
+  int readEcEntryBits(int index, int bits, uint64_t *value) {
+    if (validateEntry(index)) {
+      return -1;
+    }
+    return entries_[index]->readBits(0, bits, value);
+  }
+
+  int writeEcEntryBits(int index, int bits, uint64_t value) {
+    if (validateEntry(index)) {
+      return -1;
+    }
+    return entries_[index]->writeBits(0, bits, value);
+  }
+
+  bool checkEntryExist(int index) {
+    return index >= 0 && index < ECMC_EC_ENTRY_LINKS_MAX && entries_[index];
+  }
+
+  bool checkDomainOK(int) {
+    return true;
+  }
+
+  bool checkDomainOKAllEntries() {
+    return true;
+  }
+
+private:
+  ecmcEcEntry *entries_[ECMC_EC_ENTRY_LINKS_MAX]{};
 };
 
 class ecmcMonitor {

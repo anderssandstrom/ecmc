@@ -10,6 +10,7 @@
 *
 \*************************************************************************/
 #include "ecmcMasterSlaveStateMachine.h"
+#include "ecmcErrorsList.h"
 
 ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asynPortDriver,
                                                          int index,
@@ -54,6 +55,10 @@ ecmcMasterSlaveStateMachine::~ecmcMasterSlaveStateMachine(){
 
 const char* ecmcMasterSlaveStateMachine::getName(){
   return name_.c_str();
+};
+
+masterSlaveStates ecmcMasterSlaveStateMachine::getState() const{
+  return state_;
 };
 
 void ecmcMasterSlaveStateMachine::execute(){

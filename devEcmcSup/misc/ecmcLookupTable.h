@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include "ecmcError.h"
 
 #define ERROR_LOOKUP_TABLE_ERROR 0x1441A

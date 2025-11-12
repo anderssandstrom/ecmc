@@ -58,6 +58,10 @@ void ecmcTrajectoryTrapetz::setCurrentPosSet(double posSet) {
   ecmcTrajectoryBase::setCurrentPosSet(posSet);
 }
 
+double ecmcTrajectoryTrapetz::getCurrentPosSet() {
+  return ecmcTrajectoryBase::getCurrentPosSet();
+}
+
 double ecmcTrajectoryTrapetz::internalTraj(double *actVelocity,
                                            double *actAcceleration,
                                            bool   *trajBusy) {

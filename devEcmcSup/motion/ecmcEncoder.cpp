@@ -11,6 +11,39 @@
 \*************************************************************************/
 
 #include "ecmcEncoder.h"
+#include <limits>
+
+namespace {
+inline uint64_t contiguousMask(int bits) {
+  if (bits <= 0) {
+    return 0;
+  }
+  if (bits >= 64) {
+    return ECMC_ENCODER_MAX_VALUE_64_BIT;
+  }
+  return (1ULL << bits) - 1ULL;
+}
+
+inline int64_t rangeFromBits(int bits) {
+  if (bits <= 0) {
+    return 0;
+  }
+  if (bits >= 63) {
+    return std::numeric_limits<int64_t>::max();
+  }
+  return static_cast<int64_t>((1ULL << bits) - 1ULL);
+}
+
+inline int64_t absRangeFromBits(int bits) {
+  if (bits <= 0) {
+    return 1;
+  }
+  if (bits >= 63) {
+    return std::numeric_limits<int64_t>::max();
+  }
+  return static_cast<int64_t>(1ULL << bits);
+}
+}  // namespace
 
 ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
                          ecmcAxisData       *axisData,
@@ -29,7 +62,11 @@ ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
   // Encoder index start from 1 here, to get asyn param naming correct
   index_ = index;
   
-  initAsyn();
+  int initError = initAsyn();
+  asynInitOk_   = (initError == 0);
+  if (initError) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, initError);
+  }
 
   if (!data_) {
     LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
@@ -121,6 +158,7 @@ void ecmcEncoder::initVars() {
   encVelAct_              = NULL;
   asynPortDriver_         = NULL;
   encErrId_               = NULL;
+  asynInitOk_             = false;
   maxPosDiffToPrimEnc_    = 0;
   encInitilized_          = 0;
   hwReady_                = 0;
@@ -284,7 +322,7 @@ int64_t ecmcEncoder::handleOverUnderFlow(uint64_t rawPosOld,
       }
     }
   } else {
-    turns = 0;
+    return rawTurns;
   }
   return turns;
 }
@@ -301,7 +339,8 @@ int ecmcEncoder::setBits(int bits) {
     return 0;
   }
 
-  int errorCode = setRawMask((uint64_t)(pow(2, bits) - 1));
+  uint64_t mask = contiguousMask(bits);
+  int errorCode = setRawMask(mask);
 
   if (errorCode) {
     return errorCode;
@@ -332,8 +371,9 @@ int ecmcEncoder::setAbsBits(int absBits) {
   }
 
   absBits_     = absBits;
-  rawAbsRange_ = pow(2, absBits_);
-  rawAbsLimit_ = rawAbsRange_ * ECMC_OVER_UNDER_FLOW_FACTOR;  // Limit for over/under-flow
+  rawAbsRange_ = absRangeFromBits(absBits_);
+  rawAbsLimit_ = static_cast<uint64_t>(static_cast<long double>(contiguousMask(absBits)) *
+                                       ECMC_OVER_UNDER_FLOW_FACTOR);  // Limit for over/under-flow
   return 0;
 }
 
@@ -360,12 +400,13 @@ int ecmcEncoder::setRawMask(uint64_t mask) {
   }
 
   bits_     = bitWidth;
-  rawRange_ = pow(2, bits_) - 1;
+  rawRange_ = rangeFromBits(bits_);
 
-  // Limit for over/under-flow
-  rawLimit_         = rawRange_ * ECMC_OVER_UNDER_FLOW_FACTOR;
-  totalRawRegShift_ = pow(2, trailingZeros) - 1;
-  totalRawMask_     = mask;
+  uint64_t maskRange = contiguousMask(bitWidth);
+  rawLimit_          = static_cast<uint64_t>(static_cast<long double>(maskRange) *
+                                    ECMC_OVER_UNDER_FLOW_FACTOR);
+  totalRawRegShift_  = contiguousMask(trailingZeros);
+  totalRawMask_      = mask;
   return 0;
 }
 
@@ -477,9 +518,14 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
     }
   }
 
-  // Compensate for delay (TODO: the actVelLocal is one cycle old..)
+  double instantaneousVel = 0.0;
+  if (data_->status_.sampleTime > 0) {
+    instantaneousVel = (actPosLocal_ - actPosOld_) / data_->status_.sampleTime;
+  }
+
+  // Compensate for delay using current cycle velocity estimate
   if(enableDelayTime_) {
-    actPosLocal_ = actPosLocal_ + delayTimeS_ * actVelLocal_;
+    actPosLocal_ = actPosLocal_ + delayTimeS_ * instantaneousVel;
   }
 
   // If first valid value (at first hw ok),
@@ -749,8 +795,12 @@ double ecmcEncoder::readEntries(bool masterOK) {
   actVel_ = actVelLocal_;
 
   // Update Asyn
-  encPosAct_->refreshParamRT(0);
-  encVelAct_->refreshParamRT(0);
+  if (asynInitOk_ && encPosAct_) {
+    encPosAct_->refreshParamRT(0);
+  }
+  if (asynInitOk_ && encVelAct_) {
+    encVelAct_->refreshParamRT(0);
+  }
 
   // Only set axis error id if primary
   if(encLocalErrorId_ && isPrimary()) {
@@ -758,7 +808,7 @@ double ecmcEncoder::readEntries(bool masterOK) {
   }
   
   // update error id asyn param
-  if(encLocalErrorId_ != encLocalErrorIdOld_) {    
+  if (asynInitOk_ && encErrId_ && (encLocalErrorId_ != encLocalErrorIdOld_)) {    
     encErrId_->refreshParamRT(1);
   }
 
@@ -943,7 +993,7 @@ int ecmcEncoder::validate() {
     }
   }
 
-  if (encPosAct_ == NULL) {
+  if (asynInitOk_ && encPosAct_ == NULL) {
     LOGERR(
       "%s/%s:%d: ERROR (axis %d): Encoder asyn param object NULL (encPosAct_) for encoder %d (0x%x).\n",
       __FILE__,
@@ -959,7 +1009,7 @@ int ecmcEncoder::validate() {
                       ERROR_ENC_ASYN_PARAM_NULL);
   }
 
-  if (encVelAct_ == NULL) {
+  if (asynInitOk_ && encVelAct_ == NULL) {
     LOGERR(
       "%s/%s:%d: ERROR (axis %d): Encoder asyn param object NULL (encVelAct_) for encoder %d (0x%x).\n",
       __FILE__,
@@ -1003,7 +1053,6 @@ int ecmcEncoder::countTrailingZerosInMask(uint64_t mask) {
 int ecmcEncoder::countBitWidthOfMask(uint64_t mask, int trailZeros) {
   // Shift away trailing zeros
   mask = mask >> trailZeros;
-  uint64_t maskNoTrailingZeros = mask;
 
   // Count all ones in a "row" (without zeros)
   int ones = 0;
@@ -1014,7 +1063,7 @@ int ecmcEncoder::countBitWidthOfMask(uint64_t mask, int trailZeros) {
   }
 
   // ensure no more ones in more significant part (must be a cont. ones)
-  if (maskNoTrailingZeros > (pow(2, ones) - 1)) {
+  if (mask != 0) {
     return -1;
   }
   return ones;

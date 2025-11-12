@@ -16,7 +16,11 @@
 #include <stdio.h>
 #include "string.h"
 #include "ecmcDefinitions.h"
+#ifndef ECMC_TEST_STUBS
 #include "ecmcAsynDataItem.h"
+#else
+class ecmcAsynDataItem;
+#endif
 
 typedef struct {
   bool enableCmd          : 1;
