@@ -111,6 +111,9 @@ int ecmcDriveBase::setVelSet(double vel) {
 }
 
 int ecmcDriveBase::setCspPosSet(double posEng) {
+  if (!cspEnc_) {
+    return 0;
+  }
   cspPosSet_    = posEng; // Engineering unit
   cspRawActPos_ = cspEnc_->getRawPosRegister();
   cspActPos_    = cspEnc_->getActPos();
@@ -934,5 +937,3 @@ void ecmcDriveBase::setCspEnc(ecmcEncoder * enc) {
 int ecmcDriveBase::hwReady() {
   return 1;
 }
-
-

@@ -450,7 +450,7 @@ void cyclic_task(void *usr) {
 int ecmcInitThread(void) {
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   LOGINFO("\nECMC Initializes.............\n");
-  LOGINFO("ESS Open Source EtherCAT Motion Control Epics Module");
+  LOGINFO("Open Source EtherCAT Motion Control Module for EPICS");
   LOGINFO("\nMode: Configuration\n");
 
   appModeStat   = ECMC_MODE_CONFIG;

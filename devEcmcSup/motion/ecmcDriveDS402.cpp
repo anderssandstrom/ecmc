@@ -241,6 +241,7 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
     controlWord_           = 0;
     cycleCounter_          = 0;
     enableAmpCmd_          = false;
+    data_->status_.statusWord_.enable = false;
     data_->control_.controlWord_.enableCmd = false;
     setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_DRV_DS402_FAULT_STATE);
     break;

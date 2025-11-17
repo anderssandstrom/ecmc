@@ -244,7 +244,7 @@ void ecmcPVTController::execute() {
 
   // reset trigger
   if(nextTime_ > triggerEndTime_+ triggerDuration_) {
-    if(!triggerValidatedOK_) {
+    if(triggerValidatedOK_) {
       writeEcEntryValue(triggerEcEntryIndex_,0);
     }
     return; // Done
@@ -266,7 +266,7 @@ void ecmcPVTController::execute() {
 
   if( nextTime_ > (nextTriggerTime + halfSampleTime_) && nextTime_ <= (nextTriggerTime + triggerDuration_)) {
     // here we want to also latch data
-    if(!triggerValidatedOK_) {
+    if(triggerValidatedOK_) {
       writeEcEntryValue(triggerEcEntryIndex_,1);
     }
 
@@ -282,7 +282,7 @@ void ecmcPVTController::execute() {
     }
     newTrg_ = false;
   } else {
-    if(!triggerValidatedOK_) {
+    if(triggerValidatedOK_) {
       writeEcEntryValue(triggerEcEntryIndex_,0);
     }
     newTrg_ = true; // trigger data latch at next pulse
@@ -572,4 +572,3 @@ void ecmcPVTController::initAsyn() {
   printf("SUCCESS!");
 
 }
-
