@@ -33,6 +33,7 @@ void ecmcTrajectoryTrapetz::initVars() {
   localCurrentPositionSetpoint_ = 0;
   localBusy_                    = false;
   targetPositionLocal_          = 0;
+  invSampleTime_                = sampleTime_ > 0 ? 1.0 / sampleTime_ : 0.0;
 }
 
 void ecmcTrajectoryTrapetz::initTraj() {
@@ -100,7 +101,7 @@ double ecmcTrajectoryTrapetz::internalTraj(double *actVelocity,
   *actVelocity = 0;
 
   if (localBusy_) {
-    *actVelocity = thisStepSize_ / sampleTime_;
+    *actVelocity = thisStepSize_ * invSampleTime_;
   }
 
   motionDirection nextDir = checkDirection(localCurrentPositionSetpoint_,
@@ -133,8 +134,8 @@ double ecmcTrajectoryTrapetz::internalTraj(double *actVelocity,
   *trajBusy                     = localBusy_;
   prevStepSize_                 = thisStepSize_;
   localCurrentPositionSetpoint_ = posSetTemp;
-  *actAcceleration              = (currentVelocitySetpoint_ - *actVelocity) /
-                                  sampleTime_;
+  *actAcceleration              = (currentVelocitySetpoint_ - *actVelocity) *
+                                  invSampleTime_;
 
   return posSetTemp;
 }
@@ -302,7 +303,7 @@ double ecmcTrajectoryTrapetz::moveStop(stopMode stopMode,
     thisStepSize_ = -positionStep;
   }
 
-  *velocity = (posSetTemp - currSetpoint) / sampleTime_;
+  *velocity = (posSetTemp - currSetpoint) * invSampleTime_;
 
   if ((nDir == ECMC_DIR_STANDSTILL) || (positionStep <= 0)) {
     *stopped  = true;

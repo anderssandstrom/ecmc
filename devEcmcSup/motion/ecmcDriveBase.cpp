@@ -32,6 +32,8 @@ ecmcDriveBase::ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
   data_->control_.drvMode = ECMC_DRV_MODE_NONE;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   asynPortDriver_ = asynPortDriver;
+  invSampleTime_ = data_->status_.sampleTime > 0 ? 1.0 / data_->status_.sampleTime
+                                                 : 0.0;
 
   if (!data_) {
     LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
@@ -40,8 +42,10 @@ ecmcDriveBase::ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
 
   initAsyn();
 
-  stateMachineTimeoutCycles_ = ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME /
-                               data_->status_.sampleTime;
+  stateMachineTimeoutCycles_ = invSampleTime_ > 0
+                                 ? static_cast<int>(ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME *
+                                                    invSampleTime_)
+                                 : ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME;
 }
 
 void ecmcDriveBase::initVars() {
@@ -50,6 +54,7 @@ void ecmcDriveBase::initVars() {
   scaleNum_                  = 0;
   scaleDenom_                = 0;
   velSet_                    = 0;
+  invSampleTime_             = 0;
   enableBrake_               = 0;
   enableReduceTorque_        = 0;
   controlWord_               = 0;
@@ -921,7 +926,12 @@ void ecmcDriveBase::refreshAsyn() {
 }
 
 int ecmcDriveBase::setStateMachineTimeout(double seconds) {
-  stateMachineTimeoutCycles_ = seconds / data_->status_.sampleTime;
+  if (invSampleTime_ == 0.0 && data_->status_.sampleTime > 0) {
+    invSampleTime_ = 1.0 / data_->status_.sampleTime;
+  }
+  stateMachineTimeoutCycles_ = invSampleTime_ > 0
+                                 ? static_cast<int>(seconds * invSampleTime_)
+                                 : stateMachineTimeoutCycles_;
   return 0;
 }
 

@@ -16,9 +16,7 @@
 
 #include "ecmcEthercat.h"
 #include "ecmcEc.h"
-#include "ecmcEcPdo.h"
 #include "ecmcEcSlave.h"
-#include "ecmcEcSyncManager.h"
 #include "ecmcEcEntry.h"
 
 #include "ecmcGlobalsExtern.h"

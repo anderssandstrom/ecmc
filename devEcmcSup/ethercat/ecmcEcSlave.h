@@ -25,7 +25,6 @@
 #include "ecmcAsynDataItem.h"
 #include "ecmcEcEntry.h"
 #include "ecmcEcMemMap.h"
-#include "ecmcEcSyncManager.h"
 #include "ecmcEcSDO.h"
 #include "ecmcEcAsyncSDO.h"
 #include "ecmcEcDomain.h"
@@ -87,7 +86,6 @@ public:
   ~ecmcEcSlave();
   int                addSyncManager(ec_direction_t direction,
                                     uint8_t        syncMangerIndex);
-  ecmcEcSyncManager* getSyncManager(int syncManagerIndex);
   int                getSlaveInfo(mcu_ec_slave_info_light *info);
   int                getEntryCount();
   ecmcEcEntry*       getEntry(int entryIndex);
@@ -192,24 +190,28 @@ public:
 private:
   void               initVars();
   int                initAsyn();
-  int                appendEntryToList(ecmcEcEntry *entry,
-                                       bool         useInRealTime);
-  ecmcEcSyncManager* findSyncMan(uint8_t syncMangerIndex);
+  struct SyncManager {
+    ec_direction_t direction;
+    uint8_t        index;
+    std::vector<ecmcEcEntry *> entries;
+    std::vector<std::string>   entryIds;
+  };
+  SyncManager* findSyncManNew(uint8_t syncMangerIndex);
+  ecmcEcEntry* findEntryById(const std::string& id);
+  ecmcEcEntry* addEntryToNew(uint8_t        syncMangerIndex,
+                             uint16_t       pdoIndex,
+                             uint16_t       entryIndex,
+                             uint8_t        entrySubIndex,
+                             ecmcEcDataType dt,
+                             std::string    id,
+                             int            useInRealTime,
+                             int           *errorCode);
   ec_master_t *master_;     // EtherCAT master
   uint16_t alias_;          // Slave alias.
   int32_t slavePosition_;   // Slave position.
   uint32_t vendorId_;       // Expected vendor ID.
   uint32_t productCode_;    // Expected product code.
   ec_slave_config_t *slaveConfig_;
-  ecmcEcSyncManager *syncManagerArray_[EC_MAX_SYNC_MANAGERS];
-  ecmcEcEntry *entryList_[EC_MAX_ENTRIES];
-  ecmcEcEntry *entryListInUse_[EC_MAX_ENTRIES];
-  uint32_t entryCounter_;
-  uint32_t entryCounterInUse_;
-  int pdosArrayIndex_;
-  int syncManArrayIndex_;
-  int syncManCounter_;
-  int pdosInSMCount_;
   ec_slave_config_state_t slaveState_;
   ec_slave_config_state_t slaveStateOld_;
 
@@ -221,6 +223,12 @@ private:
   ecmcAsynPortDriver *asynPortDriver_;
   ecmcAsynDataItem *slaveAsynParams_[ECMC_ASYN_EC_SLAVE_PAR_COUNT];
   int masterId_;
+  std::vector<SyncManager> newSyncManagers_;
+  std::vector<std::pair<std::string, ecmcEcEntry *>> entryLookup_;
+  bool entryLookupSorted_ = false;
+  std::vector<ecmcEcEntry *> flatEntries_;
+  std::vector<std::string>    flatEntryIds_;
+  std::vector<ecmcEcEntry *> extraEntries_;
 
   // bit 0 online          : The slave is online.
   // bit 1 int operational : The slave was brought into  OP state

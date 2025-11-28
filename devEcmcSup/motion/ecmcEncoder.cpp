@@ -56,6 +56,7 @@ ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
   data_           = axisData;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   sampleTimeMs_ = sampleTime * 1000;
+  invSampleTime_ = sampleTime > 0 ? 1.0 / sampleTime : 0.0;
   delayTimeS_ = 2 * sampleTime;  // 2 cycles delay as default
   
 
@@ -113,6 +114,7 @@ void ecmcEncoder::initVars() {
   actPos_                 = 0;
   actPosOld_              = 0;
   sampleTimeMs_           = 1;
+  invSampleTime_          = 0;
   actVel_                 = 0;
   actPosLocal_            = 0;
   actVelLocal_            = 0;
@@ -579,7 +581,10 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   if(enableVelocityFilter_) {
     actVelLocal_ = velocityFilter_->getFiltVelo(distTraveled);
   } else {
-    actVelLocal_ = distTraveled/data_->status_.sampleTime;
+    if (invSampleTime_ == 0.0 && data_->status_.sampleTime > 0) {
+      invSampleTime_ = 1.0 / data_->status_.sampleTime;
+    }
+    actVelLocal_ = distTraveled * invSampleTime_;
   }
   return 0;
 }

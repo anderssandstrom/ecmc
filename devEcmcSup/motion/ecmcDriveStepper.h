@@ -18,7 +18,6 @@
 #include "ecmcDefinitions.h"
 #include "ecmcError.h"
 #include "ecmcEcEntry.h"
-#include "ecmcEcPdo.h"
 #include "ecmcDriveBase.h"
 
 class ecmcDriveStepper : public ecmcDriveBase {

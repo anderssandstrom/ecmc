@@ -31,7 +31,6 @@
 #ifndef ECMC_TEST_STUBS
 #include "ecmcEcEntry.h"
 #include "ecmcEcEntryLink.h"
-#include "ecmcEcPdo.h"
 #include "ecmcAsynPortDriver.h"
 #endif
 #include "ecmcFilter.h"
@@ -194,6 +193,7 @@ protected:
   double actPosLocal_;
   double actPosOld_;
   double sampleTimeMs_;
+  double invSampleTime_;
   double actVel_;
   double actVelLocal_;
   bool homed_;

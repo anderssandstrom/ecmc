@@ -1089,8 +1089,8 @@ int ecSetDomainFailedCyclesLimit(int cycles);
  * Resets error on the following object types:\n
  * 1. ecmcEc().\n
  * 2. ecmcEcSlave().\n
- * 3. ecmcEcSyncManager().\n
- * 4. ecmcEcPdo().\n
+ * 3. Sync manager is handled internally in ecmcEcSlave.\n
+ * 4. PDO handling is internal in ecmcEcSlave.\n
  * 5. ecmcEcSDO().\n
  * 6. ecmcEcEntry().\n
  *
@@ -1107,7 +1107,7 @@ int ecResetError();
  * 1. ecmcEc().\n
  * 2. ecmcEcSlave().\n
  * 3. ecmcEcSyncManager().\n
- * 4. ecmcEcPdo().\n
+ * 4. PDO handling is internal in ecmcEcSlave.\n
  * 5. ecmcEcSDO().\n
  * 6. ecmcEcEntry().\n
  *

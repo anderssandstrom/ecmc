@@ -20,7 +20,6 @@
 #include "ecmcError.h"
 #include "ecmcEcEntry.h"
 #include "ecmcEcEntryLink.h"
-#include "ecmcEcPdo.h"
 #include "ecmcAxisData.h"
 #include "ecmcEncoder.h"
 
@@ -97,6 +96,7 @@ protected:
   double scaleNum_;
   double scaleDenom_;
   double velSet_;
+  double invSampleTime_;
   double cspPosSet_;
   uint64_t controlWord_;
   uint64_t statusWord_;

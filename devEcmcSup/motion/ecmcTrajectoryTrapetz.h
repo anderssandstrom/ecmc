@@ -114,6 +114,7 @@ private:
   double stepStableTol_;
   double localCurrentPositionSetpoint_;
   double targetPositionLocal_;
+  double invSampleTime_;
   bool localBusy_;
 };
 #endif  // ifndef SRC_ECMCTRAJECTORYTRAPETZ_H_
