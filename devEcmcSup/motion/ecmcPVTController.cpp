@@ -101,6 +101,7 @@ void ecmcPVTController::execute() {
   int axesAtStartPosition = 0;
   bool seqDone = 0;
   int enabledState = 0;
+
   switch(state_) {
     case  ECMC_PVT_IDLE:
       busy_ = 0;
@@ -241,6 +242,9 @@ void ecmcPVTController::execute() {
   stateOld_=state_;
 
   //#### triggering below (soft and hw) #####
+  if(!busy_) {
+    return;
+  }
 
   // reset trigger
   if(nextTime_ > triggerEndTime_+ triggerDuration_) {

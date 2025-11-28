@@ -478,6 +478,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
    data_.status_.cycleCounter++;
 
   // Update asyn parameters
+  refreshStatusWd();
   refreshAsynParamRT(ECMC_ASYN_AX_SET_POS_ID, 0);
   refreshAsynParamRT(ECMC_ASYN_AX_ACT_POS_ID, 0);
   refreshAsynParamRT(ECMC_ASYN_AX_ACT_VEL_ID, 0);
@@ -762,10 +763,6 @@ ecmcEncoder * ecmcAxisBase::getEnc(int encIndex, int *error) {
 ecmcEncoder * ecmcAxisBase::getConfigEnc() {
   return encArray_[data_.control_.cfgEncIndex];
 }
-
-// ecmcEncoder * ecmcAxisBase::getHomeEnc() {
-//  return encArray_[data_.control_.homeEncIndex];
-// }
 
 ecmcEncoder * ecmcAxisBase::getPrimEnc() {
   return encArray_[data_.control_.primaryEncIndex];

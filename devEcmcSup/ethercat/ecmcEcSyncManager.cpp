@@ -56,30 +56,24 @@ ecmcEcSyncManager::ecmcEcSyncManager(ecmcAsynPortDriver *asynPortDriver,
 void ecmcEcSyncManager::initVars() {
   errorReset();
 
-  for (int i = 0; i < EC_MAX_PDOS; i++) {
-    pdoArray_[i] = NULL;
-  }
   asynPortDriver_  = NULL;
   masterId_        = -1;
   slaveId_         = -1;
   direction_       = EC_DIR_INPUT;
   syncMangerIndex_ = 0;
-  pdoCounter_      = 0;
   slaveConfig_     = NULL;
   domain_          = NULL;
 }
 
 ecmcEcSyncManager::~ecmcEcSyncManager() {
-  for (int i = 0; i < EC_MAX_PDOS; i++) {
-    if (pdoArray_[i] != NULL) {
-      delete pdoArray_[i];
-    }
-    pdoArray_[i] = NULL;
+  for (size_t i = 0; i < pdos_.size(); i++) {
+    delete pdos_[i];
   }
+  pdos_.clear();
 }
 
 int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
-  if (pdoCounter_ >= EC_MAX_PDOS - 1) {
+  if (pdos_.size() >= static_cast<size_t>(EC_MAX_PDOS - 1)) {
     LOGERR("%s/%s:%d: ERROR: PDO array full (0x%x).\n",
            __FILE__,
            __FUNCTION__,
@@ -90,15 +84,14 @@ int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
                       __LINE__,
                       ERROR_EC_SM_PDO_ARRAY_FULL);
   }
-  pdoArray_[pdoCounter_] = new ecmcEcPdo(asynPortDriver_,
-                                         masterId_,
-                                         slaveId_,
-                                         domain_,
-                                         slaveConfig_,
-                                         syncMangerIndex_,
-                                         pdoIndex,
-                                         direction_);
-  pdoCounter_++;
+  pdos_.push_back(new ecmcEcPdo(asynPortDriver_,
+                                masterId_,
+                                slaveId_,
+                                domain_,
+                                slaveConfig_,
+                                syncMangerIndex_,
+                                pdoIndex,
+                                direction_));
   return 0;
 }
 
@@ -115,11 +108,14 @@ ecmcEcPdo * ecmcEcSyncManager::getPdo(int index) {
                ERROR_EC_SM_PDO_INDEX_OUT_OF_RANGE);
     return NULL;
   }
-  return pdoArray_[index];
+  if (index < 0 || static_cast<size_t>(index) >= pdos_.size()) {
+    return NULL;
+  }
+  return pdos_[index];
 }
 
 int ecmcEcSyncManager::getPdoCount() {
-  return pdoCounter_;
+  return static_cast<int>(pdos_.size());
 }
 
 int ecmcEcSyncManager::getInfo(ec_sync_info_t *info) {
@@ -137,7 +133,7 @@ int ecmcEcSyncManager::getInfo(ec_sync_info_t *info) {
 
   info->dir           = direction_;
   info->index         = syncMangerIndex_;
-  info->n_pdos        = pdoCounter_;
+  info->n_pdos        = static_cast<unsigned int>(pdos_.size());
   info->pdos          = NULL;
   info->watchdog_mode = EC_WD_DEFAULT;
   return 0;
@@ -170,7 +166,7 @@ ecmcEcEntry * ecmcEcSyncManager::addEntry(
       *errorCode = err;
       return NULL;
     }
-    pdo = pdoArray_[pdoCounter_ - 1];  // Last added sync manager
+    pdo = pdos_.back();  // Last added sync manager
   }
 
   ecmcEcEntry *entry = pdo->addEntry(entryIndex,
@@ -189,11 +185,10 @@ ecmcEcEntry * ecmcEcSyncManager::addEntry(
 }
 
 ecmcEcPdo * ecmcEcSyncManager::findPdo(uint16_t pdoIndex) {
-  for (int i = 0; i < pdoCounter_; i++) {
-    if (pdoArray_[i] != NULL) {
-      if (pdoArray_[i]->getPdoIndex() == pdoIndex) {
-        return pdoArray_[i];
-      }
+  for (size_t i = 0; i < pdos_.size(); i++) {
+    ecmcEcPdo *pdo = pdos_[i];
+    if (pdo && pdo->getPdoIndex() == pdoIndex) {
+      return pdo;
     }
   }
   return NULL;
@@ -202,13 +197,14 @@ ecmcEcPdo * ecmcEcSyncManager::findPdo(uint16_t pdoIndex) {
 ecmcEcEntry * ecmcEcSyncManager::findEntry(std::string id) {
   ecmcEcEntry *temp = NULL;
 
-  if (pdoCounter_ == 0) {
+  if (pdos_.empty()) {
     return temp;
   }
 
-  for (int i = 0; i < pdoCounter_; i++) {
-    if (pdoArray_[i]) {
-      temp = pdoArray_[i]->findEntry(id);
+  for (size_t i = 0; i < pdos_.size(); i++) {
+    ecmcEcPdo *pdo = pdos_[i];
+    if (pdo) {
+      temp = pdo->findEntry(id);
 
       if (temp) {
         return temp;

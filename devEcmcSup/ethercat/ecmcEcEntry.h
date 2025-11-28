@@ -128,6 +128,75 @@ public:
 protected:
   void                  setDomainAdr();
   int                   initAsyn();
+
+private:
+  using TransferFunc = void (ecmcEcEntry::*)();
+  struct TransferConfig {
+    TransferFunc input;
+    TransferFunc output;
+    size_t       usedSize;
+    bool         supportInt32;
+    bool         supportUInt32Digital;
+    bool         supportFloat64;
+    bool         supportInt64;
+  };
+  static const TransferConfig& getTransferConfig(ecmcEcDataType dt);
+  void         configureTransferFunctions();
+  void         noopTransfer();
+  void         inputNone();
+  void         outputNone();
+  void         inputBit1();
+  void         inputBit2();
+  void         inputBit3();
+  void         inputBit4();
+  void         inputU8();
+  void         inputS8();
+  void         inputS8ToU8();
+  void         inputU16();
+  void         inputS16();
+  void         inputS16ToU16();
+  void         inputU32();
+  void         inputS32();
+  void         inputS32ToU32();
+#ifdef EC_READ_U64
+  void         inputU64();
+#endif
+#ifdef EC_READ_S64
+  void         inputS64();
+  void         inputS64ToU64();
+#endif
+#ifdef EC_READ_REAL
+  void         inputF32();
+#endif
+#ifdef EC_READ_LREAL
+  void         inputF64();
+#endif
+  void         outputBit1();
+  void         outputBit2();
+  void         outputBit3();
+  void         outputBit4();
+  void         outputU8();
+  void         outputS8();
+  void         outputS8ToU8();
+  void         outputU16();
+  void         outputS16();
+  void         outputS16ToU16();
+  void         outputU32();
+  void         outputS32();
+  void         outputS32ToU32();
+#ifdef EC_WRITE_U64
+  void         outputU64();
+#endif
+#ifdef EC_WRITE_S64
+  void         outputS64();
+  void         outputS64ToU64();
+#endif
+#ifdef EC_WRITE_REAL
+  void         outputF32();
+#endif
+#ifdef EC_WRITE_LREAL
+  void         outputF64();
+#endif
   uint8_t *domainAdr_;
   uint8_t *adr_;
   uint16_t entryIndex_;
@@ -160,5 +229,7 @@ protected:
   float *float32Ptr_;
   double *float64Ptr_;
   size_t usedSizeBytes_;
+  TransferFunc inputTransfer_;
+  TransferFunc outputTransfer_;
 };
 #endif  /* ECMCECENTRY_H_ */
