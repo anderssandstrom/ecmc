@@ -18,6 +18,7 @@
 #include "ecmcError.h"
 #include "ecmcTrajectoryTrapetz.h"
 #include "ecmcAxisData.h"
+#include "ecmcEncoder.h"
 
 #define ECMC_MON_SWITCHES_FILTER_CYCLES 5
 
