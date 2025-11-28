@@ -48,7 +48,6 @@ public:
   int  updateOutProcessImage();
   int  validate();
 
-private:
   using DataTransferFunc = void (ecmcEcData::*)();
   struct DataTransferConfig {
     DataTransferFunc input;
@@ -56,6 +55,8 @@ private:
     size_t           usedSize;
   };
   static const DataTransferConfig& getTransferConfig(ecmcEcDataType dt);
+
+private:
   void initVars();
   void configureTransferFunctions();
   void noopTransfer();

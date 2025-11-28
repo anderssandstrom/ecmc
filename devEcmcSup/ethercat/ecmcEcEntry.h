@@ -124,11 +124,6 @@ public:
   virtual int           getDomainOK();
   virtual ecmcEcDomain* getDomain();
   ec_direction_t        getDirection();
-
-protected:
-  void                  setDomainAdr();
-  int                   initAsyn();
-
   using TransferFunc = void (ecmcEcEntry::*)();
   struct TransferConfig {
     TransferFunc input;
@@ -140,6 +135,11 @@ protected:
     bool         supportInt64;
   };
   static const TransferConfig& getTransferConfig(ecmcEcDataType dt);
+
+protected:
+  void                  setDomainAdr();
+  int                   initAsyn();
+
   void         configureTransferFunctions();
   void         noopTransfer();
   void         inputNone();
