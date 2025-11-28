@@ -129,7 +129,6 @@ protected:
   void                  setDomainAdr();
   int                   initAsyn();
 
-private:
   using TransferFunc = void (ecmcEcEntry::*)();
   struct TransferConfig {
     TransferFunc input;
