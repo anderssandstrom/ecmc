@@ -120,3 +120,7 @@ include $(TOP)/configure/RULES
 gitversion.c:
 	@$(RM) $@
 	@sh $(TOP)/tools/gitversion.sh $@
+
+.PHONY: smoke
+smoke:
+	@./tests/smoke/run.sh

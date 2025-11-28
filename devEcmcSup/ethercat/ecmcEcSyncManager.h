@@ -21,6 +21,7 @@
 #include "ecmcOctetIF.h"  // Logging macros
 #include "ecmcEcEntry.h"
 #include "ecmcEcPdo.h"
+#include <vector>
 
 // ECSYNCMANAGER ERRORS
 #define ERROR_EC_SM_PDO_ARRAY_FULL 0x25000
@@ -59,10 +60,9 @@ public:
 private:
   void         initVars();
   ecmcEcPdo*   findPdo(uint16_t pdoIndex);
-  ecmcEcPdo *pdoArray_[EC_MAX_PDOS];
+  std::vector<ecmcEcPdo *> pdos_;
   ec_direction_t direction_;
   uint8_t syncMangerIndex_;
-  int pdoCounter_;
   ec_slave_config_t *slaveConfig_;
   ecmcEcDomain *domain_;
   int masterId_;

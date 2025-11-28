@@ -17,6 +17,87 @@
 #include <string.h>
 #include "ecmcErrorsList.h"
 
+namespace {
+using DataConfig = ecmcEcData::DataTransferConfig;
+
+constexpr DataConfig makeDataConfig(ecmcEcData::DataTransferFunc input,
+                                    ecmcEcData::DataTransferFunc output,
+                                    size_t                       size) {
+  return DataConfig{input, output, size};
+}
+} // namespace
+
+const ecmcEcData::DataTransferConfig&
+ecmcEcData::getTransferConfig(ecmcEcDataType dt) {
+  static const DataConfig configs[] = {
+    /* ECMC_EC_NONE */ makeDataConfig(&ecmcEcData::noopTransfer,
+                                      &ecmcEcData::noopTransfer,
+                                      0),
+    /* ECMC_EC_B1 */ makeDataConfig(&ecmcEcData::inputBit1,
+                                    &ecmcEcData::outputBit1,
+                                    1),
+    /* ECMC_EC_B2 */ makeDataConfig(&ecmcEcData::inputBit2,
+                                    &ecmcEcData::outputBit2,
+                                    1),
+    /* ECMC_EC_B3 */ makeDataConfig(&ecmcEcData::inputBit3,
+                                    &ecmcEcData::outputBit3,
+                                    1),
+    /* ECMC_EC_B4 */ makeDataConfig(&ecmcEcData::inputBit4,
+                                    &ecmcEcData::outputBit4,
+                                    1),
+    /* ECMC_EC_U8 */ makeDataConfig(&ecmcEcData::inputU8,
+                                    &ecmcEcData::outputU8,
+                                    1),
+    /* ECMC_EC_S8 */ makeDataConfig(&ecmcEcData::inputS8,
+                                    &ecmcEcData::outputS8,
+                                    1),
+    /* ECMC_EC_U16 */ makeDataConfig(&ecmcEcData::inputU16,
+                                     &ecmcEcData::outputU16,
+                                     2),
+    /* ECMC_EC_S16 */ makeDataConfig(&ecmcEcData::inputS16,
+                                     &ecmcEcData::outputS16,
+                                     2),
+    /* ECMC_EC_U32 */ makeDataConfig(&ecmcEcData::inputU32,
+                                     &ecmcEcData::outputU32,
+                                     4),
+    /* ECMC_EC_S32 */ makeDataConfig(&ecmcEcData::inputS32,
+                                     &ecmcEcData::outputS32,
+                                     4),
+    /* ECMC_EC_U64 */ makeDataConfig(&ecmcEcData::inputU64,
+                                     &ecmcEcData::outputU64,
+                                     8),
+    /* ECMC_EC_S64 */ makeDataConfig(&ecmcEcData::inputS64,
+                                     &ecmcEcData::outputS64,
+                                     8),
+    /* ECMC_EC_F32 */ makeDataConfig(&ecmcEcData::inputF32,
+                                     &ecmcEcData::outputF32,
+                                     4),
+    /* ECMC_EC_F64 */ makeDataConfig(&ecmcEcData::inputF64,
+                                     &ecmcEcData::outputF64,
+                                     8),
+    /* ECMC_EC_S8_TO_U8 */ makeDataConfig(&ecmcEcData::noopTransfer,
+                                          &ecmcEcData::noopTransfer,
+                                          0),
+    /* ECMC_EC_S16_TO_U16 */ makeDataConfig(&ecmcEcData::noopTransfer,
+                                            &ecmcEcData::noopTransfer,
+                                            0),
+    /* ECMC_EC_S32_TO_U32 */ makeDataConfig(&ecmcEcData::noopTransfer,
+                                            &ecmcEcData::noopTransfer,
+                                            0),
+    /* ECMC_EC_S64_TO_U64 */ makeDataConfig(&ecmcEcData::noopTransfer,
+                                            &ecmcEcData::noopTransfer,
+                                            0)
+  };
+
+  size_t index = static_cast<size_t>(dt);
+
+  if (index >= sizeof(configs) / sizeof(configs[0])) {
+    return configs[ECMC_EC_NONE];
+  }
+
+  return configs[index];
+}
+
 ecmcEcData::ecmcEcData(ecmcAsynPortDriver *asynPortDriver,
                        int                 masterId,
                        int                 slaveId,
@@ -40,6 +121,7 @@ ecmcEcData::ecmcEcData(ecmcAsynPortDriver *asynPortDriver,
   entryByteOffset_ = entryByteOffset;
   entryBitOffset_  = entryBitOffset;
   byteSize_        = getEcDataTypeByteSize(dataType_);
+  configureTransferFunctions();
 }
 
 void ecmcEcData::initVars() {
@@ -48,153 +130,226 @@ void ecmcEcData::initVars() {
   entryBitOffset_  = 0;
   byteSize_        = 0;
   direction_       = EC_DIR_INVALID;
+  inputTransfer_   = &ecmcEcData::noopTransfer;
+  outputTransfer_  = &ecmcEcData::noopTransfer;
 }
 
 ecmcEcData::~ecmcEcData() {}
 
+int ecmcEcData::setUpdateInRealtime(int update) {
+  ecmcEcEntry::setUpdateInRealtime(update);
+  configureTransferFunctions();
+  return 0;
+}
+
 int ecmcEcData::updateInputProcessImage() {
-  if (direction_ != EC_DIR_INPUT) {
-    return 0;
-  }
-
-  buffer_ = 0;
-
-  // Read data from ethercat memory area
-  switch (dataType_) {
-  case ECMC_EC_B1:
-    *uint8Ptr_ = ecmcEcData::read_1_bit_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_B2:
-    *uint8Ptr_ = ecmcEcData::read_2_bit_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_B3:
-    *uint8Ptr_ = ecmcEcData::read_3_bit_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_B4:
-    *uint8Ptr_ = ecmcEcData::read_4_bit_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_U8:
-    *uint8Ptr_ = ecmcEcData::read_uint8_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_S8:
-    *int8Ptr_ = ecmcEcData::read_int8_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_U16:
-    *uint16Ptr_ = ecmcEcData::read_uint16_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_S16:
-    *int16Ptr_ = ecmcEcData::read_int16_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_U32:
-    *uint32Ptr_ = ecmcEcData::read_uint32_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_S32:
-    *int32Ptr_ = ecmcEcData::read_int32_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_U64:
-    *uint64Ptr_ = ecmcEcData::read_uint64_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_S64:
-    *int64Ptr_ = ecmcEcData::read_int64_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_F32:
-    *float32Ptr_ = ecmcEcData::read_float_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  case ECMC_EC_F64:
-    *float64Ptr_ = ecmcEcData::read_double_offset(adr_, 0, entryBitOffset_);
-    break;
-
-  default:
+  if (inputTransfer_ == &ecmcEcData::noopTransfer &&
+      direction_     == EC_DIR_INPUT &&
+      updateInRealTime_) {
     return ERROR_EC_ENTRY_DATATYPE_INVALID;
   }
 
-  updateAsyn(0);
+  (this->*inputTransfer_)();
   return 0;
 }
 
 int ecmcEcData::updateOutProcessImage() {
-  if (direction_ != EC_DIR_OUTPUT) {
-    return 0;
-  }
-
-  // Write data to ethercat memory area
-  // No endians check...
-  switch (dataType_) {
-  case ECMC_EC_B1:
-    ecmcEcData::write_1_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
-    break;
-
-  case ECMC_EC_B2:
-    ecmcEcData::write_2_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
-    break;
-
-  case ECMC_EC_B3:
-    ecmcEcData::write_3_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
-    break;
-
-  case ECMC_EC_B4:
-    ecmcEcData::write_4_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
-    break;
-
-  case ECMC_EC_U8:
-    ecmcEcData::write_uint8_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
-    break;
-
-  case ECMC_EC_S8:
-    ecmcEcData::write_int8_offset(adr_, 0, entryBitOffset_, *int8Ptr_);
-    break;
-
-  case ECMC_EC_U16:
-    ecmcEcData::write_uint16_offset(adr_, 0, entryBitOffset_, *uint16Ptr_);
-    break;
-
-  case ECMC_EC_S16:
-    ecmcEcData::write_int16_offset(adr_, 0, entryBitOffset_, *int16Ptr_);
-    break;
-
-  case ECMC_EC_U32:
-    ecmcEcData::write_uint32_offset(adr_, 0, entryBitOffset_, *uint32Ptr_);
-    break;
-
-  case ECMC_EC_S32:
-    ecmcEcData::write_int32_offset(adr_, 0, entryBitOffset_, *int32Ptr_);
-    break;
-
-  case ECMC_EC_U64:
-    ecmcEcData::write_uint64_offset(adr_, 0, entryBitOffset_, *uint64Ptr_);
-    break;
-
-  case ECMC_EC_S64:
-    ecmcEcData::write_int64_offset(adr_, 0, entryBitOffset_, *int64Ptr_);
-    break;
-
-  case ECMC_EC_F32:
-    ecmcEcData::write_float_offset(adr_, 0, entryBitOffset_, *float32Ptr_);
-    break;
-
-  case ECMC_EC_F64:
-    ecmcEcData::write_double_offset(adr_, 0, entryBitOffset_, *float64Ptr_);
-    break;
-
-  default:
+  if (outputTransfer_ == &ecmcEcData::noopTransfer &&
+      direction_      == EC_DIR_OUTPUT &&
+      updateInRealTime_) {
     return ERROR_EC_ENTRY_DATATYPE_INVALID;
   }
-  updateAsyn(0);
 
+  (this->*outputTransfer_)();
   return 0;
+}
+
+void ecmcEcData::configureTransferFunctions() {
+  if (!updateInRealTime_) {
+    inputTransfer_  = &ecmcEcData::noopTransfer;
+    outputTransfer_ = &ecmcEcData::noopTransfer;
+    return;
+  }
+
+  const DataTransferConfig& config = getTransferConfig(dataType_);
+
+  if (direction_ == EC_DIR_INPUT) {
+    inputTransfer_ = config.input;
+    if (inputTransfer_ == &ecmcEcData::noopTransfer &&
+        dataType_     != ECMC_EC_NONE) {
+      setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                 ERROR_EC_ENTRY_DATATYPE_INVALID);
+    }
+  } else {
+    inputTransfer_ = &ecmcEcData::noopTransfer;
+  }
+
+  if (direction_ == EC_DIR_OUTPUT) {
+    outputTransfer_ = config.output;
+    if (outputTransfer_ == &ecmcEcData::noopTransfer &&
+        dataType_      != ECMC_EC_NONE) {
+      setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                 ERROR_EC_ENTRY_DATATYPE_INVALID);
+    }
+  } else {
+    outputTransfer_ = &ecmcEcData::noopTransfer;
+  }
+}
+
+void ecmcEcData::noopTransfer() {}
+
+void ecmcEcData::inputBit1() {
+  buffer_ = 0;
+  *uint8Ptr_ = ecmcEcData::read_1_bit_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputBit2() {
+  buffer_ = 0;
+  *uint8Ptr_ = ecmcEcData::read_2_bit_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputBit3() {
+  buffer_ = 0;
+  *uint8Ptr_ = ecmcEcData::read_3_bit_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputBit4() {
+  buffer_ = 0;
+  *uint8Ptr_ = ecmcEcData::read_4_bit_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputU8() {
+  buffer_ = 0;
+  *uint8Ptr_ = ecmcEcData::read_uint8_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputS8() {
+  buffer_ = 0;
+  *int8Ptr_ = ecmcEcData::read_int8_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputU16() {
+  buffer_ = 0;
+  *uint16Ptr_ = ecmcEcData::read_uint16_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputS16() {
+  buffer_ = 0;
+  *int16Ptr_ = ecmcEcData::read_int16_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputU32() {
+  buffer_ = 0;
+  *uint32Ptr_ = ecmcEcData::read_uint32_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputS32() {
+  buffer_ = 0;
+  *int32Ptr_ = ecmcEcData::read_int32_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputU64() {
+  buffer_ = 0;
+  *uint64Ptr_ = ecmcEcData::read_uint64_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputS64() {
+  buffer_ = 0;
+  *int64Ptr_ = ecmcEcData::read_int64_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputF32() {
+  buffer_ = 0;
+  *float32Ptr_ = ecmcEcData::read_float_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::inputF64() {
+  buffer_ = 0;
+  *float64Ptr_ = ecmcEcData::read_double_offset(adr_, 0, entryBitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputBit1() {
+  ecmcEcData::write_1_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputBit2() {
+  ecmcEcData::write_2_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputBit3() {
+  ecmcEcData::write_3_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputBit4() {
+  ecmcEcData::write_4_bit_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputU8() {
+  ecmcEcData::write_uint8_offset(adr_, 0, entryBitOffset_, *uint8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputS8() {
+  ecmcEcData::write_int8_offset(adr_, 0, entryBitOffset_, *int8Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputU16() {
+  ecmcEcData::write_uint16_offset(adr_, 0, entryBitOffset_, *uint16Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputS16() {
+  ecmcEcData::write_int16_offset(adr_, 0, entryBitOffset_, *int16Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputU32() {
+  ecmcEcData::write_uint32_offset(adr_, 0, entryBitOffset_, *uint32Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputS32() {
+  ecmcEcData::write_int32_offset(adr_, 0, entryBitOffset_, *int32Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputU64() {
+  ecmcEcData::write_uint64_offset(adr_, 0, entryBitOffset_, *uint64Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputS64() {
+  ecmcEcData::write_int64_offset(adr_, 0, entryBitOffset_, *int64Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputF32() {
+  ecmcEcData::write_float_offset(adr_, 0, entryBitOffset_, *float32Ptr_);
+  updateAsyn(0);
+}
+
+void ecmcEcData::outputF64() {
+  ecmcEcData::write_double_offset(adr_, 0, entryBitOffset_, *float64Ptr_);
+  updateAsyn(0);
 }
 
 int ecmcEcData::validate() {

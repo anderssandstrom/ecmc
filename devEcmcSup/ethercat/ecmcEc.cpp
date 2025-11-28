@@ -16,6 +16,56 @@
 #include <string>
 #include "ecmcErrorsList.h"
 
+namespace {
+#ifdef EC_READ_U64
+constexpr bool kHasReadU64 = true;
+#else
+constexpr bool kHasReadU64 = false;
+#endif
+
+#ifdef EC_READ_S64
+constexpr bool kHasReadS64 = true;
+#else
+constexpr bool kHasReadS64 = false;
+#endif
+
+#ifdef EC_READ_REAL
+constexpr bool kHasReadF32 = true;
+#else
+constexpr bool kHasReadF32 = false;
+#endif
+
+#ifdef EC_READ_LREAL
+constexpr bool kHasReadF64 = true;
+#else
+constexpr bool kHasReadF64 = false;
+#endif
+
+// Lookup table for datatype support to keep validEntryType O(1) and
+// avoid a long switch.
+constexpr bool kDataTypeSupported[] = {
+  /* ECMC_EC_NONE */ true,
+  /* ECMC_EC_B1 */ true,
+  /* ECMC_EC_B2 */ true,
+  /* ECMC_EC_B3 */ true,
+  /* ECMC_EC_B4 */ true,
+  /* ECMC_EC_U8 */ true,
+  /* ECMC_EC_S8 */ true,
+  /* ECMC_EC_U16 */ true,
+  /* ECMC_EC_S16 */ true,
+  /* ECMC_EC_U32 */ true,
+  /* ECMC_EC_S32 */ true,
+  /* ECMC_EC_U64 */ kHasReadU64,
+  /* ECMC_EC_S64 */ kHasReadS64,
+  /* ECMC_EC_F32 */ kHasReadF32,
+  /* ECMC_EC_F64 */ kHasReadF64,
+  /* ECMC_EC_S8_TO_U8 */ true,
+  /* ECMC_EC_S16_TO_U16 */ true,
+  /* ECMC_EC_S32_TO_U32 */ true,
+  /* ECMC_EC_S64_TO_U64 */ kHasReadS64
+};
+} // namespace
+
 ecmcEc::ecmcEc(ecmcAsynPortDriver *asynPortDriver) {
   initVars();
   setErrorID(ERROR_EC_STATUS_NOT_OK);
@@ -772,14 +822,16 @@ int ecmcEc::writeSoE(uint16_t slavePosition,  /**< Slave position. */
 
 int ecmcEc::updateInputProcessImage() {
   for (int i = 0; i < slaveCounter_; i++) {
-    if (slaveArray_[i] != NULL) {
-      slaveArray_[i]->updateInputProcessImage();
+    ecmcEcSlave *slave = slaveArray_[i];
+    if (slave) {
+      slave->updateInputProcessImage();
     }
   }
 
   for (int i = 0; i < ecMemMapArrayCounter_; i++) {
-    if (ecMemMapArray_[i] != NULL) {
-      ecMemMapArray_[i]->updateInputProcessImage();
+    ecmcEcMemMap *memMap = ecMemMapArray_[i];
+    if (memMap) {
+      memMap->updateInputProcessImage();
     }
   }
 
@@ -788,14 +840,16 @@ int ecmcEc::updateInputProcessImage() {
 
 int ecmcEc::updateOutProcessImage() {
   for (int i = 0; i < slaveCounter_; i++) {
-    if (slaveArray_[i] != NULL) {
-      slaveArray_[i]->updateOutProcessImage();
+    ecmcEcSlave *slave = slaveArray_[i];
+    if (slave) {
+      slave->updateOutProcessImage();
     }
   }
 
   for (int i = 0; i < ecMemMapArrayCounter_; i++) {
-    if (ecMemMapArray_[i] != NULL) {
-      ecMemMapArray_[i]->updateOutProcessImage();
+    ecmcEcMemMap *memMap = ecMemMapArray_[i];
+    if (memMap) {
+      memMap->updateOutProcessImage();
     }
   }
 
@@ -874,131 +928,12 @@ int ecmcEc::addEntry(
 *
 */
 bool ecmcEc::validEntryType(ecmcEcDataType dt) {
-  switch (dt) {
-  case ECMC_EC_NONE:
-    return 1;
+  size_t index = static_cast<size_t>(dt);
 
-    break;
-
-  case ECMC_EC_B1:
-    return 1;
-
-    break;
-
-  case ECMC_EC_B2:
-    return 1;
-
-    break;
-
-  case ECMC_EC_B3:
-    return 1;
-
-    break;
-
-  case ECMC_EC_B4:
-    return 1;
-
-    break;
-
-  case ECMC_EC_U8:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S8:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S8_TO_U8:
-    return 1;
-
-    break;
-
-  case ECMC_EC_U16:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S16:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S16_TO_U16:
-    return 1;
-
-    break;
-
-  case ECMC_EC_U32:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S32:
-    return 1;
-
-    break;
-
-  case ECMC_EC_S32_TO_U32:
-    return 1;
-
-    break;
-
-  case ECMC_EC_U64:
-#ifdef EC_READ_U64
-    return 1;
-
-#else // ifdef EC_READ_U64
+  if (index >= sizeof(kDataTypeSupported) / sizeof(kDataTypeSupported[0])) {
     return 0;
-
-#endif // ifdef EC_READ_U64
-    break;
-
-  case ECMC_EC_S64:
-#ifdef EC_READ_S64
-    return 1;
-
-#else // ifdef EC_READ_S64
-    return 0;
-
-#endif // ifdef EC_READ_S64
-    break;
-
-  case ECMC_EC_S64_TO_U64:
-#ifdef EC_READ_S64
-    return 1;
-#else // ifdef EC_READ_S64
-    return 0;
-#endif // ifdef EC_READ_S64
-    break;
-
-  case ECMC_EC_F32:
-#ifdef EC_READ_REAL
-    return 1;
-
-#else // ifdef EC_READ_REAL
-    return 0;
-
-#endif // ifdef EC_READ_REAL
-    break;
-
-  case ECMC_EC_F64:
-#ifdef EC_READ_LREAL
-    return 1;
-
-#else // ifdef EC_READ_LREAL
-    return 0;
-
-#endif // ifdef EC_READ_LREAL
-    break;
-
-  default:
-    return 0;
-
-    break;
   }
-  return 0;
+  return kDataTypeSupported[index];
 }
 
 ecmcEcSlave * ecmcEc::findSlave(int busPosition) {

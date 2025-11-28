@@ -43,18 +43,58 @@ public:
   ~ecmcEcData();
 
   // Overridden ecmcEcEntry functions
+  int  setUpdateInRealtime(int update);
   int  updateInputProcessImage();
   int  updateOutProcessImage();
   int  validate();
 
 private:
+  using DataTransferFunc = void (ecmcEcData::*)();
+  struct DataTransferConfig {
+    DataTransferFunc input;
+    DataTransferFunc output;
+    size_t           usedSize;
+  };
+  static const DataTransferConfig& getTransferConfig(ecmcEcDataType dt);
   void initVars();
+  void configureTransferFunctions();
+  void noopTransfer();
+  void inputBit1();
+  void inputBit2();
+  void inputBit3();
+  void inputBit4();
+  void inputU8();
+  void inputS8();
+  void inputU16();
+  void inputS16();
+  void inputU32();
+  void inputS32();
+  void inputU64();
+  void inputS64();
+  void inputF32();
+  void inputF64();
+  void outputBit1();
+  void outputBit2();
+  void outputBit3();
+  void outputBit4();
+  void outputU8();
+  void outputS8();
+  void outputU16();
+  void outputS16();
+  void outputU32();
+  void outputS32();
+  void outputU64();
+  void outputS64();
+  void outputF32();
+  void outputF64();
 
   // byte and bit offset from entry
   size_t entryByteOffset_;
   size_t entryBitOffset_;
   size_t byteSize_;
   ecmcEcEntry *startEntry_;
+  DataTransferFunc inputTransfer_;
+  DataTransferFunc outputTransfer_;
   static uint8_t read_1_bit_offset(uint8_t *buffer,
                                    int      byteOffset,
                                    int      bitOffset);

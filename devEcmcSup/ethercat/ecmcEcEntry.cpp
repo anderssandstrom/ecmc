@@ -46,6 +46,228 @@
           *((uint8_t *)(DATA)) |= (VAL &EC_MASK_B4);\
         } while (0)
 
+namespace {
+
+#ifdef ECMC_ASYN_ASYNPARAMINT64
+constexpr bool kHasAsynInt64 = true;
+#else
+constexpr bool kHasAsynInt64 = false;
+#endif
+
+#ifdef EC_READ_U64
+#  define ENTRY_INPUT_U64 &ecmcEcEntry::inputU64
+#else
+#  define ENTRY_INPUT_U64 &ecmcEcEntry::inputNone
+#endif
+
+#ifdef EC_READ_S64
+#  define ENTRY_INPUT_S64 &ecmcEcEntry::inputS64
+#  define ENTRY_INPUT_S64_TO_U64 &ecmcEcEntry::inputS64ToU64
+#else
+#  define ENTRY_INPUT_S64 &ecmcEcEntry::inputNone
+#  define ENTRY_INPUT_S64_TO_U64 &ecmcEcEntry::inputNone
+#endif
+
+#ifdef EC_READ_REAL
+#  define ENTRY_INPUT_F32 &ecmcEcEntry::inputF32
+#else
+#  define ENTRY_INPUT_F32 &ecmcEcEntry::inputNone
+#endif
+
+#ifdef EC_READ_LREAL
+#  define ENTRY_INPUT_F64 &ecmcEcEntry::inputF64
+#else
+#  define ENTRY_INPUT_F64 &ecmcEcEntry::inputNone
+#endif
+
+#ifdef EC_WRITE_U64
+#  define ENTRY_OUTPUT_U64 &ecmcEcEntry::outputU64
+#else
+#  define ENTRY_OUTPUT_U64 &ecmcEcEntry::outputNone
+#endif
+
+#ifdef EC_WRITE_S64
+#  define ENTRY_OUTPUT_S64 &ecmcEcEntry::outputS64
+#  define ENTRY_OUTPUT_S64_TO_U64 &ecmcEcEntry::outputS64ToU64
+#else
+#  define ENTRY_OUTPUT_S64 &ecmcEcEntry::outputNone
+#  define ENTRY_OUTPUT_S64_TO_U64 &ecmcEcEntry::outputNone
+#endif
+
+#ifdef EC_WRITE_REAL
+#  define ENTRY_OUTPUT_F32 &ecmcEcEntry::outputF32
+#else
+#  define ENTRY_OUTPUT_F32 &ecmcEcEntry::outputNone
+#endif
+
+#ifdef EC_WRITE_LREAL
+#  define ENTRY_OUTPUT_F64 &ecmcEcEntry::outputF64
+#else
+#  define ENTRY_OUTPUT_F64 &ecmcEcEntry::outputNone
+#endif
+
+using EntryConfig = ecmcEcEntry::TransferConfig;
+
+constexpr EntryConfig makeEntryConfig(ecmcEcEntry::TransferFunc input,
+                                      ecmcEcEntry::TransferFunc output,
+                                      size_t                    size,
+                                      bool supportInt32,
+                                      bool supportUInt32Digital,
+                                      bool supportFloat64,
+                                      bool supportInt64) {
+  return EntryConfig{input, output, size, supportInt32, supportUInt32Digital,
+                     supportFloat64, supportInt64};
+}
+
+} // namespace
+
+const ecmcEcEntry::TransferConfig&
+ecmcEcEntry::getTransferConfig(ecmcEcDataType dt) {
+  static const EntryConfig configs[] = {
+    /* ECMC_EC_NONE */ makeEntryConfig(&ecmcEcEntry::inputNone,
+                                       &ecmcEcEntry::outputNone,
+                                       0,
+                                       false,
+                                       false,
+                                       false,
+                                       false),
+    /* ECMC_EC_B1 */ makeEntryConfig(&ecmcEcEntry::inputBit1,
+                                     &ecmcEcEntry::outputBit1,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_B2 */ makeEntryConfig(&ecmcEcEntry::inputBit2,
+                                     &ecmcEcEntry::outputBit2,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_B3 */ makeEntryConfig(&ecmcEcEntry::inputBit3,
+                                     &ecmcEcEntry::outputBit3,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_B4 */ makeEntryConfig(&ecmcEcEntry::inputBit4,
+                                     &ecmcEcEntry::outputBit4,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_U8 */ makeEntryConfig(&ecmcEcEntry::inputU8,
+                                     &ecmcEcEntry::outputU8,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_S8 */ makeEntryConfig(&ecmcEcEntry::inputS8,
+                                     &ecmcEcEntry::outputS8,
+                                     1,
+                                     true,
+                                     true,
+                                     true,
+                                     false),
+    /* ECMC_EC_U16 */ makeEntryConfig(&ecmcEcEntry::inputU16,
+                                      &ecmcEcEntry::outputU16,
+                                      2,
+                                      true,
+                                      true,
+                                      true,
+                                      false),
+    /* ECMC_EC_S16 */ makeEntryConfig(&ecmcEcEntry::inputS16,
+                                      &ecmcEcEntry::outputS16,
+                                      2,
+                                      true,
+                                      true,
+                                      true,
+                                      false),
+    /* ECMC_EC_U32 */ makeEntryConfig(&ecmcEcEntry::inputU32,
+                                      &ecmcEcEntry::outputU32,
+                                      4,
+                                      true,
+                                      true,
+                                      true,
+                                      false),
+    /* ECMC_EC_S32 */ makeEntryConfig(&ecmcEcEntry::inputS32,
+                                      &ecmcEcEntry::outputS32,
+                                      4,
+                                      true,
+                                      true,
+                                      true,
+                                      false),
+    /* ECMC_EC_U64 */ makeEntryConfig(ENTRY_INPUT_U64,
+                                      ENTRY_OUTPUT_U64,
+                                      8,
+                                      true,
+                                      true,
+                                      true,
+                                      kHasAsynInt64),
+    /* ECMC_EC_S64 */ makeEntryConfig(ENTRY_INPUT_S64,
+                                      ENTRY_OUTPUT_S64,
+                                      8,
+                                      true,
+                                      true,
+                                      true,
+                                      kHasAsynInt64),
+    /* ECMC_EC_F32 */ makeEntryConfig(ENTRY_INPUT_F32,
+                                      ENTRY_OUTPUT_F32,
+                                      4,
+                                      false,
+                                      false,
+                                      true,
+                                      false),
+    /* ECMC_EC_F64 */ makeEntryConfig(ENTRY_INPUT_F64,
+                                      ENTRY_OUTPUT_F64,
+                                      8,
+                                      false,
+                                      false,
+                                      true,
+                                      false),
+    /* ECMC_EC_S8_TO_U8 */ makeEntryConfig(&ecmcEcEntry::inputS8ToU8,
+                                           &ecmcEcEntry::outputS8ToU8,
+                                           1,
+                                           true,
+                                           true,
+                                           true,
+                                           false),
+    /* ECMC_EC_S16_TO_U16 */ makeEntryConfig(&ecmcEcEntry::inputS16ToU16,
+                                             &ecmcEcEntry::outputS16ToU16,
+                                             2,
+                                             true,
+                                             true,
+                                             true,
+                                             false),
+    /* ECMC_EC_S32_TO_U32 */ makeEntryConfig(&ecmcEcEntry::inputS32ToU32,
+                                             &ecmcEcEntry::outputS32ToU32,
+                                             4,
+                                             true,
+                                             true,
+                                             true,
+                                             false),
+    /* ECMC_EC_S64_TO_U64 */ makeEntryConfig(ENTRY_INPUT_S64_TO_U64,
+                                             ENTRY_OUTPUT_S64_TO_U64,
+                                             8,
+                                             true,
+                                             true,
+                                             true,
+                                             kHasAsynInt64)
+  };
+
+  size_t index = static_cast<size_t>(dt);
+
+  if (index >= sizeof(configs) / sizeof(configs[0])) {
+    return configs[ECMC_EC_NONE];
+  }
+
+  return configs[index];
+}
+
 ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          int                 masterId,
                          int                 slaveId,
@@ -74,6 +296,7 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   slave_            = slave;
   dataType_         = dt;
   updateInRealTime_ = useInRealtime;
+  configureTransferFunctions();
   int errorCode = ecrt_slave_config_pdo_mapping_add(slave,
                                                     pdoIndex_,
                                                     entryIndex_,
@@ -125,6 +348,7 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   adr_            = 0;
   dataType_       = dt;
   bitLength_      = getEcDataTypeBits(dt);
+  configureTransferFunctions();
   initAsyn();
 }
 
@@ -162,6 +386,8 @@ void ecmcEcEntry::initVars() {
   float32Ptr_       = (float *)&buffer_;
   float64Ptr_       = (double *)&buffer_;
   usedSizeBytes_    = 0;
+  inputTransfer_    = &ecmcEcEntry::noopTransfer;
+  outputTransfer_   = &ecmcEcEntry::noopTransfer;
 }
 
 ecmcEcEntry::~ecmcEcEntry() {
@@ -315,210 +541,12 @@ int ecmcEcEntry::readBit(int bitNumber, uint64_t *value) {
 }
 
 int ecmcEcEntry::updateInputProcessImage() {
-  if (!updateInRealTime_) {
-    return 0;
-  }
-
-  if (direction_ != EC_DIR_INPUT) {
-    return 0;
-  }
-
-  buffer_ = 0;
-
-  switch (dataType_) {
-  case ECMC_EC_NONE:
-    buffer_ = 0;
-    break;
-
-  case ECMC_EC_B1:
-    buffer_ = (uint64_t)EC_READ_BIT(adr_, bitOffset_);
-    break;
-
-  case ECMC_EC_B2:
-    buffer_ = (uint64_t)EC_READ_B2(adr_, bitOffset_);
-    break;
-
-  case ECMC_EC_B3:
-    buffer_ = (uint64_t)EC_READ_B3(adr_, bitOffset_);
-    break;
-
-  case ECMC_EC_B4:
-    buffer_ = (uint64_t)EC_READ_B4(adr_, bitOffset_);
-    break;
-
-  case ECMC_EC_U8:
-    buffer_ = (uint64_t)EC_READ_U8(adr_);
-    break;
-
-  case ECMC_EC_S8:
-    buffer_ = (uint64_t)EC_READ_S8(adr_);
-    break;
-
-  case ECMC_EC_S8_TO_U8:
-    buffer_ = (uint64_t)(EC_READ_S8(adr_) ^ 0x80u); // XOR, flip sign bit
-    break;
-
-  case ECMC_EC_U16:
-    buffer_ = (uint64_t)EC_READ_U16(adr_);
-    break;
-
-  case ECMC_EC_S16:
-    buffer_ = (uint64_t)EC_READ_S16(adr_);
-    break;
-
-  case ECMC_EC_S16_TO_U16:
-    buffer_ = (uint64_t)(EC_READ_S16(adr_) ^ 0x8000u); // XOR, flip sign bit
-    break;
-
-  case ECMC_EC_U32:
-    buffer_ = (uint64_t)EC_READ_U32(adr_);
-    break;
-
-  case ECMC_EC_S32:
-    buffer_ = (uint64_t)EC_READ_S32(adr_);
-    break;
-
-  case ECMC_EC_S32_TO_U32:
-    buffer_ = (uint64_t)(EC_READ_S32(adr_) ^ 0x80000000u); // XOR, flip sign bit
-    break;
-
-#ifdef EC_READ_U64
-  case ECMC_EC_U64:
-    buffer_ = (uint64_t)EC_READ_U64(adr_);
-    break;
-#endif // ifdef EC_READ_U64
-
-#ifdef EC_READ_S64
-  case ECMC_EC_S64:
-    buffer_ = (uint64_t)EC_READ_S64(adr_);
-    break;
-
-  case ECMC_EC_S64_TO_U64:
-    buffer_ = (uint64_t)(EC_READ_S64(adr_) ^ 0x8000000000000000ull); // XOR, flip sign bit
-    break;
-#endif // ifdef EC_READ_S64
-
-#ifdef EC_READ_REAL
-  case ECMC_EC_F32:
-    *float32Ptr_ = EC_READ_REAL(adr_);
-    break;
-#endif // ifdef EC_READ_REAL
-
-#ifdef EC_READ_LREAL
-  case ECMC_EC_F64:
-    *float64Ptr_ = EC_READ_LREAL(adr_);
-    break;
-
-#endif // ifdef EC_READ_LREAL
-  default:
-    buffer_ = 0;
-    break;
-  }
-
-  updateAsyn(0);
+  (this->*inputTransfer_)();
   return 0;
 }
 
 int ecmcEcEntry::updateOutProcessImage() {
-  if (!updateInRealTime_) {
-    return 0;
-  }
-
-  if ((direction_ != EC_DIR_OUTPUT) && !sim_) {
-    return 0;
-  }
-
-  switch (dataType_) {
-  case ECMC_EC_NONE:
-    buffer_ = 0;
-    break;
-
-  case ECMC_EC_B1:
-    EC_WRITE_BIT(adr_, bitOffset_, buffer_);
-    break;
-
-  case ECMC_EC_B2:
-    EC_WRITE_B2(adr_, buffer_);
-    break;
-
-  case ECMC_EC_B3:
-    EC_WRITE_B3(adr_, buffer_);
-    break;
-
-  case ECMC_EC_B4:
-    EC_WRITE_B4(adr_, buffer_);
-    break;
-
-  case ECMC_EC_U8:
-    EC_WRITE_U8(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S8:
-    EC_WRITE_S8(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S8_TO_U8:
-    EC_WRITE_S8(adr_, buffer_^ 0x80u); // XOR, flip sign bit    
-    break;
-
-  case ECMC_EC_U16:
-    EC_WRITE_U16(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S16:
-    EC_WRITE_S16(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S16_TO_U16:
-    EC_WRITE_S16(adr_, buffer_^ 0x8000u); // XOR, flip sign bit    
-    break;
-
-  case ECMC_EC_U32:
-    EC_WRITE_U32(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S32:
-    EC_WRITE_S32(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S32_TO_U32:
-    EC_WRITE_S32(adr_, buffer_^ 0x80000000u); // XOR, flip sign bit    
-    break;
-
-#ifdef EC_WRITE_U64
-  case ECMC_EC_U64:
-    EC_WRITE_U64(adr_, buffer_);
-    break;
-#endif // ifdef EC_WRITE_U64
-
-#ifdef EC_WRITE_S64
-  case ECMC_EC_S64:
-    EC_WRITE_S64(adr_, buffer_);
-    break;
-
-  case ECMC_EC_S64_TO_U64:
-    EC_WRITE_S64(adr_, buffer_^ 0x8000000000000000ull); // XOR, flip sign bit    
-    break;
-#endif // ifdef EC_WRITE_S64
-
-#ifdef EC_WRITE_REAL
-  case ECMC_EC_F32:
-    EC_WRITE_REAL(adr_, *float32Ptr_);
-    break;
-#endif // ifdef EC_WRITE_REAL
-
-#ifdef EC_WRITE_LREAL
-  case ECMC_EC_F64:
-    EC_WRITE_LREAL(adr_, *float64Ptr_);
-    break;
-#endif // ifdef EC_WRITE_LREAL
-
-  default:
-    buffer_ = 0;
-    break;
-  }
-
-  updateAsyn(0);
+  (this->*outputTransfer_)();
   return 0;
 }
 
@@ -580,8 +608,233 @@ uint8_t * ecmcEcEntry::getDomainAdr() {
 
 int ecmcEcEntry::setUpdateInRealtime(int update) {
   updateInRealTime_ = update;
+  configureTransferFunctions();
   return 0;
 }
+
+void ecmcEcEntry::configureTransferFunctions() {
+  const TransferConfig& config = getTransferConfig(dataType_);
+
+  if (!updateInRealTime_) {
+    inputTransfer_  = &ecmcEcEntry::noopTransfer;
+    outputTransfer_ = &ecmcEcEntry::noopTransfer;
+    return;
+  }
+
+  inputTransfer_ =
+    direction_ == EC_DIR_INPUT ? config.input : &ecmcEcEntry::noopTransfer;
+  outputTransfer_ =
+    (direction_ == EC_DIR_OUTPUT || sim_) ? config.output
+                                          : &ecmcEcEntry::noopTransfer;
+}
+
+void ecmcEcEntry::noopTransfer() {}
+
+void ecmcEcEntry::inputNone() {
+  buffer_ = 0;
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputNone() {
+  buffer_ = 0;
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputBit1() {
+  buffer_ = (uint64_t)EC_READ_BIT(adr_, bitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputBit2() {
+  buffer_ = (uint64_t)EC_READ_B2(adr_, bitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputBit3() {
+  buffer_ = (uint64_t)EC_READ_B3(adr_, bitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputBit4() {
+  buffer_ = (uint64_t)EC_READ_B4(adr_, bitOffset_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputU8() {
+  buffer_ = (uint64_t)EC_READ_U8(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS8() {
+  buffer_ = (uint64_t)EC_READ_S8(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS8ToU8() {
+  buffer_ = (uint64_t)(EC_READ_S8(adr_) ^ 0x80u);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputU16() {
+  buffer_ = (uint64_t)EC_READ_U16(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS16() {
+  buffer_ = (uint64_t)EC_READ_S16(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS16ToU16() {
+  buffer_ = (uint64_t)(EC_READ_S16(adr_) ^ 0x8000u);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputU32() {
+  buffer_ = (uint64_t)EC_READ_U32(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS32() {
+  buffer_ = (uint64_t)EC_READ_S32(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS32ToU32() {
+  buffer_ = (uint64_t)(EC_READ_S32(adr_) ^ 0x80000000u);
+  updateAsyn(0);
+}
+
+#ifdef EC_READ_U64
+void ecmcEcEntry::inputU64() {
+  buffer_ = (uint64_t)EC_READ_U64(adr_);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_READ_S64
+void ecmcEcEntry::inputS64() {
+  buffer_ = (uint64_t)EC_READ_S64(adr_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::inputS64ToU64() {
+  buffer_ = (uint64_t)(EC_READ_S64(adr_) ^ 0x8000000000000000ull);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_READ_REAL
+void ecmcEcEntry::inputF32() {
+  *float32Ptr_ = EC_READ_REAL(adr_);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_READ_LREAL
+void ecmcEcEntry::inputF64() {
+  *float64Ptr_ = EC_READ_LREAL(adr_);
+  updateAsyn(0);
+}
+#endif
+
+void ecmcEcEntry::outputBit1() {
+  EC_WRITE_BIT(adr_, bitOffset_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputBit2() {
+  EC_WRITE_B2(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputBit3() {
+  EC_WRITE_B3(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputBit4() {
+  EC_WRITE_B4(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputU8() {
+  EC_WRITE_U8(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS8() {
+  EC_WRITE_S8(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS8ToU8() {
+  EC_WRITE_S8(adr_, buffer_ ^ 0x80u);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputU16() {
+  EC_WRITE_U16(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS16() {
+  EC_WRITE_S16(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS16ToU16() {
+  EC_WRITE_S16(adr_, buffer_ ^ 0x8000u);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputU32() {
+  EC_WRITE_U32(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS32() {
+  EC_WRITE_S32(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS32ToU32() {
+  EC_WRITE_S32(adr_, buffer_ ^ 0x80000000u);
+  updateAsyn(0);
+}
+
+#ifdef EC_WRITE_U64
+void ecmcEcEntry::outputU64() {
+  EC_WRITE_U64(adr_, buffer_);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_WRITE_S64
+void ecmcEcEntry::outputS64() {
+  EC_WRITE_S64(adr_, buffer_);
+  updateAsyn(0);
+}
+
+void ecmcEcEntry::outputS64ToU64() {
+  EC_WRITE_S64(adr_, buffer_ ^ 0x8000000000000000ull);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_WRITE_REAL
+void ecmcEcEntry::outputF32() {
+  EC_WRITE_REAL(adr_, *float32Ptr_);
+  updateAsyn(0);
+}
+#endif
+
+#ifdef EC_WRITE_LREAL
+void ecmcEcEntry::outputF64() {
+  EC_WRITE_LREAL(adr_, *float64Ptr_);
+  updateAsyn(0);
+}
+#endif
 
 int ecmcEcEntry::getUpdateInRealtime() {
   return updateInRealTime_;
@@ -727,149 +980,29 @@ int ecmcEcEntry::initAsyn() {
   }
 
   // Add supported types
-  switch (dataType_) {
-  case ECMC_EC_NONE:
+  const TransferConfig& cfg = getTransferConfig(dataType_);
+
+  if (dataType_ == ECMC_EC_NONE) {
     return 0;
-
-    break;
-
-  case ECMC_EC_B1:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_B2:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_B3:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_B4:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_U8:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_S8:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_S8_TO_U8:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
-
-  case ECMC_EC_U16:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
-
-  case ECMC_EC_S16:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
-
-  case ECMC_EC_S16_TO_U16:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
-
-  case ECMC_EC_U32:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
-
-  case ECMC_EC_S32:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
-
-  case ECMC_EC_S32_TO_U32:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
-
-  case ECMC_EC_U64:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    entryAsynParam_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
-
-    usedSizeBytes_ = 8;
-    break;
-
-  case ECMC_EC_S64:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    entryAsynParam_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
-
-    usedSizeBytes_ = 8;
-    break;
-
-  case ECMC_EC_S64_TO_U64:
-    entryAsynParam_->addSupportedAsynType(asynParamInt32);
-    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    entryAsynParam_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
-
-    usedSizeBytes_ = 8;
-    break;
-
-  case ECMC_EC_F32:
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
-
-  case ECMC_EC_F64:
-    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 8;
-    break;
   }
+
+  if (cfg.supportInt32) {
+    entryAsynParam_->addSupportedAsynType(asynParamInt32);
+  }
+  if (cfg.supportUInt32Digital) {
+    entryAsynParam_->addSupportedAsynType(asynParamUInt32Digital);
+  }
+  if (cfg.supportFloat64) {
+    entryAsynParam_->addSupportedAsynType(asynParamFloat64);
+  }
+
+#ifdef ECMC_ASYN_ASYNPARAMINT64
+  if (cfg.supportInt64) {
+    entryAsynParam_->addSupportedAsynType(asynParamInt64);
+  }
+#endif // ECMC_ASYN_ASYNPARAMINT64
+
+  usedSizeBytes_ = cfg.usedSize;
   entryAsynParam_->setEcmcDataSize(usedSizeBytes_);
 
   entryAsynParam_->setAllowWriteToEcmc(direction_ == EC_DIR_OUTPUT || sim_);
