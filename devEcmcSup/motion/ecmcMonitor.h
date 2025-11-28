@@ -14,6 +14,7 @@
 #define MOTIONMONITOR_H
 #include <cmath>
 #include "ecmcEcEntry.h"
+#include "ecmcEcEntryLink.h"
 #include "ecmcError.h"
 #include "ecmcTrajectoryTrapetz.h"
 #include "ecmcAxisData.h"
@@ -131,6 +132,17 @@ public:
   // Set reduce trq drive bit for slaved axes
   void               setAxisIsWithinCtrlDBExtTraj(bool within);
   bool               getAxisIsWithinCtrlDB();
+  // Bring base helpers into scope to avoid lookup issues
+  using ecmcEcEntryLink::validateEntry;
+  using ecmcEcEntryLink::validateEntryBit;
+  using ecmcEcEntryLink::readEcEntryValue;
+  using ecmcEcEntryLink::readEcEntryValueDouble;
+  using ecmcEcEntryLink::writeEcEntryValue;
+  using ecmcEcEntryLink::writeEcEntryValueDouble;
+  using ecmcEcEntryLink::getEntryDataType;
+  using ecmcError::setErrorID;
+  using ecmcError::setWarningID;
+  using ecmcError::getWarningID;
 
 private:
   int                checkLimits();
