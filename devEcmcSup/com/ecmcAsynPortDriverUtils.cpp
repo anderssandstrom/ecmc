@@ -13,6 +13,7 @@
 #include "ecmcAsynPortDriverUtils.h"
 #include "ecmcErrorsList.h"
 
+#include <cstdio>
 #include <string.h>
 #include <stdlib.h>
 #include <initHooks.h>

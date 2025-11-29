@@ -12,6 +12,12 @@
 
 #ifndef ECMCECSDO_H_
 #define ECMCECSDO_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcSDO.h
+ * @brief Helpers for synchronous SDO read/write operations.
+ */
+#endif
 #include <string.h>
 #include "stdio.h"
 #include "ecrt.h"
@@ -28,26 +34,33 @@
 #define ERROR_EC_SDO_DATATYPE_ERROR 0x23006
 #define ERROR_EC_SDO_VALUE_CONV_ERROR 0x23007
 
+/**
+ * @brief Utility functions for synchronous SDO access via the master.
+ */
 class ecmcEcSDO : public ecmcError {
 public:
   ecmcEcSDO();
   ~ecmcEcSDO();
+  /** @brief Write SDO using integer value. */
   static int write(ec_master_t *master,
                    uint16_t     slavePosition,
                    uint16_t     sdoIndex,
                    uint8_t      sdoSubIndex,
                    uint32_t     value,
                    size_t       byteSize);
+  /** @brief Queue SDO write using a raw byte string. */
   static int addWriteComplete(ec_slave_config_t *sc,
                               uint16_t           sdoIndex,
                               const char        *dataString,
                               size_t             byteSize);
+  /** @brief Read SDO value. */
   static int read(ec_master_t *master,
                   uint16_t     slavePosition,
                   uint16_t     sdoIndex,
                   uint8_t      sdoSubIndex,
                   uint32_t    *readValue,
                   size_t      *readBytes);
+  /** @brief Write SDO and verify result. */
   static int writeAndVerify(ec_master_t *master,
                             uint16_t     slavePosition,
                             uint16_t     sdoIndex,
@@ -64,6 +77,7 @@ public:
                           size_t             byteSize);
 
   // up to 8 bytes and signed
+  /** @brief Queue SDO write with explicit data type. */
   static int addSdoConfigDT(ec_slave_config_t *slave,
                             uint16_t           slavePosition,
                             uint16_t           sdoIndex,
@@ -71,6 +85,7 @@ public:
                             const char        *value,
                             ecmcEcDataType     dt);
 
+  /** @brief Queue SDO write from raw buffer. */
   static int addSdoConfigBuffer(ec_slave_config_t *sc,
                                 uint16_t           sdoIndex,
                                 uint8_t            sdoSubIndex,

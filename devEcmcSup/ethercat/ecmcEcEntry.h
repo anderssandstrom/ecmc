@@ -12,6 +12,12 @@
 
 #ifndef ECMCECENTRY_H_
 #define ECMCECENTRY_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcEntry.h
+ * @brief EtherCAT PDO entry wrapper with asyn integration and transfer helpers.
+ */
+#endif
 
 #include <string>
 #include <cmath>
@@ -60,7 +66,9 @@
 #define ERROR_EC_ENTRY_DATATYPE_INVALID 0x2100F
 #define ERROR_EC_ENTRY_SIZE_OUT_OF_RANGE 0x21010
 
-
+/**
+ * @brief Represents a PDO entry and handles process image transfers.
+ */
 class ecmcEcEntry : public ecmcError {
 public:
   ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
@@ -87,42 +95,71 @@ public:
   void                  initVars();
   uint16_t              getEntryIndex();
   uint8_t               getEntrySubIndex();
+  /** @brief Get number of bits in entry. */
   int                   getBits();
+  /** @brief Populate PDO entry info structure. */
   int                   getEntryInfo(ec_pdo_entry_info_t *info);
+  /** @brief Return byte offset within domain. */
   int                   getByteOffset();
+  /** @brief Access entry data type. */
   ecmcEcDataType        getDataType();
 
   // After activate
+  /** @brief Activate entry after domain setup. */
   int                   activate();
 
   uint8_t*              getDomainAdr();
+  /** @brief Write raw value. */
   int                   writeValue(uint64_t value);
+  /** @brief Write double value with conversion. */
   int                   writeDouble(double value);
+  /** @brief Force write raw value bypassing domain check. */
   int                   writeValueForce(uint64_t value);
+  /** @brief Write single bit at relative index. */
   int                   writeBit(int      bitNumber,
                                  uint64_t value);
+  /** @brief Force write single bit. */
   int                   writeBitForce(int bitNumber, uint64_t value);
+  /** @brief Write range of bits. */
   int                   writeBits(int startBitNumber, int bits,
                                   uint64_t valueToWrite);
+  /** @brief Read raw value. */
   int                   readValue(uint64_t *value);
+  /** @brief Read double value with conversion. */
   int                   readDouble(double *value);
+  /** @brief Read single bit. */
   int                   readBit(int       bitNumber,
                                 uint64_t *value);
+  /** @brief Read range of bits. */
   int                   readBits(int startBitNumber,
                                  int bits, uint64_t *result);
+  /** @brief Update entry from process image. */
   virtual int           updateInputProcessImage();
+  /** @brief Push entry value to process image. */
   virtual int           updateOutProcessImage();
+  /** @brief Toggle realtime updates. */
   int                   setUpdateInRealtime(int update);
+  /** @brief Query realtime update flag. */
   int                   getUpdateInRealtime();
+  /** @brief Human-friendly identifier. */
   std::string           getIdentificationName();
+  /** @brief Register PDO entry mapping info. */
   int                   compileRegInfo();
+  /** @brief Refresh asyn parameters. */
   int                   updateAsyn(bool force);
+  /** @brief True if simulation entry. */
   bool                  getSimEntry();
+  /** @brief Validate offsets, sizes, and pointers. */
   virtual int           validate();
+  /** @brief Set communication alarm flag. */
   int                   setComAlarm(bool alarm);
+  /** @brief Get slave ID owning this entry. */
   int                   getSlaveId();
+  /** @brief Check domain OK flag. */
   virtual int           getDomainOK();
+  /** @brief Domain object pointer. */
   virtual ecmcEcDomain* getDomain();
+  /** @brief Direction of data transfer. */
   ec_direction_t        getDirection();
   using TransferFunc = void (ecmcEcEntry::*)();
   struct TransferConfig {

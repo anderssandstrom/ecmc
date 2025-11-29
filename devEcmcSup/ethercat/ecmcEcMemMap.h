@@ -12,6 +12,12 @@
 
 #ifndef ECMCECMEMMAP_H_
 #define ECMCECMEMMAP_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcMemMap.h
+ * @brief Memory map view into the EtherCAT process image with asyn exposure.
+ */
+#endif
 #include <string>
 #include <cmath>
 #include "stdio.h"
@@ -27,6 +33,9 @@
 #define ERROR_MEM_INDEX_OUT_OF_RANGE 0x211002
 #define ERROR_MEM_INVALID_DATA_TYPE 0x211003
 
+/**
+ * @brief Represents a contiguous block in the EtherCAT domain for array access.
+ */
 class ecmcEcMemMap : public ecmcError {
 public:
   ecmcEcMemMap(ecmcAsynPortDriver *asynPortDriver,
@@ -39,27 +48,43 @@ public:
                ecmcEcDataType      dt,
                std::string         id);
   ~ecmcEcMemMap();
+  /** @brief Reset members to defaults. */
   void           initVars();
+  /** @brief Write data to local buffer. */
   int            write(uint8_t *values,
                        size_t   byteToWrite,
                        size_t  *bytesWritten);
+  /** @brief Read data from local buffer. */
   int            read(uint8_t *values,
                       size_t   bytesToRead,
                       size_t  *bytesRead);
+  /** @brief Pull fresh input data from domain. */
   int            updateInputProcessImage();
+  /** @brief Push buffered output data to domain. */
   int            updateOutProcessImage();
+  /** @brief Identification string. */
   std::string    getIdentificationName();
+  /** @brief Cache domain size for bounds checking. */
   int            setDomainSize();
+  /** @brief Validate offsets, sizes, and pointers. */
   int            validate();
+  /** @brief Total byte size of map. */
   int            getByteSize();
+  /** @brief Raw buffer pointer. */
   uint8_t*       getBufferPointer();
+  /** @brief Data type of map elements. */
   ecmcEcDataType getDataType();
+  /** @brief Read element as double. */
   int            getDoubleDataAtIndex(size_t  index,
                                       double *data);
+  /** @brief Write element as double. */
   int            setDoubleDataAtIndex(size_t index,
                                       double data);
+  /** @brief Number of elements in map. */
   size_t         getElementCount();
+  /** @brief Bytes per element. */
   size_t         getBytesPerElement();
+  /** @brief Refresh asyn parameter. */
   int            updateAsyn(bool force);
 
 private:

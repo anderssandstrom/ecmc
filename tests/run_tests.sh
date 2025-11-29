@@ -41,4 +41,12 @@ build_and_run encoder_tests encoder_tests \
   "${ROOT_DIR}/devEcmcSup/motion/ecmcFilter.cpp" \
   "${ROOT_DIR}/devEcmcSup/main/ecmcError.cpp"
 
-echo "All motion tests passed."
+build_and_run ethercat_utils_tests ethercat_utils_tests \
+  "${ROOT_DIR}/tests/ethercat_utils_tests.cpp" \
+  "${ROOT_DIR}/devEcmcSup/com/ecmcAsynPortDriverUtils.cpp"
+
+build_and_run ethercat_entry_link_tests ethercat_entry_link_tests \
+  "${ROOT_DIR}/tests/ethercat_entry_link_tests.cpp" \
+  "${ROOT_DIR}/devEcmcSup/main/ecmcError.cpp"
+
+echo "All tests passed."

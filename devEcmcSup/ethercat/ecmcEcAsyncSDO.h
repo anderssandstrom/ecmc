@@ -12,6 +12,12 @@
 
 #ifndef ECMCECASYNCSDO_H_
 #define ECMCECASYNCSDO_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcAsyncSDO.h
+ * @brief Asynchronous SDO handler exposing read/write through asyn parameters.
+ */
+#endif
 #include <string.h>
 #include "stdio.h"
 #include "ecrt.h"
@@ -27,6 +33,9 @@
 
 #define DEFAULT_SDO_ASYNC_TIMOUT_MS 2000
 
+/**
+ * @brief Manages asynchronous SDO transfers backed by EtherCAT and asyn.
+ */
 class ecmcEcAsyncSDO : public ecmcError {
 public:
   ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
@@ -39,13 +48,16 @@ public:
                  std::string         alias);
   ~ecmcEcAsyncSDO();
 
+  /** @brief Write SDO value through asyn. */
   asynStatus asynWriteSDO(void         *data,
                           size_t        bytes,
                           asynParamType asynParType);
+  /** @brief Read SDO value through asyn. */
   asynStatus asynReadSDO(void         *data,
                          size_t        bytes,
                          asynParamType asynParType);
 
+  /** @brief Execute pending read/write. */
   int execute();
 
 private:

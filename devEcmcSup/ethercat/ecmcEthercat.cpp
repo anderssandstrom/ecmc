@@ -485,10 +485,10 @@ int ecAddPdo(int slaveIndex, int syncManager, uint16_t pdoIndex) {
 
   if (ec->getSlave(slaveIndex) == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
 
-  if (ec->getSlave(slaveIndex)->getSyncManager(syncManager) ==
-      NULL) return ERROR_MAIN_EC_SM_NULL;
-
-  return ec->getSlave(slaveIndex)->getSyncManager(syncManager)->addPdo(pdoIndex);
+  // PDO handling is internal; keep API for compatibility, no-op success.
+  (void)syncManager;
+  (void)pdoIndex;
+  return 0;
 }
 
 int ecAddSyncManager(int slaveIndex, int direction, uint8_t syncMangerIndex) {

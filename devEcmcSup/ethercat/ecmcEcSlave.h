@@ -13,6 +13,12 @@
 
 #ifndef ECMCECSLAVE_H_
 #define ECMCECSLAVE_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcSlave.h
+ * @brief Represents a configured EtherCAT slave with entries, memmaps, and SDO helpers.
+ */
+#endif
 
 #include <string>
 #include <vector>
@@ -72,6 +78,9 @@ typedef struct {
   uint16_t alias;   /**< The slaves alias if not equal to 0. */
 } mcu_ec_slave_info_light;
 
+/**
+ * @brief Encapsulates EtherCAT slave configuration and attached data objects.
+ */
 class ecmcEcSlave : public ecmcError {
 public:
   ecmcEcSlave(
@@ -84,15 +93,24 @@ public:
     uint32_t            vendorId, /**< Expected vendor ID. */
     uint32_t            productCode /**< Expected product code. */);
   ~ecmcEcSlave();
+  /** @brief Register a sync manager on this slave. */
   int                addSyncManager(ec_direction_t direction,
                                     uint8_t        syncMangerIndex);
+  /** @brief Populate lightweight slave info struct. */
   int                getSlaveInfo(mcu_ec_slave_info_light *info);
+  /** @brief Number of configured entries. */
   int                getEntryCount();
+  /** @brief Get entry by index. */
   ecmcEcEntry*       getEntry(int entryIndex);
+  /** @brief Check configuration state of the slave. */
   int                checkConfigState(void);
+  /** @brief Set base address for domain data. */
   void               setDomainBaseAdr(uint8_t *domainAdr);
+  /** @brief Update all input entries from process image. */
   int                updateInputProcessImage();
+  /** @brief Update all output entries into process image. */
   int                updateOutProcessImage();
+  /** @brief Bus position of this slave. */
   int                getSlaveBusPosition();
   int                addEntry(
     ec_direction_t direction,
@@ -171,17 +189,13 @@ public:
                   std::string    alias);
   int getAllowOffline();
 
-/* 
- *  The below functions are used for preventing accidental usage of a drive slaves
- *  without setting important SDO parameters like Max current. The hardware snippet
- *  for drive terminals called by ecmccfg.addSlave.cmd calls "setNeedSDOSettings()"
- *  to tell ecmc that SDO settings are needed for this slave. The ecmccfg functions
- *  configureSlave.cmd, applySlaveConfig.cmd and ecmccomp.applyComponent.cmd then calls
- *  "setSDOSettingsDone()" after successfull sdo configuration to tell ecmc that
- *  configuration for a certain channel has been performed. 
- *  At validation, before going to runtime, ecmc checks that the slave SDO settings 
- *  have been performed, if not, ecmc exits. IMPORTANT: the check is only applied if 
- *  the drive terminal is used in an ecmc motion axis ().
+/*
+ * SDO safety guard:
+ * - ecmccfg.addSlave.cmd calls setNeedSDOSettings() to mark that required SDOs must be set.
+ * - configureSlave.cmd/applySlaveConfig.cmd/ecmccomp.applyComponent.cmd call setSDOSettingsDone()
+ *   after successful SDO configuration for the channel.
+ * - Validation before runtime enforces that required SDO settings were applied; otherwise ecmc exits.
+ *   The check only applies when the drive terminal is used in an ecmc motion axis.
  */
   int setNeedSDOSettings(int chid, int need);
   int setSDOSettingsDone(int chid, int done);
@@ -230,14 +244,17 @@ private:
   std::vector<std::string>    flatEntryIds_;
   std::vector<ecmcEcEntry *> extraEntries_;
 
-  // bit 0 online          : The slave is online.
-  // bit 1 int operational : The slave was brought into  OP state
-  // bit 2..5  al_state    :  The application-layer state of the slave.
-  //                             - 1: \a INIT
-  //                             - 2: \a PREOP
-  //                             - 4: \a SAFEOP
-  //                             - 8: \a OP
-  // bit 16..31            : entry counter
+  /**
+   * Status word bits:
+   *  - bit 0   online: slave detected
+   *  - bit 1   init operational: slave entered OP state
+   *  - bits 2..5 al_state: application-layer state
+   *      - 1: INIT
+   *      - 2: PREOP
+   *      - 4: SAFEOP
+   *      - 8: OP
+   *  - bits 16..31: entry counter
+   */
   uint32_t statusWord_;
   uint32_t statusWordOld_;
 

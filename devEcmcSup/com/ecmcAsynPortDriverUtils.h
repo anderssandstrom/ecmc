@@ -14,6 +14,7 @@
 #define ECMC_ASYN_PORT_DRIVER_UTILS_H_
 #include "ecmcDefinitions.h"
 #include "asynPortDriver.h"  // data types
+#include "epicsTime.h"
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #include <limits>

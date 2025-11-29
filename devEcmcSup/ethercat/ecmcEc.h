@@ -13,6 +13,13 @@
 #ifndef ECMCEC_H_
 #define ECMCEC_H_
 
+#ifdef __cplusplus
+/**
+ * @file ecmcEc.h
+ * @brief Core EtherCAT master wrapper providing configuration and runtime helpers.
+ */
+#endif
+
 #include <string>
 #include "stdio.h"
 #include "ecrt.h"
@@ -68,6 +75,9 @@
 #define ERROR_EC_NO_VALID_CONFIG 0x26027
 #define ERROR_EC_DATATYPE_NOT_VALID 0x26028
 
+/**
+ * @brief EtherCAT master helper that encapsulates slave configuration and runtime state.
+ */
 class ecmcEc : public ecmcError {
 public:
   ecmcEc(ecmcAsynPortDriver *asynPortDriver);

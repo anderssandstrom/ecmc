@@ -12,6 +12,12 @@
 
 #ifndef ecmcEcData_H_
 #define ecmcEcData_H_
+#ifdef __cplusplus
+/**
+ * @file ecmcEcData.h
+ * @brief Provides offset-based access to EtherCAT process image data.
+ */
+#endif
 #include <string>
 #include <cmath>
 #include "stdio.h"
@@ -25,10 +31,11 @@
 
 #define WARNING_DATA_ITEM_EC_ENTRY_DIR_MISSMATCH 0x21150
 
-
-// Access to arbitraty data of up to 64 bit size in the ethercat process image.
-// A start entry, byte and bit offset needs to be defined.
-
+/**
+ * @brief Accessor for arbitrary data within the EtherCAT process image.
+ *
+ * Data is addressed relative to a start entry using byte/bit offsets and a data type.
+ */
 class ecmcEcData : public ecmcEcEntry {
 public:
   ecmcEcData(ecmcAsynPortDriver *asynPortDriver,
@@ -43,9 +50,13 @@ public:
   ~ecmcEcData();
 
   // Overridden ecmcEcEntry functions
+  /** @brief Enable/disable realtime updates. */
   int  setUpdateInRealtime(int update);
+  /** @brief Pull data from process image. */
   int  updateInputProcessImage();
+  /** @brief Push data to process image. */
   int  updateOutProcessImage();
+  /** @brief Validate offsets and data type. */
   int  validate();
 
   using DataTransferFunc = void (ecmcEcData::*)();
