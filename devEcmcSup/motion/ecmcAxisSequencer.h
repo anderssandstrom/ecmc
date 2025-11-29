@@ -15,7 +15,11 @@
 
 #include "ecmcError.h"
 #include "ecmcEncoder.h"
+#ifndef ECMC_TEST_STUBS
 #include "ecmcMonitor.h"
+#else
+class ecmcMonitor;
+#endif
 #include "ecmcPIDController.h"
 #include "ecmcTrajectoryBase.h"
 #include "ecmcAxisData.h"
@@ -142,6 +146,64 @@ private:
   void         initStop();
   void         latchPosLagMonStateBeforeSeq();
   void         restorePosLagMonAfterSeq();
+  int          runLimitEdgeHoming(bool             startSensorActive,
+                                  bool             startSensorActiveOld,
+                                  bool             latchSensorActive,
+                                  bool             latchSensorActiveOld,
+                                  motionDirection  startDir,
+                                  motionDirection  secondDir,
+                                  double           towardsVel,
+                                  double           offCamVel,
+                                  bool             checkBwd,
+                                  bool             checkFwd,
+                                  int              latchLimitError = 0,
+                                  bool             allowWithoutAtTarget = false);
+#ifdef ECMC_TEST_STUBS
+public:
+  // Test helpers (no impact in production)
+  int   testRunLimitEdgeHoming(bool             startSensorActive,
+                               bool             startSensorActiveOld,
+                               bool             latchSensorActive,
+                               bool             latchSensorActiveOld,
+                               motionDirection  startDir,
+                               motionDirection  secondDir,
+                               double           towardsVel,
+                               double           offCamVel,
+                               bool             checkBwd,
+                               bool             checkFwd,
+                               int              latchLimitError = 0,
+                               bool             allowWithoutAtTarget = false) {
+    return runLimitEdgeHoming(startSensorActive,
+                              startSensorActiveOld,
+                              latchSensorActive,
+                              latchSensorActiveOld,
+                              startDir,
+                              secondDir,
+                              towardsVel,
+                              offCamVel,
+                              checkBwd,
+                              checkFwd,
+                              latchLimitError,
+                              allowWithoutAtTarget);
+  }
+  void  testSetSensors(bool fwd,
+                       bool fwdOld,
+                       bool bwd,
+                       bool bwdOld,
+                       bool home,
+                       bool homeOld) {
+    hwLimitSwitchFwd_     = fwd;
+    hwLimitSwitchFwdOld_  = fwdOld;
+    hwLimitSwitchBwd_     = bwd;
+    hwLimitSwitchBwdOld_  = bwdOld;
+    homeSensor_           = home;
+    homeSensorOld_        = homeOld;
+  }
+  void  testSetMonitorState(bool atTarget, bool enableAtTarget) {
+    testMonAtTarget_ = atTarget;
+    testMonEnable_   = enableAtTarget;
+  }
+#endif
 
   int seqState_;
   int seqStateOld_;
@@ -186,6 +248,10 @@ private:
   bool enablePos_;
   bool enableConstVel_;
   bool enableHome_;
+#ifdef ECMC_TEST_STUBS
+  bool testMonAtTarget_{true};
+  bool testMonEnable_{true};
+#endif
 
   // Entries for drive modes
   ecmcEcEntry *modeSetEntry_;

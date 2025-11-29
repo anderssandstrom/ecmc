@@ -13,16 +13,22 @@
 #include "../../devEcmcSup/main/ecmcDefinitions.h"
 #include "../../devEcmcSup/main/ecmcError.h"
 
+#ifndef ECMC_TEST_ASYN_TYPES_DEFINED
 enum asynStatus {
   asynSuccess = 0,
   asynError   = -1,
 };
+#define ECMC_TEST_ASYN_TYPES_DEFINED
+#endif
 
+#ifndef ASYN_PARAM_TYPE_DEFINED
+#define ASYN_PARAM_TYPE_DEFINED
 enum asynParamType {
   asynParamInt32         = 0,
   asynParamFloat64       = 1,
   asynParamUInt32Digital = 2,
 };
+#endif
 
 #ifndef ECMC_EC_ENTRY_LINKS_MAX
 #define ECMC_EC_ENTRY_LINKS_MAX 20

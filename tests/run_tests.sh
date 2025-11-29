@@ -9,7 +9,9 @@ COMMON_FLAGS=(-std=c++17 -DECMC_TEST_STUBS -I"${ROOT_DIR}"
               -I"${ROOT_DIR}/tests/mocks"
               -I"${ROOT_DIR}/devEcmcSup/main"
               -I"${ROOT_DIR}/devEcmcSup/com"
-              -I"${ROOT_DIR}/devEcmcSup/misc")
+              -I"${ROOT_DIR}/devEcmcSup/misc"
+              -I"${ROOT_DIR}/devEcmcSup/ethercat"
+              -I"${ROOT_DIR}/devEcmcSup/motion")
 
 build_and_run() {
   local target="$1"
