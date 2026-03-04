@@ -50,15 +50,12 @@ ecmc_SRCS += ecmcPLCMain.cpp
 
 SRC_DIRS  += $(ECMC)/misc
 ecmc_SRCS += ecmcMisc.cpp 
-ecmc_SRCS += ecmcEvent.cpp 
-ecmc_SRCS += ecmcEventConsumer.cpp 
-ecmc_SRCS += ecmcDataRecorder.cpp 
 ecmc_SRCS += ecmcDataStorage.cpp 
-ecmc_SRCS += ecmcCommandList.cpp 
 
 SRC_DIRS  += $(ECMC)/main
 ecmc_SRCS += ecmcGeneral.cpp 
 ecmc_SRCS += ecmcError.cpp 
+ecmc_SRCS += ecmcMain.cpp
 ecmc_SRCS += ecmcMainThread.cpp
 ecmc_SRCS += gitversion.c
 
@@ -67,9 +64,12 @@ ecmc_SRCS += gitversion.c
 SRC_DIRS  += $(ECMC)/ethercat
 ecmc_SRCS += ecmcEthercat.cpp 
 ecmc_SRCS += ecmcEc.cpp 
+ecmc_SRCS += ecmcEcData.cpp
+ecmc_SRCS += ecmcEcDomain.cpp
 ecmc_SRCS += ecmcEcEntry.cpp 
 ecmc_SRCS += ecmcEcPdo.cpp 
 ecmc_SRCS += ecmcEcSDO.cpp 
+ecmc_SRCS += ecmcEcAsyncSDO.cpp
 ecmc_SRCS += ecmcEcSlave.cpp 
 ecmc_SRCS += ecmcEcSyncManager.cpp 
 ecmc_SRCS += ecmcEcEntryLink.cpp 
@@ -85,10 +85,12 @@ ecmc_SRCS += ecmcCmdParser.c
 ecmc_SRCS += ecmcAsynPortDriver.cpp 
 ecmc_SRCS += ecmcAsynPortDriverUtils.cpp 
 ecmc_SRCS += ecmcAsynDataItem.cpp 
+ecmc_SRCS += ecmcDataItem.cpp
 
 SRC_DIRS  += $(ECMC)/motion
 ecmc_SRCS += ecmcMotion.cpp 
 ecmc_SRCS += ecmcAxisBase.cpp 
+ecmc_SRCS += ecmcAxisGroup.cpp
 ecmc_SRCS += ecmcAxisReal.cpp 
 ecmc_SRCS += ecmcAxisVirt.cpp 
 ecmc_SRCS += ecmcDriveBase.cpp 
@@ -97,10 +99,25 @@ ecmc_SRCS += ecmcDriveDS402.cpp
 ecmc_SRCS += ecmcEncoder.cpp 
 ecmc_SRCS += ecmcFilter.cpp 
 ecmc_SRCS += ecmcMonitor.cpp 
+ecmc_SRCS += ecmcMasterSlaveStateMachine.cpp
+ecmc_SRCS += ecmcMotionUtils.cpp
 ecmc_SRCS += ecmcPIDController.cpp
+ecmc_SRCS += ecmcPVTController.cpp
 ecmc_SRCS += ecmcAxisSequencer.cpp
+ecmc_SRCS += ecmcAxisPVTSequence.cpp
+ecmc_SRCS += ecmcTrajectoryBase.cpp
+ecmc_SRCS += ecmcTrajectoryS.cpp
 ecmc_SRCS += ecmcTrajectoryTrapetz.cpp 
 ecmc_SRCS += ecmcAxisData.cpp
+
+SRC_DIRS  += $(ECMC)/plugin
+ecmc_SRCS += ecmcPlugin.cpp
+ecmc_SRCS += ecmcPluginLib.cpp
+ecmc_SRCS += ecmcPluginClient.cpp
+
+SRC_DIRS  += $(ECMC)/plc
+ecmc_SRCS += ecmcPLCLib.cpp
+ecmc_SRCS += ecmcPLCLibFunc.cpp
 
 SRC_DIRS  += $(ECMC)/motor
 DBD       += ecmcMotorRecordSupport.dbd

@@ -17,7 +17,7 @@ $(foreach dir, $(filter-out configure, $(DIRS)), \
     $(eval $(dir)_DEPEND_DIRS += configure))
 
 
-# Any *App dirs depend on all *Sup dirs
+# Any *Sup dirs depend on all *Support dirs
 $(foreach dir, $(filter %Sup, $(DIRS)), \
     $(eval $(dir)_DEPEND_DIRS += $(filter %Support, $(DIRS))))
 
