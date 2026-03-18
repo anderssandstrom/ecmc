@@ -59,6 +59,57 @@ const char* ecmcMasterSlaveStateMachine::getName(){
   return name_.c_str();
 };
 
+int ecmcMasterSlaveStateMachine::enterResetState(int errorCode,
+                                                 const char *reason) {
+  if (errorCode) {
+    status_ = errorCode;
+    setErrorID(errorCode);
+  }
+
+  if (reason) {
+    LOGERR("ecmcMasterSlaveStateMachine: %s: %s (0x%x)\n",
+           name_.c_str(),
+           reason,
+           errorCode);
+  }
+
+  masterGrp_->halt();
+  slaveGrp_->halt();
+
+  const int masterDisableError = masterGrp_->setEnable(0);
+  const int slaveDisableError  = slaveGrp_->setEnable(0);
+  masterGrp_->setMRCnen(0);
+  slaveGrp_->setMRCnen(0);
+  masterGrp_->setMRStop(1);
+  masterGrp_->setMRSync(1);
+  slaveGrp_->setMRStop(1);
+  slaveGrp_->setMRSync(1);
+  const int slaveTrajError = slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+
+  if (status_ == 0) {
+    const int latchedError = masterDisableError ? masterDisableError :
+                             (slaveDisableError ? slaveDisableError :
+                              slaveTrajError);
+    if (latchedError) {
+      status_ = latchedError;
+      setErrorID(latchedError);
+    }
+  }
+
+  masterGrp_->setEnableAutoDisable(1);
+  state_ = ECMC_MST_SLV_STATE_RESET;
+  return status_;
+}
+
+int ecmcMasterSlaveStateMachine::setSlaveTrajSrcChecked(dataSource trajSource,
+                                                        const char *reason) {
+  const int error = slaveGrp_->setTrajSrc(trajSource);
+  if (error) {
+    enterResetState(error, reason);
+  }
+  return error;
+}
+
 void ecmcMasterSlaveStateMachine::execute(){
 
   //always update
@@ -71,7 +122,11 @@ void ecmcMasterSlaveStateMachine::execute(){
     if(state_ != ECMC_MST_SLV_STATE_IDLE) {
       masterGrp_->setBlocked(false);
       slaveGrp_->setBlocked(false);
-      slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+      if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                                 "Failed switching slave axes to internal trajectory while disabling SM")) {
+        controlOld_ = control_;
+        return;
+      }
       state_ = ECMC_MST_SLV_STATE_IDLE;
     }
     controlOld_ = control_;
@@ -129,7 +184,13 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
   const int anySlaveErrorId     = slaveStatus.firstErrorId;
   const bool anyMasterEnabled   = masterStatus.anyEnabled;
   const bool anyMasterEnableCmd = masterStatus.anyEnableCmd;
+  const bool anyMasterBusy      = masterStatus.anyBusy;
   const bool anySlaveTrajAnyExt = slaveStatus.anyTrajExternal;
+  // Actual enabled state can lag the master-side request. Treat either an
+  // enable command or an already-busy master as a takeover request.
+  const bool masterRequestsControl = anyMasterEnableCmd ||
+                                     anyMasterEnabled ||
+                                     anyMasterBusy;
 
   // State transision to SLAVE
   if( anySlaveBusy &&
@@ -146,13 +207,15 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
     }
 
   // State transision to MASTER
-  } else if(anyMasterEnabled &&
+  } else if(masterRequestsControl &&
             anySlaveErrorId == 0 ) {
     const bool allSlavesEnabled = slaveStatus.allEnabled;
     if(allSlavesEnabled && !anySlaveBusy){
-      const bool anyMasterBusy = masterStatus.anyBusy;
       if(anyMasterBusy) {
-        slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
+        if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_EXTERNAL,
+                                   "Failed switching slave axes to external trajectory")) {
+          return 0;
+        }
         state_ = ECMC_MST_SLV_STATE_MASTERS;
         // (un)block commands
         masterGrp_->setBlocked(false);
@@ -167,13 +230,19 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
       int errorSlave = slaveGrp_->setEnable(1);
       int errorMaster = masterGrp_->setEnable(1);
       if(errorSlave || errorMaster) {
+        const int transitionError = errorSlave ? errorSlave : errorMaster;
+        status_ = transitionError;
+        setErrorID(transitionError);
         slaveGrp_->setEnable(0);
         masterGrp_->setEnable(0);
         slaveGrp_->setMRCnen(0);
         masterGrp_->setMRCnen(0);
         slaveGrp_->setMRSync(1);
         masterGrp_->setMRSync(1);
-        slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);        
+        if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                                   "Failed restoring slave axes to internal trajectory after enable error")) {
+          return 0;
+        }
         if(errorSlave) {
           masterGrp_->setSlavedAxisInError();
         }
@@ -208,16 +277,27 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
   if(!anySlaveBusy) {
     // Auto disable also if the axis has no cfg to auto disable
     if(control_.autoDisableSlaves || (!slaveGrp_->getAxisAutoDisableEnabled())) {
-      slaveGrp_->setEnable(0);
+      const int error = slaveGrp_->setEnable(0);
+      if (error) {
+        enterResetState(error, "Failed disabling slave group in SLAVE state");
+        return 0;
+      }
       //slaveGrp_->setMRCnen(0);     
     }
     
     if(control_.autoDisableMasters) {      
-      masterGrp_->setEnable(0);
+      const int error = masterGrp_->setEnable(0);
+      if (error) {
+        enterResetState(error, "Failed disabling master group in SLAVE state");
+        return 0;
+      }
       masterGrp_->setMRCnen(0);
     }
 
-    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+    if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                               "Failed switching slave axes to internal trajectory in SLAVE state")) {
+      return 0;
+    }
 
     // Sync the master axes
     masterGrp_->setMRSync(1);
@@ -233,7 +313,11 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
   const bool anyMasterEnabled = masterStatus.anyEnabled;
   const bool anyMasterEnableCmd = masterStatus.anyEnableCmd;
   if(anyMasterEnabled || anyMasterEnableCmd) {
-    masterGrp_->setEnable(0);
+    const int error = masterGrp_->setEnable(0);
+    if (error) {
+      enterResetState(error, "Failed forcing master group disabled in SLAVE state");
+      return 0;
+    }
     masterGrp_->setMRCnen(0);
   }
   return 0;
@@ -254,8 +338,14 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
 
   if(masterAnyEnabled && !masterAnyBusy) {
     if(control_.autoDisableMasters) {
-      slaveGrp_->setEnable(0);
-      masterGrp_->setEnable(0);
+      int error = slaveGrp_->setEnable(0);
+      if (!error) {
+        error = masterGrp_->setEnable(0);
+      }
+      if (error) {
+        enterResetState(error, "Failed auto-disabling groups in MASTER state");
+        return 0;
+      }
       slaveGrp_->setMRCnen(0);
       masterGrp_->setMRCnen(0);
     }
@@ -271,7 +361,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     bool lostEnabled = masterAnyEnabled && !masterStatus.allEnabled;
     lostEnabled = lostEnabled || (slaveStatus.anyEnabled && !slaveStatus.allEnabled);
     if(lostEnabled || masterAnyError) {
-      state_ = ECMC_MST_SLV_STATE_IDLE;
+      state_ = ECMC_MST_SLV_STATE_RESET;
       LOGERR("ecmcMasterSlaveStateMachine: %s: At least one axis lost enable during motion. Disable all axes..\n",
              name_.c_str());
       LOGERR("ecmcMasterSlaveStateMachine: %s: State change, MASTER -> RESET\n",
@@ -281,10 +371,17 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       masterGrp_->setMRStop(1);
       masterGrp_->setMRSync(1);
       slaveGrp_->halt();
-      slaveGrp_->setEnable(0);
+      const int slaveDisableError = slaveGrp_->setEnable(0);
+      if (slaveDisableError) {
+        status_ = slaveDisableError;
+        setErrorID(slaveDisableError);
+      }
       slaveGrp_->setMRStop(1);
       slaveGrp_->setMRSync(1);
-      slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+      if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                                 "Failed switching slave axes to internal trajectory during MASTER fault handling")) {
+        return 0;
+      }
       if(!masterAnyError) { // Dont overwrite error if master error
         masterGrp_->setSlavedAxisIlocked();
       }
@@ -311,7 +408,10 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   const bool anySlaveIlocked = slaveStatusNow.anyIlocked;
   const bool allSlaveTrajExternal = slaveStatusNow.allTrajExternal;
   if(anySlaveIlocked || !allSlaveTrajExternal){
-    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+    if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                               "Failed switching slave axes to internal trajectory after slave interlock")) {
+      return 0;
+    }
     slaveGrp_->setMRSync(1);
     slaveGrp_->setMRStop(1);
     slaveGrp_->halt();
@@ -324,14 +424,21 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, MASTER -> SLAVE\n",
               name_.c_str());
     }
+    return 0;
   }
   
   // Done?
   if(!masterStatusNow.anyEnabled) {
-    slaveGrp_->setEnable(0);
+    const int error = slaveGrp_->setEnable(0);
+    if (error) {
+      enterResetState(error, "Failed disabling slave group when leaving MASTER state");
+      return 0;
+    }
     slaveGrp_->setMRCnen(0);
-    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
-    slaveGrp_->setErrorReset();
+    if (setSlaveTrajSrcChecked(ECMC_DATA_SOURCE_INTERNAL,
+                               "Failed switching slave axes to internal trajectory when leaving MASTER state")) {
+      return 0;
+    }
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
     if(control_.enableDbgPrintouts) {
@@ -343,13 +450,23 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
 }
 
 int ecmcMasterSlaveStateMachine::stateReset() {
-  slaveGrp_->setEnable(0);
-  masterGrp_->setEnable(0);
+  int error = slaveGrp_->setEnable(0);
+  if (!error) {
+    error = masterGrp_->setEnable(0);
+  }
+  if (error) {
+    status_ = error;
+    setErrorID(error);
+    return error;
+  }
   slaveGrp_->setMRCnen(0);
   masterGrp_->setMRCnen(0);
-  slaveGrp_->setErrorReset();
-  masterGrp_->setErrorReset();
-  slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+  error = slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+  if (error) {
+    status_ = error;
+    setErrorID(error);
+    return error;
+  }
   masterGrp_->setEnableAutoDisable(1);
   masterGrp_->setBlocked(false);
   slaveGrp_->setBlocked(false);
@@ -365,6 +482,14 @@ int ecmcMasterSlaveStateMachine::validate(){
   if( masterGrp_ == NULL || slaveGrp_ == NULL){
     return ERROR_MST_SLV_SM_GRP_NULL;
   };
+
+  if (masterGrp_ == slaveGrp_) {
+    return ERROR_MST_SLV_SM_GRP_SAME;
+  }
+
+  if ((masterGrp_->size() == 0) || (slaveGrp_->size() == 0)) {
+    return ERROR_MST_SLV_SM_GRP_EMPTY;
+  }
 
   if( !asynInitOk_){
     return ERROR_MST_SLV_SM_GRP_INIT_ASYN_FAILED;

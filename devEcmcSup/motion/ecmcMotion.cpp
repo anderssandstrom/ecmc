@@ -4585,6 +4585,14 @@ int createMasterSlaveSM(int index,
     return ERROR_GROUP_NULL;
   }
 
+  if (masterGrp == slaveGrp) {
+    return ERROR_MST_SLV_SM_GRP_SAME;
+  }
+
+  if ((masterGrp->size() == 0) || (slaveGrp->size() == 0)) {
+    return ERROR_MST_SLV_SM_GRP_EMPTY;
+  }
+
   masterSlaveSMs[index] = new ecmcMasterSlaveStateMachine(asynPort,
                                                           index,
                                                           name,

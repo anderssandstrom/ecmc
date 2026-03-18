@@ -35,6 +35,8 @@
 
 #define ERROR_MST_SLV_SM_GRP_NULL 0x17000
 #define ERROR_MST_SLV_SM_GRP_INIT_ASYN_FAILED 0x17001
+#define ERROR_MST_SLV_SM_GRP_EMPTY 0x17002
+#define ERROR_MST_SLV_SM_GRP_SAME 0x17003
 
 #include "ecmcError.h"
 #include "ecmcAxisGroup.h"
@@ -81,6 +83,8 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int initAsyn();
     void refreshAsyn();
     void setMrIgnoreEnableAlarm();
+    int enterResetState(int errorCode, const char *reason);
+    int setSlaveTrajSrcChecked(dataSource trajSource, const char *reason);
     int createAsynParam(const char        *nameFormat,
                         asynParamType      asynType,
                         ecmcEcDataType     ecmcType,

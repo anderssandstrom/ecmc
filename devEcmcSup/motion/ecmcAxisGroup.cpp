@@ -166,14 +166,18 @@ void ecmcAxisGroup::setError(int error){
 // Set slaved axis error all axes
 void ecmcAxisGroup::setSlavedAxisInError(){
   for (auto *axis : axes_) {
-    axis->setSlavedAxisInError();
+    if (!axis->getError()) {
+      axis->setSlavedAxisInError();
+    }
   }
 };
 
 // Set slaved axis error all axes
 void ecmcAxisGroup::halt(){
   for (auto *axis : axes_) {
-    axis->stopMotion(0);
+    if (axis->getBusy()) {
+      axis->stopMotion(0);
+    }
   }
 };
 
@@ -345,7 +349,9 @@ bool ecmcAxisGroup::getAnyAtLimit() {
 
 void ecmcAxisGroup::setSlavedAxisIlocked() {
   for (auto *axis : axes_) {
-    axis->setSlavedAxisInterlock();
+    if (!axis->getError()) {
+      axis->setSlavedAxisInterlock();
+    }
   }
 }
 
