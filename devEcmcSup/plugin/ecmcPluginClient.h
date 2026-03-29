@@ -65,6 +65,17 @@ void*  getEcmcAsynDataItem(char *idStringWP);
  */
 void*  getEcMaster();
 
+/** \brief Get current EtherCAT master index
+ *
+ * \return EtherCAT master index if success or otherwise -1.\n
+ *
+ * \note This helper exists so plugins can query the current master index
+ *  without depending directly on ecmcEc.h / ecrt.h.\n
+ *
+ * \note There's no ascii command in ecmcCmdParser.c for this method.\n
+ */
+int    getEcmcMasterIndex();
+
 /** \brief Get ecmcAsynPortObject (as void*)
  *
  * \return ecmcAsynPortObject (void*) object if success or otherwise NULL.\n

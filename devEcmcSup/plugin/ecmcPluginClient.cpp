@@ -46,6 +46,13 @@ void* getEcMaster() {
   return (void *)ec;
 }
 
+int getEcmcMasterIndex() {
+  if (!ec) {
+    return -1;
+  }
+  return ec->getMasterIndex();
+}
+
 void* getEcmcAsynPortDriver() {
   LOGINFO4("%s/%s:%d:\n",
            __FILE__,
