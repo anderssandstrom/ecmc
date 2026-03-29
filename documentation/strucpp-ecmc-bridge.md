@@ -7,8 +7,8 @@ The bridge is now split into two sibling repositories:
 
 - generic host plugin:
   [`../ecmc_plugin_strucpp`](../../ecmc_plugin_strucpp)
-- application-side logic library example:
-  [`../ecmc_strucpp_app_example`](../../ecmc_strucpp_app_example)
+- curated source examples:
+  [`../ecmc_plugin_strucpp/examples/psi_ioc_examples`](../../ecmc_plugin_strucpp/examples/psi_ioc_examples)
 
 The old in-repo PoC under `plugins/strucpp_bridge_poc` has been retired.
 
@@ -51,19 +51,20 @@ At runtime it:
 
 ### Logic library
 
-The application-specific logic stays outside the plugin repo.
+The application-specific logic is kept as source examples under the plugin
+repo.
 
-The example lives in:
+The sample app lives in:
 
-- [`../ecmc_strucpp_app_example/src/generated/machine.hpp`](../../ecmc_strucpp_app_example/src/generated/machine.hpp)
-- [`../ecmc_strucpp_app_example/src/generated/machine.cpp`](../../ecmc_strucpp_app_example/src/generated/machine.cpp)
-- [`../ecmc_strucpp_app_example/src/machine_logic.cpp`](../../ecmc_strucpp_app_example/src/machine_logic.cpp)
+- [`../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/generated/machine.hpp`](../../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/generated/machine.hpp)
+- [`../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/generated/machine.cpp`](../../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/generated/machine.cpp)
+- [`../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/machine_logic.cpp`](../../ecmc_plugin_strucpp/examples/psi_ioc_examples/sample_app/src/machine_logic.cpp)
 
 That split is the important boundary:
 
 - `ecmc_plugin_strucpp`
   stays generic and reusable
-- ST application repo
+- example app subtree
   owns generated code and the tiny wrapper that exposes the logic ABI
 
 ## Logic ABI
@@ -155,7 +156,7 @@ The generic host plugin repo includes:
 - startup helper:
   [`../ecmc_plugin_strucpp/startup.cmd`](../../ecmc_plugin_strucpp/startup.cmd)
 - IOC example:
-  [`../ecmc_plugin_strucpp/examples/loadPluginExample.cmd`](../../ecmc_plugin_strucpp/examples/loadPluginExample.cmd)
+  [`../ecmc_plugin_strucpp/examples/iocsh_examples/loadPluginExample.cmd`](../../ecmc_plugin_strucpp/examples/iocsh_examples/loadPluginExample.cmd)
 
 Typical flow:
 
@@ -186,7 +187,7 @@ For real use, the next practical step is:
 1. bind the host to one real `%I/%Q` source in an IOC, preferably through a
    startup-linked mapping file
 2. build the sample logic library from
-   [`../ecmc_strucpp_app_example`](../../ecmc_strucpp_app_example)
+   [`../ecmc_plugin_strucpp/examples/psi_ioc_examples`](../../ecmc_plugin_strucpp/examples/psi_ioc_examples)
 3. run one end-to-end cycle test
 
 After that, if needed, the next extension is direct domain-image binding instead
