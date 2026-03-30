@@ -15,6 +15,8 @@
 #ifndef ECMC_PLUGIN_H_
 #define ECMC_PLUGIN_H_
 
+#include <stdint.h>
+
 # ifdef __cplusplus
 extern "C" {
 # endif  // ifdef __cplusplus
@@ -75,6 +77,35 @@ void*  getEcMaster();
  * \note There's no ascii command in ecmcCmdParser.c for this method.\n
  */
 int    getEcmcMasterIndex();
+
+/** \brief Get packed EtherCAT slave state for one slave on one master
+ *
+ * \param[in] masterIndex EtherCAT master index, or -1 for current/default.
+ * \param[in] slaveIndex EtherCAT slave index.
+ *
+ * \return Packed status word:
+ *         bit 0 valid
+ *         bit 1 online
+ *         bit 2 operational
+ *         bit 3..6 AL state
+ *
+ * \note Returns 0 when the slave state cannot be resolved.
+ */
+uint32_t getEcmcSlaveStateWord(int masterIndex, int slaveIndex);
+
+/** \brief Get packed EtherCAT master state for one master
+ *
+ * \param[in] masterIndex EtherCAT master index, or -1 for current/default.
+ *
+ * \return Packed status word:
+ *         bit 0 valid
+ *         bit 1 link up
+ *         bit 2..5 AL state
+ *         bit 16..31 slaves responding
+ *
+ * \note Returns 0 when the master state cannot be resolved.
+ */
+uint32_t getEcmcMasterStateWord(int masterIndex);
 
 /** \brief Get ecmcAsynPortObject (as void*)
  *
