@@ -127,6 +127,78 @@ int setEcmcAxisExtActPos(int axisIndex, double value) {
   return setAxisExtActPos(axisIndex, value);
 }
 
+int getEcmcAxisTrajSource(int axisIndex) {
+  int value = -1;
+  if (getAxisTrajSource(axisIndex, &value)) {
+    return -1;
+  }
+  return value;
+}
+
+int getEcmcAxisEncSource(int axisIndex) {
+  int value = -1;
+  if (getAxisEncSource(axisIndex, &value)) {
+    return -1;
+  }
+  return value;
+}
+
+double getEcmcAxisActualPos(int axisIndex) {
+  double value = 0.0;
+  if (getAxisEncPosAct(axisIndex, &value)) {
+    return 0.0;
+  }
+  return value;
+}
+
+double getEcmcAxisSetpointPos(int axisIndex) {
+  double value = 0.0;
+  if (getAxisPosSet(axisIndex, &value)) {
+    return 0.0;
+  }
+  return value;
+}
+
+double getEcmcAxisActualVel(int axisIndex) {
+  double value = 0.0;
+  if (getAxisEncVelAct(axisIndex, &value)) {
+    return 0.0;
+  }
+  return value;
+}
+
+double getEcmcAxisSetpointVel(int axisIndex) {
+  double value = 0.0;
+  if (getAxisTrajVelo(axisIndex, &value)) {
+    return 0.0;
+  }
+  return value;
+}
+
+int getEcmcAxisEnabled(int axisIndex) {
+  int value = 0;
+  if (getAxisEnabled(axisIndex, &value)) {
+    return 0;
+  }
+  return value;
+}
+
+int getEcmcAxisBusy(int axisIndex) {
+  int value = 0;
+  if (getAxisBusy(axisIndex, &value)) {
+    return 0;
+  }
+  return value;
+}
+
+int getEcmcAxisError(int axisIndex) {
+  return getAxisError(axisIndex);
+}
+
+int getEcmcAxisErrorId(int axisIndex) {
+  return getAxisErrorID(axisIndex);
+}
+
 void* getEcmcAsynPortDriver() {
   LOGINFO4("%s/%s:%d:\n",
            __FILE__,

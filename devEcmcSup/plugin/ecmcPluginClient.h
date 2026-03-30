@@ -143,6 +143,17 @@ int setEcmcAxisExtSetPos(int axisIndex, double value);
  */
 int setEcmcAxisExtActPos(int axisIndex, double value);
 
+int getEcmcAxisTrajSource(int axisIndex);
+int getEcmcAxisEncSource(int axisIndex);
+double getEcmcAxisActualPos(int axisIndex);
+double getEcmcAxisSetpointPos(int axisIndex);
+double getEcmcAxisActualVel(int axisIndex);
+double getEcmcAxisSetpointVel(int axisIndex);
+int getEcmcAxisEnabled(int axisIndex);
+int getEcmcAxisBusy(int axisIndex);
+int getEcmcAxisError(int axisIndex);
+int getEcmcAxisErrorId(int axisIndex);
+
 /** \brief Get ecmcAsynPortObject (as void*)
  *
  * \return ecmcAsynPortObject (void*) object if success or otherwise NULL.\n
