@@ -107,6 +107,42 @@ uint32_t getEcmcSlaveStateWord(int masterIndex, int slaveIndex);
  */
 uint32_t getEcmcMasterStateWord(int masterIndex);
 
+/** \brief Set axis trajectory data source
+ *
+ * \param[in] axisIndex Axis index.
+ * \param[in] source 0 = internal, 1 = external.
+ *
+ * \return 0 if success or otherwise an error code.
+ */
+int setEcmcAxisTrajSource(int axisIndex, int source);
+
+/** \brief Set axis encoder data source
+ *
+ * \param[in] axisIndex Axis index.
+ * \param[in] source 0 = internal, 1 = external.
+ *
+ * \return 0 if success or otherwise an error code.
+ */
+int setEcmcAxisEncSource(int axisIndex, int source);
+
+/** \brief Set axis external trajectory position setpoint
+ *
+ * \param[in] axisIndex Axis index.
+ * \param[in] value External setpoint position.
+ *
+ * \return 0 if success or otherwise an error code.
+ */
+int setEcmcAxisExtSetPos(int axisIndex, double value);
+
+/** \brief Set axis external encoder position
+ *
+ * \param[in] axisIndex Axis index.
+ * \param[in] value External actual encoder position.
+ *
+ * \return 0 if success or otherwise an error code.
+ */
+int setEcmcAxisExtActPos(int axisIndex, double value);
+
 /** \brief Get ecmcAsynPortObject (as void*)
  *
  * \return ecmcAsynPortObject (void*) object if success or otherwise NULL.\n

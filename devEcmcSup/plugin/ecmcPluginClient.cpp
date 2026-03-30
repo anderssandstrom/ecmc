@@ -111,6 +111,22 @@ uint32_t getEcmcMasterStateWord(int masterIndex) {
   return word;
 }
 
+int setEcmcAxisTrajSource(int axisIndex, int source) {
+  return setAxisTrajSource(axisIndex, source);
+}
+
+int setEcmcAxisEncSource(int axisIndex, int source) {
+  return setAxisEncSource(axisIndex, source);
+}
+
+int setEcmcAxisExtSetPos(int axisIndex, double value) {
+  return setAxisExtSetPos(axisIndex, value);
+}
+
+int setEcmcAxisExtActPos(int axisIndex, double value) {
+  return setAxisExtActPos(axisIndex, value);
+}
+
 void* getEcmcAsynPortDriver() {
   LOGINFO4("%s/%s:%d:\n",
            __FILE__,

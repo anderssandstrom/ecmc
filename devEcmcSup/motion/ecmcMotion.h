@@ -1584,6 +1584,19 @@ int setAxisJogVel(int    axisIndex,
 int setAxisExtSetPos(int    axisIndex,
                      double value);
 
+/** \brief Set axis external actual encoder position.\n
+ *
+ * Set the external encoder position for an axis.
+ *
+ * \param[in] axisIndex  Axis index.\n
+ * \param[in] value external actual position.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ *
+ */
+int setAxisExtActPos(int    axisIndex,
+                     double value);
+
 /** \brief Set the denominator part of the encoder scale.\n
  *
  * The encoder scale factor is divided into one numerator and one denominator

@@ -1134,6 +1134,22 @@ int setAxisExtSetPos(int    axisIndex,
   return 0;
 }
 
+int setAxisExtActPos(int    axisIndex,
+                     double value) {
+  LOGINFO4("%s/%s:%d axisIndex=%d value=%f\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex,
+           value);
+
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  CHECK_AXIS_ENCODER_RETURN_IF_ERROR(axisIndex)
+
+  axes[axisIndex]->setExtActPos(value);
+  return 0;
+}
+
 int setAxisHomeVelTowardsCam(int axisIndex, double dVel) {
   LOGINFO4("%s/%s:%d axisIndex=%d value=%f\n",
            __FILE__,
