@@ -465,6 +465,16 @@ int getAxisTrajVelo(int     axisIndex,
 int getAxisID(int  axisIndex,
               int *value);
 
+/** \brief Get current axis position setpoint.\n
+ *
+ * \param[in] axisIndex  Axis index.\n
+ * \param[out] value Axis position setpoint.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ */
+int getAxisPosSet(int     axisIndex,
+                  double *value);
+
 /** \brief Get enable alarms at limits bit.\n
  *
  * \param[in] axisIndex  Axis index.\n
