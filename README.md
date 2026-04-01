@@ -45,6 +45,7 @@ This repository contains the core `ecmc` module, example IOC files, and the EPIC
 ## Repository layout
 
 - `devEcmcSup/`: core `ecmc` library sources
+- `devEcmcSup/logic/`: additive native-logic interface and examples
 - `ecmcExampleTop/`: example IOC application and boot files
 - `configure/`: EPICS build configuration
 - `documentation/`: Doxygen configuration and generated-documentation inputs
@@ -157,6 +158,10 @@ Current plugin examples:
 - PVA support from `ecmc-plc`: https://github.com/anderssandstrom/e3-ecmc_plugin_pva
 - Scope plugin for EtherCAT DC slaves: https://github.com/anderssandstrom/e3-ecmc_plugin_scope
 - DAQ plugin: https://github.com/paulscherrerinstitute/ecmc_plugin_daq
+
+`ecmc` also now contains an additive native C/C++ logic interface under
+[devEcmcSup/logic/](devEcmcSup/logic/) that is separate from the original
+plugin ABI and intended for small cyclic logic modules.
 
 ## Documentation and examples
 

@@ -228,3 +228,39 @@ int getEcmcEpicsIOCState() {
   }
   return asynPort->getEpicsState();
 }
+
+void publishEcmcDebugText(const char* message) {
+  if (!message || !message[0]) {
+    return;
+  }
+
+  LOGINFO("[ecmc native] %s\n", message);
+}
+
+void getEcmcNativeLogicHostServices(struct ecmcNativeLogicHostServices* services) {
+  if (!services) {
+    return;
+  }
+
+  *services = {};
+  services->version = ECMC_NATIVE_LOGIC_ABI_VERSION;
+  services->get_cycle_time_s = []() -> double { return getEcmcSampleTimeMS() * 1e-3; };
+  services->get_ec_master_state_word = &getEcmcMasterStateWord;
+  services->get_ec_slave_state_word = &getEcmcSlaveStateWord;
+  services->get_axis_traj_source = &getEcmcAxisTrajSource;
+  services->get_axis_enc_source = &getEcmcAxisEncSource;
+  services->get_axis_actual_pos = &getEcmcAxisActualPos;
+  services->get_axis_setpoint_pos = &getEcmcAxisSetpointPos;
+  services->get_axis_actual_vel = &getEcmcAxisActualVel;
+  services->get_axis_setpoint_vel = &getEcmcAxisSetpointVel;
+  services->get_axis_enabled = &getEcmcAxisEnabled;
+  services->get_axis_busy = &getEcmcAxisBusy;
+  services->get_axis_error = &getEcmcAxisError;
+  services->get_axis_error_id = &getEcmcAxisErrorId;
+  services->set_axis_traj_source = &setEcmcAxisTrajSource;
+  services->set_axis_enc_source = &setEcmcAxisEncSource;
+  services->set_axis_ext_set_pos = &setEcmcAxisExtSetPos;
+  services->set_axis_ext_act_pos = &setEcmcAxisExtActPos;
+  services->get_ioc_state = &getEcmcEpicsIOCState;
+  services->publish_debug_text = &publishEcmcDebugText;
+}
