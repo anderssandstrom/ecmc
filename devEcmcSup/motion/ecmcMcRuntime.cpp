@@ -200,14 +200,16 @@ int ecmcMcMoveAbsolute::run(ecmcMcAxisRef axisRef,
   int errorCode = 0;
   auto *axis    = resolveAxis(axisRef, &errorCode);
   if (!axis) {
-    issuedCommand_ = false;
-    executeOld_    = execute;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
+    executeOld_         = execute;
     setError(errorCode);
     return errorCode;
   }
 
   if (axis->getErrorID()) {
-    issuedCommand_ = false;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
     setError(axis->getErrorID());
     executeOld_ = execute;
     return static_cast<int>(ErrorID);
@@ -218,9 +220,10 @@ int ecmcMcMoveAbsolute::run(ecmcMcAxisRef axisRef,
   const bool trigger = risingEdge(execute);
 
   if (!execute) {
-    issuedCommand_ = false;
-    Busy           = false;
-    Active         = false;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
+    Busy                = false;
+    Active              = false;
     return 0;
   }
 
@@ -230,18 +233,21 @@ int ecmcMcMoveAbsolute::run(ecmcMcAxisRef axisRef,
                                            acceleration,
                                            deceleration);
     if (errorCode) {
-      issuedCommand_ = false;
+      issuedCommand_      = false;
+      awaitingStandstill_ = false;
       setError(errorCode);
       return errorCode;
     }
-    issuedCommand_ = true;
+    issuedCommand_      = true;
+    awaitingStandstill_ = false;
   } else if (issuedCommand_ && isMoveAbsoluteActive(axis)) {
     errorCode = axis->moveAbsolutePosition(position,
                                            velocity,
                                            acceleration,
                                            deceleration);
     if (errorCode) {
-      issuedCommand_ = false;
+      issuedCommand_      = false;
+      awaitingStandstill_ = false;
       setError(errorCode);
       return errorCode;
     }
@@ -249,16 +255,26 @@ int ecmcMcMoveAbsolute::run(ecmcMcAxisRef axisRef,
 
   const bool moveAbsActive = isMoveAbsoluteActive(axis);
 
-  Busy   = issuedCommand_ && moveAbsActive;
-  Active = moveAbsActive;
+  if (issuedCommand_ && moveAbsActive) {
+    Busy   = true;
+    Active = true;
+    return 0;
+  }
 
   if (issuedCommand_ && !moveAbsActive) {
-    if (isAxisAtTarget(axis)) {
+    issuedCommand_      = false;
+    awaitingStandstill_ = true;
+  }
+
+  Busy   = false;
+  Active = false;
+
+  if (awaitingStandstill_) {
+    const bool atTargetMonEnabled = axis->getMon() && axis->getMon()->getEnableAtTargetMon();
+    if (!atTargetMonEnabled || isAxisAtTarget(axis)) {
       Done = true;
-    } else {
-      CommandAborted = true;
+      awaitingStandstill_ = false;
     }
-    issuedCommand_ = false;
   }
 
   return 0;
@@ -275,14 +291,16 @@ int ecmcMcMoveRelative::run(ecmcMcAxisRef axisRef,
   int errorCode = 0;
   auto *axis    = resolveAxis(axisRef, &errorCode);
   if (!axis) {
-    issuedCommand_ = false;
-    executeOld_    = execute;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
+    executeOld_         = execute;
     setError(errorCode);
     return errorCode;
   }
 
   if (axis->getErrorID()) {
-    issuedCommand_ = false;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
     setError(axis->getErrorID());
     executeOld_ = execute;
     return static_cast<int>(ErrorID);
@@ -293,9 +311,10 @@ int ecmcMcMoveRelative::run(ecmcMcAxisRef axisRef,
   const bool trigger = risingEdge(execute);
 
   if (!execute) {
-    issuedCommand_ = false;
-    Busy           = false;
-    Active         = false;
+    issuedCommand_      = false;
+    awaitingStandstill_ = false;
+    Busy                = false;
+    Active              = false;
     return 0;
   }
 
@@ -305,18 +324,21 @@ int ecmcMcMoveRelative::run(ecmcMcAxisRef axisRef,
                                            acceleration,
                                            deceleration);
     if (errorCode) {
-      issuedCommand_ = false;
+      issuedCommand_      = false;
+      awaitingStandstill_ = false;
       setError(errorCode);
       return errorCode;
     }
-    issuedCommand_ = true;
+    issuedCommand_      = true;
+    awaitingStandstill_ = false;
   } else if (issuedCommand_ && isMoveRelativeActive(axis)) {
     errorCode = axis->moveRelativePosition(distance,
                                            velocity,
                                            acceleration,
                                            deceleration);
     if (errorCode) {
-      issuedCommand_ = false;
+      issuedCommand_      = false;
+      awaitingStandstill_ = false;
       setError(errorCode);
       return errorCode;
     }
@@ -324,16 +346,26 @@ int ecmcMcMoveRelative::run(ecmcMcAxisRef axisRef,
 
   const bool moveRelActive = isMoveRelativeActive(axis);
 
-  Busy   = issuedCommand_ && moveRelActive;
-  Active = moveRelActive;
+  if (issuedCommand_ && moveRelActive) {
+    Busy   = true;
+    Active = true;
+    return 0;
+  }
 
   if (issuedCommand_ && !moveRelActive) {
-    if (isAxisAtTarget(axis)) {
+    issuedCommand_      = false;
+    awaitingStandstill_ = true;
+  }
+
+  Busy   = false;
+  Active = false;
+
+  if (awaitingStandstill_) {
+    const bool atTargetMonEnabled = axis->getMon() && axis->getMon()->getEnableAtTargetMon();
+    if (!atTargetMonEnabled || isAxisAtTarget(axis)) {
       Done = true;
-    } else {
-      CommandAborted = true;
+      awaitingStandstill_ = false;
     }
-    issuedCommand_ = false;
   }
 
   return 0;

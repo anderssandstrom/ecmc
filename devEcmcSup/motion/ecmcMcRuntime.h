@@ -69,7 +69,8 @@ public:
           double        deceleration);
 
 private:
-  bool issuedCommand_ = false;
+  bool issuedCommand_       = false;
+  bool awaitingStandstill_  = false;
 };
 
 class ecmcMcMoveRelative : public ecmcMcFBBase {
@@ -82,7 +83,8 @@ public:
           double        deceleration);
 
 private:
-  bool issuedCommand_ = false;
+  bool issuedCommand_       = false;
+  bool awaitingStandstill_  = false;
 };
 
 class ecmcMcHome : public ecmcMcFBBase {
