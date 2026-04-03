@@ -18,13 +18,13 @@ struct NativeBounceLogic : public ecmcNative::LogicBase {
   int32_t cycle_counter {0};
 
   NativeBounceLogic() {
-    io.input("ec.s14.positionActual01", actual_position)
-      .output("ec.s14.driveControl01", drive_control)
-      .output("ec.s14.velocitySetpoint01", velocity_setpoint);
+    ecmc.input("ec.s14.positionActual01", actual_position)
+        .output("ec.s14.driveControl01", drive_control)
+        .output("ec.s14.velocitySetpoint01", velocity_setpoint);
 
-    pv.readOnly("main.actual_position", actual_position)
-      .readOnly("main.cycle_counter", cycle_counter)
-      .writable("main.velocity_setpoint", velocity_setpoint);
+    epics.readOnly("main.actual_position", actual_position)
+         .readOnly("main.cycle_counter", cycle_counter)
+         .writable("main.velocity_setpoint", velocity_setpoint);
   }
 
   void run() override {

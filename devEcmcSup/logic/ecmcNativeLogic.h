@@ -19,7 +19,15 @@
 extern "C" {
 #endif
 
-#define ECMC_NATIVE_LOGIC_ABI_VERSION 1
+#define ECMC_NATIVE_LOGIC_ABI_VERSION 4
+
+#define ECMC_NATIVE_BIND_FLAG_NONE 0u
+#define ECMC_NATIVE_BIND_FLAG_AUTO_SIZE 1u
+
+struct ecmcNativeLogicItemBinding;
+
+typedef int (*ecmcNativeLogicPrepareItemBindingFn)(struct ecmcNativeLogicItemBinding* binding,
+                                                   uint32_t sourceBytes);
 
 enum ecmcNativeValueType {
   ECMC_NATIVE_TYPE_BOOL = 1,
@@ -31,6 +39,8 @@ enum ecmcNativeValueType {
   ECMC_NATIVE_TYPE_U32 = 7,
   ECMC_NATIVE_TYPE_F32 = 8,
   ECMC_NATIVE_TYPE_F64 = 9,
+  ECMC_NATIVE_TYPE_U64 = 10,
+  ECMC_NATIVE_TYPE_S64 = 11,
 };
 
 struct ecmcNativeLogicItemBinding {
@@ -39,12 +49,16 @@ struct ecmcNativeLogicItemBinding {
   uint32_t type;
   uint32_t bytes;
   uint32_t writable;
+  uint32_t flags;
+  ecmcNativeLogicPrepareItemBindingFn prepare;
+  void* prepareContext;
 };
 
 struct ecmcNativeLogicExportedVar {
   const char* name;
   void* data;
   uint32_t type;
+  uint32_t bytes;
   uint32_t writable;
 };
 

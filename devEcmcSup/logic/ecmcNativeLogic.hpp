@@ -11,7 +11,9 @@
 
 #include "ecmcNativeLogic.h"
 
+#include <array>
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -30,6 +32,32 @@ inline const ecmcNativeLogicHostServices* hostServices() {
 
 template <typename T>
 struct ValueType;
+
+template <typename T, typename = void>
+struct HasContiguousDataAndSize : std::false_type {};
+
+template <typename T>
+struct HasContiguousDataAndSize<
+  T,
+  std::void_t<
+    decltype(std::declval<T&>().data()),
+    decltype(std::declval<T&>().size())>> : std::true_type {};
+
+template <typename T>
+inline int prepareAutoVectorBinding(ecmcNativeLogicItemBinding* binding, uint32_t sourceBytes) {
+  if (!binding || !binding->prepareContext) {
+    return -1;
+  }
+  if ((sourceBytes % sizeof(T)) != 0u) {
+    return -1;
+  }
+
+  auto* values = static_cast<std::vector<T>*>(binding->prepareContext);
+  values->resize(sourceBytes / sizeof(T));
+  binding->data = values->data();
+  binding->bytes = sourceBytes;
+  return 0;
+}
 
 template <>
 struct ValueType<bool> {
@@ -67,29 +95,239 @@ template <>
 struct ValueType<double> {
   static constexpr uint32_t value = ECMC_NATIVE_TYPE_F64;
 };
+template <>
+struct ValueType<uint64_t> {
+  static constexpr uint32_t value = ECMC_NATIVE_TYPE_U64;
+};
+template <>
+struct ValueType<int64_t> {
+  static constexpr uint32_t value = ECMC_NATIVE_TYPE_S64;
+};
 
 template <typename T>
 inline ecmcNativeLogicItemBinding ecmcInput(const char* item_name, T* value) {
   using RawT = std::remove_cv_t<T>;
-  return {item_name, value, ValueType<RawT>::value, static_cast<uint32_t>(sizeof(RawT)), 0u};
+  return {item_name,
+          value,
+          ValueType<RawT>::value,
+          static_cast<uint32_t>(sizeof(RawT)),
+          0u,
+          ECMC_NATIVE_BIND_FLAG_NONE,
+          nullptr,
+          nullptr};
 }
 
 template <typename T>
 inline ecmcNativeLogicItemBinding ecmcOutput(const char* item_name, T* value) {
   using RawT = std::remove_cv_t<T>;
-  return {item_name, value, ValueType<RawT>::value, static_cast<uint32_t>(sizeof(RawT)), 1u};
+  return {item_name,
+          value,
+          ValueType<RawT>::value,
+          static_cast<uint32_t>(sizeof(RawT)),
+          1u,
+          ECMC_NATIVE_BIND_FLAG_NONE,
+          nullptr,
+          nullptr};
 }
 
 template <typename T>
 inline ecmcNativeLogicExportedVar epicsReadOnly(const char* name, T* value) {
   using RawT = std::remove_cv_t<T>;
-  return {name, value, ValueType<RawT>::value, 0u};
+  return {name, value, ValueType<RawT>::value, static_cast<uint32_t>(sizeof(RawT)), 0u};
 }
 
 template <typename T>
 inline ecmcNativeLogicExportedVar epicsWritable(const char* name, T* value) {
   using RawT = std::remove_cv_t<T>;
-  return {name, value, ValueType<RawT>::value, 1u};
+  return {name, value, ValueType<RawT>::value, static_cast<uint32_t>(sizeof(RawT)), 1u};
+}
+
+template <typename T>
+inline ecmcNativeLogicItemBinding ecmcInputArray(const char* item_name,
+                                                 T*          values,
+                                                 size_t      count) {
+  using RawT = std::remove_cv_t<T>;
+  return {
+    item_name,
+    values,
+    ValueType<RawT>::value,
+    static_cast<uint32_t>(sizeof(RawT) * count),
+    0u,
+    ECMC_NATIVE_BIND_FLAG_NONE,
+    nullptr,
+    nullptr,
+  };
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicItemBinding ecmcInputArray(const char* item_name, T (&values)[N]) {
+  return ecmcInputArray(item_name, values, N);
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicItemBinding ecmcInputArray(const char* item_name,
+                                                 std::array<T, N>& values) {
+  return ecmcInputArray(item_name, values.data(), values.size());
+}
+
+template <typename Container,
+          typename ValueT = std::remove_pointer_t<decltype(std::declval<Container&>().data())>,
+          std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+inline ecmcNativeLogicItemBinding ecmcInputArray(const char* item_name, Container& values) {
+  return ecmcInputArray(item_name, values.data(), values.size());
+}
+
+template <typename T>
+inline ecmcNativeLogicItemBinding ecmcOutputArray(const char* item_name,
+                                                  T*          values,
+                                                  size_t      count) {
+  using RawT = std::remove_cv_t<T>;
+  return {
+    item_name,
+    values,
+    ValueType<RawT>::value,
+    static_cast<uint32_t>(sizeof(RawT) * count),
+    1u,
+    ECMC_NATIVE_BIND_FLAG_NONE,
+    nullptr,
+    nullptr,
+  };
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicItemBinding ecmcOutputArray(const char* item_name, T (&values)[N]) {
+  return ecmcOutputArray(item_name, values, N);
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicItemBinding ecmcOutputArray(const char* item_name,
+                                                  std::array<T, N>& values) {
+  return ecmcOutputArray(item_name, values.data(), values.size());
+}
+
+template <typename Container,
+          typename ValueT = std::remove_pointer_t<decltype(std::declval<Container&>().data())>,
+          std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+inline ecmcNativeLogicItemBinding ecmcOutputArray(const char* item_name, Container& values) {
+  return ecmcOutputArray(item_name, values.data(), values.size());
+}
+
+template <typename T>
+inline ecmcNativeLogicItemBinding ecmcInputAutoArray(const char* item_name,
+                                                     std::vector<T>& values) {
+  return {item_name,
+          nullptr,
+          ValueType<std::remove_cv_t<T>>::value,
+          0u,
+          0u,
+          ECMC_NATIVE_BIND_FLAG_AUTO_SIZE,
+          &prepareAutoVectorBinding<T>,
+          &values};
+}
+
+template <typename T>
+inline ecmcNativeLogicItemBinding ecmcOutputAutoArray(const char* item_name,
+                                                      std::vector<T>& values) {
+  return {item_name,
+          nullptr,
+          ValueType<std::remove_cv_t<T>>::value,
+          0u,
+          1u,
+          ECMC_NATIVE_BIND_FLAG_AUTO_SIZE,
+          &prepareAutoVectorBinding<T>,
+          &values};
+}
+
+inline ecmcNativeLogicItemBinding ecmcInputBytes(const char* item_name,
+                                                 void*       data,
+                                                 uint32_t    bytes,
+                                                 uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+  return {item_name, data, type, bytes, 0u, ECMC_NATIVE_BIND_FLAG_NONE, nullptr, nullptr};
+}
+
+inline ecmcNativeLogicItemBinding ecmcOutputBytes(const char* item_name,
+                                                  void*       data,
+                                                  uint32_t    bytes,
+                                                  uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+  return {item_name, data, type, bytes, 1u, ECMC_NATIVE_BIND_FLAG_NONE, nullptr, nullptr};
+}
+
+template <typename T>
+inline ecmcNativeLogicExportedVar epicsReadOnlyArray(const char* name,
+                                                     T*          values,
+                                                     size_t      count) {
+  using RawT = std::remove_cv_t<T>;
+  return {
+    name,
+    values,
+    ValueType<RawT>::value,
+    static_cast<uint32_t>(sizeof(RawT) * count),
+    0u,
+  };
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicExportedVar epicsReadOnlyArray(const char* name, T (&values)[N]) {
+  return epicsReadOnlyArray(name, values, N);
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicExportedVar epicsReadOnlyArray(const char* name,
+                                                     std::array<T, N>& values) {
+  return epicsReadOnlyArray(name, values.data(), values.size());
+}
+
+template <typename Container,
+          typename ValueT = std::remove_pointer_t<decltype(std::declval<Container&>().data())>,
+          std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+inline ecmcNativeLogicExportedVar epicsReadOnlyArray(const char* name, Container& values) {
+  return epicsReadOnlyArray(name, values.data(), values.size());
+}
+
+template <typename T>
+inline ecmcNativeLogicExportedVar epicsWritableArray(const char* name,
+                                                     T*          values,
+                                                     size_t      count) {
+  using RawT = std::remove_cv_t<T>;
+  return {
+    name,
+    values,
+    ValueType<RawT>::value,
+    static_cast<uint32_t>(sizeof(RawT) * count),
+    1u,
+  };
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicExportedVar epicsWritableArray(const char* name, T (&values)[N]) {
+  return epicsWritableArray(name, values, N);
+}
+
+template <typename T, size_t N>
+inline ecmcNativeLogicExportedVar epicsWritableArray(const char* name,
+                                                     std::array<T, N>& values) {
+  return epicsWritableArray(name, values.data(), values.size());
+}
+
+template <typename Container,
+          typename ValueT = std::remove_pointer_t<decltype(std::declval<Container&>().data())>,
+          std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+inline ecmcNativeLogicExportedVar epicsWritableArray(const char* name, Container& values) {
+  return epicsWritableArray(name, values.data(), values.size());
+}
+
+inline ecmcNativeLogicExportedVar epicsReadOnlyBytes(const char* name,
+                                                     void*       data,
+                                                     uint32_t    bytes,
+                                                     uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+  return {name, data, type, bytes, 0u};
+}
+
+inline ecmcNativeLogicExportedVar epicsWritableBytes(const char* name,
+                                                     void*       data,
+                                                     uint32_t    bytes,
+                                                     uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+  return {name, data, type, bytes, 1u};
 }
 
 class EcmcItems {
@@ -103,6 +341,84 @@ class EcmcItems {
   template <typename T>
   EcmcItems& output(const char* item_name, T& value) {
     bindings_.push_back(ecmcOutput(item_name, &value));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputArray(const char* item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcInputArray(item_name, values, count));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& inputArray(const char* item_name, T (&values)[N]) {
+    bindings_.push_back(ecmcInputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& inputArray(const char* item_name, std::array<T, N>& values) {
+    bindings_.push_back(ecmcInputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EcmcItems& inputArray(const char* item_name, Container& values) {
+    bindings_.push_back(ecmcInputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputArray(const char* item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcOutputArray(item_name, values, count));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& outputArray(const char* item_name, T (&values)[N]) {
+    bindings_.push_back(ecmcOutputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& outputArray(const char* item_name, std::array<T, N>& values) {
+    bindings_.push_back(ecmcOutputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EcmcItems& outputArray(const char* item_name, Container& values) {
+    bindings_.push_back(ecmcOutputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputAutoArray(const char* item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcInputAutoArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputAutoArray(const char* item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcOutputAutoArray(item_name, values));
+    return *this;
+  }
+
+  EcmcItems& inputBytes(const char* item_name,
+                        void*       data,
+                        uint32_t    bytes,
+                        uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+    bindings_.push_back(ecmcInputBytes(item_name, data, bytes, type));
+    return *this;
+  }
+
+  EcmcItems& outputBytes(const char* item_name,
+                         void*       data,
+                         uint32_t    bytes,
+                         uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+    bindings_.push_back(ecmcOutputBytes(item_name, data, bytes, type));
     return *this;
   }
 
@@ -132,6 +448,72 @@ class EpicsExports {
     return *this;
   }
 
+  template <typename T>
+  EpicsExports& readOnlyArray(const char* name, T* values, size_t count) {
+    exports_.push_back(epicsReadOnlyArray(name, values, count));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& readOnlyArray(const char* name, T (&values)[N]) {
+    exports_.push_back(epicsReadOnlyArray(name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& readOnlyArray(const char* name, std::array<T, N>& values) {
+    exports_.push_back(epicsReadOnlyArray(name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EpicsExports& readOnlyArray(const char* name, Container& values) {
+    exports_.push_back(epicsReadOnlyArray(name, values));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& writableArray(const char* name, T* values, size_t count) {
+    exports_.push_back(epicsWritableArray(name, values, count));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& writableArray(const char* name, T (&values)[N]) {
+    exports_.push_back(epicsWritableArray(name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& writableArray(const char* name, std::array<T, N>& values) {
+    exports_.push_back(epicsWritableArray(name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EpicsExports& writableArray(const char* name, Container& values) {
+    exports_.push_back(epicsWritableArray(name, values));
+    return *this;
+  }
+
+  EpicsExports& readOnlyBytes(const char* name,
+                              void*       data,
+                              uint32_t    bytes,
+                              uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+    exports_.push_back(epicsReadOnlyBytes(name, data, bytes, type));
+    return *this;
+  }
+
+  EpicsExports& writableBytes(const char* name,
+                              void*       data,
+                              uint32_t    bytes,
+                              uint32_t    type = ECMC_NATIVE_TYPE_U8) {
+    exports_.push_back(epicsWritableBytes(name, data, bytes, type));
+    return *this;
+  }
+
   const ecmcNativeLogicExportedVar* data() const {
     return exports_.data();
   }
@@ -151,8 +533,6 @@ class LogicBase {
 
   EcmcItems ecmc;
   EpicsExports epics;
-  EcmcItems& io {ecmc};
-  EpicsExports& pv {epics};
 };
 
 inline double getCycleTimeS() {

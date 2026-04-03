@@ -6,8 +6,8 @@ interface in `ecmc`.
 The example uses:
 
 - `ecmcNative::LogicBase`
-- `io` for live `ecmc` item bindings
-- `pv` for EPICS-facing exported values
+- `ecmc` for live `ecmc` item bindings
+- `epics` for EPICS-facing exported values
 - `ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(...)`
 
 Main source:

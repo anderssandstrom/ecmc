@@ -29,14 +29,14 @@ struct NativeMotionLogic : public ecmcNative::LogicBase {
   uint8_t standstill {0};
 
   NativeMotionLogic() {
-    pv.readOnly("motion.actual_position", actual_position)
-      .readOnly("motion.target_position", target_position)
-      .readOnly("motion.cycle_counter", cycle_counter)
-      .readOnly("motion.power_status", power_status)
-      .readOnly("motion.move_busy", move_busy)
-      .readOnly("motion.move_done", move_done)
-      .readOnly("motion.status_valid", status_valid)
-      .readOnly("motion.standstill", standstill);
+    epics.readOnly("motion.actual_position", actual_position)
+         .readOnly("motion.target_position", target_position)
+         .readOnly("motion.cycle_counter", cycle_counter)
+         .readOnly("motion.power_status", power_status)
+         .readOnly("motion.move_busy", move_busy)
+         .readOnly("motion.move_done", move_done)
+         .readOnly("motion.status_valid", status_valid)
+         .readOnly("motion.standstill", standstill);
   }
 
   void run() override {
