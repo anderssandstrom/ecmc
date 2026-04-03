@@ -14,8 +14,16 @@ Main source:
 
 - [`main.cpp`](./main.cpp)
 
-The example is intentionally header-only on the `ecmc` side. A future loader can
-compile this file into a shared library and query:
+The example is intentionally small on the `ecmc` side. Compile it into a shared
+library and load it either through `Cfg.LoadNativeLogic(...)` directly or,
+preferably in IOC startup, through:
+
+```iocsh
+iocshLoad("$(ecmccfg_DIR)loadNativeLogic.cmd",
+          "LOGIC_ID=0,FILE=/path/to/native_logic.so,ASYN_PORT=NATIVE.LOGIC0")
+```
+
+`ecmc` queries:
 
 ```cpp
 ecmc_native_logic_get_api()

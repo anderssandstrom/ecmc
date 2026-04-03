@@ -21,6 +21,7 @@
 #include "ecmcAsynDataItem.h"
 #include "ecmcMotorRecordController.h"
 #include "ecmcPluginLib.h"
+#include "ecmcNativeLogicLib.h"
 #include "ecmcPVTController.h"
 #include "ecmcLookupTable.h"
 #include "epicsMutex.h"
@@ -38,6 +39,7 @@ ecmcMainThreadDiag  threadDiag = { 0 };
 app_mode_type appModeCmd, appModeCmdOld, appModeStat;
 ecmcMotorRecordController *asynPortMotorRecord;
 ecmcPluginLib *plugins[ECMC_MAX_PLUGINS];
+ecmcNativeLogicLib *nativeLogics[ECMC_MAX_PLUGINS];
 ecmcPluginLib *safetyplugin = NULL;
 ecmcShm shmObj;
 ecmcPVTController *pvtCtrl_ = NULL;
@@ -61,6 +63,7 @@ double mcuPeriod                 = MCU_PERIOD_NS;
 int    sampleRateChangeAllowed   = 1;
 int    blockCmdParserInRt        = 0;
 int    pluginsError              = 0;
+int    nativeLogicError          = 0;
 int    safetypluginError         = 0;
 int    shmInitError              = 0;
 int    shmAccessError            = 0;

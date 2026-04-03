@@ -50,6 +50,7 @@ SRC_DIRS += ${ECMC}/motion
 SRC_DIRS += ${ECMC}/motor
 SRC_DIRS += ${ECMC}/plc
 SRC_DIRS += ${ECMC}/plugin
+SRC_DIRS += ${ECMC}/logic
 SRC_DIRS += ${ECMC}/misc
 
 ecmc_SRCS += $(notdir $(foreach d,$(SRC_DIRS),$(wildcard $d/*.c)))

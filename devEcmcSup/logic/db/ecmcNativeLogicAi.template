@@ -1,0 +1,6 @@
+record(ai, "$(P)$(REC)") {
+  field(DESC, "$(DESC=)")
+  field(PREC, "$(PREC=3)")
+  field(SCAN, "I/O Intr")
+  field(INP,  "@asyn($(PORT),0,1000)$(PARAM)")
+}

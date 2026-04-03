@@ -170,6 +170,43 @@ The native logic area also includes helper headers for common patterns:
 - [`ecmcNativeControl.hpp`](devEcmcSup/logic/ecmcNativeControl.hpp): control helpers such as `ecmcNative::Pid`
 - [`ecmcNativeUtils.hpp`](devEcmcSup/logic/ecmcNativeUtils.hpp): utility helpers such as debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
 
+Native logic modules can be loaded directly in `ecmc` with:
+
+```iocsh
+ecmcConfigOrDie "Cfg.LoadNativeLogic(0,/path/to/native_logic.so)"
+ecmcConfigOrDie "Cfg.LoadNativeLogic(0,/path/to/native_logic.so,asyn_port=NATIVE.LOGIC0;sample_rate_ms=2)"
+```
+
+For normal IOC usage, the recommended entry point is the companion IOC shell
+wrapper in `ecmccfg`:
+
+```iocsh
+iocshLoad("$(ecmccfg_DIR)loadNativeLogic.cmd",
+          "LOGIC_ID=0,FILE=/path/to/native_logic.so,ASYN_PORT=NATIVE.LOGIC0")
+```
+
+That wrapper loads the built-in native-logic control/status PVs by default.
+Custom `epics.*` substitutions can be enabled separately with
+`LOAD_APP_PVS=1,EPICS_SUBST=...`.
+
+Each loaded native logic instance gets its own dedicated asyn port. Both the
+built-in runtime PVs and all user-defined `epics.*` exports are published on
+that port.
+
+That script is intended to load the built-in core substitutions from:
+
+- `../ecmccfg/db/generic/ecmcNativeLogicCore.substitutions`
+
+For native logic EPICS exports there is also an offline substitutions generator:
+
+- [`tools/ecmcNativeLogicSubstGen.py`](tools/ecmcNativeLogicSubstGen.py)
+
+It can inspect a compiled native logic shared library through
+`ecmc_native_logic_get_api()` and generate substitutions for the variables
+declared through the native `epics` export builder. Load the generic core
+substitutions and the generated custom substitutions on the same native-logic
+asyn port.
+
 ## Documentation and examples
 
 - Manual: https://paulscherrerinstitute.github.io/ecmccfg/manual/

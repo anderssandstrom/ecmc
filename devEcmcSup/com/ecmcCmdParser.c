@@ -34,6 +34,7 @@
 #include "ecmcCom.h"
 #include "ecmcPLC.h"
 #include "ecmcPlugin.h"
+#include "ecmcNativeLogicCmd.h"
 #include <iocsh.h>
 
 extern int blockCmdParserInRt;
@@ -3277,6 +3278,18 @@ parse_cfg_setaxisdrv:
     return loadPlugin(iValue, cIdBuffer, cIdBuffer2);
   }
 
+  /*int Cfg.LoadNativeLogic(int logicId, char *cFilename, char *configString); */
+  nvals = sscanf(myarg_1,
+                 "LoadNativeLogic(%d,%[^,],%[^)])",
+                 &iValue,
+                 cIdBuffer,
+                 cIdBuffer2);
+
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadNativeLogic");
+    return loadNativeLogic(iValue, cIdBuffer, cIdBuffer2);
+  }
+
   /*int Cfg.LoadSafetyPlugin(char *cFilename, char *configString); */
   nvals = sscanf(myarg_1,
                  "LoadSafetyPlugin(%[^,],%[^)])",
@@ -3296,11 +3309,26 @@ parse_cfg_setaxisdrv:
     return loadPlugin(iValue, cIdBuffer, "");
   }
 
+  /*int Cfg.LoadNativeLogic(int logicId, char *cFilename); */
+  nvals = sscanf(myarg_1, "LoadNativeLogic(%d,%[^)])", &iValue, cIdBuffer);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadNativeLogic");
+    return loadNativeLogic(iValue, cIdBuffer, "");
+  }
+
   /*int Cfg.ReportPlugin(int pluginId); */
   nvals = sscanf(myarg_1, "ReportPlugin(%d)", &iValue);
 
   if (nvals == 1) {
     return reportPlugin(iValue);
+  }
+
+  /*int Cfg.ReportNativeLogic(int logicId); */
+  nvals = sscanf(myarg_1, "ReportNativeLogic(%d)", &iValue);
+
+  if (nvals == 1) {
+    return reportNativeLogic(iValue);
   }
 
   /*int Cfg.SetAxisSeqTimeout(int axis_no, int value);  IN seconds!!*/

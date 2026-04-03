@@ -69,9 +69,21 @@ int getControllerError() {
     }
   }
 
+  for (int i = 0; i < ECMC_MAX_PLUGINS; i++) {
+    if (nativeLogics[i]) {
+      if (nativeLogics[i]->getError()) {
+        return nativeLogics[i]->getErrorID();
+      }
+    }
+  }
+
   // Plugin RTfunc retrun errors
   if (pluginsError) {
     return pluginsError;
+  }
+
+  if (nativeLogicError) {
+    return nativeLogicError;
   }
 
   if (shmAccessError) {
@@ -114,8 +126,15 @@ int controllerErrorReset() {
     }
   }
 
+  for (int i = 0; i < ECMC_MAX_PLUGINS; i++) {
+    if (nativeLogics[i]) {
+      nativeLogics[i]->errorReset();
+    }
+  }
+
   // Plugin RTfunc retrun errors
   pluginsError = 0;
+  nativeLogicError = 0;
   shmAccessError = 0;
 
   // PLCs

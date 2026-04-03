@@ -1,0 +1,4 @@
+record(longout, "$(P)$(REC)") {
+  field(DESC, "$(DESC=)")
+  field(OUT,  "@asyn($(PORT),0,1000)$(PARAM)")
+}

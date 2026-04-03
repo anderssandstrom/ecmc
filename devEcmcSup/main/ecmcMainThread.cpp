@@ -303,6 +303,8 @@ void cyclic_task(void *usr) {
   ecmcMasterSlaveStateMachine *activeMasterSlaves[ECMC_MAX_MST_SLVS_SMS] = {};
   int activePluginCount           = 0;
   ecmcPluginLib *activePlugins[ECMC_MAX_PLUGINS] = {};
+  int activeNativeLogicCount      = 0;
+  ecmcNativeLogicLib *activeNativeLogics[ECMC_MAX_PLUGINS] = {};
 
   int writeToShm = masterId < ECMC_SHM_MAX_MASTERS &&
                    masterId > -ECMC_SHM_MAX_MASTERS;
@@ -334,6 +336,13 @@ void cyclic_task(void *usr) {
     if (plugin != NULL) {
       activePlugins[activePluginCount] = plugin;
       activePluginCount++;
+    }
+  }
+  for (int logicIndex = 0; logicIndex < ECMC_MAX_PLUGINS; ++logicIndex) {
+    auto * const nativeLogic = nativeLogics[logicIndex];
+    if (nativeLogic != NULL) {
+      activeNativeLogics[activeNativeLogicCount] = nativeLogic;
+      activeNativeLogicCount++;
     }
   }
 
@@ -449,6 +458,10 @@ void cyclic_task(void *usr) {
       pluginsError = activePlugins[i]->exeRTFunc(controllerError);
     }
 
+    for (i = 0; i < activeNativeLogicCount; i++) {
+      nativeLogicError = activeNativeLogics[i]->exeRTFunc(controllerError);
+    }
+
     // PLCs
     if (plcs) {
       plcs->execute(ecStat);
@@ -527,6 +540,7 @@ int ecmcInitThread(void) {
   axisDiagIndex = 0;
   axisDiagFreq  = 10;
   setDiagAxisEnable(0);
+  nativeLogicError = 0;
 
   for (int i = 0; i < ECMC_MAX_AXES; i++) {
     axisGroups[i] = NULL;
@@ -539,6 +553,7 @@ int ecmcInitThread(void) {
 
   for (int i = 0; i < ECMC_MAX_PLUGINS; i++) {
     plugins[i] = NULL;
+    nativeLogics[i] = NULL;
   }
 
   for (int i = 0; i < ECMC_MAX_LUTS; i++) {
@@ -697,9 +712,20 @@ int setAppModeCfg(int mode) {
       }
     }
 
+    for (int i = 0; i < ECMC_MAX_PLUGINS; ++i) {
+      if (nativeLogics[i]) {
+        int errorCode = nativeLogics[i]->exeExitRTFunc();
+        if (errorCode) {
+          return errorCode;
+        }
+      }
+    }
+
     if (safetyplugin) {
       safetyplugin->exeExitRTFunc();
     }
+
+    nativeLogicError = 0;
   }
 
   if (asynPort) {
@@ -763,6 +789,15 @@ int setAppModeRun(int mode) {
     if (plugins[i]) {
       errorCode = plugins[i]->exeEnterRTFunc();
 
+      if (errorCode) {
+        return errorCode;
+      }
+    }
+  }
+
+  for (int i = 0; i < ECMC_MAX_PLUGINS; ++i) {
+    if (nativeLogics[i]) {
+      errorCode = nativeLogics[i]->exeEnterRTFunc();
       if (errorCode) {
         return errorCode;
       }
