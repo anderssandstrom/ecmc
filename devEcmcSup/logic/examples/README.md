@@ -6,6 +6,7 @@ interface in `ecmc`.
 Current examples:
 
 - [`native_logic_minimal`](./native_logic_minimal/): minimal C++ example using [`ecmcNativeLogic.h`](../ecmcNativeLogic.h) and [`ecmcNativeLogic.hpp`](../ecmcNativeLogic.hpp)
+- [`native_logic_control`](./native_logic_control/): C++ example using [`ecmcNativeControl.hpp`](../ecmcNativeControl.hpp) and [`ecmcNativeUtils.hpp`](../ecmcNativeUtils.hpp)
 - [`native_logic_motion`](./native_logic_motion/): C++ example using [`ecmcNativeMotion.hpp`](../ecmcNativeMotion.hpp) with `MC_Power`, `MC_MoveAbsolute`, and `MC_ReadStatus` style wrappers
 - [`native_logic_scope`](./native_logic_scope/): EL3702/EL1252-style scope example using oversampling memmaps, trigger timestamps, and a digital trigger
 

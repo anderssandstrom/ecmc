@@ -45,7 +45,7 @@ This repository contains the core `ecmc` module, example IOC files, and the EPIC
 ## Repository layout
 
 - `devEcmcSup/`: core `ecmc` library sources
-- `devEcmcSup/logic/`: additive native-logic interface and examples
+- `devEcmcSup/logic/`: additive native-logic interface, helper headers, and examples
 - `ecmcExampleTop/`: example IOC application and boot files
 - `configure/`: EPICS build configuration
 - `documentation/`: Doxygen configuration and generated-documentation inputs
@@ -162,6 +162,13 @@ Current plugin examples:
 `ecmc` also now contains an additive native C/C++ logic interface under
 [devEcmcSup/logic/](devEcmcSup/logic/) that is separate from the original
 plugin ABI and intended for small cyclic logic modules.
+
+The native logic area also includes helper headers for common patterns:
+
+- [`ecmcNativeLogic.hpp`](devEcmcSup/logic/ecmcNativeLogic.hpp): bindings, exports, host services, and loader glue
+- [`ecmcNativeMotion.hpp`](devEcmcSup/logic/ecmcNativeMotion.hpp): `MC_*` style C++ wrappers on top of the existing `ecmc` motion API
+- [`ecmcNativeControl.hpp`](devEcmcSup/logic/ecmcNativeControl.hpp): control helpers such as `ecmcNative::Pid`
+- [`ecmcNativeUtils.hpp`](devEcmcSup/logic/ecmcNativeUtils.hpp): utility helpers such as debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
 
 ## Documentation and examples
 
