@@ -10,6 +10,8 @@ The example uses:
 - `ecmcCpp::Pid` to turn a position error into a velocity command
 - `ecmcCpp::RateLimiter` to ramp the velocity setpoint
 - `ecmcCpp::HysteresisBool` for a simple in-position window
+- `ecmcCpp::Ton` to delay drive enable
+- `ecmcCpp::RTrig` to toggle the setpoint on an in-position edge
 
 Main source:
 

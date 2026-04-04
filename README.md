@@ -168,7 +168,7 @@ The `cpp_logic` area also includes helper headers for common patterns:
 - [`ecmcCppLogic.hpp`](devEcmcSup/logic/ecmcCppLogic.hpp): bindings, exports, host services, and loader glue
 - [`ecmcCppMotion.hpp`](devEcmcSup/logic/ecmcCppMotion.hpp): `MC_*` style C++ wrappers on top of the existing `ecmc` motion API
 - [`ecmcCppControl.hpp`](devEcmcSup/logic/ecmcCppControl.hpp): control helpers such as `ecmcCpp::Pid`
-- [`ecmcCppUtils.hpp`](devEcmcSup/logic/ecmcCppUtils.hpp): utility helpers such as debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
+- [`ecmcCppUtils.hpp`](devEcmcSup/logic/ecmcCppUtils.hpp): utility helpers such as edge triggers, `TON`/`TOF`/`TP` style timers, debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
 
 `cpp_logic` modules can be loaded directly in `ecmc` with:
 

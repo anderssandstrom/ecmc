@@ -23,6 +23,8 @@ struct NativeControlLogic : public ecmcCpp::LogicBase {
   ecmcCpp::Pid position_pid;
   ecmcCpp::RateLimiter velocity_ramp;
   ecmcCpp::HysteresisBool in_position;
+  ecmcCpp::RTrig in_position_trig;
+  ecmcCpp::Ton enable_delay;
 
   NativeControlLogic() {
     ecmc.input("ec.s14.positionActual01", actual_position)
@@ -33,7 +35,8 @@ struct NativeControlLogic : public ecmcCpp::LogicBase {
          .readOnly("control.actual_position", actual_position)
          .readOnly("control.raw_velocity_cmd", raw_velocity_cmd)
          .readOnly("control.velocity_setpoint", velocity_setpoint)
-         .readOnly("control.in_position", in_position.Out);
+         .readOnly("control.in_position", in_position.Out)
+         .readOnly("control.enable_delay_done", enable_delay.Q);
 
     position_pid.Kp = 2.0;
     position_pid.Ki = 0.0;
@@ -46,10 +49,14 @@ struct NativeControlLogic : public ecmcCpp::LogicBase {
 
     in_position.Low = -5.0;
     in_position.High = 5.0;
+
+    enable_delay.PT = 0.2;
   }
 
   void run() override {
-    drive_control = 0x0001;
+    enable_delay.In = true;
+    enable_delay.run();
+    drive_control = enable_delay.Q ? 0x0001 : 0x0000;
 
     position_pid.Setpoint = setpoint_position;
     position_pid.Actual = actual_position;
@@ -62,6 +69,13 @@ struct NativeControlLogic : public ecmcCpp::LogicBase {
 
     in_position.In = setpoint_position - actual_position;
     in_position.run();
+    in_position_trig.Clk = in_position.Out;
+    in_position_trig.run();
+
+    if (in_position_trig.Q) {
+      setpoint_position = (setpoint_position > 0.0) ? 0.0 : 5000.0;
+      ecmcCpp::publishDebugText("cpp logic control setpoint toggled");
+    }
   }
 };
 

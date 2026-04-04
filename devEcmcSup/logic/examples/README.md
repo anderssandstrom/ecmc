@@ -10,7 +10,11 @@ Current examples:
 - [`cpp_logic_motion`](./cpp_logic_motion/): C++ example using [`ecmcCppMotion.hpp`](../ecmcCppMotion.hpp) with `MC_Power`, `MC_MoveAbsolute`, and `MC_ReadStatus` style wrappers
 - [`cpp_logic_scope`](./cpp_logic_scope/): EL3702/EL1252-style scope example using oversampling memmaps, trigger timestamps, and a digital trigger
 
-The native-logic helper also supports explicit buffer bindings for arrays and
+The utility header also includes IEC-style timing/edge helpers such as
+`ecmcCpp::RTrig`, `ecmcCpp::FTrig`, `ecmcCpp::Ton`, `ecmcCpp::Tof`, and
+`ecmcCpp::Tp`.
+
+The cpp_logic helper also supports explicit buffer bindings for arrays and
 raw bytes, for example:
 
 ```cpp
