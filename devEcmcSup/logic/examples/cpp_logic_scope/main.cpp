@@ -5,11 +5,11 @@
 *
 *  main.cpp
 *
-*  EL3702 / EL1252 style native logic scope example.
+*  EL3702 / EL1252 style C++ logic scope example.
 *
 \*************************************************************************/
 
-#include "ecmcNativeLogic.hpp"
+#include "ecmcCppLogic.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <vector>
 
-struct NativeScopeLogic : public ecmcNative::LogicBase {
+struct NativeScopeLogic : public ecmcCpp::LogicBase {
   static constexpr size_t kMaxScopeSamples = 4096;
   static constexpr size_t kRingCapacity = 16384;
 
@@ -133,7 +133,7 @@ struct NativeScopeLogic : public ecmcNative::LogicBase {
     trigger_index = pre_samples;
     capture_ready = 1u;
     capture_pending = false;
-    ecmcNative::publishDebugText("native scope capture ready");
+    ecmcCpp::publishDebugText("cpp logic scope capture ready");
   }
 
   void run() override {
@@ -146,7 +146,7 @@ struct NativeScopeLogic : public ecmcNative::LogicBase {
     }
 
     frame_size = static_cast<uint32_t>(sample_count);
-    const double cycle_time_s = ecmcNative::getCycleTimeS();
+    const double cycle_time_s = ecmcCpp::getCycleTimeS();
     sample_period_ns = (cycle_time_s > 0.0)
                          ? (cycle_time_s * 1.0e9 / static_cast<double>(sample_count))
                          : 0.0;
@@ -194,4 +194,4 @@ struct NativeScopeLogic : public ecmcNative::LogicBase {
   }
 };
 
-ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(NativeScopeLogic)
+ECMC_CPP_LOGIC_REGISTER_DEFAULT(NativeScopeLogic)

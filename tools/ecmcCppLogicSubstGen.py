@@ -30,7 +30,7 @@ class ExportedVar(ctypes.Structure):
     ]
 
 
-class NativeLogicApi(ctypes.Structure):
+class CppLogicApi(ctypes.Structure):
     pass
 
 
@@ -42,7 +42,7 @@ GET_EXPORTED_VARS = ctypes.CFUNCTYPE(ctypes.POINTER(ExportedVar), ctypes.c_void_
 GET_EXPORTED_VAR_COUNT = ctypes.CFUNCTYPE(ctypes.c_uint32, ctypes.c_void_p)
 
 
-NativeLogicApi._fields_ = [
+CppLogicApi._fields_ = [
     ("abiVersion", ctypes.c_uint32),
     ("name", ctypes.c_char_p),
     ("setHostServices", SET_HOST),
@@ -87,7 +87,7 @@ def type_to_ftvl(value_type: int) -> str:
 
 def scalar_template(value_type: int, writable: bool) -> str:
     if value_type == ECMC_NATIVE_TYPE_BOOL:
-        return "ecmcNativeLogicBo.template" if writable else "ecmcNativeLogicBi.template"
+        return "ecmcCppLogicBo.template" if writable else "ecmcCppLogicBi.template"
     if value_type in (
         ECMC_NATIVE_TYPE_S8,
         ECMC_NATIVE_TYPE_U8,
@@ -96,8 +96,8 @@ def scalar_template(value_type: int, writable: bool) -> str:
         ECMC_NATIVE_TYPE_S32,
         ECMC_NATIVE_TYPE_U32,
     ):
-        return "ecmcNativeLogicLongOut.template" if writable else "ecmcNativeLogicLongIn.template"
-    return "ecmcNativeLogicAo.template" if writable else "ecmcNativeLogicAi.template"
+        return "ecmcCppLogicLongOut.template" if writable else "ecmcCppLogicLongIn.template"
+    return "ecmcCppLogicAo.template" if writable else "ecmcCppLogicAi.template"
 
 
 def build_template_spec(param_prefix: str, export_var: ExportedVar) -> TemplateSpec:
@@ -108,9 +108,9 @@ def build_template_spec(param_prefix: str, export_var: ExportedVar) -> TemplateS
 
     if is_array:
         template = (
-            "ecmcNativeLogicWaveformOut.template"
+            "ecmcCppLogicWaveformOut.template"
             if export_var.writable
-            else "ecmcNativeLogicWaveformIn.template"
+            else "ecmcCppLogicWaveformIn.template"
         )
         values = {
             "REC": rec_name,
@@ -128,7 +128,7 @@ def build_template_spec(param_prefix: str, export_var: ExportedVar) -> TemplateS
         "DESC": name,
     }
     columns = ("REC", "PARAM", "DESC")
-    if template in ("ecmcNativeLogicAi.template", "ecmcNativeLogicAo.template"):
+    if template in ("ecmcCppLogicAi.template", "ecmcCppLogicAo.template"):
         values["PREC"] = "3"
         columns = ("REC", "PARAM", "DESC", "PREC")
     return TemplateSpec(template, columns, values)
@@ -159,7 +159,7 @@ def load_exports(logic_lib: Path) -> tuple[str, list[ExportedVar]]:
             break
     if get_api is None:
         raise AttributeError("Missing ecmc_cpp_logic_get_api/ecmc_native_logic_get_api")
-    get_api.restype = ctypes.POINTER(NativeLogicApi)
+    get_api.restype = ctypes.POINTER(CppLogicApi)
     api = get_api().contents
     logic_name = api.name.decode() if api.name else logic_lib.stem
 
@@ -174,7 +174,7 @@ def load_exports(logic_lib: Path) -> tuple[str, list[ExportedVar]]:
 
 def render_substitutions(logic_name: str, specs: list[TemplateSpec]) -> str:
     lines = [
-        "# Auto-generated native logic substitutions",
+        "# Auto-generated C++ logic substitutions",
         f"# Logic: {logic_name}",
         'global { P = "$(P)" PORT = "$(PORT)" }',
         "",
@@ -198,8 +198,8 @@ def render_substitutions(logic_name: str, specs: list[TemplateSpec]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate substitutions for native logic EPICS exports")
-    parser.add_argument("--logic-lib", required=True, help="Path to compiled native logic shared library")
+    parser = argparse.ArgumentParser(description="Generate substitutions for C++ logic EPICS exports")
+    parser.add_argument("--logic-lib", required=True, help="Path to compiled C++ logic shared library")
     parser.add_argument("--output", required=True, help="Output substitutions file")
     parser.add_argument(
         "--param-prefix",

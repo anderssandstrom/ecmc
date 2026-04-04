@@ -5,24 +5,24 @@
 *
 *  main.cpp
 *
-*  Native logic example using the control and utility helper headers.
+*  C++ logic example using the control and utility helper headers.
 *
 \*************************************************************************/
 
-#include "ecmcNativeControl.hpp"
-#include "ecmcNativeLogic.hpp"
-#include "ecmcNativeUtils.hpp"
+#include "ecmcCppControl.hpp"
+#include "ecmcCppLogic.hpp"
+#include "ecmcCppUtils.hpp"
 
-struct NativeControlLogic : public ecmcNative::LogicBase {
+struct NativeControlLogic : public ecmcCpp::LogicBase {
   double actual_position {0.0};
   double setpoint_position {5000.0};
   double raw_velocity_cmd {0.0};
   double velocity_setpoint {0.0};
   int16_t drive_control {0};
 
-  ecmcNative::Pid position_pid;
-  ecmcNative::RateLimiter velocity_ramp;
-  ecmcNative::HysteresisBool in_position;
+  ecmcCpp::Pid position_pid;
+  ecmcCpp::RateLimiter velocity_ramp;
+  ecmcCpp::HysteresisBool in_position;
 
   NativeControlLogic() {
     ecmc.input("ec.s14.positionActual01", actual_position)
@@ -65,4 +65,4 @@ struct NativeControlLogic : public ecmcNative::LogicBase {
   }
 };
 
-ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(NativeControlLogic)
+ECMC_CPP_LOGIC_REGISTER_DEFAULT(NativeControlLogic)

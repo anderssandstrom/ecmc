@@ -16,6 +16,8 @@ extern "C" {
 
 int loadNativeLogic(int logicId, const char* filenameWP, const char* configStr);
 int reportNativeLogic(int logicId);
+int loadCppLogic(int logicId, const char* filenameWP, const char* configStr);
+int reportCppLogic(int logicId);
 
 #ifdef __cplusplus
 }

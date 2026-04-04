@@ -703,6 +703,8 @@ inline uint32_t getExportedVarCountAdapter(void* instance) {
 
 }  // namespace ecmcNative
 
+namespace ecmcCpp = ecmcNative;
+
 #define ECMC_NATIVE_LOGIC_REGISTER(LOGIC_TYPE, LOGIC_NAME)                           \
   extern "C" const ecmcNativeLogicApi* ecmc_native_logic_get_api(void) {             \
     static_assert(std::is_base_of_v<ecmcNative::LogicBase, LOGIC_TYPE>,              \
@@ -720,7 +722,16 @@ inline uint32_t getExportedVarCountAdapter(void* instance) {
       &ecmcNative::detail::getExportedVarCountAdapter<LOGIC_TYPE>,                    \
     };                                                                                \
     return &kApi;                                                                     \
+  }                                                                                   \
+  extern "C" const ecmcNativeLogicApi* ecmc_cpp_logic_get_api(void) {                \
+    return ecmc_native_logic_get_api();                                               \
   }
 
 #define ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(LOGIC_TYPE) \
   ECMC_NATIVE_LOGIC_REGISTER(LOGIC_TYPE, #LOGIC_TYPE)
+
+#define ECMC_CPP_LOGIC_REGISTER(LOGIC_TYPE, LOGIC_NAME) \
+  ECMC_NATIVE_LOGIC_REGISTER(LOGIC_TYPE, LOGIC_NAME)
+
+#define ECMC_CPP_LOGIC_REGISTER_DEFAULT(LOGIC_TYPE) \
+  ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(LOGIC_TYPE)

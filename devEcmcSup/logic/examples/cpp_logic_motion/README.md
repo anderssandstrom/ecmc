@@ -1,16 +1,16 @@
-# Native Logic Motion
+# Cpp Logic Motion
 
-This example shows how the additive native-logic interface can reuse the
+This example shows how the additive C++ logic interface can reuse the
 existing `ecmcMcApi` PLCopen-style motion backend through the C++ wrapper in
-[`ecmcNativeMotion.hpp`](../../ecmcNativeMotion.hpp).
+[`ecmcCppMotion.hpp`](../../ecmcCppMotion.hpp).
 
 It uses:
 
-- `ecmcNative::LogicBase`
-- `ecmcNative::McPower`
-- `ecmcNative::McMoveAbsolute`
-- `ecmcNative::McReadStatus`
-- `ecmcNative::McReadActualPosition`
+- `ecmcCpp::LogicBase`
+- `ecmcCpp::McPower`
+- `ecmcCpp::McMoveAbsolute`
+- `ecmcCpp::McReadStatus`
+- `ecmcCpp::McReadActualPosition`
 
 Behavior:
 

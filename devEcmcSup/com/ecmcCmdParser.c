@@ -3294,6 +3294,20 @@ parse_cfg_setaxisdrv:
     return loadNativeLogic(iValue, cIdBuffer, cIdBuffer2);
   }
 
+  /*int Cfg.LoadCppLogic(int logicId, char *cFilename, char *configString); */
+  cIdBuffer[0]  = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "LoadCppLogic(%d,%[^,],%[^)])",
+                 &iValue,
+                 cIdBuffer,
+                 cIdBuffer2);
+
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadCppLogic");
+    return loadCppLogic(iValue, cIdBuffer, cIdBuffer2);
+  }
+
   /*int Cfg.LoadSafetyPlugin(char *cFilename, char *configString); */
   nvals = sscanf(myarg_1,
                  "LoadSafetyPlugin(%[^,],%[^)])",
@@ -3323,6 +3337,15 @@ parse_cfg_setaxisdrv:
     return loadNativeLogic(iValue, cIdBuffer, "");
   }
 
+  /*int Cfg.LoadCppLogic(int logicId, char *cFilename); */
+  cIdBuffer[0] = '\0';
+  nvals = sscanf(myarg_1, "LoadCppLogic(%d,%[^)])", &iValue, cIdBuffer);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadCppLogic");
+    return loadCppLogic(iValue, cIdBuffer, "");
+  }
+
   /*int Cfg.ReportPlugin(int pluginId); */
   nvals = sscanf(myarg_1, "ReportPlugin(%d)", &iValue);
 
@@ -3335,6 +3358,13 @@ parse_cfg_setaxisdrv:
 
   if (nvals == 1) {
     return reportNativeLogic(iValue);
+  }
+
+  /*int Cfg.ReportCppLogic(int logicId); */
+  nvals = sscanf(myarg_1, "ReportCppLogic(%d)", &iValue);
+
+  if (nvals == 1) {
+    return reportCppLogic(iValue);
   }
 
   /*int Cfg.SetAxisSeqTimeout(int axis_no, int value);  IN seconds!!*/

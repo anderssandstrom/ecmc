@@ -5,19 +5,19 @@
 *
 *  main.cpp
 *
-*  Native logic example using the ecmc MC runtime wrappers.
+*  C++ logic example using the ecmc MC runtime wrappers.
 *
 \*************************************************************************/
 
-#include "ecmcNativeLogic.hpp"
-#include "ecmcNativeMotion.hpp"
+#include "ecmcCppLogic.hpp"
+#include "ecmcCppMotion.hpp"
 
-struct NativeMotionLogic : public ecmcNative::LogicBase {
-  ecmcNative::McAxisRef axis {1};
-  ecmcNative::McPower power;
-  ecmcNative::McMoveAbsolute move_absolute;
-  ecmcNative::McReadStatus read_status;
-  ecmcNative::McReadActualPosition read_position;
+struct NativeMotionLogic : public ecmcCpp::LogicBase {
+  ecmcCpp::McAxisRef axis {1};
+  ecmcCpp::McPower power;
+  ecmcCpp::McMoveAbsolute move_absolute;
+  ecmcCpp::McReadStatus read_status;
+  ecmcCpp::McReadActualPosition read_position;
 
   int32_t cycle_counter {0};
   double actual_position {0.0};
@@ -59,9 +59,9 @@ struct NativeMotionLogic : public ecmcNative::LogicBase {
 
     if (move_absolute.Done) {
       target_position = (target_position > 0.0) ? 0.0 : 12800.0;
-      ecmcNative::publishDebugText("native motion target toggled");
+      ecmcCpp::publishDebugText("cpp logic motion target toggled");
     }
   }
 };
 
-ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(NativeMotionLogic)
+ECMC_CPP_LOGIC_REGISTER_DEFAULT(NativeMotionLogic)

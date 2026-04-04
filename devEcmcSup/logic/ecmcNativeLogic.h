@@ -5,7 +5,7 @@
 *
 *  ecmcNativeLogic.h
 *
-* Additive native-logic interface for small C/C++ cyclic logic modules.
+* Additive C/C++ logic interface for small cyclic logic modules.
 * This does not replace the existing ecmc plugin ABI in ecmcPluginDefs.h.
 *
 \*************************************************************************/
@@ -99,6 +99,7 @@ struct ecmcNativeLogicApi {
 };
 
 const struct ecmcNativeLogicApi* ecmc_native_logic_get_api(void);
+const struct ecmcNativeLogicApi* ecmc_cpp_logic_get_api(void);
 
 #ifdef __cplusplus
 }

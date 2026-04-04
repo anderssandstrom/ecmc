@@ -45,7 +45,7 @@ This repository contains the core `ecmc` module, example IOC files, and the EPIC
 ## Repository layout
 
 - `devEcmcSup/`: core `ecmc` library sources
-- `devEcmcSup/logic/`: additive native-logic interface, helper headers, and examples
+- `devEcmcSup/logic/`: additive `cpp_logic` interface, helper headers, and examples
 - `ecmcExampleTop/`: example IOC application and boot files
 - `configure/`: EPICS build configuration
 - `documentation/`: Doxygen configuration and generated-documentation inputs
@@ -159,52 +159,52 @@ Current plugin examples:
 - Scope plugin for EtherCAT DC slaves: https://github.com/anderssandstrom/e3-ecmc_plugin_scope
 - DAQ plugin: https://github.com/paulscherrerinstitute/ecmc_plugin_daq
 
-`ecmc` also now contains an additive native C/C++ logic interface under
+`ecmc` also now contains an additive `cpp_logic` C/C++ interface under
 [devEcmcSup/logic/](devEcmcSup/logic/) that is separate from the original
 plugin ABI and intended for small cyclic logic modules.
 
-The native logic area also includes helper headers for common patterns:
+The `cpp_logic` area also includes helper headers for common patterns:
 
-- [`ecmcNativeLogic.hpp`](devEcmcSup/logic/ecmcNativeLogic.hpp): bindings, exports, host services, and loader glue
-- [`ecmcNativeMotion.hpp`](devEcmcSup/logic/ecmcNativeMotion.hpp): `MC_*` style C++ wrappers on top of the existing `ecmc` motion API
-- [`ecmcNativeControl.hpp`](devEcmcSup/logic/ecmcNativeControl.hpp): control helpers such as `ecmcNative::Pid`
-- [`ecmcNativeUtils.hpp`](devEcmcSup/logic/ecmcNativeUtils.hpp): utility helpers such as debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
+- [`ecmcCppLogic.hpp`](devEcmcSup/logic/ecmcCppLogic.hpp): bindings, exports, host services, and loader glue
+- [`ecmcCppMotion.hpp`](devEcmcSup/logic/ecmcCppMotion.hpp): `MC_*` style C++ wrappers on top of the existing `ecmc` motion API
+- [`ecmcCppControl.hpp`](devEcmcSup/logic/ecmcCppControl.hpp): control helpers such as `ecmcCpp::Pid`
+- [`ecmcCppUtils.hpp`](devEcmcSup/logic/ecmcCppUtils.hpp): utility helpers such as debounce, rate limiting, filtering, hysteresis, integration, and EtherCAT status wrappers
 
-Native logic modules can be loaded directly in `ecmc` with:
+`cpp_logic` modules can be loaded directly in `ecmc` with:
 
 ```iocsh
-ecmcConfigOrDie "Cfg.LoadNativeLogic(0,/path/to/native_logic.so)"
-ecmcConfigOrDie "Cfg.LoadNativeLogic(0,/path/to/native_logic.so,asyn_port=NATIVE.LOGIC0;sample_rate_ms=2)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2)"
 ```
 
 For normal IOC usage, the recommended entry point is the companion IOC shell
 wrapper in `ecmccfg`:
 
 ```iocsh
-iocshLoad("$(ecmccfg_DIR)loadNativeLogic.cmd",
-          "LOGIC_ID=0,FILE=/path/to/native_logic.so,ASYN_PORT=NATIVE.LOGIC0")
+iocshLoad("$(ecmccfg_DIR)loadCppLogic.cmd",
+          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=CPP.LOGIC0")
 ```
 
-That wrapper loads the built-in native-logic control/status PVs by default.
+That wrapper loads the built-in `cpp_logic` control/status PVs by default.
 Custom `epics.*` substitutions can be enabled separately with
 `LOAD_APP_PVS=1,EPICS_SUBST=...`.
 
-Each loaded native logic instance gets its own dedicated asyn port. Both the
+Each loaded `cpp_logic` instance gets its own dedicated asyn port. Both the
 built-in runtime PVs and all user-defined `epics.*` exports are published on
 that port.
 
 That script is intended to load the built-in core substitutions from:
 
-- `../ecmccfg/db/generic/ecmcNativeLogicCore.substitutions`
+- `../ecmccfg/db/generic/ecmcCppLogicCore.substitutions`
 
-For native logic EPICS exports there is also an offline substitutions generator:
+For `cpp_logic` EPICS exports there is also an offline substitutions generator:
 
-- [`tools/ecmcNativeLogicSubstGen.py`](tools/ecmcNativeLogicSubstGen.py)
+- [`tools/ecmcCppLogicSubstGen.py`](tools/ecmcCppLogicSubstGen.py)
 
-It can inspect a compiled native logic shared library through
-`ecmc_native_logic_get_api()` and generate substitutions for the variables
-declared through the native `epics` export builder. Load the generic core
-substitutions and the generated custom substitutions on the same native-logic
+It can inspect a compiled C++ logic shared library through
+`ecmc_cpp_logic_get_api()` and generate substitutions for the variables
+declared through the `cpp_logic` `epics` export builder. Load the generic core
+substitutions and the generated custom substitutions on the same `cpp_logic`
 asyn port.
 
 ## Documentation and examples

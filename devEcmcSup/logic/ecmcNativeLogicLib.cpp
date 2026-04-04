@@ -51,6 +51,7 @@
 namespace {
 
 constexpr const char* kDriverName = "ecmcNativeLogicLib";
+constexpr const char* kCppLogicGetApiSymbol = "ecmc_cpp_logic_get_api";
 constexpr const char* kNativeLogicGetApiSymbol = "ecmc_native_logic_get_api";
 constexpr const char* kDefaultAsynPortBase = "NATIVE.LOGIC";
 
@@ -1221,13 +1222,18 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
   }
 
   auto* getApi =
-    reinterpret_cast<const ecmcNativeLogicApi* (*)()>(dlsym(impl_->dlHandle, kNativeLogicGetApiSymbol));
+    reinterpret_cast<const ecmcNativeLogicApi* (*)()>(dlsym(impl_->dlHandle, kCppLogicGetApiSymbol));
   if (!getApi) {
-    LOGERR("%s/%s:%d: Native logic %s missing %s.\n",
+    getApi = reinterpret_cast<const ecmcNativeLogicApi* (*)()>(
+      dlsym(impl_->dlHandle, kNativeLogicGetApiSymbol));
+  }
+  if (!getApi) {
+    LOGERR("%s/%s:%d: Native logic %s missing %s or %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
            impl_->libFilename.c_str(),
+           kCppLogicGetApiSymbol,
            kNativeLogicGetApiSymbol);
     unload();
     return setErrorID(ERROR_MAIN_NATIVE_LOGIC_GET_API_FAIL);

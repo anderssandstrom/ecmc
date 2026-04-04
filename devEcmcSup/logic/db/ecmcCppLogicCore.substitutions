@@ -1,0 +1,25 @@
+file ecmcCppLogicLongOut.template {
+  pattern { REC, PARAM, DESC }
+  { "CppLogic$(CPP_ID=0)-CtrlWord-RB", "logic.ctrl.word", "bit0 en, bit1 timing, bit2 dbg" }
+}
+
+file ecmcCppLogicAo.template {
+  pattern { REC, PARAM, DESC, PREC }
+  { "CppLogic$(CPP_ID=0)-RateMs-RB",  "logic.ctrl.rate_ms", "Requested sample rate", "3" }
+  { "CppLogic$(CPP_ID=0)-RateMsAct", "logic.stat.rate_ms", "Actual sample rate",    "3" }
+  { "CppLogic$(CPP_ID=0)-ExeMsAct",  "logic.stat.exec_ms", "Logic exec time",       "6" }
+  { "CppLogic$(CPP_ID=0)-InMsAct",   "logic.stat.input_ms","Input copy time",       "6" }
+  { "CppLogic$(CPP_ID=0)-OutMsAct",  "logic.stat.output_ms","Output copy time",     "6" }
+  { "CppLogic$(CPP_ID=0)-TotMsAct",  "logic.stat.total_ms","Total logic time",      "6" }
+}
+
+file ecmcCppLogicLongIn.template {
+  pattern { REC, PARAM, DESC }
+  { "CppLogic$(CPP_ID=0)-DivAct", "logic.stat.div",   "Execute divider" }
+  { "CppLogic$(CPP_ID=0)-CntAct", "logic.stat.count", "Execute count" }
+}
+
+file ecmcCppLogicStringIn.template {
+  pattern { REC, PARAM, DESC }
+  { "CppLogic$(CPP_ID=0)-DbgTxtAct", "logic.stat.dbg_txt", "Debug text" }
+}

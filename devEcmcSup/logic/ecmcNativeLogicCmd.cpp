@@ -67,3 +67,11 @@ int reportNativeLogic(int logicId) {
   nativeLogics[logicId]->report();
   return 0;
 }
+
+int loadCppLogic(int logicId, const char* filenameWP, const char* configStr) {
+  return loadNativeLogic(logicId, filenameWP, configStr);
+}
+
+int reportCppLogic(int logicId) {
+  return reportNativeLogic(logicId);
+}

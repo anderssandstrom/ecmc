@@ -1,6 +1,6 @@
-# Native Logic Scope
+# Cpp Logic Scope
 
-This example shows one way to use the additive native-logic interface as a
+This example shows one way to use the additive C++ logic interface as a
 small scope/logger:
 
 - two EL3702-style oversampling memmaps are read through `ecmc.inputAutoArray(...)`

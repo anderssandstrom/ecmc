@@ -5,13 +5,13 @@
 *
 *  main.cpp
 *
-*  Minimal example for the additive native-logic interface in ecmc.
+*  Minimal example for the additive C++ logic interface in ecmc.
 *
 \*************************************************************************/
 
-#include "ecmcNativeLogic.hpp"
+#include "ecmcCppLogic.hpp"
 
-struct NativeBounceLogic : public ecmcNative::LogicBase {
+struct NativeBounceLogic : public ecmcCpp::LogicBase {
   int32_t actual_position {0};
   int16_t drive_control {0};
   int16_t velocity_setpoint {1000};
@@ -41,9 +41,9 @@ struct NativeBounceLogic : public ecmcNative::LogicBase {
     }
 
     if ((cycle_counter % 1000) == 0) {
-      ecmcNative::publishDebugText("native logic example running");
+      ecmcCpp::publishDebugText("cpp logic example running");
     }
   }
 };
 
-ECMC_NATIVE_LOGIC_REGISTER_DEFAULT(NativeBounceLogic)
+ECMC_CPP_LOGIC_REGISTER_DEFAULT(NativeBounceLogic)
