@@ -170,6 +170,7 @@ The `cpp_logic` area also includes helper headers for common patterns:
 - [`ecmcCppControl.hpp`](devEcmcSup/logic/ecmcCppControl.hpp): control helpers such as `ecmcCpp::Pid`
 - [`ecmcCppUtils.hpp`](devEcmcSup/logic/ecmcCppUtils.hpp): utility helpers such as edge triggers, `TON`/`TOF`/`TP` style timers, latches, blink/state helpers, filtering, moving averages, min/max hold, and EtherCAT status wrappers
 - [`CPP_LOGIC_HELPERS.md`](devEcmcSup/logic/CPP_LOGIC_HELPERS.md): compact helper reference for the C++ logic headers
+- [`devEcmcSup/logic/examples/cpp_logic_starter`](devEcmcSup/logic/examples/cpp_logic_starter): smallest practical starter example for a new `cpp_logic` shared library
 
 `cpp_logic` modules can be loaded directly in `ecmc` with:
 

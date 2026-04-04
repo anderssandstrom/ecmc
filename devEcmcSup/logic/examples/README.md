@@ -5,6 +5,7 @@ interface in `ecmc`.
 
 Current examples:
 
+- [`cpp_logic_starter`](./cpp_logic_starter/): smallest practical starting point for a new C++ logic shared library
 - [`cpp_logic_minimal`](./cpp_logic_minimal/): minimal C++ example using [`ecmcCppLogic.h`](../ecmcCppLogic.h) and [`ecmcCppLogic.hpp`](../ecmcCppLogic.hpp)
 - [`cpp_logic_control`](./cpp_logic_control/): C++ example using [`ecmcCppControl.hpp`](../ecmcCppControl.hpp) and [`ecmcCppUtils.hpp`](../ecmcCppUtils.hpp)
 - [`cpp_logic_arrays`](./cpp_logic_arrays/): array and byte-buffer example using `inputAutoArray(...)`, `outputArray(...)`, and `readOnlyArray(...)`

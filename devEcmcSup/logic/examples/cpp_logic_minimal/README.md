@@ -1,4 +1,4 @@
-# Native Logic Minimal
+# Cpp Logic Minimal
 
 This example shows the simplest intended C++ usage of the additive C++ logic
 interface in `ecmc`.
