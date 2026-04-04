@@ -3267,6 +3267,8 @@ parse_cfg_setaxisdrv:
   }
 
   /*int Cfg.LoadPlugin(int pluginId, char *cFilename, char *configString); */
+  cIdBuffer[0]  = '\0';
+  cIdBuffer2[0] = '\0';
   nvals = sscanf(myarg_1,
                  "LoadPlugin(%d,%[^,],%[^)])",
                  &iValue,
@@ -3279,6 +3281,8 @@ parse_cfg_setaxisdrv:
   }
 
   /*int Cfg.LoadNativeLogic(int logicId, char *cFilename, char *configString); */
+  cIdBuffer[0]  = '\0';
+  cIdBuffer2[0] = '\0';
   nvals = sscanf(myarg_1,
                  "LoadNativeLogic(%d,%[^,],%[^)])",
                  &iValue,
@@ -3302,6 +3306,7 @@ parse_cfg_setaxisdrv:
   }
 
   /*int Cfg.LoadPlugin(int pluginId, char *cFilename); */
+  cIdBuffer[0] = '\0';
   nvals = sscanf(myarg_1, "LoadPlugin(%d,%[^)])", &iValue, cIdBuffer);
 
   if (nvals == 2) {
@@ -3310,6 +3315,7 @@ parse_cfg_setaxisdrv:
   }
 
   /*int Cfg.LoadNativeLogic(int logicId, char *cFilename); */
+  cIdBuffer[0] = '\0';
   nvals = sscanf(myarg_1, "LoadNativeLogic(%d,%[^)])", &iValue, cIdBuffer);
 
   if (nvals == 2) {
