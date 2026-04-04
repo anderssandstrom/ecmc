@@ -23,7 +23,7 @@
 #include "ecmcEthercat.h"
 #include "ecmcMotorRecordController.h"
 #include "ecmcPluginLib.h"
-#include "ecmcNativeLogicLib.h"
+#include "ecmcCppLogicLib.h"
 #include "ecmcPVTController.h"
 #include "ecmcLookupTable.h"
 #include "epicsMutex.h"
@@ -41,7 +41,7 @@ extern ecmcMainThreadDiag  threadDiag;
 extern app_mode_type appModeCmd, appModeCmdOld, appModeStat;
 extern ecmcMotorRecordController *asynPortMotorRecord;
 extern ecmcPluginLib *plugins[ECMC_MAX_PLUGINS];
-extern ecmcNativeLogicLib *nativeLogics[ECMC_MAX_PLUGINS];
+extern ecmcCppLogicLib *cppLogics[ECMC_MAX_PLUGINS];
 extern ecmcPluginLib *safetyplugin;
 extern ecmcShm shmObj;
 extern ecmcPVTController *pvtCtrl_;
@@ -65,7 +65,7 @@ extern double mcuPeriod;
 extern int    sampleRateChangeAllowed;
 extern int    blockCmdParserInRt;
 extern int    pluginsError;
-extern int    nativeLogicError;
+extern int    cppLogicError;
 extern int    safetypluginError;
 extern int    shmInitError;
 extern int    shmAccessError;

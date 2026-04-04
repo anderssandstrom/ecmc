@@ -16,7 +16,7 @@
 #define ECMC_PLUGIN_H_
 
 #include <stdint.h>
-#include "../logic/ecmcNativeLogic.h"
+#include "../logic/ecmcCppLogic.h"
 
 # ifdef __cplusplus
 extern "C" {
@@ -190,18 +190,18 @@ double getEcmcSampleTimeMS();
  */
 int    getEcmcEpicsIOCState();
 
-/** \brief Publish a short native-logic debug/info message through ecmc logging
+/** \brief Publish a short cpp_logic debug/info message through ecmc logging
  *
  * \param[in] message Zero-terminated text message.
  */
 void publishEcmcDebugText(const char* message);
 
-/** \brief Fill a native-logic host-services table with ecmc callbacks
+/** \brief Fill a cpp_logic host-services table with ecmc callbacks
  *
  * \param[out] services Host-services table to fill. Nothing is done when
  *                      the pointer is NULL.
  */
-void getEcmcNativeLogicHostServices(struct ecmcNativeLogicHostServices* services);
+void getEcmcCppLogicHostServices(struct ecmcCppLogicHostServices* services);
 
 # ifdef __cplusplus
 }

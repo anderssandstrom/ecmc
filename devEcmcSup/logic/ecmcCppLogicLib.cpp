@@ -3,14 +3,14 @@
 * ecmc is distributed subject to a Software License Agreement found
 * in file LICENSE that is included with this distribution.
 *
-*  ecmcNativeLogicLib.cpp
+*  ecmcCppLogicLib.cpp
 *
 \*************************************************************************/
 
-#include "ecmcNativeLogicLib.h"
+#include "ecmcCppLogicLib.h"
 
 #include "asynPortDriver.h"
-#include "ecmcNativeLogic.h"
+#include "ecmcCppLogic.h"
 #include "ecmcPluginClient.h"
 #include "ecmcDataItem.h"
 #include "ecmcDefinitions.h"
@@ -50,10 +50,9 @@
 
 namespace {
 
-constexpr const char* kDriverName = "ecmcNativeLogicLib";
+constexpr const char* kDriverName = "ecmcCppLogicLib";
 constexpr const char* kCppLogicGetApiSymbol = "ecmc_cpp_logic_get_api";
-constexpr const char* kNativeLogicGetApiSymbol = "ecmc_native_logic_get_api";
-constexpr const char* kDefaultAsynPortBase = "NATIVE.LOGIC";
+constexpr const char* kDefaultAsynPortBase = "CPP.LOGIC";
 
 constexpr const char* kBuiltinControlWordName = "logic.ctrl.word";
 constexpr const char* kBuiltinRequestedRateMsName = "logic.ctrl.rate_ms";
@@ -71,14 +70,14 @@ constexpr uint32_t kControlWordEnableTimingBit = 1u;
 constexpr uint32_t kControlWordEnableDebugPrintsBit = 2u;
 constexpr size_t kBuiltinDebugTextMaxChars = 39u;
 
-struct NativeLogicConfig {
+struct CppLogicConfig {
   std::string asynPortName;
   double sampleRateMs {0.0};
 };
 
 struct ResolvedItemBinding {
   std::string itemName;
-  ecmcNativeLogicItemBinding binding {};
+  ecmcCppLogicItemBinding binding {};
   ecmcDataItem* item {nullptr};
   ecmcDataItemInfo info {};
 };
@@ -96,7 +95,7 @@ struct ExportedParamBinding {
   bool initialized {false};
 };
 
-class NativeLogicAsynPort;
+class CppLogicAsynPort;
 
 inline bool isEpicsStarted() {
   return allowCallbackEpicsState != 0;
@@ -105,52 +104,52 @@ inline bool isEpicsStarted() {
 double currentCycleTimeS();
 void publishCurrentDebugText(const char* message);
 
-uint32_t nativeTypeSize(uint32_t type) {
+uint32_t cppLogicTypeSize(uint32_t type) {
   switch (type) {
-  case ECMC_NATIVE_TYPE_BOOL:
-  case ECMC_NATIVE_TYPE_S8:
-  case ECMC_NATIVE_TYPE_U8:
+  case ECMC_CPP_TYPE_BOOL:
+  case ECMC_CPP_TYPE_S8:
+  case ECMC_CPP_TYPE_U8:
     return 1u;
-  case ECMC_NATIVE_TYPE_S16:
-  case ECMC_NATIVE_TYPE_U16:
+  case ECMC_CPP_TYPE_S16:
+  case ECMC_CPP_TYPE_U16:
     return 2u;
-  case ECMC_NATIVE_TYPE_S32:
-  case ECMC_NATIVE_TYPE_U32:
-  case ECMC_NATIVE_TYPE_F32:
+  case ECMC_CPP_TYPE_S32:
+  case ECMC_CPP_TYPE_U32:
+  case ECMC_CPP_TYPE_F32:
     return 4u;
-  case ECMC_NATIVE_TYPE_S64:
-  case ECMC_NATIVE_TYPE_U64:
-  case ECMC_NATIVE_TYPE_F64:
+  case ECMC_CPP_TYPE_S64:
+  case ECMC_CPP_TYPE_U64:
+  case ECMC_CPP_TYPE_F64:
     return 8u;
   default:
     return 0u;
   }
 }
 
-bool nativeTypeMatchesItemType(uint32_t nativeType, ecmcEcDataType itemType) {
-  switch (nativeType) {
-  case ECMC_NATIVE_TYPE_BOOL:
+bool cppLogicTypeMatchesItemType(uint32_t cppType, ecmcEcDataType itemType) {
+  switch (cppType) {
+  case ECMC_CPP_TYPE_BOOL:
     return itemType == ECMC_EC_B1 || itemType == ECMC_EC_B2 || itemType == ECMC_EC_B3 ||
            itemType == ECMC_EC_B4 || itemType == ECMC_EC_U8 || itemType == ECMC_EC_S8;
-  case ECMC_NATIVE_TYPE_S8:
+  case ECMC_CPP_TYPE_S8:
     return itemType == ECMC_EC_S8 || itemType == ECMC_EC_U8;
-  case ECMC_NATIVE_TYPE_U8:
+  case ECMC_CPP_TYPE_U8:
     return itemType == ECMC_EC_U8 || itemType == ECMC_EC_S8 || itemType == ECMC_EC_S8_TO_U8;
-  case ECMC_NATIVE_TYPE_S16:
+  case ECMC_CPP_TYPE_S16:
     return itemType == ECMC_EC_S16 || itemType == ECMC_EC_U16;
-  case ECMC_NATIVE_TYPE_U16:
+  case ECMC_CPP_TYPE_U16:
     return itemType == ECMC_EC_U16 || itemType == ECMC_EC_S16 || itemType == ECMC_EC_S16_TO_U16;
-  case ECMC_NATIVE_TYPE_S32:
+  case ECMC_CPP_TYPE_S32:
     return itemType == ECMC_EC_S32 || itemType == ECMC_EC_U32;
-  case ECMC_NATIVE_TYPE_U32:
+  case ECMC_CPP_TYPE_U32:
     return itemType == ECMC_EC_U32 || itemType == ECMC_EC_S32 || itemType == ECMC_EC_S32_TO_U32;
-  case ECMC_NATIVE_TYPE_S64:
+  case ECMC_CPP_TYPE_S64:
     return itemType == ECMC_EC_S64 || itemType == ECMC_EC_U64;
-  case ECMC_NATIVE_TYPE_U64:
+  case ECMC_CPP_TYPE_U64:
     return itemType == ECMC_EC_U64 || itemType == ECMC_EC_S64 || itemType == ECMC_EC_S64_TO_U64;
-  case ECMC_NATIVE_TYPE_F32:
+  case ECMC_CPP_TYPE_F32:
     return itemType == ECMC_EC_F32;
-  case ECMC_NATIVE_TYPE_F64:
+  case ECMC_CPP_TYPE_F64:
     return itemType == ECMC_EC_F64;
   default:
     return false;
@@ -158,18 +157,18 @@ bool nativeTypeMatchesItemType(uint32_t nativeType, ecmcEcDataType itemType) {
 }
 
 asynParamType exportParamType(uint32_t type, size_t bytes) {
-  const uint32_t scalarBytes = nativeTypeSize(type);
+  const uint32_t scalarBytes = cppLogicTypeSize(type);
   const bool isArray = scalarBytes > 0u && bytes > scalarBytes;
 
   if (!isArray) {
     switch (type) {
-    case ECMC_NATIVE_TYPE_BOOL:
-    case ECMC_NATIVE_TYPE_S8:
-    case ECMC_NATIVE_TYPE_U8:
-    case ECMC_NATIVE_TYPE_S16:
-    case ECMC_NATIVE_TYPE_U16:
-    case ECMC_NATIVE_TYPE_S32:
-    case ECMC_NATIVE_TYPE_U32:
+    case ECMC_CPP_TYPE_BOOL:
+    case ECMC_CPP_TYPE_S8:
+    case ECMC_CPP_TYPE_U8:
+    case ECMC_CPP_TYPE_S16:
+    case ECMC_CPP_TYPE_U16:
+    case ECMC_CPP_TYPE_S32:
+    case ECMC_CPP_TYPE_U32:
       return asynParamInt32;
     default:
       return asynParamFloat64;
@@ -177,17 +176,17 @@ asynParamType exportParamType(uint32_t type, size_t bytes) {
   }
 
   switch (type) {
-  case ECMC_NATIVE_TYPE_BOOL:
-  case ECMC_NATIVE_TYPE_S8:
-  case ECMC_NATIVE_TYPE_U8:
+  case ECMC_CPP_TYPE_BOOL:
+  case ECMC_CPP_TYPE_S8:
+  case ECMC_CPP_TYPE_U8:
     return asynParamInt8Array;
-  case ECMC_NATIVE_TYPE_S16:
-  case ECMC_NATIVE_TYPE_U16:
+  case ECMC_CPP_TYPE_S16:
+  case ECMC_CPP_TYPE_U16:
     return asynParamInt16Array;
-  case ECMC_NATIVE_TYPE_S32:
-  case ECMC_NATIVE_TYPE_U32:
+  case ECMC_CPP_TYPE_S32:
+  case ECMC_CPP_TYPE_U32:
     return asynParamInt32Array;
-  case ECMC_NATIVE_TYPE_F32:
+  case ECMC_CPP_TYPE_F32:
     return asynParamFloat32Array;
   default:
     return asynParamFloat64Array;
@@ -203,7 +202,7 @@ void trimDebugText(std::string* text) {
   }
 }
 
-bool parseConfigString(const char* configStr, NativeLogicConfig* config, std::string* errorOut) {
+bool parseConfigString(const char* configStr, CppLogicConfig* config, std::string* errorOut) {
   if (!config) {
     return false;
   }
@@ -224,7 +223,7 @@ bool parseConfigString(const char* configStr, NativeLogicConfig* config, std::st
       const size_t equals = token.find('=');
       if (equals == std::string::npos) {
         if (errorOut) {
-          *errorOut = "Invalid native logic config token: " + token;
+          *errorOut = "Invalid C++ logic config token: " + token;
         }
         return false;
       }
@@ -249,7 +248,7 @@ bool parseConfigString(const char* configStr, NativeLogicConfig* config, std::st
           config->sampleRateMs = parsed;
         }
       } else if (errorOut) {
-        *errorOut = "Unknown native logic config key: " + key;
+        *errorOut = "Unknown C++ logic config key: " + key;
         return false;
       } else {
         return false;
@@ -271,10 +270,10 @@ double monotonicTimeMs() {
   return static_cast<double>(now.tv_sec) * 1000.0 + static_cast<double>(now.tv_nsec) / 1.0e6;
 }
 
-class NativeLogicAsynPort : public asynPortDriver {
+class CppLogicAsynPort : public asynPortDriver {
  public:
-  explicit NativeLogicAsynPort(ecmcNativeLogicLib::Impl* impl);
-  ~NativeLogicAsynPort() override;
+  explicit CppLogicAsynPort(ecmcCppLogicLib::Impl* impl);
+  ~CppLogicAsynPort() override;
 
   bool syncExportedParams(std::vector<ExportedParamBinding>* bindings, bool force, bool deferCallbacks);
   bool syncOctetParam(int paramId,
@@ -321,7 +320,7 @@ class NativeLogicAsynPort : public asynPortDriver {
                                             size_t nElements);
   static void lowerCurrentThreadPriority();
 
-  ecmcNativeLogicLib::Impl* impl_;
+  ecmcCppLogicLib::Impl* impl_;
   std::mutex callbackMutex_;
   std::condition_variable callbackCv_;
   std::thread callbackThread_;
@@ -333,24 +332,24 @@ class NativeLogicAsynPort : public asynPortDriver {
 
 }  // namespace
 
-struct ecmcNativeLogicLib::Impl {
-  explicit Impl(ecmcNativeLogicLib* ownerIn, int indexIn)
+struct ecmcCppLogicLib::Impl {
+  explicit Impl(ecmcCppLogicLib* ownerIn, int indexIn)
     : owner(ownerIn), index(indexIn) {}
 
-  ecmcNativeLogicLib* owner {nullptr};
+  ecmcCppLogicLib* owner {nullptr};
   int index {0};
   std::string libFilename;
   std::string configString;
   std::string logicName;
-  NativeLogicConfig config {};
+  CppLogicConfig config {};
   void* dlHandle {nullptr};
-  const ecmcNativeLogicApi* api {nullptr};
+  const ecmcCppLogicApi* api {nullptr};
   void* instance {nullptr};
-  NativeLogicAsynPort* asynPort {nullptr};
+  CppLogicAsynPort* asynPort {nullptr};
   std::vector<ResolvedItemBinding> itemBindings;
   std::vector<ExportedParamBinding> builtinParams;
   std::vector<ExportedParamBinding> exportedParams;
-  ecmcNativeLogicHostServices hostServices {};
+  ecmcCppLogicHostServices hostServices {};
   bool loaded {false};
   bool enteredRt {false};
   uint32_t controlWord {1u};
@@ -378,24 +377,24 @@ struct ecmcNativeLogicLib::Impl {
 
 namespace {
 
-thread_local ecmcNativeLogicLib::Impl* g_activeNativeLogic = nullptr;
+thread_local ecmcCppLogicLib::Impl* g_activeCppLogic = nullptr;
 
 double currentCycleTimeS() {
-  if (g_activeNativeLogic) {
-    return g_activeNativeLogic->actualSampleRateMs / 1000.0;
+  if (g_activeCppLogic) {
+    return g_activeCppLogic->actualSampleRateMs / 1000.0;
   }
   return getEcmcSampleTimeMS() * 1e-3;
 }
 
 void publishCurrentDebugText(const char* message) {
-  if (!g_activeNativeLogic) {
+  if (!g_activeCppLogic) {
     if (message && message[0]) {
-      LOGINFO("[ecmc native] %s\n", message);
+      LOGINFO("[ecmc cpp_logic] %s\n", message);
     }
     return;
   }
 
-  ecmcNativeLogicLib::Impl* impl = g_activeNativeLogic;
+  ecmcCppLogicLib::Impl* impl = g_activeCppLogic;
   if ((impl->controlWord & (1u << kControlWordEnableDebugPrintsBit)) == 0u) {
     return;
   }
@@ -403,13 +402,13 @@ void publishCurrentDebugText(const char* message) {
   impl->debugText.assign(message ? message : "");
   trimDebugText(&impl->debugText);
   if (!impl->debugText.empty()) {
-    LOGINFO("[ecmc native %s] %s\n",
+    LOGINFO("[ecmc cpp_logic %s] %s\n",
             impl->logicName.empty() ? "logic" : impl->logicName.c_str(),
             impl->debugText.c_str());
   }
 }
 
-bool applyRuntimeSampleRateMs(ecmcNativeLogicLib::Impl* impl,
+bool applyRuntimeSampleRateMs(ecmcCppLogicLib::Impl* impl,
                               double requestedMs,
                               std::string* errorOut) {
   if (!impl) {
@@ -455,7 +454,7 @@ bool applyRuntimeSampleRateMs(ecmcNativeLogicLib::Impl* impl,
   return true;
 }
 
-bool addBoundParam(NativeLogicAsynPort* port,
+bool addBoundParam(CppLogicAsynPort* port,
                    const char* name,
                    uint32_t type,
                    uint32_t writable,
@@ -473,7 +472,7 @@ bool addBoundParam(NativeLogicAsynPort* port,
   binding.writable = writable;
   binding.data = data;
   binding.bytes = bytes;
-  binding.isArray = bytes > nativeTypeSize(type);
+  binding.isArray = bytes > cppLogicTypeSize(type);
   binding.asynType = exportParamType(type, bytes);
 
   if (port->createParam(binding.name.c_str(), binding.asynType, &binding.paramId) != asynSuccess) {
@@ -505,9 +504,9 @@ bool copyBindingToItem(const ResolvedItemBinding& binding) {
 
 }  // namespace
 
-NativeLogicAsynPort::NativeLogicAsynPort(ecmcNativeLogicLib::Impl* impl)
+CppLogicAsynPort::CppLogicAsynPort(ecmcCppLogicLib::Impl* impl)
   : asynPortDriver(impl && !impl->config.asynPortName.empty() ? impl->config.asynPortName.c_str()
-                                                              : "NATIVE.LOGIC",
+                                                              : "CPP.LOGIC",
                    1,
                    asynInt32Mask | asynFloat64Mask | asynOctetMask | asynDrvUserMask |
                      asynInt8ArrayMask | asynInt16ArrayMask | asynInt32ArrayMask |
@@ -523,7 +522,7 @@ NativeLogicAsynPort::NativeLogicAsynPort(ecmcNativeLogicLib::Impl* impl)
   callbackThread_ = std::thread([this]() { callbackWorker(); });
 }
 
-NativeLogicAsynPort::~NativeLogicAsynPort() {
+CppLogicAsynPort::~CppLogicAsynPort() {
   {
     std::lock_guard<std::mutex> lock(callbackMutex_);
     stopCallbackThread_ = true;
@@ -535,7 +534,7 @@ NativeLogicAsynPort::~NativeLogicAsynPort() {
   }
 }
 
-void NativeLogicAsynPort::lowerCurrentThreadPriority() {
+void CppLogicAsynPort::lowerCurrentThreadPriority() {
 #if defined(__APPLE__)
   pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0);
 #elif defined(__linux__)
@@ -545,7 +544,7 @@ void NativeLogicAsynPort::lowerCurrentThreadPriority() {
 #endif
 }
 
-ExportedParamBinding* NativeLogicAsynPort::paramBindingForReason(int reason) {
+ExportedParamBinding* CppLogicAsynPort::paramBindingForReason(int reason) {
   if (!impl_) {
     return nullptr;
   }
@@ -563,7 +562,7 @@ ExportedParamBinding* NativeLogicAsynPort::paramBindingForReason(int reason) {
   return nullptr;
 }
 
-bool NativeLogicAsynPort::syncOctetParam(int paramId,
+bool CppLogicAsynPort::syncOctetParam(int paramId,
                                          const std::string& value,
                                          std::string* lastValue,
                                          bool* initialized,
@@ -590,7 +589,7 @@ bool NativeLogicAsynPort::syncOctetParam(int paramId,
   return true;
 }
 
-bool NativeLogicAsynPort::pushArrayCallback(const ExportedParamBinding* binding) {
+bool CppLogicAsynPort::pushArrayCallback(const ExportedParamBinding* binding) {
   if (!binding || !binding->isArray) {
     return false;
   }
@@ -602,7 +601,7 @@ bool NativeLogicAsynPort::pushArrayCallback(const ExportedParamBinding* binding)
   return true;
 }
 
-void NativeLogicAsynPort::scheduleCallbacks(bool withScalarCallbacks) {
+void CppLogicAsynPort::scheduleCallbacks(bool withScalarCallbacks) {
   if (!isEpicsStarted()) {
     return;
   }
@@ -615,7 +614,7 @@ void NativeLogicAsynPort::scheduleCallbacks(bool withScalarCallbacks) {
   callbackCv_.notify_one();
 }
 
-void NativeLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
+void CppLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
   if (!impl_) {
     return;
   }
@@ -626,30 +625,30 @@ void NativeLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
       continue;
     }
 
-    const size_t elementSize = std::max<size_t>(1u, nativeTypeSize(binding->type));
+    const size_t elementSize = std::max<size_t>(1u, cppLogicTypeSize(binding->type));
     const size_t elementCount = binding->bytes / elementSize;
 
     switch (binding->type) {
-    case ECMC_NATIVE_TYPE_BOOL:
-    case ECMC_NATIVE_TYPE_S8:
-    case ECMC_NATIVE_TYPE_U8:
+    case ECMC_CPP_TYPE_BOOL:
+    case ECMC_CPP_TYPE_S8:
+    case ECMC_CPP_TYPE_U8:
       doCallbacksInt8Array(static_cast<epicsInt8*>(binding->data), elementCount, binding->paramId, 0);
       break;
-    case ECMC_NATIVE_TYPE_S16:
-    case ECMC_NATIVE_TYPE_U16:
+    case ECMC_CPP_TYPE_S16:
+    case ECMC_CPP_TYPE_U16:
       doCallbacksInt16Array(static_cast<epicsInt16*>(binding->data), elementCount, binding->paramId, 0);
       break;
-    case ECMC_NATIVE_TYPE_S32:
-    case ECMC_NATIVE_TYPE_U32:
+    case ECMC_CPP_TYPE_S32:
+    case ECMC_CPP_TYPE_U32:
       doCallbacksInt32Array(static_cast<epicsInt32*>(binding->data), elementCount, binding->paramId, 0);
       break;
-    case ECMC_NATIVE_TYPE_F32:
+    case ECMC_CPP_TYPE_F32:
       doCallbacksFloat32Array(static_cast<epicsFloat32*>(binding->data), elementCount, binding->paramId, 0);
       break;
-    case ECMC_NATIVE_TYPE_F64:
+    case ECMC_CPP_TYPE_F64:
       doCallbacksFloat64Array(static_cast<epicsFloat64*>(binding->data), elementCount, binding->paramId, 0);
       break;
-    case ECMC_NATIVE_TYPE_S64: {
+    case ECMC_CPP_TYPE_S64: {
       std::vector<epicsFloat64> values(elementCount);
       const auto* source = static_cast<const int64_t*>(binding->data);
       for (size_t i = 0; i < elementCount; ++i) {
@@ -658,7 +657,7 @@ void NativeLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
       doCallbacksFloat64Array(values.data(), elementCount, binding->paramId, 0);
       break;
     }
-    case ECMC_NATIVE_TYPE_U64: {
+    case ECMC_CPP_TYPE_U64: {
       std::vector<epicsFloat64> values(elementCount);
       const auto* source = static_cast<const uint64_t*>(binding->data);
       for (size_t i = 0; i < elementCount; ++i) {
@@ -673,7 +672,7 @@ void NativeLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
   }
 }
 
-void NativeLogicAsynPort::callbackWorker() {
+void CppLogicAsynPort::callbackWorker() {
   lowerCurrentThreadPriority();
   std::unique_lock<std::mutex> lock(callbackMutex_);
   for (;;) {
@@ -699,7 +698,7 @@ void NativeLogicAsynPort::callbackWorker() {
   }
 }
 
-bool NativeLogicAsynPort::syncOneParam(ExportedParamBinding* binding, bool force) {
+bool CppLogicAsynPort::syncOneParam(ExportedParamBinding* binding, bool force) {
   if (!binding || binding->paramId < 0 || !binding->data || binding->bytes == 0u) {
     return false;
   }
@@ -723,64 +722,64 @@ bool NativeLogicAsynPort::syncOneParam(ExportedParamBinding* binding, bool force
   }
 
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_BOOL:
+  case ECMC_CPP_TYPE_BOOL:
     setIntegerParam(binding->paramId, current[0] != 0u ? 1 : 0);
     return true;
-  case ECMC_NATIVE_TYPE_S8: {
+  case ECMC_CPP_TYPE_S8: {
     int8_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_U8: {
+  case ECMC_CPP_TYPE_U8: {
     uint8_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_S16: {
+  case ECMC_CPP_TYPE_S16: {
     int16_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_U16: {
+  case ECMC_CPP_TYPE_U16: {
     uint16_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_S32: {
+  case ECMC_CPP_TYPE_S32: {
     int32_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_U32: {
+  case ECMC_CPP_TYPE_U32: {
     uint32_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setIntegerParam(binding->paramId, static_cast<epicsInt32>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_F32: {
+  case ECMC_CPP_TYPE_F32: {
     float value = 0.0f;
     std::memcpy(&value, current, sizeof(value));
     setDoubleParam(binding->paramId, static_cast<epicsFloat64>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_F64: {
+  case ECMC_CPP_TYPE_F64: {
     double value = 0.0;
     std::memcpy(&value, current, sizeof(value));
     setDoubleParam(binding->paramId, static_cast<epicsFloat64>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_S64: {
+  case ECMC_CPP_TYPE_S64: {
     int64_t value = 0;
     std::memcpy(&value, current, sizeof(value));
     setDoubleParam(binding->paramId, static_cast<epicsFloat64>(value));
     return true;
   }
-  case ECMC_NATIVE_TYPE_U64: {
+  case ECMC_CPP_TYPE_U64: {
     uint64_t value = 0u;
     std::memcpy(&value, current, sizeof(value));
     setDoubleParam(binding->paramId, static_cast<epicsFloat64>(value));
@@ -791,7 +790,7 @@ bool NativeLogicAsynPort::syncOneParam(ExportedParamBinding* binding, bool force
   }
 }
 
-bool NativeLogicAsynPort::syncExportedParams(std::vector<ExportedParamBinding>* bindings,
+bool CppLogicAsynPort::syncExportedParams(std::vector<ExportedParamBinding>* bindings,
                                              bool force,
                                              bool deferCallbacks) {
   if (!bindings) {
@@ -829,43 +828,43 @@ bool NativeLogicAsynPort::syncExportedParams(std::vector<ExportedParamBinding>* 
   return true;
 }
 
-bool NativeLogicAsynPort::writeScalarFromInt32(ExportedParamBinding* binding, epicsInt32 value) {
+bool CppLogicAsynPort::writeScalarFromInt32(ExportedParamBinding* binding, epicsInt32 value) {
   if (!binding || !binding->data || binding->bytes == 0u) {
     return false;
   }
 
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_BOOL: {
+  case ECMC_CPP_TYPE_BOOL: {
     const uint8_t typed = value != 0 ? 1u : 0u;
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_S8: {
+  case ECMC_CPP_TYPE_S8: {
     const int8_t typed = static_cast<int8_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_U8: {
+  case ECMC_CPP_TYPE_U8: {
     const uint8_t typed = static_cast<uint8_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_S16: {
+  case ECMC_CPP_TYPE_S16: {
     const int16_t typed = static_cast<int16_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_U16: {
+  case ECMC_CPP_TYPE_U16: {
     const uint16_t typed = static_cast<uint16_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_S32: {
+  case ECMC_CPP_TYPE_S32: {
     const int32_t typed = static_cast<int32_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_U32: {
+  case ECMC_CPP_TYPE_U32: {
     const uint32_t typed = static_cast<uint32_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
@@ -878,28 +877,28 @@ bool NativeLogicAsynPort::writeScalarFromInt32(ExportedParamBinding* binding, ep
   return true;
 }
 
-bool NativeLogicAsynPort::writeScalarFromFloat64(ExportedParamBinding* binding, epicsFloat64 value) {
+bool CppLogicAsynPort::writeScalarFromFloat64(ExportedParamBinding* binding, epicsFloat64 value) {
   if (!binding || !binding->data || binding->bytes == 0u) {
     return false;
   }
 
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_F32: {
+  case ECMC_CPP_TYPE_F32: {
     const float typed = static_cast<float>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_F64: {
+  case ECMC_CPP_TYPE_F64: {
     const double typed = static_cast<double>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_S64: {
+  case ECMC_CPP_TYPE_S64: {
     const int64_t typed = static_cast<int64_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
   }
-  case ECMC_NATIVE_TYPE_U64: {
+  case ECMC_CPP_TYPE_U64: {
     const uint64_t typed = static_cast<uint64_t>(value);
     std::memcpy(binding->data, &typed, sizeof(typed));
     break;
@@ -912,7 +911,7 @@ bool NativeLogicAsynPort::writeScalarFromFloat64(ExportedParamBinding* binding, 
   return true;
 }
 
-asynStatus NativeLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value) {
+asynStatus CppLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u) {
     return asynError;
@@ -952,7 +951,7 @@ asynStatus NativeLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value
   return asynSuccess;
 }
 
-asynStatus NativeLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 value) {
+asynStatus CppLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 value) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u) {
     return asynError;
@@ -979,7 +978,7 @@ asynStatus NativeLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 v
 }
 
 template <typename SrcT, typename DstT>
-asynStatus NativeLogicAsynPort::writeTypedArray(asynUser* pasynUser, SrcT* value, size_t nElements) {
+asynStatus CppLogicAsynPort::writeTypedArray(asynUser* pasynUser, SrcT* value, size_t nElements) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u || !binding->data || !binding->isArray) {
     return asynError;
@@ -997,7 +996,7 @@ asynStatus NativeLogicAsynPort::writeTypedArray(asynUser* pasynUser, SrcT* value
 }
 
 template <typename SrcT, typename DstT>
-asynStatus NativeLogicAsynPort::readTypedArray(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readTypedArray(asynUser* pasynUser,
                                                SrcT* value,
                                                size_t nElements,
                                                size_t* nIn) {
@@ -1019,7 +1018,7 @@ asynStatus NativeLogicAsynPort::readTypedArray(asynUser* pasynUser,
 }
 
 template <typename IntT>
-asynStatus NativeLogicAsynPort::readInt64BackedAsFloat64Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readInt64BackedAsFloat64Array(asynUser* pasynUser,
                                                               epicsFloat64* value,
                                                               size_t nElements,
                                                               size_t* nIn) {
@@ -1041,7 +1040,7 @@ asynStatus NativeLogicAsynPort::readInt64BackedAsFloat64Array(asynUser* pasynUse
 }
 
 template <typename IntT>
-asynStatus NativeLogicAsynPort::writeFloat64AsInt64BackedArray(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::writeFloat64AsInt64BackedArray(asynUser* pasynUser,
                                                                epicsFloat64* value,
                                                                size_t nElements) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
@@ -1060,23 +1059,23 @@ asynStatus NativeLogicAsynPort::writeFloat64AsInt64BackedArray(asynUser* pasynUs
   return asynSuccess;
 }
 
-asynStatus NativeLogicAsynPort::writeInt8Array(asynUser* pasynUser, epicsInt8* value, size_t nElements) {
+asynStatus CppLogicAsynPort::writeInt8Array(asynUser* pasynUser, epicsInt8* value, size_t nElements) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding) {
     return asynError;
   }
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_BOOL:
-  case ECMC_NATIVE_TYPE_U8:
+  case ECMC_CPP_TYPE_BOOL:
+  case ECMC_CPP_TYPE_U8:
     return writeTypedArray<epicsInt8, uint8_t>(pasynUser, value, nElements);
-  case ECMC_NATIVE_TYPE_S8:
+  case ECMC_CPP_TYPE_S8:
     return writeTypedArray<epicsInt8, int8_t>(pasynUser, value, nElements);
   default:
     return asynError;
   }
 }
 
-asynStatus NativeLogicAsynPort::readInt8Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readInt8Array(asynUser* pasynUser,
                                               epicsInt8* value,
                                               size_t nElements,
                                               size_t* nIn) {
@@ -1085,52 +1084,52 @@ asynStatus NativeLogicAsynPort::readInt8Array(asynUser* pasynUser,
     return asynError;
   }
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_BOOL:
-  case ECMC_NATIVE_TYPE_U8:
+  case ECMC_CPP_TYPE_BOOL:
+  case ECMC_CPP_TYPE_U8:
     return readTypedArray<epicsInt8, uint8_t>(pasynUser, value, nElements, nIn);
-  case ECMC_NATIVE_TYPE_S8:
+  case ECMC_CPP_TYPE_S8:
     return readTypedArray<epicsInt8, int8_t>(pasynUser, value, nElements, nIn);
   default:
     return asynError;
   }
 }
 
-asynStatus NativeLogicAsynPort::writeInt16Array(asynUser* pasynUser, epicsInt16* value, size_t nElements) {
+asynStatus CppLogicAsynPort::writeInt16Array(asynUser* pasynUser, epicsInt16* value, size_t nElements) {
   return writeTypedArray<epicsInt16, epicsInt16>(pasynUser, value, nElements);
 }
 
-asynStatus NativeLogicAsynPort::readInt16Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readInt16Array(asynUser* pasynUser,
                                                epicsInt16* value,
                                                size_t nElements,
                                                size_t* nIn) {
   return readTypedArray<epicsInt16, epicsInt16>(pasynUser, value, nElements, nIn);
 }
 
-asynStatus NativeLogicAsynPort::writeInt32Array(asynUser* pasynUser, epicsInt32* value, size_t nElements) {
+asynStatus CppLogicAsynPort::writeInt32Array(asynUser* pasynUser, epicsInt32* value, size_t nElements) {
   return writeTypedArray<epicsInt32, epicsInt32>(pasynUser, value, nElements);
 }
 
-asynStatus NativeLogicAsynPort::readInt32Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readInt32Array(asynUser* pasynUser,
                                                epicsInt32* value,
                                                size_t nElements,
                                                size_t* nIn) {
   return readTypedArray<epicsInt32, epicsInt32>(pasynUser, value, nElements, nIn);
 }
 
-asynStatus NativeLogicAsynPort::writeFloat32Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::writeFloat32Array(asynUser* pasynUser,
                                                   epicsFloat32* value,
                                                   size_t nElements) {
   return writeTypedArray<epicsFloat32, epicsFloat32>(pasynUser, value, nElements);
 }
 
-asynStatus NativeLogicAsynPort::readFloat32Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readFloat32Array(asynUser* pasynUser,
                                                  epicsFloat32* value,
                                                  size_t nElements,
                                                  size_t* nIn) {
   return readTypedArray<epicsFloat32, epicsFloat32>(pasynUser, value, nElements, nIn);
 }
 
-asynStatus NativeLogicAsynPort::writeFloat64Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::writeFloat64Array(asynUser* pasynUser,
                                                   epicsFloat64* value,
                                                   size_t nElements) {
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
@@ -1139,20 +1138,20 @@ asynStatus NativeLogicAsynPort::writeFloat64Array(asynUser* pasynUser,
   }
 
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_F64:
+  case ECMC_CPP_TYPE_F64:
     return writeTypedArray<epicsFloat64, epicsFloat64>(pasynUser, value, nElements);
-  case ECMC_NATIVE_TYPE_F32:
+  case ECMC_CPP_TYPE_F32:
     return writeTypedArray<epicsFloat64, epicsFloat32>(pasynUser, value, nElements);
-  case ECMC_NATIVE_TYPE_S64:
+  case ECMC_CPP_TYPE_S64:
     return writeFloat64AsInt64BackedArray<int64_t>(pasynUser, value, nElements);
-  case ECMC_NATIVE_TYPE_U64:
+  case ECMC_CPP_TYPE_U64:
     return writeFloat64AsInt64BackedArray<uint64_t>(pasynUser, value, nElements);
   default:
     return asynError;
   }
 }
 
-asynStatus NativeLogicAsynPort::readFloat64Array(asynUser* pasynUser,
+asynStatus CppLogicAsynPort::readFloat64Array(asynUser* pasynUser,
                                                  epicsFloat64* value,
                                                  size_t nElements,
                                                  size_t* nIn) {
@@ -1162,35 +1161,35 @@ asynStatus NativeLogicAsynPort::readFloat64Array(asynUser* pasynUser,
   }
 
   switch (binding->type) {
-  case ECMC_NATIVE_TYPE_F64:
+  case ECMC_CPP_TYPE_F64:
     return readTypedArray<epicsFloat64, epicsFloat64>(pasynUser, value, nElements, nIn);
-  case ECMC_NATIVE_TYPE_F32:
+  case ECMC_CPP_TYPE_F32:
     return readTypedArray<epicsFloat64, epicsFloat32>(pasynUser, value, nElements, nIn);
-  case ECMC_NATIVE_TYPE_S64:
+  case ECMC_CPP_TYPE_S64:
     return readInt64BackedAsFloat64Array<int64_t>(pasynUser, value, nElements, nIn);
-  case ECMC_NATIVE_TYPE_U64:
+  case ECMC_CPP_TYPE_U64:
     return readInt64BackedAsFloat64Array<uint64_t>(pasynUser, value, nElements, nIn);
   default:
     return asynError;
   }
 }
 
-ecmcNativeLogicLib::ecmcNativeLogicLib(int index)
+ecmcCppLogicLib::ecmcCppLogicLib(int index)
   : impl_(new Impl(this, index)) {}
 
-ecmcNativeLogicLib::~ecmcNativeLogicLib() {
+ecmcCppLogicLib::~ecmcCppLogicLib() {
   unload();
   delete impl_;
   impl_ = nullptr;
 }
 
-const char* ecmcNativeLogicLib::getPortName() const {
+const char* ecmcCppLogicLib::getPortName() const {
   return impl_ ? impl_->config.asynPortName.c_str() : "";
 }
 
-int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
+int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   if (!impl_ || !libFilenameWP || !libFilenameWP[0]) {
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_FILENAME_EMPTY);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_FILENAME_EMPTY);
   }
 
   errorReset();
@@ -1201,7 +1200,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
 
   std::string error;
   if (!parseConfigString(configStr, &impl_->config, &error)) {
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_CONFIG_INVALID);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_CONFIG_INVALID);
   }
 
   if (impl_->config.asynPortName.empty()) {
@@ -1212,45 +1211,40 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
 
   impl_->dlHandle = dlopen(impl_->libFilename.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!impl_->dlHandle) {
-    LOGERR("%s/%s:%d: Native logic %s open failed: %s\n",
+    LOGERR("%s/%s:%d: C++ logic %s open failed: %s\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
            impl_->libFilename.c_str(),
            dlerror());
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_OPEN_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_OPEN_FAIL);
   }
 
   auto* getApi =
-    reinterpret_cast<const ecmcNativeLogicApi* (*)()>(dlsym(impl_->dlHandle, kCppLogicGetApiSymbol));
+    reinterpret_cast<const ecmcCppLogicApi* (*)()>(dlsym(impl_->dlHandle, kCppLogicGetApiSymbol));
   if (!getApi) {
-    getApi = reinterpret_cast<const ecmcNativeLogicApi* (*)()>(
-      dlsym(impl_->dlHandle, kNativeLogicGetApiSymbol));
-  }
-  if (!getApi) {
-    LOGERR("%s/%s:%d: Native logic %s missing %s or %s.\n",
+    LOGERR("%s/%s:%d: C++ logic %s missing %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
            impl_->libFilename.c_str(),
-           kCppLogicGetApiSymbol,
-           kNativeLogicGetApiSymbol);
+           kCppLogicGetApiSymbol);
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_GET_API_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_GET_API_FAIL);
   }
 
   impl_->api = getApi();
   if (!impl_->api) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_API_NULL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_API_NULL);
   }
-  if (impl_->api->abiVersion != ECMC_NATIVE_LOGIC_ABI_VERSION) {
+  if (impl_->api->abiVersion != ECMC_CPP_LOGIC_ABI_VERSION) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_ABI_MISMATCH);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_ABI_MISMATCH);
   }
 
-  getEcmcNativeLogicHostServices(&impl_->hostServices);
-  impl_->hostServices.version = ECMC_NATIVE_LOGIC_ABI_VERSION;
+  getEcmcCppLogicHostServices(&impl_->hostServices);
+  impl_->hostServices.version = ECMC_CPP_LOGIC_ABI_VERSION;
   impl_->hostServices.get_cycle_time_s = &currentCycleTimeS;
   impl_->hostServices.publish_debug_text = &publishCurrentDebugText;
   if (impl_->api->setHostServices) {
@@ -1259,16 +1253,16 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
 
   if (!impl_->api->createInstance || !impl_->api->runCycle || !impl_->api->destroyInstance) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_API_NULL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_API_NULL);
   }
 
   impl_->instance = impl_->api->createInstance();
   if (!impl_->instance) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_CREATE_INSTANCE_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_CREATE_INSTANCE_FAIL);
   }
 
-  const ecmcNativeLogicItemBinding* itemBindings =
+  const ecmcCppLogicItemBinding* itemBindings =
     impl_->api->getItemBindings ? impl_->api->getItemBindings(impl_->instance) : nullptr;
   const uint32_t itemBindingCount =
     impl_->api->getItemBindingCount ? impl_->api->getItemBindingCount(impl_->instance) : 0u;
@@ -1282,52 +1276,52 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
     resolved.item = asynPort ? asynPort->findAvailDataItem(resolved.itemName.c_str()) : nullptr;
     if (!resolved.item) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_ITEM_MISSING);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_MISSING);
     }
 
     ecmcDataItemInfo* info = resolved.item->getDataItemInfo();
     if (!info || !info->dataPointerValid || !info->data) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_ITEM_INVALID);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_INVALID);
     }
     resolved.info = *info;
 
-    if ((resolved.binding.flags & ECMC_NATIVE_BIND_FLAG_AUTO_SIZE) != 0u) {
+    if ((resolved.binding.flags & ECMC_CPP_BIND_FLAG_AUTO_SIZE) != 0u) {
       if (!resolved.binding.prepare ||
           resolved.binding.prepare(&resolved.binding, static_cast<uint32_t>(resolved.info.dataSize)) != 0) {
         unload();
-        return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_PREPARE_FAIL);
+        return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_PREPARE_FAIL);
       }
     }
 
-    const uint32_t elementSize = nativeTypeSize(resolved.binding.type);
+    const uint32_t elementSize = cppLogicTypeSize(resolved.binding.type);
     if (!resolved.binding.data || resolved.binding.bytes == 0u || elementSize == 0u) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_ITEM_INVALID);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_INVALID);
     }
     if (resolved.binding.bytes != resolved.info.dataSize ||
         resolved.info.dataElementSize != elementSize ||
-        !nativeTypeMatchesItemType(resolved.binding.type, resolved.info.dataType)) {
+        !cppLogicTypeMatchesItemType(resolved.binding.type, resolved.info.dataType)) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_ITEM_TYPE_MISMATCH);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_TYPE_MISMATCH);
     }
     if (resolved.binding.writable != 0u && resolved.info.dataDirection != ECMC_DIR_WRITE) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_DIRECTION_MISMATCH);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_DIRECTION_MISMATCH);
     }
     if (resolved.binding.writable == 0u && resolved.info.dataDirection != ECMC_DIR_READ) {
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_BIND_DIRECTION_MISMATCH);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_DIRECTION_MISMATCH);
     }
 
     impl_->itemBindings.push_back(resolved);
   }
 
   impl_->logicName = (impl_->api->name && impl_->api->name[0]) ? impl_->api->name : impl_->libFilename;
-  impl_->asynPort = new NativeLogicAsynPort(impl_);
+  impl_->asynPort = new CppLogicAsynPort(impl_);
   if (!impl_->asynPort) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_ASYN_CREATE_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL);
   }
 
   impl_->builtinParams.clear();
@@ -1335,7 +1329,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
 
   if (!addBoundParam(impl_->asynPort,
                      kBuiltinControlWordName,
-                     ECMC_NATIVE_TYPE_U32,
+                     ECMC_CPP_TYPE_U32,
                      1u,
                      &impl_->controlWord,
                      sizeof(impl_->controlWord),
@@ -1343,7 +1337,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinRequestedRateMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      1u,
                      &impl_->requestedSampleRateMs,
                      sizeof(impl_->requestedSampleRateMs),
@@ -1351,7 +1345,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinActualRateMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      0u,
                      &impl_->actualSampleRateMs,
                      sizeof(impl_->actualSampleRateMs),
@@ -1359,7 +1353,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinExecMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      0u,
                      &impl_->lastExecTimeMs,
                      sizeof(impl_->lastExecTimeMs),
@@ -1367,7 +1361,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinInputMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      0u,
                      &impl_->lastInputTimeMs,
                      sizeof(impl_->lastInputTimeMs),
@@ -1375,7 +1369,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinOutputMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      0u,
                      &impl_->lastOutputTimeMs,
                      sizeof(impl_->lastOutputTimeMs),
@@ -1383,7 +1377,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinTotalMsName,
-                     ECMC_NATIVE_TYPE_F64,
+                     ECMC_CPP_TYPE_F64,
                      0u,
                      &impl_->lastTotalTimeMs,
                      sizeof(impl_->lastTotalTimeMs),
@@ -1391,7 +1385,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinDividerName,
-                     ECMC_NATIVE_TYPE_S32,
+                     ECMC_CPP_TYPE_S32,
                      0u,
                      &impl_->executeDividerPv,
                      sizeof(impl_->executeDividerPv),
@@ -1399,7 +1393,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error) ||
       !addBoundParam(impl_->asynPort,
                      kBuiltinExecuteCountName,
-                     ECMC_NATIVE_TYPE_S32,
+                     ECMC_CPP_TYPE_S32,
                      0u,
                      &impl_->executeCount,
                      sizeof(impl_->executeCount),
@@ -1407,16 +1401,16 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &error)) {
     LOGERR("%s/%s:%d: %s\n", __FILE__, __FUNCTION__, __LINE__, error.c_str());
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_ASYN_CREATE_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL);
   }
 
   if (impl_->asynPort->createParam(kBuiltinDebugTextName, asynParamOctet, &impl_->debugTextParamId) !=
       asynSuccess) {
     unload();
-    return setErrorID(ERROR_MAIN_NATIVE_LOGIC_ASYN_CREATE_FAIL);
+    return setErrorID(ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL);
   }
 
-  const ecmcNativeLogicExportedVar* exportedVars =
+  const ecmcCppLogicExportedVar* exportedVars =
     impl_->api->getExportedVars ? impl_->api->getExportedVars(impl_->instance) : nullptr;
   const uint32_t exportedVarCount =
     impl_->api->getExportedVarCount ? impl_->api->getExportedVarCount(impl_->instance) : 0u;
@@ -1432,7 +1426,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
                        &error)) {
       LOGERR("%s/%s:%d: %s\n", __FILE__, __FUNCTION__, __LINE__, error.c_str());
       unload();
-      return setErrorID(ERROR_MAIN_NATIVE_LOGIC_ASYN_CREATE_FAIL);
+      return setErrorID(ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL);
     }
   }
 
@@ -1454,7 +1448,7 @@ int ecmcNativeLogicLib::load(const char* libFilenameWP, const char* configStr) {
   return 0;
 }
 
-void ecmcNativeLogicLib::unload() {
+void ecmcCppLogicLib::unload() {
   if (!impl_) {
     return;
   }
@@ -1488,12 +1482,12 @@ void ecmcNativeLogicLib::unload() {
   impl_->debugTextInitialized = false;
 }
 
-void ecmcNativeLogicLib::report() {
+void ecmcCppLogicLib::report() {
   if (!impl_) {
     return;
   }
 
-  printf("Native Logic %d\n", impl_->index);
+  printf("Cpp Logic %d\n", impl_->index);
   printf("  Loaded             = %s\n", impl_->loaded ? "yes" : "no");
   printf("  Logic name         = %s\n", impl_->logicName.c_str());
   printf("  Shared library     = %s\n", impl_->libFilename.c_str());
@@ -1506,7 +1500,7 @@ void ecmcNativeLogicLib::report() {
   printf("  EPICS exports      = %zu\n", impl_->exportedParams.size());
 }
 
-int ecmcNativeLogicLib::exeEnterRTFunc() {
+int ecmcCppLogicLib::exeEnterRTFunc() {
   if (!impl_ || !impl_->loaded) {
     return 0;
   }
@@ -1532,7 +1526,7 @@ int ecmcNativeLogicLib::exeEnterRTFunc() {
   return 0;
 }
 
-int ecmcNativeLogicLib::exeExitRTFunc() {
+int ecmcCppLogicLib::exeExitRTFunc() {
   if (!impl_) {
     return 0;
   }
@@ -1545,7 +1539,7 @@ int ecmcNativeLogicLib::exeExitRTFunc() {
   return 0;
 }
 
-int ecmcNativeLogicLib::exeRTFunc(int controllerErrorCode) {
+int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
   (void)controllerErrorCode;
 
   if (!impl_ || !impl_->loaded || !impl_->enteredRt) {
@@ -1588,11 +1582,11 @@ int ecmcNativeLogicLib::exeRTFunc(int controllerErrorCode) {
 
   const double execStartMs = measureTiming ? monotonicTimeMs() : 0.0;
   try {
-    g_activeNativeLogic = impl_;
+    g_activeCppLogic = impl_;
     impl_->api->runCycle(impl_->instance);
-    g_activeNativeLogic = nullptr;
+    g_activeCppLogic = nullptr;
   } catch (...) {
-    g_activeNativeLogic = nullptr;
+    g_activeCppLogic = nullptr;
     return setErrorID(ERROR_MAIN_EXCEPTION);
   }
   if (measureTiming) {

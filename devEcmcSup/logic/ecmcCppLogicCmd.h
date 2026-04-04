@@ -3,19 +3,17 @@
 * ecmc is distributed subject to a Software License Agreement found
 * in file LICENSE that is included with this distribution.
 *
-*  ecmcNativeLogicCmd.h
+*  ecmcCppLogicCmd.h
 *
 \*************************************************************************/
 
-#ifndef ECMC_NATIVE_LOGIC_CMD_H_
-#define ECMC_NATIVE_LOGIC_CMD_H_
+#ifndef ECMC_CPP_LOGIC_CMD_H_
+#define ECMC_CPP_LOGIC_CMD_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int loadNativeLogic(int logicId, const char* filenameWP, const char* configStr);
-int reportNativeLogic(int logicId);
 int loadCppLogic(int logicId, const char* filenameWP, const char* configStr);
 int reportCppLogic(int logicId);
 

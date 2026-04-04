@@ -3,21 +3,21 @@
 * ecmc is distributed subject to a Software License Agreement found
 * in file LICENSE that is included with this distribution.
 *
-*  ecmcNativeLogicLib.h
+*  ecmcCppLogicLib.h
 *
 \*************************************************************************/
 
-#ifndef ECMC_NATIVE_LOGIC_LIB_H_
-#define ECMC_NATIVE_LOGIC_LIB_H_
+#ifndef ECMC_CPP_LOGIC_LIB_H_
+#define ECMC_CPP_LOGIC_LIB_H_
 
 #include "ecmcError.h"
 
-class ecmcNativeLogicLib : public ecmcError {
+class ecmcCppLogicLib : public ecmcError {
  public:
   struct Impl;
 
-  explicit ecmcNativeLogicLib(int index);
-  ~ecmcNativeLogicLib() override;
+  explicit ecmcCppLogicLib(int index);
+  ~ecmcCppLogicLib() override;
 
   int load(const char* libFilenameWP, const char* configStr);
   void unload();

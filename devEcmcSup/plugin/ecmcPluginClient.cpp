@@ -234,16 +234,16 @@ void publishEcmcDebugText(const char* message) {
     return;
   }
 
-  LOGINFO("[ecmc native] %s\n", message);
+  LOGINFO("[ecmc cpp_logic] %s\n", message);
 }
 
-void getEcmcNativeLogicHostServices(struct ecmcNativeLogicHostServices* services) {
+void getEcmcCppLogicHostServices(struct ecmcCppLogicHostServices* services) {
   if (!services) {
     return;
   }
 
   *services = {};
-  services->version = ECMC_NATIVE_LOGIC_ABI_VERSION;
+  services->version = ECMC_CPP_LOGIC_ABI_VERSION;
   services->get_cycle_time_s = []() -> double { return getEcmcSampleTimeMS() * 1e-3; };
   services->get_ec_master_state_word = &getEcmcMasterStateWord;
   services->get_ec_slave_state_word = &getEcmcSlaveStateWord;

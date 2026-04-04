@@ -1,5 +1,0 @@
-record(ao, "$(P)$(REC)") {
-  field(DESC, "$(DESC=)")
-  field(PREC, "$(PREC=3)")
-  field(OUT,  "@asyn($(PORT),0,1000)$(PARAM)")
-}

@@ -1,6 +1,0 @@
-record(bo, "$(P)$(REC)") {
-  field(DESC, "$(DESC=)")
-  field(OUT,  "@asyn($(PORT),0,1000)$(PARAM)")
-  field(ZNAM, "$(ZNAM=Off)")
-  field(ONAM, "$(ONAM=On)")
-}

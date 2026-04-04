@@ -7,17 +7,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ECMC_NATIVE_TYPE_BOOL = 1
-ECMC_NATIVE_TYPE_S8 = 2
-ECMC_NATIVE_TYPE_U8 = 3
-ECMC_NATIVE_TYPE_S16 = 4
-ECMC_NATIVE_TYPE_U16 = 5
-ECMC_NATIVE_TYPE_S32 = 6
-ECMC_NATIVE_TYPE_U32 = 7
-ECMC_NATIVE_TYPE_F32 = 8
-ECMC_NATIVE_TYPE_F64 = 9
-ECMC_NATIVE_TYPE_U64 = 10
-ECMC_NATIVE_TYPE_S64 = 11
+ECMC_CPP_TYPE_BOOL = 1
+ECMC_CPP_TYPE_S8 = 2
+ECMC_CPP_TYPE_U8 = 3
+ECMC_CPP_TYPE_S16 = 4
+ECMC_CPP_TYPE_U16 = 5
+ECMC_CPP_TYPE_S32 = 6
+ECMC_CPP_TYPE_U32 = 7
+ECMC_CPP_TYPE_F32 = 8
+ECMC_CPP_TYPE_F64 = 9
+ECMC_CPP_TYPE_U64 = 10
+ECMC_CPP_TYPE_S64 = 11
 
 
 class ExportedVar(ctypes.Structure):
@@ -68,33 +68,33 @@ def sanitize_record_name(name: str) -> str:
 
 
 def type_to_ftvl(value_type: int) -> str:
-    if value_type == ECMC_NATIVE_TYPE_BOOL:
+    if value_type == ECMC_CPP_TYPE_BOOL:
         return "UCHAR"
-    if value_type == ECMC_NATIVE_TYPE_S8:
+    if value_type == ECMC_CPP_TYPE_S8:
         return "CHAR"
-    if value_type == ECMC_NATIVE_TYPE_U8:
+    if value_type == ECMC_CPP_TYPE_U8:
         return "UCHAR"
-    if value_type == ECMC_NATIVE_TYPE_S16:
+    if value_type == ECMC_CPP_TYPE_S16:
         return "SHORT"
-    if value_type == ECMC_NATIVE_TYPE_U16:
+    if value_type == ECMC_CPP_TYPE_U16:
         return "USHORT"
-    if value_type in (ECMC_NATIVE_TYPE_S32, ECMC_NATIVE_TYPE_U32):
+    if value_type in (ECMC_CPP_TYPE_S32, ECMC_CPP_TYPE_U32):
         return "LONG"
-    if value_type == ECMC_NATIVE_TYPE_F32:
+    if value_type == ECMC_CPP_TYPE_F32:
         return "FLOAT"
     return "DOUBLE"
 
 
 def scalar_template(value_type: int, writable: bool) -> str:
-    if value_type == ECMC_NATIVE_TYPE_BOOL:
+    if value_type == ECMC_CPP_TYPE_BOOL:
         return "ecmcCppLogicBo.template" if writable else "ecmcCppLogicBi.template"
     if value_type in (
-        ECMC_NATIVE_TYPE_S8,
-        ECMC_NATIVE_TYPE_U8,
-        ECMC_NATIVE_TYPE_S16,
-        ECMC_NATIVE_TYPE_U16,
-        ECMC_NATIVE_TYPE_S32,
-        ECMC_NATIVE_TYPE_U32,
+        ECMC_CPP_TYPE_S8,
+        ECMC_CPP_TYPE_U8,
+        ECMC_CPP_TYPE_S16,
+        ECMC_CPP_TYPE_U16,
+        ECMC_CPP_TYPE_S32,
+        ECMC_CPP_TYPE_U32,
     ):
         return "ecmcCppLogicLongOut.template" if writable else "ecmcCppLogicLongIn.template"
     return "ecmcCppLogicAo.template" if writable else "ecmcCppLogicAi.template"
@@ -136,29 +136,29 @@ def build_template_spec(param_prefix: str, export_var: ExportedVar) -> TemplateS
 
 def type_size(value_type: int) -> int:
     return {
-        ECMC_NATIVE_TYPE_BOOL: 1,
-        ECMC_NATIVE_TYPE_S8: 1,
-        ECMC_NATIVE_TYPE_U8: 1,
-        ECMC_NATIVE_TYPE_S16: 2,
-        ECMC_NATIVE_TYPE_U16: 2,
-        ECMC_NATIVE_TYPE_S32: 4,
-        ECMC_NATIVE_TYPE_U32: 4,
-        ECMC_NATIVE_TYPE_F32: 4,
-        ECMC_NATIVE_TYPE_F64: 8,
-        ECMC_NATIVE_TYPE_U64: 8,
-        ECMC_NATIVE_TYPE_S64: 8,
+        ECMC_CPP_TYPE_BOOL: 1,
+        ECMC_CPP_TYPE_S8: 1,
+        ECMC_CPP_TYPE_U8: 1,
+        ECMC_CPP_TYPE_S16: 2,
+        ECMC_CPP_TYPE_U16: 2,
+        ECMC_CPP_TYPE_S32: 4,
+        ECMC_CPP_TYPE_U32: 4,
+        ECMC_CPP_TYPE_F32: 4,
+        ECMC_CPP_TYPE_F64: 8,
+        ECMC_CPP_TYPE_U64: 8,
+        ECMC_CPP_TYPE_S64: 8,
     }.get(value_type, 1)
 
 
 def load_exports(logic_lib: Path) -> tuple[str, list[ExportedVar]]:
     lib = ctypes.CDLL(str(logic_lib))
     get_api = None
-    for symbol_name in ("ecmc_cpp_logic_get_api", "ecmc_native_logic_get_api"):
+    for symbol_name in ("ecmc_cpp_logic_get_api", "ecmc_cpp_logic_get_api"):
         if hasattr(lib, symbol_name):
             get_api = getattr(lib, symbol_name)
             break
     if get_api is None:
-        raise AttributeError("Missing ecmc_cpp_logic_get_api/ecmc_native_logic_get_api")
+        raise AttributeError("Missing ecmc_cpp_logic_get_api/ecmc_cpp_logic_get_api")
     get_api.restype = ctypes.POINTER(CppLogicApi)
     api = get_api().contents
     logic_name = api.name.decode() if api.name else logic_lib.stem

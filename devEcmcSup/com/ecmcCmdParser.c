@@ -34,7 +34,7 @@
 #include "ecmcCom.h"
 #include "ecmcPLC.h"
 #include "ecmcPlugin.h"
-#include "ecmcNativeLogicCmd.h"
+#include "ecmcCppLogicCmd.h"
 #include <iocsh.h>
 
 extern int blockCmdParserInRt;
@@ -3280,20 +3280,6 @@ parse_cfg_setaxisdrv:
     return loadPlugin(iValue, cIdBuffer, cIdBuffer2);
   }
 
-  /*int Cfg.LoadNativeLogic(int logicId, char *cFilename, char *configString); */
-  cIdBuffer[0]  = '\0';
-  cIdBuffer2[0] = '\0';
-  nvals = sscanf(myarg_1,
-                 "LoadNativeLogic(%d,%[^,],%[^)])",
-                 &iValue,
-                 cIdBuffer,
-                 cIdBuffer2);
-
-  if (nvals == 3) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadNativeLogic");
-    return loadNativeLogic(iValue, cIdBuffer, cIdBuffer2);
-  }
-
   /*int Cfg.LoadCppLogic(int logicId, char *cFilename, char *configString); */
   cIdBuffer[0]  = '\0';
   cIdBuffer2[0] = '\0';
@@ -3328,15 +3314,6 @@ parse_cfg_setaxisdrv:
     return loadPlugin(iValue, cIdBuffer, "");
   }
 
-  /*int Cfg.LoadNativeLogic(int logicId, char *cFilename); */
-  cIdBuffer[0] = '\0';
-  nvals = sscanf(myarg_1, "LoadNativeLogic(%d,%[^)])", &iValue, cIdBuffer);
-
-  if (nvals == 2) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadNativeLogic");
-    return loadNativeLogic(iValue, cIdBuffer, "");
-  }
-
   /*int Cfg.LoadCppLogic(int logicId, char *cFilename); */
   cIdBuffer[0] = '\0';
   nvals = sscanf(myarg_1, "LoadCppLogic(%d,%[^)])", &iValue, cIdBuffer);
@@ -3351,13 +3328,6 @@ parse_cfg_setaxisdrv:
 
   if (nvals == 1) {
     return reportPlugin(iValue);
-  }
-
-  /*int Cfg.ReportNativeLogic(int logicId); */
-  nvals = sscanf(myarg_1, "ReportNativeLogic(%d)", &iValue);
-
-  if (nvals == 1) {
-    return reportNativeLogic(iValue);
   }
 
   /*int Cfg.ReportCppLogic(int logicId); */
