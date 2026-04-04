@@ -1,0 +1,125 @@
+# Cpp Logic Helpers
+
+This page gives a compact reference for the helper headers under
+[`devEcmcSup/logic/`](./).
+
+It complements the higher-level IOC/user docs in `ecmccfg` and focuses on the
+C++ helper API itself.
+
+## Main Headers
+
+- [`ecmcCppLogic.hpp`](./ecmcCppLogic.hpp)
+  Core binding/export interface, host services, and registration macros.
+- [`ecmcCppMotion.hpp`](./ecmcCppMotion.hpp)
+  `MC_*` style motion wrappers on top of the existing `ecmc` motion backend.
+- [`ecmcCppControl.hpp`](./ecmcCppControl.hpp)
+  Control-oriented helpers such as `ecmcCpp::Pid`.
+- [`ecmcCppUtils.hpp`](./ecmcCppUtils.hpp)
+  Utility helpers for triggers, timers, latches, filtering, basic state
+  handling, and EtherCAT status decoding.
+
+## Logic Base And Registration
+
+Normal user code derives from `ecmcCpp::LogicBase` and finishes with:
+
+```cpp
+ECMC_CPP_LOGIC_REGISTER_DEFAULT(MyLogic)
+```
+
+Inside the logic class:
+
+- `ecmc...` binds to live `ecmc` items
+- `epics...` exports values on the dedicated C++ logic asyn port
+
+## ecmcCppLogic.hpp
+
+Common scalar binding helpers:
+
+- `ecmc.input("item", value)`
+- `ecmc.output("item", value)`
+- `epics.readOnly("name", value)`
+- `epics.writable("name", value)`
+
+Array/buffer helpers:
+
+- `ecmc.inputArray(...)`
+- `ecmc.outputArray(...)`
+- `ecmc.inputBytes(...)`
+- `ecmc.outputBytes(...)`
+- `ecmc.inputAutoArray(...)`
+- `ecmc.outputAutoArray(...)`
+- `epics.readOnlyArray(...)`
+- `epics.writableArray(...)`
+- `epics.readOnlyBytes(...)`
+- `epics.writableBytes(...)`
+
+## ecmcCppControl.hpp
+
+Current control helper:
+
+- `ecmcCpp::Pid`
+
+Highlights:
+
+- `Kp`, `Ki`, `Kd`
+- feed-forward via `FF` and `Kff`
+- output limiting with `OutMin` / `OutMax`
+- integral limiting with `IMin` / `IMax`
+- optional derivative filtering via `DFilterTau`
+
+## ecmcCppUtils.hpp
+
+### Triggers and timers
+
+- `ecmcCpp::RTrig`
+- `ecmcCpp::FTrig`
+- `ecmcCpp::Ton`
+- `ecmcCpp::Tof`
+- `ecmcCpp::Tp`
+
+These are intended to feel familiar to users coming from IEC/ST helper blocks.
+
+### Latches and toggles
+
+- `ecmcCpp::Sr`
+- `ecmcCpp::Rs`
+- `ecmcCpp::FlipFlop`
+
+### Simple runtime utilities
+
+- `ecmcCpp::Blink`
+- `ecmcCpp::StateTimer<T>`
+- `ecmcCpp::DebounceBool`
+- `ecmcCpp::StartupDelay`
+- `ecmcCpp::RateLimiter`
+- `ecmcCpp::FirstOrderFilter`
+- `ecmcCpp::HysteresisBool`
+- `ecmcCpp::Integrator`
+- `ecmcCpp::MoveAverage`
+- `ecmcCpp::MinMaxHold`
+
+### Scalar helper functions
+
+- `ecmcCpp::applyDeadband(...)`
+- `ecmcCpp::clampValue(...)`
+- `ecmcCpp::inWindow(...)`
+
+### EtherCAT status wrappers
+
+- `ecmcCpp::EcMasterStatus`
+- `ecmcCpp::EcSlaveStatus`
+
+## Examples
+
+See:
+
+- [`examples/README.md`](./examples/README.md)
+- [`examples/cpp_logic_control/main.cpp`](./examples/cpp_logic_control/main.cpp)
+- [`examples/cpp_logic_arrays/main.cpp`](./examples/cpp_logic_arrays/main.cpp)
+
+The array example is the best starting point for:
+
+- `inputAutoArray(...)`
+- `outputArray(...)`
+- `epics.readOnlyArray(...)`
+- byte-buffer exports

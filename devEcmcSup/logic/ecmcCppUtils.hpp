@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <vector>
 
 namespace ecmcCpp {
 
@@ -165,6 +167,156 @@ class Tp {
  private:
   bool PrevIn_ {false};
   bool Active_ {false};
+};
+
+class Sr {
+ public:
+  bool S {false};
+  bool R {false};
+  bool Q {false};
+
+  void run() {
+    if (R) {
+      Q = false;
+    } else if (S) {
+      Q = true;
+    }
+  }
+};
+
+class Rs {
+ public:
+  bool S {false};
+  bool R {false};
+  bool Q {false};
+
+  void run() {
+    if (S) {
+      Q = true;
+    } else if (R) {
+      Q = false;
+    }
+  }
+};
+
+class FlipFlop {
+ public:
+  bool Toggle {false};
+  bool Reset {false};
+  bool Q {false};
+
+  void run() {
+    if (Reset) {
+      Q = false;
+    } else if (Toggle && !PrevToggle_) {
+      Q = !Q;
+    }
+    PrevToggle_ = Toggle;
+  }
+
+ private:
+  bool PrevToggle_ {false};
+};
+
+class Blink {
+ public:
+  bool Enable {false};
+  double OnTimeS {0.5};
+  double OffTimeS {0.5};
+  bool StartHigh {true};
+
+  bool Q {false};
+  bool Rising {false};
+  bool Falling {false};
+
+  void run(double dt_s = getCycleTimeS()) {
+    Rising = false;
+    Falling = false;
+
+    if (!Enable) {
+      setOutput(false);
+      ActivePhaseHigh_ = StartHigh;
+      PhaseElapsedS_ = 0.0;
+      WasEnabled_ = false;
+      return;
+    }
+
+    if (!WasEnabled_) {
+      setOutput(StartHigh);
+      ActivePhaseHigh_ = StartHigh;
+      PhaseElapsedS_ = 0.0;
+      WasEnabled_ = true;
+      return;
+    }
+
+    const double phase_time = ActivePhaseHigh_ ? OnTimeS : OffTimeS;
+    if (phase_time <= 0.0) {
+      ActivePhaseHigh_ = !ActivePhaseHigh_;
+      setOutput(ActivePhaseHigh_);
+      PhaseElapsedS_ = 0.0;
+      return;
+    }
+
+    PhaseElapsedS_ += std::max(dt_s, 0.0);
+    if (PhaseElapsedS_ >= phase_time) {
+      PhaseElapsedS_ = 0.0;
+      ActivePhaseHigh_ = !ActivePhaseHigh_;
+      setOutput(ActivePhaseHigh_);
+    }
+  }
+
+ private:
+  bool ActivePhaseHigh_ {true};
+  bool WasEnabled_ {false};
+  double PhaseElapsedS_ {0.0};
+
+  void setOutput(bool value) {
+    Rising = value && !Q;
+    Falling = !value && Q;
+    Q = value;
+  }
+};
+
+template <typename T = int32_t>
+class StateTimer {
+ public:
+  T State {};
+  bool Reset {false};
+
+  bool Changed {false};
+  double ElapsedS {0.0};
+
+  void run(double dt_s = getCycleTimeS()) {
+    if (Reset) {
+      Changed = false;
+      ElapsedS = 0.0;
+      PreviousState_ = State;
+      Initialized_ = true;
+      return;
+    }
+
+    if (!Initialized_) {
+      Changed = true;
+      ElapsedS = 0.0;
+      PreviousState_ = State;
+      Initialized_ = true;
+      return;
+    }
+
+    if (State != PreviousState_) {
+      Changed = true;
+      ElapsedS = 0.0;
+      PreviousState_ = State;
+      return;
+    }
+
+    Changed = false;
+    ElapsedS += std::max(dt_s, 0.0);
+  }
+
+ private:
+  T PreviousState_ {};
+  bool Initialized_ {false};
 };
 
 class DebounceBool {
@@ -424,6 +576,101 @@ class Integrator {
  private:
   double resolveDt() const {
     return (DT > 0.0) ? DT : getCycleTimeS();
+  }
+};
+
+class MoveAverage {
+ public:
+  bool Enable {true};
+  bool Reset {false};
+  double In {0.0};
+  uint32_t WindowSamples {8u};
+
+  double Out {0.0};
+  uint32_t ActiveSamples {0u};
+
+  void run() {
+    const size_t window = std::max<size_t>(1u, static_cast<size_t>(WindowSamples));
+    if (Reset || !Enable) {
+      Buffer_.clear();
+      RunningSum_ = 0.0;
+      WriteIndex_ = 0u;
+      ActiveSamples = 0u;
+      Out = In;
+      return;
+    }
+
+    ensureWindow(window);
+
+    if (ActiveSamples < window) {
+      Buffer_[WriteIndex_] = In;
+      RunningSum_ += In;
+      ++ActiveSamples;
+    } else {
+      RunningSum_ -= Buffer_[WriteIndex_];
+      Buffer_[WriteIndex_] = In;
+      RunningSum_ += In;
+    }
+
+    WriteIndex_ = (WriteIndex_ + 1u) % window;
+    const double divisor = (ActiveSamples > 0u) ? static_cast<double>(ActiveSamples) : 1.0;
+    Out = RunningSum_ / divisor;
+  }
+
+ private:
+  std::vector<double> Buffer_;
+  double RunningSum_ {0.0};
+  size_t WriteIndex_ {0u};
+
+  void ensureWindow(size_t window) {
+    if (Buffer_.size() == window) {
+      return;
+    }
+    Buffer_.assign(window, In);
+    RunningSum_ = In;
+    ActiveSamples = 1u;
+    WriteIndex_ = (window > 1u) ? 1u : 0u;
+    Out = In;
+  }
+};
+
+class MinMaxHold {
+ public:
+  bool Enable {true};
+  bool Reset {false};
+  bool TrackMin {true};
+  bool TrackMax {true};
+  double In {0.0};
+
+  bool Valid {false};
+  double Min {0.0};
+  double Max {0.0};
+  double Span {0.0};
+
+  void run() {
+    if (Reset || !Enable) {
+      Valid = false;
+      Min = 0.0;
+      Max = 0.0;
+      Span = 0.0;
+      return;
+    }
+
+    if (!Valid) {
+      Valid = true;
+      Min = In;
+      Max = In;
+      Span = 0.0;
+      return;
+    }
+
+    if (TrackMin && (In < Min)) {
+      Min = In;
+    }
+    if (TrackMax && (In > Max)) {
+      Max = In;
+    }
+    Span = Max - Min;
   }
 };
 
