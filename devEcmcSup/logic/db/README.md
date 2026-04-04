@@ -14,6 +14,7 @@ Current scope:
   - [`ecmcCppLogicCore.substitutions`](./ecmcCppLogicCore.substitutions)
 - scalar templates for `bi`, `bo`, `longin`, `longout`, `ai`, and `ao`
 - string template for short debug text
+- static string template for IOC-local application panel paths
 - waveform templates for array-style exports
 - offline generation of custom substitutions through:
   - [`../../../tools/ecmcCppLogicSubstGen.py`](../../../tools/ecmcCppLogicSubstGen.py)

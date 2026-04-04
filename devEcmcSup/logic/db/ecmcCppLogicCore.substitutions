@@ -23,3 +23,8 @@ file ecmcCppLogicStringIn.template {
   pattern { REC, PARAM, DESC }
   { "CppLogic$(CPP_ID=0)-DbgTxtAct", "logic.stat.dbg_txt", "Debug text" }
 }
+
+file ecmcCppLogicStringVal.template {
+  pattern { REC, VAL, DESC }
+  { "CppLogic$(CPP_ID=0)-AppPnlPath", "$(APP_PANEL=)", "App panel path" }
+}

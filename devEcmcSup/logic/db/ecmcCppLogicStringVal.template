@@ -1,0 +1,5 @@
+record(stringin, "$(P)$(REC)") {
+  field(DESC, "$(DESC=)")
+  field(PINI, "YES")
+  field(VAL,  "$(VAL=)")
+}
