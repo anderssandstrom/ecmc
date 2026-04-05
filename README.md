@@ -176,7 +176,7 @@ The `cpp_logic` area also includes helper headers for common patterns:
 
 ```iocsh
 ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so)"
-ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2;update_rate_ms=20)"
 ```
 
 For normal IOC usage, the recommended entry point is the companion IOC shell

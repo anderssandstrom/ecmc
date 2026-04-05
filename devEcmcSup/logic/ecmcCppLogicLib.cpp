@@ -57,6 +57,8 @@ constexpr const char* kDefaultAsynPortBase = "CPP.LOGIC";
 constexpr const char* kBuiltinControlWordName = "logic.ctrl.word";
 constexpr const char* kBuiltinRequestedRateMsName = "logic.ctrl.rate_ms";
 constexpr const char* kBuiltinActualRateMsName = "logic.stat.rate_ms";
+constexpr const char* kBuiltinRequestedUpdateRateMsName = "logic.ctrl.update_rate_ms";
+constexpr const char* kBuiltinActualUpdateRateMsName = "logic.stat.update_rate_ms";
 constexpr const char* kBuiltinExecMsName = "logic.stat.exec_ms";
 constexpr const char* kBuiltinInputMsName = "logic.stat.input_ms";
 constexpr const char* kBuiltinOutputMsName = "logic.stat.output_ms";
@@ -73,6 +75,7 @@ constexpr size_t kBuiltinDebugTextMaxChars = 39u;
 struct CppLogicConfig {
   std::string asynPortName;
   double sampleRateMs {0.0};
+  double updateRateMs {0.0};
 };
 
 struct ResolvedItemBinding {
@@ -247,6 +250,20 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
           }
           config->sampleRateMs = parsed;
         }
+      } else if (key == "update_rate_ms") {
+        if (value.empty()) {
+          config->updateRateMs = 0.0;
+        } else {
+          char* endPtr = nullptr;
+          const double parsed = std::strtod(value.c_str(), &endPtr);
+          if (!endPtr || *endPtr != '\0' || !std::isfinite(parsed) || parsed < 0.0) {
+            if (errorOut) {
+              *errorOut = "Invalid update_rate_ms value: '" + value + "'";
+            }
+            return false;
+          }
+          config->updateRateMs = parsed;
+        }
       } else if (errorOut) {
         *errorOut = "Unknown C++ logic config key: " + key;
         return false;
@@ -360,6 +377,10 @@ struct ecmcCppLogicLib::Impl {
   double actualSampleRateMs {0.0};
   size_t runtimeExecuteDivider {1u};
   size_t executeDividerCounter {0u};
+  double requestedUpdateRateMs {0.0};
+  double actualUpdateRateMs {0.0};
+  size_t runtimeUpdateDivider {1u};
+  size_t updateDividerCounter {0u};
   double lastExecTimeMs {0.0};
   double lastInputTimeMs {0.0};
   double lastOutputTimeMs {0.0};
@@ -451,6 +472,46 @@ bool applyRuntimeSampleRateMs(ecmcCppLogicLib::Impl* impl,
   impl->executeCountPublishDivider = publishDivider;
   impl->executeCountPublishCounter = 0u;
   impl->executeCountPublishDue = true;
+  return true;
+}
+
+bool applyRuntimeUpdateRateMs(ecmcCppLogicLib::Impl* impl,
+                              double requestedMs,
+                              std::string* errorOut) {
+  if (!impl) {
+    return false;
+  }
+
+  const double baseUpdateMs =
+    (std::isfinite(impl->actualSampleRateMs) && impl->actualSampleRateMs > 0.0)
+      ? impl->actualSampleRateMs
+      : getEcmcSampleTimeMS();
+  if (!std::isfinite(baseUpdateMs) || baseUpdateMs <= 0.0) {
+    if (errorOut) {
+      *errorOut = "Invalid C++ logic base update time.";
+    }
+    return false;
+  }
+
+  if (!std::isfinite(requestedMs) || requestedMs < 0.0) {
+    if (errorOut) {
+      *errorOut = "Invalid update rate.";
+    }
+    return false;
+  }
+
+  size_t divider = 1u;
+  if (requestedMs > 0.0) {
+    divider = static_cast<size_t>(std::llround(requestedMs / baseUpdateMs));
+    if (divider < 1u) {
+      divider = 1u;
+    }
+  }
+
+  impl->requestedUpdateRateMs = requestedMs;
+  impl->runtimeUpdateDivider = divider;
+  impl->actualUpdateRateMs = baseUpdateMs * static_cast<double>(divider);
+  impl->updateDividerCounter = 0u;
   return true;
 }
 
@@ -963,6 +1024,23 @@ asynStatus CppLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 valu
       LOGERR("%s/%s:%d: %s\n", __FILE__, __FUNCTION__, __LINE__, error.c_str());
       return asynError;
     }
+    if (!applyRuntimeUpdateRateMs(impl_, impl_->requestedUpdateRateMs, &error)) {
+      LOGERR("%s/%s:%d: %s\n", __FILE__, __FUNCTION__, __LINE__, error.c_str());
+      return asynError;
+    }
+    for (auto& builtin : impl_->builtinParams) {
+      builtin.initialized = false;
+    }
+    syncExportedParams(&impl_->builtinParams, false, false);
+    return asynSuccess;
+  }
+
+  if (binding->name == kBuiltinRequestedUpdateRateMsName) {
+    std::string error;
+    if (!applyRuntimeUpdateRateMs(impl_, static_cast<double>(value), &error)) {
+      LOGERR("%s/%s:%d: %s\n", __FILE__, __FUNCTION__, __LINE__, error.c_str());
+      return asynError;
+    }
     for (auto& builtin : impl_->builtinParams) {
       builtin.initialized = false;
     }
@@ -1352,6 +1430,22 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      &impl_->builtinParams,
                      &error) ||
       !addBoundParam(impl_->asynPort,
+                     kBuiltinRequestedUpdateRateMsName,
+                     ECMC_CPP_TYPE_F64,
+                     1u,
+                     &impl_->requestedUpdateRateMs,
+                     sizeof(impl_->requestedUpdateRateMs),
+                     &impl_->builtinParams,
+                     &error) ||
+      !addBoundParam(impl_->asynPort,
+                     kBuiltinActualUpdateRateMsName,
+                     ECMC_CPP_TYPE_F64,
+                     0u,
+                     &impl_->actualUpdateRateMs,
+                     sizeof(impl_->actualUpdateRateMs),
+                     &impl_->builtinParams,
+                     &error) ||
+      !addBoundParam(impl_->asynPort,
                      kBuiltinExecMsName,
                      ECMC_CPP_TYPE_F64,
                      0u,
@@ -1431,6 +1525,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   }
 
   applyRuntimeSampleRateMs(impl_, impl_->config.sampleRateMs, nullptr);
+  applyRuntimeUpdateRateMs(impl_, impl_->config.updateRateMs, nullptr);
   impl_->loaded = true;
   impl_->enteredRt = false;
   impl_->debugText.clear();
@@ -1495,6 +1590,8 @@ void ecmcCppLogicLib::report() {
   printf("  Asyn port          = %s\n", impl_->config.asynPortName.c_str());
   printf("  Requested rate [ms]= %.3f\n", impl_->requestedSampleRateMs);
   printf("  Actual rate [ms]   = %.3f\n", impl_->actualSampleRateMs);
+  printf("  Requested update [ms]= %.3f\n", impl_->requestedUpdateRateMs);
+  printf("  Actual update [ms]   = %.3f\n", impl_->actualUpdateRateMs);
   printf("  Execute divider    = %d\n", impl_->executeDividerPv);
   printf("  Item bindings      = %zu\n", impl_->itemBindings.size());
   printf("  EPICS exports      = %zu\n", impl_->exportedParams.size());
@@ -1507,6 +1604,7 @@ int ecmcCppLogicLib::exeEnterRTFunc() {
 
   impl_->enteredRt = true;
   impl_->executeDividerCounter = 0u;
+  impl_->updateDividerCounter = 0u;
   impl_->executeCount = 0;
   impl_->executeCountPublishCounter = 0u;
   impl_->executeCountPublishDue = true;
@@ -1551,6 +1649,12 @@ int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
     return 0;
   }
   impl_->executeDividerCounter = 0u;
+
+  impl_->updateDividerCounter++;
+  const bool publishDue = impl_->updateDividerCounter >= impl_->runtimeUpdateDivider;
+  if (publishDue) {
+    impl_->updateDividerCounter = 0u;
+  }
 
   if (impl_->executionEnabled == 0u) {
     if (impl_->lastExecTimeMs != 0.0 || impl_->lastInputTimeMs != 0.0 ||
@@ -1609,8 +1713,6 @@ int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
     impl_->executeCountPublishDue = true;
   }
 
-  impl_->asynPort->syncExportedParams(&impl_->exportedParams, false, true);
-
   if (measureTiming) {
     impl_->lastOutputTimeMs = monotonicTimeMs() - outputStartMs;
     impl_->lastTotalTimeMs = monotonicTimeMs() - totalStartMs;
@@ -1619,13 +1721,16 @@ int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
     impl_->lastTotalTimeMs = 0.0;
   }
 
-  impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, true);
-  impl_->asynPort->syncOctetParam(impl_->debugTextParamId,
-                                  impl_->debugEnabled ? impl_->debugText : std::string(),
-                                  &impl_->debugTextLastValue,
-                                  &impl_->debugTextInitialized,
-                                  false,
-                                  true);
-  impl_->executeCountPublishDue = false;
+  if (publishDue) {
+    impl_->asynPort->syncExportedParams(&impl_->exportedParams, false, true);
+    impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, true);
+    impl_->asynPort->syncOctetParam(impl_->debugTextParamId,
+                                    impl_->debugEnabled ? impl_->debugText : std::string(),
+                                    &impl_->debugTextLastValue,
+                                    &impl_->debugTextInitialized,
+                                    false,
+                                    true);
+    impl_->executeCountPublishDue = false;
+  }
   return 0;
 }

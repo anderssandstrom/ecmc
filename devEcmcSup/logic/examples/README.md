@@ -57,7 +57,7 @@ C++ logic modules can now be loaded directly from `ecmc` with:
 
 ```iocsh
 ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so)"
-ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2;update_rate_ms=20)"
 ```
 
 For IOC startup scripts, the recommended wrapper is:

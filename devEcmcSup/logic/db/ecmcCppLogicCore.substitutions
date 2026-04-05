@@ -7,6 +7,8 @@ file ecmcCppLogicAo.template {
   pattern { REC, PARAM, DESC, PREC }
   { "CppLogic$(CPP_ID=0)-RateMs-RB",  "logic.ctrl.rate_ms", "Requested sample rate", "3" }
   { "CppLogic$(CPP_ID=0)-RateMsAct", "logic.stat.rate_ms", "Actual sample rate",    "3" }
+  { "CppLogic$(CPP_ID=0)-UpdMs-RB",  "logic.ctrl.update_rate_ms", "Requested PV update rate", "3" }
+  { "CppLogic$(CPP_ID=0)-UpdMsAct", "logic.stat.update_rate_ms", "Actual PV update rate",    "3" }
   { "CppLogic$(CPP_ID=0)-ExeMsAct",  "logic.stat.exec_ms", "Logic exec time",       "6" }
   { "CppLogic$(CPP_ID=0)-InMsAct",   "logic.stat.input_ms","Input copy time",       "6" }
   { "CppLogic$(CPP_ID=0)-OutMsAct",  "logic.stat.output_ms","Output copy time",     "6" }
