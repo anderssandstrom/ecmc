@@ -8,9 +8,14 @@ It uses:
 
 - `ecmcCpp::LogicBase`
 - `ecmcCpp::McPower`
+- `ecmcCpp::McReset`
 - `ecmcCpp::McMoveAbsolute`
+- `ecmcCpp::McMoveRelative`
+- `ecmcCpp::McHome`
+- `ecmcCpp::McStop`
 - `ecmcCpp::McReadStatus`
 - `ecmcCpp::McReadActualPosition`
+- `ecmcCpp::McReadActualVelocity`
 
 Behavior:
 

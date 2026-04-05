@@ -17,6 +17,11 @@ C++ helper API itself.
 - [`ecmcCppUtils.hpp`](./ecmcCppUtils.hpp)
   Utility helpers for triggers, timers, latches, filtering, basic state
   handling, and EtherCAT status decoding.
+- [`ecmcCppTrace.hpp`](./ecmcCppTrace.hpp)
+  Reusable fixed-capacity triggered trace helper for exported waveforms.
+- [`ecmcCppPersist.hpp`](./ecmcCppPersist.hpp)
+  Small retained-value helper for infrequent load/save of trivially copyable
+  parameters and state.
 
 ## Logic Base And Registration
 
@@ -109,6 +114,47 @@ These are intended to feel familiar to users coming from IEC/ST helper blocks.
 - `ecmcCpp::EcMasterStatus`
 - `ecmcCpp::EcSlaveStatus`
 
+## ecmcCppTrace.hpp
+
+Current trace helper:
+
+- `ecmcCpp::TriggeredTrace<T, Capacity>`
+
+Highlights:
+
+- rolling pre-trigger history
+- capture of pre-trigger, trigger, and post-trigger samples
+- fixed-capacity output array suitable for `epics.readOnlyArray(...)`
+- explicit arming and ready state
+
+## ecmcCppPersist.hpp
+
+Current persistence helper:
+
+- `ecmcCpp::RetainedValue<T>`
+
+Highlights:
+
+- binary load/save of trivially copyable values
+- explicit `restore()` and `store()` calls
+- useful for infrequent retained parameters such as setpoints or tunings
+- intended for startup/manual save patterns, not continuous per-cycle file I/O
+
+## ecmcCppMotion.hpp
+
+Current motion wrappers include:
+
+- `ecmcCpp::McPower`
+- `ecmcCpp::McReset`
+- `ecmcCpp::McMoveAbsolute`
+- `ecmcCpp::McMoveRelative`
+- `ecmcCpp::McHome`
+- `ecmcCpp::McMoveVelocity`
+- `ecmcCpp::McStop`
+- `ecmcCpp::McReadStatus`
+- `ecmcCpp::McReadActualPosition`
+- `ecmcCpp::McReadActualVelocity`
+
 ## Examples
 
 See:
@@ -116,6 +162,8 @@ See:
 - [`examples/README.md`](./examples/README.md)
 - [`examples/cpp_logic_control/main.cpp`](./examples/cpp_logic_control/main.cpp)
 - [`examples/cpp_logic_arrays/main.cpp`](./examples/cpp_logic_arrays/main.cpp)
+- [`examples/cpp_logic_trace/main.cpp`](./examples/cpp_logic_trace/main.cpp)
+- [`examples/cpp_logic_retained/main.cpp`](./examples/cpp_logic_retained/main.cpp)
 
 The array example is the best starting point for:
 

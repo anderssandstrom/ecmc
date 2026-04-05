@@ -9,8 +9,10 @@ Current examples:
 - [`cpp_logic_minimal`](./cpp_logic_minimal/): minimal C++ example using [`ecmcCppLogic.h`](../ecmcCppLogic.h) and [`ecmcCppLogic.hpp`](../ecmcCppLogic.hpp)
 - [`cpp_logic_control`](./cpp_logic_control/): C++ example using [`ecmcCppControl.hpp`](../ecmcCppControl.hpp) and [`ecmcCppUtils.hpp`](../ecmcCppUtils.hpp)
 - [`cpp_logic_arrays`](./cpp_logic_arrays/): array and byte-buffer example using `inputAutoArray(...)`, `outputArray(...)`, and `readOnlyArray(...)`
-- [`cpp_logic_motion`](./cpp_logic_motion/): C++ example using [`ecmcCppMotion.hpp`](../ecmcCppMotion.hpp) with `MC_Power`, `MC_MoveAbsolute`, and `MC_ReadStatus` style wrappers
+- [`cpp_logic_motion`](./cpp_logic_motion/): C++ example using [`ecmcCppMotion.hpp`](../ecmcCppMotion.hpp) with `MC_*` style wrappers
 - [`cpp_logic_scope`](./cpp_logic_scope/): EL3702/EL1252-style scope example using oversampling memmaps, trigger timestamps, and a digital trigger
+- [`cpp_logic_trace`](./cpp_logic_trace/): reusable triggered trace example using [`ecmcCppTrace.hpp`](../ecmcCppTrace.hpp)
+- [`cpp_logic_retained`](./cpp_logic_retained/): retained parameter example using [`ecmcCppPersist.hpp`](../ecmcCppPersist.hpp)
 
 The utility header also includes IEC-style timing/edge helpers and other small
 building blocks such as:
@@ -22,6 +24,11 @@ building blocks such as:
 - `ecmcCpp::StateTimer<T>`
 - `ecmcCpp::MoveAverage`
 - `ecmcCpp::MinMaxHold`
+
+Additional helper headers include:
+
+- [`ecmcCppTrace.hpp`](../ecmcCppTrace.hpp)
+- [`ecmcCppPersist.hpp`](../ecmcCppPersist.hpp)
 
 The cpp_logic helper also supports explicit buffer bindings for arrays and
 raw bytes, for example:

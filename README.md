@@ -169,6 +169,8 @@ The `cpp_logic` area also includes helper headers for common patterns:
 - [`ecmcCppMotion.hpp`](devEcmcSup/logic/ecmcCppMotion.hpp): `MC_*` style C++ wrappers on top of the existing `ecmc` motion API
 - [`ecmcCppControl.hpp`](devEcmcSup/logic/ecmcCppControl.hpp): control helpers such as `ecmcCpp::Pid`
 - [`ecmcCppUtils.hpp`](devEcmcSup/logic/ecmcCppUtils.hpp): utility helpers such as edge triggers, `TON`/`TOF`/`TP` style timers, latches, blink/state helpers, filtering, moving averages, min/max hold, and EtherCAT status wrappers
+- [`ecmcCppTrace.hpp`](devEcmcSup/logic/ecmcCppTrace.hpp): reusable fixed-capacity triggered trace helper for waveform-style exports
+- [`ecmcCppPersist.hpp`](devEcmcSup/logic/ecmcCppPersist.hpp): retained-value helper for infrequent load/save of trivially copyable values
 - [`CPP_LOGIC_HELPERS.md`](devEcmcSup/logic/CPP_LOGIC_HELPERS.md): compact helper reference for the C++ logic headers
 - [`devEcmcSup/logic/examples/cpp_logic_starter`](devEcmcSup/logic/examples/cpp_logic_starter): smallest practical starter example for a new `cpp_logic` shared library
 

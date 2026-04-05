@@ -114,6 +114,112 @@ class McMoveAbsolute {
   ecmcMcMoveAbsoluteHandle* handle_ {nullptr};
 };
 
+class McMoveRelative {
+ public:
+  McMoveRelative() : handle_(ecmcMcMoveRelativeCreate()) {}
+  ~McMoveRelative() {
+    if (handle_) {
+      ecmcMcMoveRelativeDestroy(handle_);
+    }
+  }
+
+  McMoveRelative(const McMoveRelative&) = delete;
+  McMoveRelative& operator=(const McMoveRelative&) = delete;
+
+  int run(McAxisRef axis,
+          bool execute,
+          double distance,
+          double velocity,
+          double acceleration,
+          double deceleration) {
+    ecmcMcMoveRelativeStatus status {};
+    const int error = ecmcMcMoveRelativeRun(handle_,
+                                            axis.axis_index,
+                                            execute ? 1 : 0,
+                                            distance,
+                                            velocity,
+                                            acceleration,
+                                            deceleration,
+                                            &status);
+    updateBase(status.base);
+    return error;
+  }
+
+  bool Busy {false};
+  bool Done {false};
+  bool Error {false};
+  bool CommandAborted {false};
+  bool Active {false};
+  uint32_t ErrorID {0};
+
+ private:
+  void updateBase(const ecmcMcBaseStatus& base) {
+    Busy = base.Busy != 0;
+    Done = base.Done != 0;
+    Error = base.Error != 0;
+    CommandAborted = base.CommandAborted != 0;
+    Active = base.Active != 0;
+    ErrorID = base.ErrorID;
+  }
+
+  ecmcMcMoveRelativeHandle* handle_ {nullptr};
+};
+
+class McHome {
+ public:
+  McHome() : handle_(ecmcMcHomeCreate()) {}
+  ~McHome() {
+    if (handle_) {
+      ecmcMcHomeDestroy(handle_);
+    }
+  }
+
+  McHome(const McHome&) = delete;
+  McHome& operator=(const McHome&) = delete;
+
+  int run(McAxisRef axis,
+          bool execute,
+          int seq_id,
+          double home_position,
+          double velocity_towards_cam,
+          double velocity_off_cam,
+          double acceleration,
+          double deceleration) {
+    ecmcMcHomeStatus status {};
+    const int error = ecmcMcHomeRun(handle_,
+                                    axis.axis_index,
+                                    execute ? 1 : 0,
+                                    seq_id,
+                                    home_position,
+                                    velocity_towards_cam,
+                                    velocity_off_cam,
+                                    acceleration,
+                                    deceleration,
+                                    &status);
+    updateBase(status.base);
+    return error;
+  }
+
+  bool Busy {false};
+  bool Done {false};
+  bool Error {false};
+  bool CommandAborted {false};
+  bool Active {false};
+  uint32_t ErrorID {0};
+
+ private:
+  void updateBase(const ecmcMcBaseStatus& base) {
+    Busy = base.Busy != 0;
+    Done = base.Done != 0;
+    Error = base.Error != 0;
+    CommandAborted = base.CommandAborted != 0;
+    Active = base.Active != 0;
+    ErrorID = base.ErrorID;
+  }
+
+  ecmcMcHomeHandle* handle_ {nullptr};
+};
+
 class McMoveVelocity {
  public:
   McMoveVelocity() : handle_(ecmcMcMoveVelocityCreate()) {}
@@ -163,6 +269,84 @@ class McMoveVelocity {
   }
 
   ecmcMcMoveVelocityHandle* handle_ {nullptr};
+};
+
+class McStop {
+ public:
+  McStop() : handle_(ecmcMcHaltCreate()) {}
+  ~McStop() {
+    if (handle_) {
+      ecmcMcHaltDestroy(handle_);
+    }
+  }
+
+  McStop(const McStop&) = delete;
+  McStop& operator=(const McStop&) = delete;
+
+  int run(McAxisRef axis, bool execute) {
+    ecmcMcHaltStatus status {};
+    const int error = ecmcMcHaltRun(handle_, axis.axis_index, execute ? 1 : 0, &status);
+    updateBase(status.base);
+    return error;
+  }
+
+  bool Busy {false};
+  bool Done {false};
+  bool Error {false};
+  bool CommandAborted {false};
+  bool Active {false};
+  uint32_t ErrorID {0};
+
+ private:
+  void updateBase(const ecmcMcBaseStatus& base) {
+    Busy = base.Busy != 0;
+    Done = base.Done != 0;
+    Error = base.Error != 0;
+    CommandAborted = base.CommandAborted != 0;
+    Active = base.Active != 0;
+    ErrorID = base.ErrorID;
+  }
+
+  ecmcMcHaltHandle* handle_ {nullptr};
+};
+
+class McReset {
+ public:
+  McReset() : handle_(ecmcMcResetCreate()) {}
+  ~McReset() {
+    if (handle_) {
+      ecmcMcResetDestroy(handle_);
+    }
+  }
+
+  McReset(const McReset&) = delete;
+  McReset& operator=(const McReset&) = delete;
+
+  int run(McAxisRef axis, bool execute) {
+    ecmcMcResetStatus status {};
+    const int error = ecmcMcResetRun(handle_, axis.axis_index, execute ? 1 : 0, &status);
+    updateBase(status.base);
+    return error;
+  }
+
+  bool Busy {false};
+  bool Done {false};
+  bool Error {false};
+  bool CommandAborted {false};
+  bool Active {false};
+  uint32_t ErrorID {0};
+
+ private:
+  void updateBase(const ecmcMcBaseStatus& base) {
+    Busy = base.Busy != 0;
+    Done = base.Done != 0;
+    Error = base.Error != 0;
+    CommandAborted = base.CommandAborted != 0;
+    Active = base.Active != 0;
+    ErrorID = base.ErrorID;
+  }
+
+  ecmcMcResetHandle* handle_ {nullptr};
 };
 
 class McReadStatus {
@@ -264,6 +448,50 @@ class McReadActualPosition {
   }
 
   ecmcMcReadActualPositionHandle* handle_ {nullptr};
+};
+
+class McReadActualVelocity {
+ public:
+  McReadActualVelocity() : handle_(ecmcMcReadActualVelocityCreate()) {}
+  ~McReadActualVelocity() {
+    if (handle_) {
+      ecmcMcReadActualVelocityDestroy(handle_);
+    }
+  }
+
+  McReadActualVelocity(const McReadActualVelocity&) = delete;
+  McReadActualVelocity& operator=(const McReadActualVelocity&) = delete;
+
+  int run(McAxisRef axis, bool enable) {
+    ecmcMcReadActualVelocityStatus status {};
+    const int error =
+      ecmcMcReadActualVelocityRun(handle_, axis.axis_index, enable ? 1 : 0, &status);
+    updateBase(status.base);
+    Valid = status.Valid != 0;
+    Velocity = status.Velocity;
+    return error;
+  }
+
+  bool Busy {false};
+  bool Done {false};
+  bool Error {false};
+  bool CommandAborted {false};
+  bool Active {false};
+  uint32_t ErrorID {0};
+  bool Valid {false};
+  double Velocity {0.0};
+
+ private:
+  void updateBase(const ecmcMcBaseStatus& base) {
+    Busy = base.Busy != 0;
+    Done = base.Done != 0;
+    Error = base.Error != 0;
+    CommandAborted = base.CommandAborted != 0;
+    Active = base.Active != 0;
+    ErrorID = base.ErrorID;
+  }
+
+  ecmcMcReadActualVelocityHandle* handle_ {nullptr};
 };
 
 }  // namespace ecmcCpp
