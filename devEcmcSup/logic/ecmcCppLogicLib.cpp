@@ -1621,6 +1621,9 @@ int ecmcCppLogicLib::exeEnterRTFunc() {
                                   &impl_->debugTextInitialized,
                                   true,
                                   false);
+  if (impl_->api->enterRealtime) {
+    impl_->api->enterRealtime(impl_->instance);
+  }
   return 0;
 }
 
@@ -1633,6 +1636,9 @@ int ecmcCppLogicLib::exeExitRTFunc() {
   impl_->lastInputTimeMs = 0.0;
   impl_->lastOutputTimeMs = 0.0;
   impl_->lastTotalTimeMs = 0.0;
+  if (impl_->loaded && impl_->api->exitRealtime) {
+    impl_->api->exitRealtime(impl_->instance);
+  }
   impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, false);
   return 0;
 }

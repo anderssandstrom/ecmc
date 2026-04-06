@@ -35,8 +35,18 @@ Inside the logic class:
 
 - `ecmc...` binds to live `ecmc` items
 - `epics...` exports values on the dedicated C++ logic asyn port
+- override `enterRealtime()` for setup that should run once when RT starts
+- override `exitRealtime()` for one-time cleanup when RT stops
+- keep `run()` for cyclic realtime work only
 
 ## ecmcCppLogic.hpp
+
+Logic lifecycle:
+
+- constructor: normal object construction and binding/export declarations
+- `enterRealtime()`: called once when the logic enters RT
+- `run()`: called cyclically at the configured execution rate
+- `exitRealtime()`: called once when the logic leaves RT
 
 Common scalar binding helpers:
 
@@ -139,6 +149,7 @@ Highlights:
 - explicit `restore()` and `store()` calls
 - useful for infrequent retained parameters such as setpoints or tunings
 - intended for startup/manual save patterns, not continuous per-cycle file I/O
+- prefer `enterRealtime()` for startup restore instead of doing file I/O from `run()`
 
 ## ecmcCppMotion.hpp
 

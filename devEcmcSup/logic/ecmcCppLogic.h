@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define ECMC_CPP_LOGIC_ABI_VERSION 4
+#define ECMC_CPP_LOGIC_ABI_VERSION 5
 
 #define ECMC_CPP_BIND_FLAG_NONE 0u
 #define ECMC_CPP_BIND_FLAG_AUTO_SIZE 1u
@@ -90,6 +90,8 @@ struct ecmcCppLogicApi {
   const char* name;
   void (*setHostServices)(const struct ecmcCppLogicHostServices* services);
   void* (*createInstance)();
+  void (*enterRealtime)(void* instance);
+  void (*exitRealtime)(void* instance);
   void (*destroyInstance)(void* instance);
   void (*runCycle)(void* instance);
   const struct ecmcCppLogicItemBinding* (*getItemBindings)(void* instance);

@@ -41,14 +41,15 @@ struct CppLogicRetained : public ecmcCpp::LogicBase {
          .readOnly("retain.save_ok", save_ok);
   }
 
-  void run() override {
-    if (startup_load_done == 0u) {
-      if (retained.restore()) {
-        retained_setpoint = retained.Value;
-      }
-      startup_load_done = 1u;
-      load_ok = retained.LoadOk ? 1u : 0u;
+  void enterRealtime() override {
+    if (retained.restore()) {
+      retained_setpoint = retained.Value;
     }
+    startup_load_done = 1u;
+    load_ok = retained.LoadOk ? 1u : 0u;
+  }
+
+  void run() override {
 
     load_trig.Clk = load_request != 0u;
     load_trig.run();

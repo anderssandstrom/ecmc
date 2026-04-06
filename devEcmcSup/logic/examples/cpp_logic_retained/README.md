@@ -7,12 +7,13 @@ This example shows the retained-value helper in:
 It demonstrates:
 
 - one retained `double` value
-- automatic restore on startup
+- automatic restore in `enterRealtime()`
 - explicit load/save trigger PVs
 
 The helper stores a trivially-copyable value in a small binary file. This is
 intended for infrequent actions such as startup restore or a manual save
-request, not for continuous per-cycle file I/O.
+request, not for continuous per-cycle file I/O. The example therefore keeps
+startup restore out of `run()` and does it in the dedicated lifecycle callback.
 
 Main source:
 

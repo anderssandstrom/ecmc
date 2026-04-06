@@ -529,6 +529,8 @@ class EpicsExports {
 class LogicBase {
  public:
   virtual ~LogicBase() = default;
+  virtual void enterRealtime() {}
+  virtual void exitRealtime() {}
   virtual void run() = 0;
 
   EcmcItems ecmc;
@@ -675,6 +677,16 @@ inline void destroyInstanceAdapter(void* instance) {
 }
 
 template <typename LogicT>
+inline void enterRealtimeAdapter(void* instance) {
+  static_cast<LogicT*>(instance)->enterRealtime();
+}
+
+template <typename LogicT>
+inline void exitRealtimeAdapter(void* instance) {
+  static_cast<LogicT*>(instance)->exitRealtime();
+}
+
+template <typename LogicT>
 inline void runCycleAdapter(void* instance) {
   static_cast<LogicT*>(instance)->run();
 }
@@ -712,6 +724,8 @@ inline uint32_t getExportedVarCountAdapter(void* instance) {
       LOGIC_NAME,                                                                    \
       &ecmcCpp::detail::setHostServicesAdapter<LOGIC_TYPE>,                          \
       &ecmcCpp::detail::createInstanceAdapter<LOGIC_TYPE>,                           \
+      &ecmcCpp::detail::enterRealtimeAdapter<LOGIC_TYPE>,                            \
+      &ecmcCpp::detail::exitRealtimeAdapter<LOGIC_TYPE>,                             \
       &ecmcCpp::detail::destroyInstanceAdapter<LOGIC_TYPE>,                          \
       &ecmcCpp::detail::runCycleAdapter<LOGIC_TYPE>,                                 \
       &ecmcCpp::detail::getItemBindingsAdapter<LOGIC_TYPE>,                          \
