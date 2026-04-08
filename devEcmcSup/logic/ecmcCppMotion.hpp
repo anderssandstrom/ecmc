@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "../motion/ecmcMcApi.h"
+#include "ecmcMcApi.h"
 
 #include <cstdint>
 #include <utility>
