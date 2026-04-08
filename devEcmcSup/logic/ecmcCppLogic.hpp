@@ -639,6 +639,12 @@ inline int32_t axisSetExternalEncoderPos(int32_t axis_index, double value) {
            : -1;
 }
 
+inline int32_t setEnableDbg(bool enable) {
+  return (g_hostServices && g_hostServices->set_enable_dbg)
+           ? g_hostServices->set_enable_dbg(enable ? 1 : 0)
+           : -1;
+}
+
 inline int32_t getIocState() {
   return (g_hostServices && g_hostServices->get_ioc_state)
            ? g_hostServices->get_ioc_state()

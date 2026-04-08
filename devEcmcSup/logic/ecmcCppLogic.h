@@ -81,6 +81,7 @@ struct ecmcCppLogicHostServices {
   int32_t (*set_axis_enc_source)(int32_t axis_index, int32_t source);
   int32_t (*set_axis_ext_set_pos)(int32_t axis_index, double value);
   int32_t (*set_axis_ext_act_pos)(int32_t axis_index, double value);
+  int32_t (*set_enable_dbg)(int32_t enable);
   int32_t (*get_ioc_state)();
   void (*publish_debug_text)(const char* message);
 };

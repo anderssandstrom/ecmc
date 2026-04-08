@@ -55,6 +55,7 @@ constexpr const char* kCppLogicGetApiSymbol = "ecmc_cpp_logic_get_api";
 constexpr const char* kDefaultAsynPortBase = "CPP.LOGIC";
 
 constexpr const char* kBuiltinControlWordName = "logic.ctrl.word";
+constexpr const char* kBuiltinStatusWordName = "logic.stat.word";
 constexpr const char* kBuiltinRequestedRateMsName = "logic.ctrl.rate_ms";
 constexpr const char* kBuiltinActualRateMsName = "logic.stat.rate_ms";
 constexpr const char* kBuiltinRequestedUpdateRateMsName = "logic.ctrl.update_rate_ms";
@@ -70,6 +71,11 @@ constexpr const char* kBuiltinDebugTextName = "logic.stat.dbg_txt";
 constexpr uint32_t kControlWordEnableExecutionBit = 0u;
 constexpr uint32_t kControlWordEnableTimingBit = 1u;
 constexpr uint32_t kControlWordEnableDebugPrintsBit = 2u;
+constexpr uint32_t kStatusWordLoadedBit = 0u;
+constexpr uint32_t kStatusWordEnteredRtBit = 1u;
+constexpr uint32_t kStatusWordExecutionEnabledBit = 2u;
+constexpr uint32_t kStatusWordTimingEnabledBit = 3u;
+constexpr uint32_t kStatusWordDebugEnabledBit = 4u;
 constexpr size_t kBuiltinDebugTextMaxChars = 39u;
 
 struct CppLogicConfig {
@@ -194,6 +200,19 @@ asynParamType exportParamType(uint32_t type, size_t bytes) {
   default:
     return asynParamFloat64Array;
   }
+}
+
+std::string resolveCppLogicItemName(const std::string& name) {
+  if (name.rfind("ec.s", 0) != 0) {
+    return name;
+  }
+
+  const int masterIndex = getEcmcMasterIndex();
+  if (masterIndex < 0) {
+    return name;
+  }
+
+  return "ec" + std::to_string(masterIndex) + name.substr(2);
 }
 
 void trimDebugText(std::string* text) {
@@ -370,6 +389,7 @@ struct ecmcCppLogicLib::Impl {
   bool loaded {false};
   bool enteredRt {false};
   uint32_t controlWord {1u};
+  uint32_t statusWord {0u};
   uint8_t executionEnabled {1u};
   uint8_t timingEnabled {0u};
   uint8_t debugEnabled {0u};
@@ -399,6 +419,73 @@ struct ecmcCppLogicLib::Impl {
 namespace {
 
 thread_local ecmcCppLogicLib::Impl* g_activeCppLogic = nullptr;
+thread_local ecmcCppLogicLib::Impl* g_hostServiceCppLogic = nullptr;
+
+void updateControlStateFromWord(ecmcCppLogicLib::Impl* impl) {
+  if (!impl) {
+    return;
+  }
+
+  impl->executionEnabled =
+    ((impl->controlWord >> kControlWordEnableExecutionBit) & 0x1u) ? 1u : 0u;
+  impl->timingEnabled =
+    ((impl->controlWord >> kControlWordEnableTimingBit) & 0x1u) ? 1u : 0u;
+  impl->debugEnabled =
+    ((impl->controlWord >> kControlWordEnableDebugPrintsBit) & 0x1u) ? 1u : 0u;
+}
+
+void updateStatusWord(ecmcCppLogicLib::Impl* impl) {
+  if (!impl) {
+    return;
+  }
+
+  impl->statusWord = 0u;
+  if (impl->loaded) {
+    impl->statusWord |= (1u << kStatusWordLoadedBit);
+  }
+  if (impl->enteredRt) {
+    impl->statusWord |= (1u << kStatusWordEnteredRtBit);
+  }
+  if (impl->executionEnabled != 0u) {
+    impl->statusWord |= (1u << kStatusWordExecutionEnabledBit);
+  }
+  if (impl->timingEnabled != 0u) {
+    impl->statusWord |= (1u << kStatusWordTimingEnabledBit);
+  }
+  if (impl->debugEnabled != 0u) {
+    impl->statusWord |= (1u << kStatusWordDebugEnabledBit);
+  }
+}
+
+int32_t setCurrentDebugEnable(int32_t enable) {
+  ecmcCppLogicLib::Impl* impl = g_activeCppLogic ? g_activeCppLogic : g_hostServiceCppLogic;
+  if (!impl) {
+    return -1;
+  }
+
+  if (enable != 0) {
+    impl->controlWord |= (1u << kControlWordEnableDebugPrintsBit);
+  } else {
+    impl->controlWord &= ~(1u << kControlWordEnableDebugPrintsBit);
+  }
+
+  updateControlStateFromWord(impl);
+  updateStatusWord(impl);
+
+  if (impl->asynPort) {
+    impl->asynPort->syncExportedParams(&impl->builtinParams, false, false);
+    if (impl->debugTextParamId >= 0) {
+      impl->asynPort->syncOctetParam(impl->debugTextParamId,
+                                     impl->debugEnabled ? impl->debugText : std::string(),
+                                     &impl->debugTextLastValue,
+                                     &impl->debugTextInitialized,
+                                     false,
+                                     false);
+    }
+  }
+
+  return 0;
+}
 
 double currentCycleTimeS() {
   if (g_activeCppLogic) {
@@ -980,18 +1067,14 @@ asynStatus CppLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value) {
 
   if (binding->name == kBuiltinControlWordName) {
     impl_->controlWord = static_cast<uint32_t>(value);
-    impl_->executionEnabled =
-      ((impl_->controlWord >> kControlWordEnableExecutionBit) & 0x1u) ? 1u : 0u;
-    impl_->timingEnabled =
-      ((impl_->controlWord >> kControlWordEnableTimingBit) & 0x1u) ? 1u : 0u;
-    impl_->debugEnabled =
-      ((impl_->controlWord >> kControlWordEnableDebugPrintsBit) & 0x1u) ? 1u : 0u;
+    updateControlStateFromWord(impl_);
     if (!impl_->timingEnabled) {
       impl_->lastExecTimeMs = 0.0;
       impl_->lastInputTimeMs = 0.0;
       impl_->lastOutputTimeMs = 0.0;
       impl_->lastTotalTimeMs = 0.0;
     }
+    updateStatusWord(impl_);
     binding->initialized = false;
     syncExportedParams(&impl_->builtinParams, false, false);
     if (impl_->debugTextParamId >= 0) {
@@ -1325,6 +1408,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   impl_->hostServices.version = ECMC_CPP_LOGIC_ABI_VERSION;
   impl_->hostServices.get_cycle_time_s = &currentCycleTimeS;
   impl_->hostServices.publish_debug_text = &publishCurrentDebugText;
+  impl_->hostServices.set_enable_dbg = &setCurrentDebugEnable;
   if (impl_->api->setHostServices) {
     impl_->api->setHostServices(&impl_->hostServices);
   }
@@ -1334,7 +1418,9 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
     return setErrorID(ERROR_MAIN_CPP_LOGIC_API_NULL);
   }
 
+  g_hostServiceCppLogic = impl_;
   impl_->instance = impl_->api->createInstance();
+  g_hostServiceCppLogic = nullptr;
   if (!impl_->instance) {
     unload();
     return setErrorID(ERROR_MAIN_CPP_LOGIC_CREATE_INSTANCE_FAIL);
@@ -1351,8 +1437,37 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
     ResolvedItemBinding resolved {};
     resolved.itemName = itemBindings[i].itemName ? itemBindings[i].itemName : "";
     resolved.binding = itemBindings[i];
-    resolved.item = asynPort ? asynPort->findAvailDataItem(resolved.itemName.c_str()) : nullptr;
+    const std::string requestedItemName = resolved.itemName;
+    const std::string fallbackItemName = resolveCppLogicItemName(requestedItemName);
+
+    resolved.item = asynPort ? asynPort->findAvailDataItem(requestedItemName.c_str()) : nullptr;
+    if (!resolved.item && fallbackItemName != requestedItemName) {
+      resolved.item = asynPort ? asynPort->findAvailDataItem(fallbackItemName.c_str()) : nullptr;
+      if (resolved.item) {
+        resolved.itemName = fallbackItemName;
+        LOGINFO4("%s/%s:%d: cpp_logic item binding alias resolved '%s' -> '%s'\n",
+                 __FILE__,
+                 __FUNCTION__,
+                 __LINE__,
+                 requestedItemName.c_str(),
+                 fallbackItemName.c_str());
+      }
+    }
     if (!resolved.item) {
+      if (fallbackItemName != requestedItemName) {
+        LOGERR("%s/%s:%d: cpp_logic item binding failed: requested='%s', fallback='%s'\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               requestedItemName.c_str(),
+               fallbackItemName.c_str());
+      } else {
+        LOGERR("%s/%s:%d: cpp_logic item binding failed: requested='%s'\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               requestedItemName.c_str());
+      }
       unload();
       return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_MISSING);
     }
@@ -1380,6 +1495,20 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
     if (resolved.binding.bytes != resolved.info.dataSize ||
         resolved.info.dataElementSize != elementSize ||
         !cppLogicTypeMatchesItemType(resolved.binding.type, resolved.info.dataType)) {
+      LOGERR("%s/%s:%d: cpp_logic item type mismatch\n"
+             "  item:      '%s'\n"
+             "  binding:   type=%u bytes=%u elem=%u\n"
+             "  available: type=%d bytes=%zu elem=%zu\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             resolved.itemName.c_str(),
+             resolved.binding.type,
+             resolved.binding.bytes,
+             elementSize,
+             resolved.info.dataType,
+             resolved.info.dataSize,
+             resolved.info.dataElementSize);
       unload();
       return setErrorID(ERROR_MAIN_CPP_LOGIC_BIND_ITEM_TYPE_MISMATCH);
     }
@@ -1404,6 +1533,8 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
 
   impl_->builtinParams.clear();
   impl_->exportedParams.clear();
+  updateControlStateFromWord(impl_);
+  updateStatusWord(impl_);
 
   if (!addBoundParam(impl_->asynPort,
                      kBuiltinControlWordName,
@@ -1411,6 +1542,14 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
                      1u,
                      &impl_->controlWord,
                      sizeof(impl_->controlWord),
+                     &impl_->builtinParams,
+                     &error) ||
+      !addBoundParam(impl_->asynPort,
+                     kBuiltinStatusWordName,
+                     ECMC_CPP_TYPE_U32,
+                     0u,
+                     &impl_->statusWord,
+                     sizeof(impl_->statusWord),
                      &impl_->builtinParams,
                      &error) ||
       !addBoundParam(impl_->asynPort,
@@ -1531,6 +1670,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   impl_->debugText.clear();
   impl_->debugTextLastValue.clear();
   impl_->debugTextInitialized = false;
+  updateStatusWord(impl_);
 
   impl_->asynPort->syncExportedParams(&impl_->builtinParams, true, false);
   impl_->asynPort->syncExportedParams(&impl_->exportedParams, true, false);
@@ -1550,6 +1690,7 @@ void ecmcCppLogicLib::unload() {
 
   impl_->enteredRt = false;
   impl_->loaded = false;
+  updateStatusWord(impl_);
 
   if (impl_->asynPort) {
     delete impl_->asynPort;
@@ -1613,6 +1754,7 @@ int ecmcCppLogicLib::exeEnterRTFunc() {
   impl_->lastOutputTimeMs = 0.0;
   impl_->lastTotalTimeMs = 0.0;
   impl_->debugText.clear();
+  updateStatusWord(impl_);
   impl_->asynPort->syncExportedParams(&impl_->builtinParams, true, false);
   impl_->asynPort->syncExportedParams(&impl_->exportedParams, true, false);
   impl_->asynPort->syncOctetParam(impl_->debugTextParamId,
@@ -1622,7 +1764,9 @@ int ecmcCppLogicLib::exeEnterRTFunc() {
                                   true,
                                   false);
   if (impl_->api->enterRealtime) {
+    g_hostServiceCppLogic = impl_;
     impl_->api->enterRealtime(impl_->instance);
+    g_hostServiceCppLogic = nullptr;
   }
   return 0;
 }
@@ -1636,8 +1780,11 @@ int ecmcCppLogicLib::exeExitRTFunc() {
   impl_->lastInputTimeMs = 0.0;
   impl_->lastOutputTimeMs = 0.0;
   impl_->lastTotalTimeMs = 0.0;
+  updateStatusWord(impl_);
   if (impl_->loaded && impl_->api->exitRealtime) {
+    g_hostServiceCppLogic = impl_;
     impl_->api->exitRealtime(impl_->instance);
+    g_hostServiceCppLogic = nullptr;
   }
   impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, false);
   return 0;
