@@ -1797,6 +1797,18 @@ int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
     return 0;
   }
 
+  if (!isEpicsStarted()) {
+    if (impl_->lastExecTimeMs != 0.0 || impl_->lastInputTimeMs != 0.0 ||
+        impl_->lastOutputTimeMs != 0.0 || impl_->lastTotalTimeMs != 0.0) {
+      impl_->lastExecTimeMs = 0.0;
+      impl_->lastInputTimeMs = 0.0;
+      impl_->lastOutputTimeMs = 0.0;
+      impl_->lastTotalTimeMs = 0.0;
+      impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, true);
+    }
+    return 0;
+  }
+
   impl_->executeDividerCounter++;
   if (impl_->executeDividerCounter < impl_->runtimeExecuteDivider) {
     return 0;
