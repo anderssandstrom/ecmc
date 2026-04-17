@@ -55,6 +55,14 @@ Common scalar binding helpers:
 - `epics.readOnly("name", value)`
 - `epics.writable("name", value)`
 
+Configuration text helper:
+
+- `ecmcCpp::getMacrosText()`
+
+This returns the optional `MACROS` string passed from the IOC startup path.
+Typical use is to read it once in the constructor and interpret it as a small
+configuration string for the logic module.
+
 Array/buffer helpers:
 
 - `ecmc.inputArray(...)`

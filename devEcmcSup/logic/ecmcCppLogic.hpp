@@ -651,6 +651,15 @@ inline int32_t getIocState() {
            : -1;
 }
 
+inline std::string getMacrosText() {
+  if (!g_hostServices || !g_hostServices->get_macros_text) {
+    return {};
+  }
+
+  const char* text = g_hostServices->get_macros_text();
+  return text ? std::string(text) : std::string();
+}
+
 inline void publishDebugText(const char* message) {
   if (g_hostServices && g_hostServices->publish_debug_text) {
     g_hostServices->publish_debug_text(message);
