@@ -9,6 +9,7 @@
     "Cfg.AddAxisToGroupByName(<index>,<name>)",
     "Cfg.AddAxisToGroupByName(<index>,<name>,<createGrp>)",
     "Cfg.AppendAxisPLCExpr(<axisIndex>)=<expr>",
+    "Cfg.AppendCppLogicMacros(<logicId>)=<macrosText>",
     "Cfg.AppendPLCExpr(<index>)=<fileName>",
     "Cfg.ClearPLCExpr(<index>)",
     "Cfg.CompileAxisPLC(<axisIndex>)",

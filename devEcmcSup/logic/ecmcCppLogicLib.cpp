@@ -1782,6 +1782,7 @@ void ecmcCppLogicLib::report() {
   printf("  Logic name         = %s\n", impl_->logicName.c_str());
   printf("  Shared library     = %s\n", impl_->libFilename.c_str());
   printf("  Config             = %s\n", impl_->configString.c_str());
+  printf("  MACROS             = %s\n", impl_->config.macrosText.c_str());
   printf("  Asyn port          = %s\n", impl_->config.asynPortName.c_str());
   printf("  Requested rate [ms]= %.3f\n", impl_->requestedSampleRateMs);
   printf("  Actual rate [ms]   = %.3f\n", impl_->actualSampleRateMs);
@@ -1790,6 +1791,27 @@ void ecmcCppLogicLib::report() {
   printf("  Execute divider    = %d\n", impl_->executeDividerPv);
   printf("  Item bindings      = %zu\n", impl_->itemBindings.size());
   printf("  EPICS exports      = %zu\n", impl_->exportedParams.size());
+}
+
+int ecmcCppLogicLib::appendMacros(const char* macrosText) {
+  if (!impl_ || !impl_->loaded) {
+    return ERROR_MAIN_CPP_LOGIC_OBJECT_NULL;
+  }
+
+  const std::string appendText =
+    stripOptionalQuotes(trimCopy(macrosText ? std::string(macrosText) : std::string()));
+  if (appendText.empty()) {
+    return 0;
+  }
+
+  if (impl_->config.macrosText.empty()) {
+    impl_->config.macrosText = appendText;
+  } else {
+    impl_->config.macrosText += ",";
+    impl_->config.macrosText += appendText;
+  }
+
+  return 0;
 }
 
 int ecmcCppLogicLib::exeEnterRTFunc() {
