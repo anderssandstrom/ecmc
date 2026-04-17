@@ -208,7 +208,7 @@ that port.
 
 `cpp_logic` also supports an optional free-form `MACROS` text string from the
 IOC startup path. That text is available to user code through
-`ecmcCpp::getMacrosText()` and is intended for small logic-specific
+`ecmcCpp::getMacrosString()` and is intended for small logic-specific
 configuration parsed by the constructor or other one-time lifecycle code.
 
 That script is intended to load the built-in core substitutions from:

@@ -57,11 +57,15 @@ Common scalar binding helpers:
 
 Configuration text helper:
 
-- `ecmcCpp::getMacrosText()`
+- `ecmcCpp::getMacrosString()`
+- `ecmcCpp::getMacroValue(...)`
+- `ecmcCpp::getMacroValueInt(...)`
+- `ecmcCpp::getMacroValueDouble(...)`
 
 This returns the optional `MACROS` string passed from the IOC startup path.
 Typical use is to read it once in the constructor and interpret it as a small
-configuration string for the logic module.
+configuration string for the logic module. The typed helpers return a caller-
+provided default value when the key is missing or the text cannot be parsed.
 
 Array/buffer helpers:
 

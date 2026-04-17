@@ -12,8 +12,10 @@
 #include "ecmcCppLogic.h"
 
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstddef>
+#include <cstdlib>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -651,13 +653,147 @@ inline int32_t getIocState() {
            : -1;
 }
 
-inline std::string getMacrosText() {
+inline std::string getMacrosString() {
   if (!g_hostServices || !g_hostServices->get_macros_text) {
     return {};
   }
 
   const char* text = g_hostServices->get_macros_text();
   return text ? std::string(text) : std::string();
+}
+
+inline std::string getMacroValue(const std::string& macrosString, const std::string& key) {
+  auto trimCopy = [](const std::string& value) -> std::string {
+    size_t begin = 0u;
+    while (begin < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
+      ++begin;
+    }
+
+    size_t end = value.size();
+    while (end > begin &&
+           std::isspace(static_cast<unsigned char>(value[end - 1u])) != 0) {
+      --end;
+    }
+
+    return value.substr(begin, end - begin);
+  };
+
+  auto stripOptionalQuotes = [](const std::string& value) -> std::string {
+    if (value.size() >= 2u &&
+        ((value.front() == '\'' && value.back() == '\'') ||
+         (value.front() == '"' && value.back() == '"'))) {
+      return value.substr(1u, value.size() - 2u);
+    }
+    return value;
+  };
+
+  auto splitMacroTokens = [](const std::string& text) -> std::vector<std::string> {
+    std::vector<std::string> tokens;
+    std::string current;
+    char quoteChar = '\0';
+
+    for (char c : text) {
+      if (c == '\'' || c == '"') {
+        if (quoteChar == '\0') {
+          quoteChar = c;
+        } else if (quoteChar == c) {
+          quoteChar = '\0';
+        }
+        current.push_back(c);
+        continue;
+      }
+
+      if (c == ',' && quoteChar == '\0') {
+        tokens.emplace_back(std::move(current));
+        current.clear();
+        continue;
+      }
+
+      current.push_back(c);
+    }
+
+    tokens.emplace_back(std::move(current));
+    return tokens;
+  };
+
+  const std::string wantedKey = trimCopy(key);
+  if (wantedKey.empty()) {
+    return {};
+  }
+
+  for (const std::string& token : splitMacroTokens(macrosString)) {
+    if (token.empty()) {
+      continue;
+    }
+
+    const size_t equals = token.find('=');
+    if (equals == std::string::npos) {
+      continue;
+    }
+
+    const std::string tokenKey = trimCopy(token.substr(0, equals));
+    if (tokenKey != wantedKey) {
+      continue;
+    }
+
+    return stripOptionalQuotes(trimCopy(token.substr(equals + 1u)));
+  }
+
+  return {};
+}
+
+inline std::string getMacroValue(const char* macrosString, const char* key) {
+  return getMacroValue(macrosString ? std::string(macrosString) : std::string(),
+                       key ? std::string(key) : std::string());
+}
+
+inline int getMacroValueInt(const std::string& macrosString,
+                            const std::string& key,
+                            int defaultValue = 0) {
+  const std::string value = getMacroValue(macrosString, key);
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  char* endPtr = nullptr;
+  const long parsed = std::strtol(value.c_str(), &endPtr, 0);
+  if (!endPtr || *endPtr != '\0') {
+    return defaultValue;
+  }
+  return static_cast<int>(parsed);
+}
+
+inline int getMacroValueInt(const char* macrosString,
+                            const char* key,
+                            int defaultValue = 0) {
+  return getMacroValueInt(macrosString ? std::string(macrosString) : std::string(),
+                          key ? std::string(key) : std::string(),
+                          defaultValue);
+}
+
+inline double getMacroValueDouble(const std::string& macrosString,
+                                  const std::string& key,
+                                  double defaultValue = 0.0) {
+  const std::string value = getMacroValue(macrosString, key);
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  char* endPtr = nullptr;
+  const double parsed = std::strtod(value.c_str(), &endPtr);
+  if (!endPtr || *endPtr != '\0') {
+    return defaultValue;
+  }
+  return parsed;
+}
+
+inline double getMacroValueDouble(const char* macrosString,
+                                  const char* key,
+                                  double defaultValue = 0.0) {
+  return getMacroValueDouble(macrosString ? std::string(macrosString) : std::string(),
+                             key ? std::string(key) : std::string(),
+                             defaultValue);
 }
 
 inline void publishDebugText(const char* message) {
