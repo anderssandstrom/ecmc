@@ -16,7 +16,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdlib>
+#include <deque>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -334,21 +336,54 @@ inline ecmcCppLogicExportedVar epicsWritableBytes(const char* name,
 
 class EcmcItems {
  public:
+  static const char* ownName(std::deque<std::string>* storage, std::string_view name) {
+    if (!storage) {
+      return "";
+    }
+    storage->emplace_back(name);
+    return storage->back().c_str();
+  }
+
   template <typename T>
   EcmcItems& input(const char* item_name, T& value) {
-    bindings_.push_back(ecmcInput(item_name, &value));
+    bindings_.push_back(ecmcInput(ownName(&ownedNames_, item_name ? std::string_view(item_name)
+                                                                  : std::string_view()),
+                                  &value));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& input(std::string_view item_name, T& value) {
+    bindings_.push_back(ecmcInput(ownName(&ownedNames_, item_name), &value));
     return *this;
   }
 
   template <typename T>
   EcmcItems& output(const char* item_name, T& value) {
-    bindings_.push_back(ecmcOutput(item_name, &value));
+    bindings_.push_back(ecmcOutput(ownName(&ownedNames_, item_name ? std::string_view(item_name)
+                                                                   : std::string_view()),
+                                   &value));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& output(std::string_view item_name, T& value) {
+    bindings_.push_back(ecmcOutput(ownName(&ownedNames_, item_name), &value));
     return *this;
   }
 
   template <typename T>
   EcmcItems& inputArray(const char* item_name, T* values, size_t count) {
-    bindings_.push_back(ecmcInputArray(item_name, values, count));
+    bindings_.push_back(ecmcInputArray(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputArray(std::string_view item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcInputArray(ownName(&ownedNames_, item_name), values, count));
     return *this;
   }
 
@@ -373,7 +408,16 @@ class EcmcItems {
 
   template <typename T>
   EcmcItems& outputArray(const char* item_name, T* values, size_t count) {
-    bindings_.push_back(ecmcOutputArray(item_name, values, count));
+    bindings_.push_back(ecmcOutputArray(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputArray(std::string_view item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcOutputArray(ownName(&ownedNames_, item_name), values, count));
     return *this;
   }
 
@@ -398,13 +442,31 @@ class EcmcItems {
 
   template <typename T>
   EcmcItems& inputAutoArray(const char* item_name, std::vector<T>& values) {
-    bindings_.push_back(ecmcInputAutoArray(item_name, values));
+    bindings_.push_back(
+      ecmcInputAutoArray(ownName(&ownedNames_,
+                                 item_name ? std::string_view(item_name) : std::string_view()),
+                         values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputAutoArray(std::string_view item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcInputAutoArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
   template <typename T>
   EcmcItems& outputAutoArray(const char* item_name, std::vector<T>& values) {
-    bindings_.push_back(ecmcOutputAutoArray(item_name, values));
+    bindings_.push_back(
+      ecmcOutputAutoArray(ownName(&ownedNames_,
+                                  item_name ? std::string_view(item_name) : std::string_view()),
+                          values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputAutoArray(std::string_view item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcOutputAutoArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -412,7 +474,19 @@ class EcmcItems {
                         void*       data,
                         uint32_t    bytes,
                         uint32_t    type = ECMC_CPP_TYPE_U8) {
-    bindings_.push_back(ecmcInputBytes(item_name, data, bytes, type));
+    bindings_.push_back(ecmcInputBytes(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EcmcItems& inputBytes(std::string_view item_name,
+                        void*            data,
+                        uint32_t         bytes,
+                        uint32_t         type = ECMC_CPP_TYPE_U8) {
+    bindings_.push_back(ecmcInputBytes(ownName(&ownedNames_, item_name), data, bytes, type));
     return *this;
   }
 
@@ -420,7 +494,19 @@ class EcmcItems {
                          void*       data,
                          uint32_t    bytes,
                          uint32_t    type = ECMC_CPP_TYPE_U8) {
-    bindings_.push_back(ecmcOutputBytes(item_name, data, bytes, type));
+    bindings_.push_back(ecmcOutputBytes(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EcmcItems& outputBytes(std::string_view item_name,
+                         void*            data,
+                         uint32_t         bytes,
+                         uint32_t         type = ECMC_CPP_TYPE_U8) {
+    bindings_.push_back(ecmcOutputBytes(ownName(&ownedNames_, item_name), data, bytes, type));
     return *this;
   }
 
@@ -433,26 +519,60 @@ class EcmcItems {
   }
 
  private:
+  std::deque<std::string> ownedNames_;
   std::vector<ecmcCppLogicItemBinding> bindings_;
 };
 
 class EpicsExports {
  public:
+  static const char* ownName(std::deque<std::string>* storage, std::string_view name) {
+    if (!storage) {
+      return "";
+    }
+    storage->emplace_back(name);
+    return storage->back().c_str();
+  }
+
   template <typename T>
   EpicsExports& readOnly(const char* name, T& value) {
-    exports_.push_back(epicsReadOnly(name, &value));
+    exports_.push_back(epicsReadOnly(ownName(&ownedNames_,
+                                             name ? std::string_view(name) : std::string_view()),
+                                     &value));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& readOnly(std::string_view name, T& value) {
+    exports_.push_back(epicsReadOnly(ownName(&ownedNames_, name), &value));
     return *this;
   }
 
   template <typename T>
   EpicsExports& writable(const char* name, T& value) {
-    exports_.push_back(epicsWritable(name, &value));
+    exports_.push_back(epicsWritable(ownName(&ownedNames_,
+                                             name ? std::string_view(name) : std::string_view()),
+                                     &value));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& writable(std::string_view name, T& value) {
+    exports_.push_back(epicsWritable(ownName(&ownedNames_, name), &value));
     return *this;
   }
 
   template <typename T>
   EpicsExports& readOnlyArray(const char* name, T* values, size_t count) {
-    exports_.push_back(epicsReadOnlyArray(name, values, count));
+    exports_.push_back(epicsReadOnlyArray(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& readOnlyArray(std::string_view name, T* values, size_t count) {
+    exports_.push_back(epicsReadOnlyArray(ownName(&ownedNames_, name), values, count));
     return *this;
   }
 
@@ -477,7 +597,16 @@ class EpicsExports {
 
   template <typename T>
   EpicsExports& writableArray(const char* name, T* values, size_t count) {
-    exports_.push_back(epicsWritableArray(name, values, count));
+    exports_.push_back(epicsWritableArray(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& writableArray(std::string_view name, T* values, size_t count) {
+    exports_.push_back(epicsWritableArray(ownName(&ownedNames_, name), values, count));
     return *this;
   }
 
@@ -504,7 +633,19 @@ class EpicsExports {
                               void*       data,
                               uint32_t    bytes,
                               uint32_t    type = ECMC_CPP_TYPE_U8) {
-    exports_.push_back(epicsReadOnlyBytes(name, data, bytes, type));
+    exports_.push_back(epicsReadOnlyBytes(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EpicsExports& readOnlyBytes(std::string_view name,
+                              void*            data,
+                              uint32_t         bytes,
+                              uint32_t         type = ECMC_CPP_TYPE_U8) {
+    exports_.push_back(epicsReadOnlyBytes(ownName(&ownedNames_, name), data, bytes, type));
     return *this;
   }
 
@@ -512,7 +653,19 @@ class EpicsExports {
                               void*       data,
                               uint32_t    bytes,
                               uint32_t    type = ECMC_CPP_TYPE_U8) {
-    exports_.push_back(epicsWritableBytes(name, data, bytes, type));
+    exports_.push_back(epicsWritableBytes(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EpicsExports& writableBytes(std::string_view name,
+                              void*            data,
+                              uint32_t         bytes,
+                              uint32_t         type = ECMC_CPP_TYPE_U8) {
+    exports_.push_back(epicsWritableBytes(ownName(&ownedNames_, name), data, bytes, type));
     return *this;
   }
 
@@ -525,6 +678,7 @@ class EpicsExports {
   }
 
  private:
+  std::deque<std::string> ownedNames_;
   std::vector<ecmcCppLogicExportedVar> exports_;
 };
 
