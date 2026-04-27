@@ -19,10 +19,10 @@
 #define CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndex) {             \
   if(axIndex>=ECMC_MAX_AXES || axIndex<0){                    \
     mc_errorCode=0;                                           \
-    LOGERR("ERROR: Axis index out of range.\n");              \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis index out of range.\n", __FILE__, __FUNCTION__, __LINE__);              \
     return (double)ERROR_PLC_AXIS_ID_OUT_OF_RANGE;}           \
     if(axes[axIndex]==NULL){                                  \
-      LOGERR("ERROR: Axis object NULL\n");                    \
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis object is NULL.\n", __FILE__, __FUNCTION__, __LINE__);                    \
       return (double)ERROR_PLC_AXIS_OBJECT_NULL;              \
     }                                                         \
   }                                                           \
@@ -30,10 +30,10 @@
 #define CHECK_PLC_AXISGRP_RETURN_IF_ERROR(grpIndex) {         \
   if(intGrpIndex >= ECMC_MAX_AXES || intGrpIndex < 0){        \
     mc_errorCode=0;                                           \
-    LOGERR("ERROR: Group index out of range.\n");             \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Group index out of range.\n", __FILE__, __FUNCTION__, __LINE__);             \
     return (double)ERROR_PLC_AXIS_ID_OUT_OF_RANGE;}           \
     if(axisGroups[intGrpIndex]==NULL){                        \
-      LOGERR("ERROR: Group object NULL\n");                   \
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Group object is NULL.\n", __FILE__, __FUNCTION__, __LINE__);                   \
       return (double)ERROR_PLC_AXIS_OBJECT_NULL;              \
     }                                                         \
   }                                                           \
@@ -41,12 +41,12 @@
 #define CHECK_PLC_AXISGRP_RETURN_0_IF_ERROR(grpIndex) {       \
  if(intGrpIndex >= ECMC_MAX_AXES || intGrpIndex < 0){         \
     mc_errorCode=ERROR_PLC_AXIS_ID_OUT_OF_RANGE;              \
-    LOGERR("ERROR: Group index out of range.\n");             \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Group index out of range.\n", __FILE__, __FUNCTION__, __LINE__);             \
     return 0;                                                 \
   }                                                           \
   if(axisGroups[intGrpIndex] == NULL){                        \
     mc_errorCode=ERROR_PLC_AXIS_OBJECT_NULL;                  \
-    LOGERR("ERROR: Group object NULL\n");                     \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Group object is NULL.\n", __FILE__, __FUNCTION__, __LINE__);                     \
     return 0;                                                 \
   }                                                           \
 }                                                             \
@@ -166,7 +166,7 @@ inline double mc_move_abs(double axIndex,double execute,double pos, double vel, 
     if(mc_errorCode){
       return mc_errorCode;
     }
-    axes[index]->setTargetPos(pos);
+    axes[index]->setTargetPosAndCmd(pos);
     axes[index]->setTargetVel(vel);
     axes[index]->setDec(dec);
     axes[index]->setAcc(acc);
@@ -214,7 +214,7 @@ inline double mc_move_rel(double axIndex,double execute,double pos, double vel, 
     if(mc_errorCode){
       return mc_errorCode;
     }
-    axes[index]->setTargetPos(pos);
+    axes[index]->setTargetPosAndCmd(pos);
     axes[index]->setTargetVel(vel);
     axes[index]->setDec(dec);
     axes[index]->setAcc(acc);
@@ -612,7 +612,7 @@ inline double mc_move_ext_pos(double axIndex,double execute, double vel, double 
       return mc_errorCode;
     }
     double pos = axis->getExtSetPos();
-    axis->setTargetPos(pos);
+    axis->setTargetPosAndCmd(pos);
     axis->setTargetVel(vel);
     axis->setDec(dec);
     axis->setAcc(acc);

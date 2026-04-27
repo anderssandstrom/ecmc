@@ -11,31 +11,26 @@
 \*************************************************************************/
 
 #include "ecmcDriveDS402.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_DRV_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_DRV_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogWarning(...) \
+  ECMC_RT_LOG_AXIS_DRV_WARNING((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
 
 ecmcDriveDS402::ecmcDriveDS402(ecmcAsynPortDriver *asynPortDriver,
-                               ecmcAxisData       *axisData) :
+                               ecmcAxisData       &axisData) :
   ecmcDriveBase(asynPortDriver, axisData) {
-  data_ = axisData;
-
   initVars();
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
 }
 
 ecmcDriveDS402::ecmcDriveDS402(ecmcAsynPortDriver *asynPortDriver,
-                               ecmcAxisData       *axisData,
+                               ecmcAxisData       &axisData,
                                double              scale) :
   ecmcDriveBase(asynPortDriver, axisData) {
-  data_ = axisData;
   initVars();
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
 
   scale_ = scale;
 }
@@ -140,7 +135,7 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
       //}
     }
     if(!ds402Fault && masterOK){
-      LOGERR("%s/%s:%d: DS402 Startup fault cleared.\n",
+      ecmcRtLoggerLogInfo("%s/%s:%d: INFO: DS402 startup fault cleared.\n",
         __FILE__,
         __FUNCTION__,
         __LINE__);
@@ -151,7 +146,7 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
   
   // Printout warning.. Do not stop
   if (ds402Warning && !ds402WarningOld_) {
-    LOGERR("%s/%s:%d: DS402 Warning bit high.\n",
+    ecmcRtLoggerLogWarning("%s/%s:%d: WARNING: DS402 warning bit is high.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__);

@@ -15,6 +15,13 @@
 #include <time.h>
 #include <string>
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogWarning(...) \
+  ECMC_RT_LOG_WARNING_SOURCE(ECMC_RT_LOG_SOURCE_ETHERCAT, -1, __VA_ARGS__)
+
+extern app_mode_type appModeStat;
+extern double mcuFrequency;
 
 ecmcEc::ecmcEc(ecmcAsynPortDriver *asynPortDriver) {
   initVars();
@@ -22,6 +29,20 @@ ecmcEc::ecmcEc(ecmcAsynPortDriver *asynPortDriver) {
   asynPortDriver_ = asynPortDriver;
   simSlave_       =
     new ecmcEcSlave(asynPortDriver_, 0, NULL, NULL, 0, -1, 0, 0);
+  if (simSlave_) {
+    int errorCode = simSlave_->getErrorID();
+    if (errorCode) {
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Simulation slave creation failed: %s (0x%x).\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             ecmcError::convertErrorIdToString(errorCode),
+             errorCode);
+      delete simSlave_;
+      simSlave_ = NULL;
+      setErrorID(errorCode);
+    }
+  }
 }
 
 void ecmcEc::initVars() {
@@ -41,7 +62,7 @@ void ecmcEc::initVars() {
   masterLinkUp_          = 0;
   statusWordMaster_      = 0;
   ecStatOk_              = 0;
-  delayEcOKCycles_       = 0;
+  delayEcOKCycles_       = -1;
   startupCounter_        = 0;
   domainCounter_         = 0;
   allowOffline_          = 0;
@@ -101,7 +122,7 @@ int ecmcEc::init(int nMasterIndex) {
   master_ = ecrt_request_master(nMasterIndex);
 
   if (!master_) {
-    LOGERR("%s/%s:%d: ERROR: EtherCAT master request failed (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: EtherCAT master request failed (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -114,7 +135,7 @@ int ecmcEc::init(int nMasterIndex) {
 
   // If this fucntion is called several times then the domains needs to be readded
   if (initDone_) {
-    LOGERR("%s/%s:%d: WARNINF: EtherCAT master alreday initialized once\n",
+    ecmcRtLoggerLogWarning("%s/%s:%d: WARNING: EtherCAT master already initialized once.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__);
@@ -125,13 +146,20 @@ int ecmcEc::init(int nMasterIndex) {
   masterIndex_ = nMasterIndex;
 
   // Create default domain at ec-rate
-  addDomain(0, 0);
+  int errorCode = addDomain(0, 0);
+  if (errorCode) {
+    return errorCode;
+  }
 
   return initAsyn(asynPortDriver_);
 }
 
 ecmcEc::~ecmcEc() {
-  LOGINFO5("%s/%s:%d: INFO: Deleting Ec.\n", __FILE__, __FUNCTION__, __LINE__);
+  ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                             "%s/%s:%d: DEBUG: Deleting Ec.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__);
 
   for (int i = 0; i < slaveCounter_; i++) {
     delete slaveArray_[i];
@@ -175,8 +203,9 @@ int ecmcEc::addSlave(
   uint16_t position,  /**< Slave position. */
   uint32_t vendorId,  /**< Expected vendor ID. */
   uint32_t productCode /**< Expected product code. */) {
-  LOGINFO5(
-    "%s/%s:%d: INFO: Adding EtherCAT slave (alias=%d, position=%d, vendorId=%x, productCode=%x).\n",
+  ECMC_RT_LOG_ETHERCAT_DEBUG(
+    -1,
+    "%s/%s:%d: DEBUG: Adding EtherCAT slave (alias=%d, position=%d, vendorId=%x, productCode=%x).\n",
     __FILE__,
     __FUNCTION__,
     __LINE__,
@@ -194,6 +223,21 @@ int ecmcEc::addSlave(
                                                  position,
                                                  vendorId,
                                                  productCode);
+    int errorCode = slaveArray_[slaveCounter_]->getErrorID();
+    if (errorCode) {
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave %d (0x%x,0x%x): Creation failed: %s (0x%x).\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             position,
+             vendorId,
+             productCode,
+             ecmcError::convertErrorIdToString(errorCode),
+             errorCode);
+      delete slaveArray_[slaveCounter_];
+      slaveArray_[slaveCounter_] = NULL;
+      return -errorCode;
+    }
     slaveCounter_++;
 
     ecAsynParams_[ECMC_ASYN_EC_PAR_SLAVE_COUNT_ID]->refreshParam(1);
@@ -202,7 +246,7 @@ int ecmcEc::addSlave(
 
     return slaveCounter_ - 1;
   } else {
-    LOGERR("%s/%s:%d: ERROR: Slave Array full (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave Array full (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -217,7 +261,7 @@ int ecmcEc::addSlave(
 ecmcEcSlave * ecmcEc::getSlave(int slaveIndex) {
   if ((slaveIndex >= EC_MAX_SLAVES) || (slaveIndex < -1) ||
       (slaveIndex >= slaveCounter_)) {
-    LOGERR("%s/%s:%d: ERROR: Invalid slave index (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Invalid slave index (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -234,7 +278,7 @@ ecmcEcSlave * ecmcEc::getSlave(int slaveIndex) {
   }
 
   if (slaveArray_[slaveIndex] == NULL) {
-    LOGERR("%s/%s:%d: ERROR: Slave NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -247,13 +291,14 @@ ecmcEcSlave * ecmcEc::getSlave(int slaveIndex) {
 }
 
 int ecmcEc::activate() {
-  LOGINFO5("%s/%s:%d: INFO: Activating master...\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__);
+  ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                             "%s/%s:%d: DEBUG: Activating master...\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__);
 
   if (ecrt_master_activate(master_)) {
-    LOGERR("%s/%s:%d: ERROR: ecrt_master_activate() failed (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: ecrt_master_activate() failed (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -264,15 +309,16 @@ int ecmcEc::activate() {
                       ERROR_EC_MAIN_MASTER_ACTIVATE_FAILED);
   }
 
-  LOGINFO5("%s/%s:%d: INFO: Writing process data offsets to entries.\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__);
+  ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                             "%s/%s:%d: DEBUG: Writing process data offsets to entries.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__);
 
   for (int slaveIndex = 0; slaveIndex < slaveCounter_; slaveIndex++) {
     ecmcEcSlave * const slave = slaveArray_[slaveIndex];
     if (slave == NULL) {
-      LOGERR("%s/%s:%d: ERROR: Slave NULL (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave is NULL (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,
@@ -298,7 +344,7 @@ int ecmcEc::compileRegInfo() {
   for (int slaveIndex = 0; slaveIndex < slaveCounter_; slaveIndex++) {
     ecmcEcSlave * const slave = slaveArray_[slaveIndex];
     if (slave == NULL) {
-      LOGERR("%s/%s:%d: ERROR: Slave NULL (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave is NULL (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,
@@ -356,8 +402,8 @@ bool ecmcEc::checkSlavesConfState() {
   for (int i = 0; i < slaveCounter_; i++) {
     retVal = checkSlaveConfState(i);
 
-    if (retVal && !getErrorID()) {
-      LOGERR(
+    if (retVal && !getErrorID() && (appModeStat != ECMC_MODE_STARTUP)) {
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: Slave with bus position %d reports error (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -385,7 +431,7 @@ int ecmcEc::checkSlaveConfState(int slaveIndex) {
   }
 
   if ((slaveIndex >= EC_MAX_SLAVES) || (slaveIndex >= slaveCounter_)) {
-    LOGERR("%s/%s:%d: ERROR: Invalid slave index (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Invalid slave index (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -398,7 +444,7 @@ int ecmcEc::checkSlaveConfState(int slaveIndex) {
 
   ecmcEcSlave * const slave = slaveArray_[slaveIndex];
   if (slave == NULL) {
-    LOGERR("%s/%s:%d: ERROR: Slave NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -447,28 +493,31 @@ bool ecmcEc::checkState(void) {
                       ((uint16_t)(masterState_.slaves_responding) << 16);
 
   if (masterState_.slaves_responding != masterStateOld_.slaves_responding) {
-    LOGINFO5("%s/%s:%d: INFO: %u slave(s) responding.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             masterState_.slaves_responding);
+    ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                               "%s/%s:%d: DEBUG: %u slave(s) responding.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               masterState_.slaves_responding);
   }
 
   if (masterState_.link_up != masterStateOld_.link_up) {
-    LOGINFO5("%s/%s:%d: INFO: Master link is %s.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             masterState_.link_up ? "up" : "down");
+    ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                               "%s/%s:%d: DEBUG: Master link is %s.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               masterState_.link_up ? "up" : "down");
   }
   masterLinkUp_ = masterState_.link_up;
 
   if (masterState_.al_states != masterStateOld_.al_states) {
-    LOGINFO5("%s/%s:%d: INFO: Application Layer state: 0x%x.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             masterState_.al_states);
+    ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
+                               "%s/%s:%d: DEBUG: Application Layer state: 0x%x.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               masterState_.al_states);
   }
   masterAlStates_ = masterState_.al_states;
 
@@ -482,8 +531,8 @@ bool ecmcEc::checkState(void) {
 
   if (static_cast<int>(masterState_.slaves_responding) < slaveCounter_) {
     if (getErrorID() != ERROR_EC_RESPOND_VS_CONFIG_SLAVES_MISSMATCH) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Respondig slave count VS configures slave count missmatch (0x%x).\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Responding slave count vs configured slave count mismatch (0x%x).\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -500,21 +549,30 @@ bool ecmcEc::checkState(void) {
   if (masterState_.al_states != EC_AL_STATE_OP) {
     switch (masterState_.al_states) {
     case EC_AL_STATE_INIT:
-      setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_INIT);
+      // Expected transient while the master is moving to OP.
+      if (appModeStat != ECMC_MODE_STARTUP) {
+        setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_INIT);
+      }
       masterOK_ = false;
       return false;
 
       break;
 
     case EC_AL_STATE_PREOP:
-      setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_PREOP);
+      // Expected transient while the master is moving to OP.
+      if (appModeStat != ECMC_MODE_STARTUP) {
+        setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_PREOP);
+      }
       masterOK_ = false;
       return false;
 
       break;
 
     case EC_AL_STATE_SAFEOP:
-      setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_SAFEOP);
+      // Expected transient while the master is moving to OP.
+      if (appModeStat != ECMC_MODE_STARTUP) {
+        setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_AL_STATE_SAFEOP);
+      }
       masterOK_ = false;
       return false;
 
@@ -595,7 +653,7 @@ int ecmcEc::addSDOWrite(uint16_t slavePosition,
   ecmcEcSlave *slave = findSlave(slavePosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -617,7 +675,7 @@ int ecmcEc::addSDOWriteDT(uint16_t       slavePosition,
   ecmcEcSlave *slave = findSlave(slavePosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -651,7 +709,7 @@ int ecmcEc::addSDOWriteComplete(uint16_t    slavePosition,
   ecmcEcSlave *slave = findSlave(slavePosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -674,7 +732,7 @@ int ecmcEc::addSDOWriteBuffer(uint16_t    slavePosition,
   ecmcEcSlave *slave = findSlave(slavePosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -731,7 +789,7 @@ int ecmcEc::readSoE(uint16_t slavePosition,  /**< Slave position. */
     );
 
   if (errorCode) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: SoE read failed with SoE error code 0x%x (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -763,7 +821,7 @@ int ecmcEc::writeSoE(uint16_t slavePosition,  /**< Slave position. */
     );
 
   if (errorCode) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: SoE write failed with SoE error code 0x%x (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -829,7 +887,7 @@ int ecmcEc::addEntry(
   int            useInRealTime) {
   // Ensure master can support datatype
   if (!validEntryType(dt)) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Data type is not supported for current installed master. Please upgrade to newer ethercat master version (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -1034,7 +1092,7 @@ int ecmcEc::findSlaveIndex(int busPosition, int *slaveIndex) {
       }
     }
   }
-  LOGERR("%s/%s:%d: ERROR: Slave NULL (0x%x).\n",
+  ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave is NULL (0x%x).\n",
          __FILE__,
          __FUNCTION__,
          __LINE__,
@@ -1051,10 +1109,17 @@ int ecmcEc::statusOK() {
   const bool ecReady = slavesOK_ && domainsOK_ && masterOK_;
 
   // Auto reset error at startup
-  if (inStartupPhase_ && ecReady &&
-      (startupCounter_ > delayEcOKCycles_)) {
-    inStartupPhase_ = false;
-    errorReset();
+  const int delayEcOKCycles = delayEcOKCycles_ >= 0 ? delayEcOKCycles_ :
+                              static_cast<int>(mcuFrequency);
+  if (inStartupPhase_) {
+    if (ecReady) {
+      if (startupCounter_ > delayEcOKCycles) {
+        inStartupPhase_ = false;
+        errorReset();
+      }
+    } else {
+      startupCounter_ = 0;
+    }
   }
 
   // printf("slavesOK_ %d domainsOK_ %d masterOK_ %d inStartupPhase_%d\n",slavesOK_,domainsOK_,masterOK_,inStartupPhase_);
@@ -1076,8 +1141,9 @@ int ecmcEc::setDomainFailedCyclesLimitInterlock(int cycles) {
 }
 
 void ecmcEc::slowExecute() {
-  LOGINFO5(
-    "%s/%s:%d: INFO: MasterOK: %d, SlavesOK: %d, DomainOK: %d, Error Code:0x%x .\n",
+  ECMC_RT_LOG_ETHERCAT_DEBUG(
+    -1,
+    "%s/%s:%d: DEBUG: MasterOK: %d, SlavesOK: %d, DomainOK: %d, Error Code:0x%x .\n",
     __FILE__,
     __FUNCTION__,
     __LINE__,
@@ -1119,7 +1185,7 @@ int ecmcEc::addMemMap(uint16_t       startEntryBusPosition,
   ecmcEcSlave *slave = findSlave(startEntryBusPosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave with busposition %d not found (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave with busposition %d not found (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1132,7 +1198,7 @@ int ecmcEc::addMemMap(uint16_t       startEntryBusPosition,
   }
 
   if (ecMemMapArrayCounter_ >= EC_MAX_MEM_MAPS) {
-    LOGERR("%s/%s:%d: ERROR: Adding ecMemMap failed. Array full (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Adding ecMemMap failed. Array full (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1146,7 +1212,7 @@ int ecmcEc::addMemMap(uint16_t       startEntryBusPosition,
   ecmcEcEntry *entry = slave->findEntry(startEntryIDString);
 
   if (!entry) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Adding ecMemMap failed. Start entry not found (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -1169,7 +1235,7 @@ int ecmcEc::addMemMap(uint16_t       startEntryBusPosition,
                                                            memMapIDString);
 
   if (!ecMemMapArray_[ecMemMapArrayCounter_]) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Adding ecMemMap failed. New ecmcEcMemMap fail (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -1205,7 +1271,7 @@ int ecmcEc::addDataItem(uint16_t       startEntryBusPosition,
   ecmcEcSlave *slave = findSlave(startEntryBusPosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave with busposition %d not found (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave with busposition %d not found (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1220,7 +1286,7 @@ int ecmcEc::addDataItem(uint16_t       startEntryBusPosition,
   ecmcEcEntry *entry = slave->findEntry(startEntryIDString);
 
   if (!entry) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Adding ecDataItem failed. Start entry not found (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -1303,8 +1369,8 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                     masterIndex_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer to small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1321,7 +1387,7 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -1342,8 +1408,8 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                        masterIndex_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer to small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1359,7 +1425,7 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -1377,8 +1443,8 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                        masterIndex_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer to small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1395,7 +1461,7 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -1414,8 +1480,8 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                        masterIndex_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer to small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1431,7 +1497,7 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -1450,8 +1516,8 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                        masterIndex_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer to small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1467,7 +1533,7 @@ int ecmcEc::initAsyn(ecmcAsynPortDriver *asynPortDriver) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -1503,7 +1569,7 @@ int ecmcEc::printAllConfig() {
   int entryCount       = 0;
 
   if (!master_) {
-    LOGINFO("%s/%s:%d: INFO: No EtherCAT master selected.\n",
+    ecmcRtLoggerLogInfo("%s/%s:%d: INFO: No EtherCAT master selected.\n",
             __FILE__,
             __FUNCTION__,
             __LINE__);
@@ -1513,8 +1579,8 @@ int ecmcEc::printAllConfig() {
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1522,7 +1588,7 @@ int ecmcEc::printAllConfig() {
     return 0;
   }
 
-  LOGINFO("ec%d.slaveCount=%d\n", masterIndex_, masterInfo.slave_count);
+  ecmcRtLoggerLogInfo("ec%d.slaveCount=%d\n", masterIndex_, masterInfo.slave_count);
 
   // Slave loop
   slaveCount = masterInfo.slave_count;
@@ -1531,39 +1597,39 @@ int ecmcEc::printAllConfig() {
     errorCode = ecrt_master_get_slave(master_, slaveLoopIndex, &slaveInfo);
 
     if (errorCode) {
-      LOGERR(
-        "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x.\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x.\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
         errorCode);
       return 0;
     }
-    LOGINFO("ec%d.s%d.position=%d\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.position=%d\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.position);
-    LOGINFO("ec%d.s%d.syncManCount=%d\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.syncManCount=%d\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.sync_count);
-    LOGINFO("ec%d.s%d.alias=%d\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.alias=%d\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.alias);
-    LOGINFO("ec%d.s%d.vendorId=0x%x\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.vendorId=0x%x\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.vendor_id);
-    LOGINFO("ec%d.s%d.revisionNum=0x%x\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.revisionNum=0x%x\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.revision_number);
-    LOGINFO("ec%d.s%d.productCode=0x%x\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.productCode=0x%x\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.product_code);
-    LOGINFO("ec%d.s%d.serial_number=0x%x\n",
+    ecmcRtLoggerLogInfo("ec%d.s%d.serial_number=0x%x\n",
             masterIndex_,
             slaveLoopIndex,
             slaveInfo.serial_number);
@@ -1580,25 +1646,25 @@ int ecmcEc::printAllConfig() {
                                                &syncInfo);
 
       if (errorCode) {
-        LOGERR(
-          "%s/%s:%d: Error: Function ecrt_master_get_sync_manager() failed with error code 0x%x.\n",
+        ecmcRtLoggerLogError(
+          "%s/%s:%d: ERROR: Function ecrt_master_get_sync_manager() failed with error code 0x%x.\n",
           __FILE__,
           __FUNCTION__,
           __LINE__,
           errorCode);
         return 0;
       }
-      LOGINFO("ec%d.s%d.sm%d.pdoCount=%d\n",
+      ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdoCount=%d\n",
               masterIndex_,
               slaveLoopIndex,
               syncManLoopIndex,
               syncInfo.n_pdos);
-      LOGINFO("ec%d.s%d.sm%d.direction=%s\n",
+      ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.direction=%s\n",
               masterIndex_,
               slaveLoopIndex,
               syncManLoopIndex,
               syncInfo.dir == 1 ? "Output" : "Input");
-      LOGINFO("ec%d.s%d.sm%d.watchDogMode=%s\n",
+      ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.watchDogMode=%s\n",
               masterIndex_,
               slaveLoopIndex,
               syncManLoopIndex,
@@ -1617,21 +1683,21 @@ int ecmcEc::printAllConfig() {
                                         &pdoInfo);
 
         if (errorCode) {
-          LOGERR(
-            "%s/%s:%d: Error: Function ecrt_master_get_pdo() failed with error code 0x%x.\n",
+          ecmcRtLoggerLogError(
+            "%s/%s:%d: ERROR: Function ecrt_master_get_pdo() failed with error code 0x%x.\n",
             __FILE__,
             __FUNCTION__,
             __LINE__,
             errorCode);
           return 0;
         }
-        LOGINFO("ec%d.s%d.sm%d.pdo%d.index=0x%x\n",
+        ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdo%d.index=0x%x\n",
                 masterIndex_,
                 slaveLoopIndex,
                 syncManLoopIndex,
                 pdoLoopIndex,
                 pdoInfo.index);
-        LOGINFO("ec%d.s%d.sm%d.pdo%d.entryCount=%d\n",
+        ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdo%d.entryCount=%d\n",
                 masterIndex_,
                 slaveLoopIndex,
                 syncManLoopIndex,
@@ -1651,29 +1717,29 @@ int ecmcEc::printAllConfig() {
                                                 &pdoEntryInfo);
 
           if (errorCode) {
-            LOGERR(
-              "%s/%s:%d: Error: Function ecrt_master_get_pdo_entry() failed with error code 0x%x.\n",
+            ecmcRtLoggerLogError(
+              "%s/%s:%d: ERROR: Function ecrt_master_get_pdo_entry() failed with error code 0x%x.\n",
               __FILE__,
               __FUNCTION__,
               __LINE__,
               errorCode);
             return 0;
           }
-          LOGINFO("ec%d.s%d.sm%d.pdo%d.e%d.index=0x%x\n",
+          ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdo%d.e%d.index=0x%x\n",
                   masterIndex_,
                   slaveLoopIndex,
                   syncManLoopIndex,
                   pdoLoopIndex,
                   entryLoopIndex,
                   pdoEntryInfo.index);
-          LOGINFO("ec%d.s%d.sm%d.pdo%d.e%d.subIndex=0x%x\n",
+          ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdo%d.e%d.subIndex=0x%x\n",
                   masterIndex_,
                   slaveLoopIndex,
                   syncManLoopIndex,
                   pdoLoopIndex,
                   entryLoopIndex,
                   pdoEntryInfo.subindex);
-          LOGINFO("ec%d.s%d.sm%d.pdo%d.e%d.bitLength=0x%x\n",
+          ecmcRtLoggerLogInfo("ec%d.s%d.sm%d.pdo%d.e%d.bitLength=0x%x\n",
                   masterIndex_,
                   slaveLoopIndex,
                   syncManLoopIndex,
@@ -1703,7 +1769,7 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
   int entryCount       = 0;
 
   if (!master_) {
-    LOGINFO("%s/%s:%d: INFO: No EtherCAT master selected.\n",
+    ecmcRtLoggerLogInfo("%s/%s:%d: INFO: No EtherCAT master selected.\n",
             __FILE__,
             __FUNCTION__,
             __LINE__);
@@ -1713,8 +1779,8 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1722,13 +1788,13 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
     return 0;
   }
 
-  LOGINFO("ec%d.slaveCount=%d\n", masterIndex_, masterInfo.slave_count);
+  ecmcRtLoggerLogInfo("ec%d.slaveCount=%d\n", masterIndex_, masterInfo.slave_count);
 
   // Slave loop
   slaveCount = masterInfo.slave_count;
 
   if (slaveIndex >= slaveCount) {
-    LOGINFO("%s/%s:%d: INFO: Slave index out of range.\n",
+    ecmcRtLoggerLogInfo("%s/%s:%d: INFO: Slave index out of range.\n",
             __FILE__,
             __FUNCTION__,
             __LINE__);
@@ -1738,8 +1804,8 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
   errorCode = ecrt_master_get_slave(master_, slaveIndex, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1770,8 +1836,8 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
                                              &syncInfo);
 
     if (errorCode) {
-      LOGERR(
-        "%s/%s:%d: Error: Function ecrt_master_get_sync_manager() failed with error code 0x%x.\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Function ecrt_master_get_sync_manager() failed with error code 0x%x.\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -1792,8 +1858,8 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
                                       &pdoInfo);
 
       if (errorCode) {
-        LOGERR(
-          "%s/%s:%d: Error: Function ecrt_master_get_pdo() failed with error code 0x%x.\n",
+        ecmcRtLoggerLogError(
+          "%s/%s:%d: ERROR: Function ecrt_master_get_pdo() failed with error code 0x%x.\n",
           __FILE__,
           __FUNCTION__,
           __LINE__,
@@ -1814,8 +1880,8 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
                                               &pdoEntryInfo);
 
         if (errorCode) {
-          LOGERR(
-            "%s/%s:%d: Error: Function ecrt_master_get_pdo_entry() failed with error code 0x%x.\n",
+          ecmcRtLoggerLogError(
+            "%s/%s:%d: ERROR: Function ecrt_master_get_pdo_entry() failed with error code 0x%x.\n",
             __FILE__,
             __FUNCTION__,
             __LINE__,
@@ -1892,7 +1958,7 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   int slaveCount = 0;
 
   if (!master_) {
-    LOGERR("%s/%s:%d: INFO: No EtherCAT master selected (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: No EtherCAT master selected (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1903,8 +1969,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1916,7 +1982,7 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   slaveCount = masterInfo.slave_count;
 
   if (slavePos >= slaveCount) {
-    LOGERR("%s/%s:%d: INFO: Slave index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1927,8 +1993,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   errorCode = ecrt_master_get_slave(master_, slavePos, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1938,8 +2004,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   }
 
   if (slaveInfo.position != slavePos) {
-    LOGERR(
-      "%s/%s:%d: Error: Slave verification for busposition %d failed. Bus position %d != %d (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Slave verification for busposition %d failed. Bus position %d != %d (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1951,8 +2017,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   }
 
   if (slaveInfo.alias != alias) {
-    LOGERR(
-      "%s/%s:%d: Error: Slave verification for busposition %d failed. Alias %d != %d (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Slave verification for busposition %d failed. Alias %d != %d (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1964,8 +2030,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
   }
 
   if (slaveInfo.vendor_id != vendorId) {
-    LOGERR(
-      "%s/%s:%d: Error: Slave verification for busposition %d failed. Vendor Id 0x%x != 0x%x (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Slave verification for busposition %d failed. Vendor Id 0x%x != 0x%x (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1978,8 +2044,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
 
 
   if (slaveInfo.product_code != productCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Slave verification for busposition %d failed. Product Code 0x%x != 0x%x (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Slave verification for busposition %d failed. Product Code 0x%x != 0x%x (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1992,8 +2058,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
 
   // Only check revision if revisionNum is set (> 0)
   if ((revisionNum > 0) && (slaveInfo.revision_number < revisionNum)) {
-    LOGERR(
-      "%s/%s:%d: Error: Slave verification for busposition %d failed. Revision of actual slave (0x%x) must be >= revision of config (0x%x) (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Slave verification for busposition %d failed. Revision of actual slave (0x%x) must be >= revision of config (0x%x) (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2009,8 +2075,8 @@ int ecmcEc::verifySlave(uint16_t alias,  /**< Slave alias. */
 
 int ecmcEc::checkReadyForRuntime() {
   if ((slaveCounter_ == 0) || (entryCounter_ == 0)) {
-    LOGERR(
-      "%s/%s:%d: Error: No valid EtherCAT configuration (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: No valid EtherCAT configuration (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2061,7 +2127,7 @@ uint32_t ecmcEc::getSlaveVendorId(uint16_t alias,  /**< Slave alias. */
   int slaveCount = 0;
 
   if (!master_) {
-    LOGERR("%s/%s:%d: INFO: No EtherCAT master selected (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: No EtherCAT master selected (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2072,8 +2138,8 @@ uint32_t ecmcEc::getSlaveVendorId(uint16_t alias,  /**< Slave alias. */
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2084,7 +2150,7 @@ uint32_t ecmcEc::getSlaveVendorId(uint16_t alias,  /**< Slave alias. */
   slaveCount = masterInfo.slave_count;
 
   if (slavePos >= slaveCount) {
-    LOGERR("%s/%s:%d: INFO: Slave index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2095,8 +2161,8 @@ uint32_t ecmcEc::getSlaveVendorId(uint16_t alias,  /**< Slave alias. */
   errorCode = ecrt_master_get_slave(master_, slavePos, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2116,7 +2182,7 @@ uint32_t ecmcEc::getSlaveProductCode(uint16_t alias,  /**< Slave alias. */
   int slaveCount = 0;
 
   if (!master_) {
-    LOGERR("%s/%s:%d: INFO: No EtherCAT master selected (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: No EtherCAT master selected (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2127,8 +2193,8 @@ uint32_t ecmcEc::getSlaveProductCode(uint16_t alias,  /**< Slave alias. */
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2139,7 +2205,7 @@ uint32_t ecmcEc::getSlaveProductCode(uint16_t alias,  /**< Slave alias. */
   slaveCount = masterInfo.slave_count;
 
   if (slavePos >= slaveCount) {
-    LOGERR("%s/%s:%d: INFO: Slave index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2150,8 +2216,8 @@ uint32_t ecmcEc::getSlaveProductCode(uint16_t alias,  /**< Slave alias. */
   errorCode = ecrt_master_get_slave(master_, slavePos, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2171,7 +2237,7 @@ uint32_t ecmcEc::getSlaveRevisionNum(uint16_t alias,  /**< Slave alias. */
   int slaveCount = 0;
 
   if (!master_) {
-    LOGERR("%s/%s:%d: INFO: No EtherCAT master selected (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: No EtherCAT master selected (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2182,8 +2248,8 @@ uint32_t ecmcEc::getSlaveRevisionNum(uint16_t alias,  /**< Slave alias. */
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2194,7 +2260,7 @@ uint32_t ecmcEc::getSlaveRevisionNum(uint16_t alias,  /**< Slave alias. */
   slaveCount = masterInfo.slave_count;
 
   if (slavePos >= slaveCount) {
-    LOGERR("%s/%s:%d: INFO: Slave index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2205,8 +2271,8 @@ uint32_t ecmcEc::getSlaveRevisionNum(uint16_t alias,  /**< Slave alias. */
   errorCode = ecrt_master_get_slave(master_, slavePos, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2225,7 +2291,7 @@ uint32_t ecmcEc::getSlaveSerialNum(uint16_t alias,  /**< Slave alias. */
   int slaveCount = 0;
 
   if (!master_) {
-    LOGERR("%s/%s:%d: INFO: No EtherCAT master selected (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: No EtherCAT master selected (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2236,8 +2302,8 @@ uint32_t ecmcEc::getSlaveSerialNum(uint16_t alias,  /**< Slave alias. */
   int errorCode = ecrt_master(master_, &masterInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master() failed with error code 0x%x.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master() failed with error code 0x%x.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2248,7 +2314,7 @@ uint32_t ecmcEc::getSlaveSerialNum(uint16_t alias,  /**< Slave alias. */
   slaveCount = masterInfo.slave_count;
 
   if (slavePos >= slaveCount) {
-    LOGERR("%s/%s:%d: INFO: Slave index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2259,8 +2325,8 @@ uint32_t ecmcEc::getSlaveSerialNum(uint16_t alias,  /**< Slave alias. */
   errorCode = ecrt_master_get_slave(master_, slavePos, &slaveInfo);
 
   if (errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Function ecrt_master_get_slave() failed with error code 0x%x (ecmc error 0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2308,7 +2374,7 @@ int ecmcEc::addSDOAsync(uint16_t       slaveBusPosition,
   ecmcEcSlave *slave = findSlave(slaveBusPosition);
 
   if (!slave) {
-    LOGERR("%s/%s:%d: ERROR: Slave object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -2333,6 +2399,18 @@ int ecmcEc::addDomain(int exeCycles, int offsetCycles) {
                                             domainCounter_,
                                             exeCycles,
                                             offsetCycles);
+    int errorCode = domain->getErrorID();
+    if (errorCode) {
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Domain[%d]: Creation failed: %s (0x%x).\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             domainCounter_,
+             ecmcError::convertErrorIdToString(errorCode),
+             errorCode);
+      delete domain;
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    }
     domains_.push_back(domain);
     domainCounter_++;
 
@@ -2341,7 +2419,7 @@ int ecmcEc::addDomain(int exeCycles, int offsetCycles) {
     currentDomain_->setFailedCyclesLimitInterlock(domainFailCyclesLimit_);
   }
   catch (std::exception& e) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Failed to create domain object (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -2357,7 +2435,7 @@ int ecmcEc::addDomain(int exeCycles, int offsetCycles) {
 
 int ecmcEc::setDomAllowOffline(int allow) {
   if (!currentDomain_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Failed to create domain object (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -2375,7 +2453,7 @@ int ecmcEc::setDomAllowOffline(int allow) {
 
 int ecmcEc::getDomAllowOffline(int *allow) {
   if (!currentDomain_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Failed to create domain object (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -2420,7 +2498,7 @@ int ecmcEc::addSimEntry(int            position,     // Slave position.
 
   // Ensure master can support datatype
   if (!validEntryType(dt)) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Data type is not supported for current installed master. Please upgrade to newer ethercat master version (0x%x).\n",
       __FILE__,
       __FUNCTION__,

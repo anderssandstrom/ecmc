@@ -18,6 +18,8 @@
 #include <vector>
 #include <cstdio>
 #include "ecmcAxisData.h"
+#include "ecmcOctetIF.h"
+#include "ecmcRtLogger.h"
 
 #include <cmath>
 
@@ -33,7 +35,13 @@ class ecmcPvtPoint {
     }
 
     void print() {
-       printf("%lf,%lf,%lf\n",time_, position_, velocity_);  
+       ecmcRtLoggerLogInfo("%s/%s:%d: INFO: PVT point: time=%lf, pos=%lf, vel=%lf.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               time_,
+               position_,
+               velocity_);
     } 
 };
 
@@ -59,7 +67,14 @@ class ecmcPvtSegment {
       k1_ = startPnt_->velocity_;
       k2_ = 3 * range_ / (timeSpan_ * timeSpan_) - (2 * startPnt_->velocity_ + endPnt_->velocity_) / timeSpan_;
       k3_ = -2 * range_ / (timeSpan_ * timeSpan_ * timeSpan_) + (startPnt_->velocity_ + endPnt_->velocity_) / (timeSpan_ * timeSpan_);
-      printf("k1 %lf, k2 %lf, k3 %lf\n",k1_,k2_,k3_);
+      ECMC_RT_LOG_AXIS_PVT_DEBUG(-1,
+                                 "%s/%s:%d: DEBUG: PVT segment coefficients: k1=%lf, k2=%lf, k3=%lf.\n",
+                                 __FILE__,
+                                 __FUNCTION__,
+                                 __LINE__,
+                                 k1_,
+                                 k2_,
+                                 k3_);
       return true;
     }
 
@@ -93,8 +108,13 @@ class ecmcPvtSegment {
     
     double position(double time) {
       if(!isTimeValid(time)) {
-        // Exception
-        printf("ERROR: TIME INVALID, NOT WITHIN SEGMENT, %lf\n",time);
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT segment position rejected: time %lf outside segment [%lf, %lf].\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               time,
+               startPnt_->time_,
+               endPnt_->time_);
         return 0;
       }
       timeInSeg_ = time - startPnt_->time_;
@@ -104,8 +124,13 @@ class ecmcPvtSegment {
 
     double velocity(double time) {
       if(!isTimeValid(time)) {
-        // Exception
-        printf("ERROR: TIME INVALID, NOT WITHIN SEGMENT, %lf\n",time);
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT segment velocity rejected: time %lf outside segment [%lf, %lf].\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               time,
+               startPnt_->time_,
+               endPnt_->time_);
         return 0;
       }
       timeInSeg_ = time - startPnt_->time_;
@@ -114,8 +139,13 @@ class ecmcPvtSegment {
 
     double acceleration(double time) {
       if(!isTimeValid(time)) {
-        // Exception
-        printf("ERROR: TIME INVALID, NOT WITHIN SEGMENT, %lf\n",time);
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT segment acceleration rejected: time %lf outside segment [%lf, %lf].\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               time,
+               startPnt_->time_,
+               endPnt_->time_);
         return 0;
       }
       return 2 * k2_ + 6 * k3_ * (time - startPnt_->time_);
@@ -131,6 +161,7 @@ enum trgMode{
 class ecmcAxisPVTSequence {
   public:
     ecmcAxisPVTSequence(double sampleTime, size_t maxProfilePoints);
+    ~ecmcAxisPVTSequence();
     void   setSampleTime(double sampleTime);
     int    setAxisDataRef(ecmcAxisData *data);
     void   addPoint(ecmcPvtPoint *pnt);
@@ -174,7 +205,7 @@ class ecmcAxisPVTSequence {
     void   setTrgDAQ();  // PVT controller trigger DAQ at trigger time
 
   private:
-    void            addSegment(ecmcPvtPoint *start, ecmcPvtPoint *end );
+    bool            addSegment(ecmcPvtPoint *start, ecmcPvtPoint *end );
     ecmcPvtSegment* getSeqmentAtTime(double time);
     std::vector<ecmcPvtSegment*> segments_;
     std::vector<ecmcPvtPoint*> points_;

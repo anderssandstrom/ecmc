@@ -12,28 +12,34 @@
 
 #include "ecmcPIDController.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 #include <stdio.h>
 #include <stdlib.h>
 
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_PID_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_PID_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogWarning(...) \
+  ECMC_RT_LOG_AXIS_PID_WARNING((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+
 ecmcPIDController::ecmcPIDController(ecmcAsynPortDriver *asynPortDriver,
-                                     ecmcAxisData       *axisData,
+                                     ecmcAxisData       &axisData,
                                      double              sampleTime)
-  : ecmcError(&(axisData->status_.errorCode),
-              &(axisData->status_.warningCode)) {
-  data_ = axisData;
+  : ecmcError(&(axisData.status_.errorCode),
+              &(axisData.status_.warningCode)) {
+  data_ = &axisData;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   initVars();
   asynPortDriver_ = asynPortDriver;
-  initAsyn();
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 }
 
 ecmcPIDController::ecmcPIDController(ecmcAsynPortDriver *asynPortDriver,
-                                     ecmcAxisData       *axisData,
+                                     ecmcAxisData       &axisData,
                                      double              kp,
                                      double              ki,
                                      double              kd,
@@ -41,16 +47,15 @@ ecmcPIDController::ecmcPIDController(ecmcAsynPortDriver *asynPortDriver,
                                      double              sampleTime,
                                      double              outMax,
                                      double              outMin)
-  : ecmcError(&(axisData->status_.errorCode),
-              &(axisData->status_.warningCode)) {
-  data_ = axisData;
+  : ecmcError(&(axisData.status_.errorCode),
+              &(axisData.status_.warningCode)) {
+  data_ = &axisData;
+  setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   initVars();
   asynPortDriver_ = asynPortDriver;
-  initAsyn();
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
   kp_         = kp;
   ki_         = ki;
@@ -236,7 +241,7 @@ int ecmcPIDController::validate() {
 
   // Output warning if CSP and any of the position control parameters have been set.
   if ((data_->control_.drvMode == ECMC_DRV_MODE_CSP) && settingMade_ && data_->control_.cspDrvEncIndex < 0) {
-    LOGERR("%s/%s:%d: WARNING: Axis %d: ecmc position control disabled (no dedicated CSP encoder selected). Settings of ecmc position control loop params will be discarded."
+    ecmcRtLoggerLogWarning("%s/%s:%d: WARNING: Axis %d: ecmc position control disabled (no dedicated CSP encoder selected). Settings of ecmc position control loop params will be discarded."
            " Position control loop params needs to be set directly in drive (where the position loop is executed).\n",
            __FILE__,
            __FUNCTION__,
@@ -246,7 +251,7 @@ int ecmcPIDController::validate() {
 
   if ((asynKp_ == NULL) || (asynKi_ == NULL) || (asynKd_ == NULL) ||
       (asynKff_ == NULL)) {
-    LOGERR("%s/%s:%d: Error: Axis %d: Kp,ki, kd or kff asyn param NULL .\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Kp, Ki, Kd, or Kff asyn parameter is NULL.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -310,7 +315,7 @@ double ecmcPIDController::getInnerTol() {
 int ecmcPIDController::initAsyn() {
   // Add Asynparms for new encoder
   if (asynPortDriver_ == NULL) {
-    LOGERR("%s/%s:%d: ERROR (axis %d): AsynPortDriver object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: AsynPortDriver object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -331,8 +336,8 @@ int ecmcPIDController::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate (%s). Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate %s; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -351,8 +356,8 @@ int ecmcPIDController::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -371,8 +376,8 @@ int ecmcPIDController::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate (%s). Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate %s; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -391,8 +396,8 @@ int ecmcPIDController::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -412,8 +417,8 @@ int ecmcPIDController::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate (%s). Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate %s; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -432,8 +437,8 @@ int ecmcPIDController::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -453,8 +458,8 @@ int ecmcPIDController::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate (%s). Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate %s; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -473,8 +478,8 @@ int ecmcPIDController::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,

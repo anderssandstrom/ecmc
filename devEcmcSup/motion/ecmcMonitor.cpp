@@ -13,20 +13,21 @@
 #include "ecmcMonitor.h"
 #include <stdio.h>
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 
-ecmcMonitor::ecmcMonitor(ecmcAxisData *axisData,
-                         ecmcEncoder **encArray) : ecmcEcEntryLink(&(axisData->
-                                                                     status_.
-                                                                     errorCode),
-                                                                   &(axisData->
-                                                                     status_.
-                                                                     warningCode))
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_MON_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_MON_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogDebug(...) \
+  ECMC_RT_LOG_AXIS_MON_DEBUG((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+
+ecmcMonitor::ecmcMonitor(ecmcAxisData &axisData,
+                         ecmcEncoder **encArray)
+  : ecmcEcEntryLink(&(axisData.status_.errorCode),
+                    &(axisData.status_.warningCode))
 {
-  if (!axisData) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
-  data_ = axisData;
+  data_ = &axisData;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   initVars();
   encArray_ = encArray;
@@ -172,8 +173,8 @@ bool ecmcMonitor::getHardLimitBwd() {
 
 int ecmcMonitor::setAtTargetTol(double tol) {
   if (tol < 0) {
-    LOGERR("%s/%s:%d: At target tolerance invalid (tol. < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TOL_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: At-target tolerance %lf is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, tol, ERROR_MON_TOL_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TOL_OUT_OF_RANGE);
   }
@@ -194,8 +195,8 @@ double ecmcMonitor::getAtTargetTol() {
 
 int ecmcMonitor::setAtTargetTime(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: At target time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: At-target time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -224,8 +225,8 @@ bool ecmcMonitor::getEnableAtTargetMon() {
 
 int ecmcMonitor::setPosLagTol(double tol) {
   if (tol < 0) {
-    LOGERR("%s/%s:%d: Position lag tolerance invalid (tol. < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TOL_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Position-lag tolerance %lf is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, tol, ERROR_MON_TOL_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TOL_OUT_OF_RANGE);
   }
@@ -240,8 +241,8 @@ double ecmcMonitor::getPosLagTol() {
 
 int ecmcMonitor::setVelDiffTimeTraj(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: Velocity diff traj time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Velocity-difference trajectory time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -256,8 +257,8 @@ int ecmcMonitor::getVelDiffTimeTraj() {
 
 int ecmcMonitor::setVelDiffTimeDrive(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: Velocity diff drive time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Velocity-difference drive time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -272,8 +273,8 @@ int ecmcMonitor::getVelDiffTimeDrive() {
 
 int ecmcMonitor::setPosLagTime(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: Position lag time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Position-lag time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -311,6 +312,9 @@ void ecmcMonitor::readEntries() {
     errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_LOWLIM, &tempRaw);
   
     if (errorCode) {
+      if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -336,6 +340,9 @@ void ecmcMonitor::readEntries() {
     errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_HIGHLIM, &tempRaw);
   
     if (errorCode) {
+      if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -361,6 +368,9 @@ void ecmcMonitor::readEntries() {
     errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_HOMESENSOR, &tempRaw);
   
     if (errorCode) {
+      if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -387,6 +397,9 @@ void ecmcMonitor::readEntries() {
     errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK, &tempRaw);
 
     if (errorCode) {
+      if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -411,6 +424,9 @@ void ecmcMonitor::readEntries() {
     errorCode = readEcEntryValueDouble(ECMC_MON_ENTRY_INDEX_ANALOG, &tempDouble);
 
     if (errorCode) {
+      if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -520,8 +536,8 @@ bool ecmcMonitor::getEnableMaxVelMon() {
 
 int ecmcMonitor::setMaxVelDriveTime(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: Max velocity drive time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Max-velocity drive time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -536,8 +552,8 @@ int ecmcMonitor::getMaxVelDriveTime() {
 
 int ecmcMonitor::setMaxVelTrajTime(int time) {
   if (time < 0) {
-    LOGERR("%s/%s:%d: Max velocity traj time invalid (time < 0) (0x%x).\n",
-           __FILE__, __FUNCTION__, __LINE__, ERROR_MON_TIME_OUT_OF_RANGE);
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Max-velocity trajectory time %d is invalid; expected >= 0 (0x%x).\n",
+           __FILE__, __FUNCTION__, __LINE__, time, ERROR_MON_TIME_OUT_OF_RANGE);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MON_TIME_OUT_OF_RANGE);
   }
@@ -777,7 +793,7 @@ int ecmcMonitor::setSoftLimitFwd(double limit) {
 
 int ecmcMonitor::validateSoftLimitConfigForEnabledLimits() {
   if (hasInvalidSoftLimitConfigForEnabledLimits()) {
-    LOGERR("%s/%s:%d: ERROR: Invalid soft-limit configuration for axis %d. "
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Invalid soft-limit configuration for axis %d. "
            "Backward soft limit (%lf) must be below forward soft limit (%lf).\n",
            __FILE__,
            __FUNCTION__,
@@ -805,6 +821,13 @@ int ecmcMonitor::checkLimits() {
   const bool moving = statusWord.moving;
   const bool axisEnabled = statusWord.enabled && statusOldWord.enabled;
   const bool isHomingCmd = status.command == ECMC_CMD_HOMING;
+
+  if (statusWord.instartup) {
+    interlocks.bothLimitsLowInterlock = false;
+    interlocks.bwdLimitInterlock = false;
+    interlocks.fwdLimitInterlock = false;
+    return 0;
+  }
 
   // Both limit switches
   interlocks.bothLimitsLowInterlock = !limitBwdOk && !limitFwdOk;
@@ -883,11 +906,25 @@ int ecmcMonitor::checkLimits() {
   }
 
   const bool checkSoftLimits = axisEnabled && !isHomingCmd;
+  const bool useVelocityDirection =
+    (status.command == ECMC_CMD_MOVEVEL) ||
+    (status.command == ECMC_CMD_JOG) ||
+    (status.command == ECMC_CMD_MOVEPVTABS) ||
+    (statusWord.trajsource != ECMC_DATA_SOURCE_INTERNAL);
+  const bool movingBwd =
+    (status.currentTargetPosition < status.currentPositionSetpoint) ||
+    (useVelocityDirection && (status.currentVelocitySetpoint < 0));
+  const bool movingFwd =
+    (status.currentTargetPosition > status.currentPositionSetpoint) ||
+    (useVelocityDirection && (status.currentVelocitySetpoint > 0));
+  const bool movingAwayFromBwdLimit = movingFwd && !movingBwd;
+  const bool movingAwayFromFwdLimit = movingBwd && !movingFwd;
 
   if (checkSoftLimits && statusWord.softlimbwdena) {
     const bool virtSoftlimitBwd =
-      (status.currentPositionSetpoint < control.softLimitBwd) ||
-      (status.currentTargetPosition < control.softLimitBwd);
+      !movingAwayFromBwdLimit &&
+      ((status.currentPositionSetpoint < control.softLimitBwd) ||
+       (status.currentTargetPosition < control.softLimitBwd));
     if (virtSoftlimitBwd) {
       interlocks.bwdSoftLimitInterlock = true;
       if (warningId != WARNING_MON_SOFT_LIMIT_BWD_INTERLOCK) {
@@ -911,8 +948,9 @@ int ecmcMonitor::checkLimits() {
 
   if (checkSoftLimits && statusWord.softlimfwdena) {
     const bool virtSoftlimitFwd =
-      (status.currentPositionSetpoint > control.softLimitFwd) ||
-      (status.currentTargetPosition > control.softLimitFwd);
+      !movingAwayFromFwdLimit &&
+      ((status.currentPositionSetpoint > control.softLimitFwd) ||
+       (status.currentTargetPosition > control.softLimitFwd));
     if (virtSoftlimitFwd) {
       interlocks.fwdSoftLimitInterlock = true;
       if (warningId != WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK) {
@@ -1030,11 +1068,14 @@ int  ecmcMonitor::checkStall() {
         stallCheckAtTargetAtCycle_ = stallMinTimeoutCycles_;
       }
       if (dbgPrint) {
-        LOGINFO("Axis[%d]: Time to check stall after: %" PRIu64 ", factor %lf, min time %lf\n",
-                data_->status_.axisId,
-                stallCheckAtTargetAtCycle_,
-                stallTimeFactor_,
-                stallMinTimeoutCycles_);
+        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Stall check scheduled after %" PRIu64 " cycles (factor=%lf, min=%lf).\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__,
+                             data_->status_.axisId,
+                             stallCheckAtTargetAtCycle_,
+                             stallTimeFactor_,
+                             stallMinTimeoutCycles_);
       }
     }
   }
@@ -1045,7 +1086,11 @@ int  ecmcMonitor::checkStall() {
     data_->interlocks_.stallInterlock = false;
     if (!statusOldWord.attarget) {
       if (dbgPrint) {
-        LOGINFO("Axis[%d]: No stall.. Brilliant!!\n", data_->status_.axisId);
+        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Stall check cleared: axis reached target.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__,
+                             data_->status_.axisId);
       }
     }
     stallLastMotionCmdCycles_ = 0;
@@ -1056,7 +1101,11 @@ int  ecmcMonitor::checkStall() {
   if ((maxStallCounter_ > stallCheckAtTargetAtCycle_) && 
      (stallCheckAtTargetAtCycle_ > 0)) {
     if (dbgPrint) {
-      LOGINFO("Axis[%d]: Stall...\n", data_->status_.axisId);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Stall detected.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           data_->status_.axisId);
     }
     stallLastMotionCmdCycles_ = 0;  
     stallCheckAtTargetAtCycle_ = 0;
@@ -1358,7 +1407,7 @@ int ecmcMonitor::setHardwareInterlockPolarity(ecmcSwitchPolarity pol) {
   int errorCode = checkPolarity(pol);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: Invalid polarity (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Hardware interlock polarity is invalid (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1376,7 +1425,7 @@ int ecmcMonitor::setAnalogInterlockPolarity(ecmcSwitchPolarity pol) {
   int errorCode = checkPolarity(pol);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: Invalid polarity (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Analog interlock polarity is invalid (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1411,7 +1460,7 @@ int ecmcMonitor::setHardLimitBwdPolarity(ecmcSwitchPolarity pol) {
   int errorCode = checkPolarity(pol);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: Invalid polarity (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Backward hard-limit polarity is invalid (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1427,7 +1476,7 @@ int ecmcMonitor::setHardLimitFwdPolarity(ecmcSwitchPolarity pol) {
   int errorCode = checkPolarity(pol);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: Invalid polarity (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Forward hard-limit polarity is invalid (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1443,7 +1492,7 @@ int ecmcMonitor::setHomePolarity(ecmcSwitchPolarity pol) {
   int errorCode = checkPolarity(pol);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: Invalid polarity (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Home switch polarity is invalid (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,

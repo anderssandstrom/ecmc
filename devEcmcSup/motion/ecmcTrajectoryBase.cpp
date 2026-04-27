@@ -12,20 +12,21 @@
 
 #include "ecmcTrajectoryBase.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 #include <stdio.h>
 
-ecmcTrajectoryBase::ecmcTrajectoryBase(ecmcAxisData *axisData,
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_TRAJ_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_TRAJ_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+
+ecmcTrajectoryBase::ecmcTrajectoryBase(ecmcAxisData &axisData,
                                        double        sampleTime)
-  : ecmcError(&(axisData->status_.errorCode),
-              &(axisData->status_.warningCode)) {
-  data_ = axisData;
+  : ecmcError(&(axisData.status_.errorCode),
+              &(axisData.status_.warningCode)) {
+  data_ = &axisData;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   initVars();
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
   sampleTime_ = sampleTime;
   invSampleTime_ = sampleTime > 0 ? 1.0 / sampleTime : 0.0;
 }
@@ -131,7 +132,7 @@ int ecmcTrajectoryBase::setExecute(bool execute) {
   execute_    = execute;
 
   if (!enable_ && execute_) {
-    LOGERR("%s/%s:%d: ERROR: Trajectory not enabled (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Trajectory not enabled (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -182,7 +183,7 @@ double ecmcTrajectoryBase::getSampleTime() {
 
 int ecmcTrajectoryBase::validate() {
   if (sampleTime_ <= 0) {
-    LOGERR("%s/%s:%d: ERROR: Sample time out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Sample time out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -194,7 +195,7 @@ int ecmcTrajectoryBase::validate() {
   }
 
   if (data_->control_.moduloRange < 0) {
-    LOGERR("%s/%s:%d: ERROR: Modulo factor out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Modulo factor out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -312,7 +313,7 @@ void ecmcTrajectoryBase::setTargetPos(double pos) {
   if (data_->control_.moduloRange > 0) {
     // Do not allow on the fly change for modulo motion
     if (busy_) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: Setpoint change while busy not allowed in modulo mode (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -367,7 +368,7 @@ void ecmcTrajectoryBase::setTargetPos(double pos) {
       break;
 
     default:
-      LOGERR("%s/%s:%d: ERROR: Modulo type out of range (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Modulo type out of range (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,

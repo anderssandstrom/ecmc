@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 
 namespace {
 
@@ -239,7 +240,7 @@ int ecmcEcData::validate() {
   // offset to data from start of domain
   if (startEntry_ == NULL) {
     if (getErrorID() != ERROR_EC_ENTRY_INVALID_DOMAIN_ADR) {
-      LOGERR("%s/%s:%d: ERROR: EcDataItem %s: Start entry invalid (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: EcDataItem %s: Start entry invalid (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,
@@ -253,7 +254,7 @@ int ecmcEcData::validate() {
   }
 
   if (startEntry_->getDirection() != direction_) {
-    LOGERR(
+    ecmcRtLoggerLogWarning(
       "%s/%s:%d: WARNING: EcDataItem %s: Data item direction is not same as for start ec-entry (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -270,7 +271,7 @@ int ecmcEcData::validate() {
 
   if (domainAdr_ == NULL) {
     if (getErrorID() != ERROR_EC_ENTRY_INVALID_DOMAIN_ADR) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: EcDataItem %s: Invalid domain address (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -295,7 +296,7 @@ int ecmcEcData::validate() {
 
   if (entryBitOffset_  > 7) {
     if (getErrorID() != ERROR_EC_ENTRY_INVALID_OFFSET) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: EcDataItem %s: Invalid data bit offset (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -311,7 +312,7 @@ int ecmcEcData::validate() {
 
   if (domainAdr_ == NULL) {
     if (getErrorID() != ERROR_EC_ENTRY_INVALID_DOMAIN_ADR) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: EcDataItem %s: Invalid domain address (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -330,7 +331,7 @@ int ecmcEcData::validate() {
 
   if (byteOffset_ + byteSize_ +  extraByteNeeded > domainSize) {
     if (getErrorID() != ERROR_EC_ENTRY_SIZE_OUT_OF_RANGE) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: ERROR: EcDataItem %s: Byte size, including byte and bit offsets, exceeds domain size (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -658,8 +659,9 @@ float ecmcEcData::read_float_offset(uint8_t *buffer,
                                     int      byteOffset,
                                     int      bitOffset) {
   uint32_t value = read_uint32_offset(buffer, byteOffset, bitOffset);
-
-  return *((float *)&value);
+  float floatValue = 0.0f;
+  memcpy(&floatValue, &value, sizeof(floatValue));
+  return floatValue;
 }
 
 // Write a float to the buffer at a specific byte and bit offset
@@ -667,7 +669,8 @@ void ecmcEcData::write_float_offset(uint8_t *buffer,
                                     int      byteOffset,
                                     int      bitOffset,
                                     float    value) {
-  uint32_t intValue = *((uint32_t *)&value);
+  uint32_t intValue = 0;
+  memcpy(&intValue, &value, sizeof(intValue));
 
   write_uint32_offset(buffer, byteOffset, bitOffset, intValue);
 }
@@ -677,8 +680,9 @@ double ecmcEcData::read_double_offset(uint8_t *buffer,
                                       int      byteOffset,
                                       int      bitOffset) {
   uint64_t value = read_uint64_offset(buffer, byteOffset, bitOffset);
-
-  return *((double *)&value);
+  double doubleValue = 0.0;
+  memcpy(&doubleValue, &value, sizeof(doubleValue));
+  return doubleValue;
 }
 
 // Write a double to the buffer at a specific byte and bit offset
@@ -686,7 +690,8 @@ void ecmcEcData::write_double_offset(uint8_t *buffer,
                                      int      byteOffset,
                                      int      bitOffset,
                                      double   value) {
-  uint64_t longValue = *((uint64_t *)&value);
+  uint64_t longValue = 0;
+  memcpy(&longValue, &value, sizeof(longValue));
 
   write_uint64_offset(buffer, byteOffset, bitOffset, longValue);
 }

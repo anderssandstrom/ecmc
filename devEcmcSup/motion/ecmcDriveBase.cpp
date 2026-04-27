@@ -12,33 +12,37 @@
 
 #include "ecmcDriveBase.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_DRV_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_DRV_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
 
 ecmcDriveBase::ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
-                             ecmcAxisData       *axisData) : ecmcEcEntryLink(&(
+                             ecmcAxisData       &axisData) : ecmcEcEntryLink(&(
                                                                                axisData
-                                                                               ->
+                                                                               .
                                                                                status_
                                                                                .
                                                                                errorCode),
                                                                              &(
                                                                                axisData
-                                                                               ->
+                                                                               .
                                                                                status_
                                                                                .
                                                                                warningCode))
 {
   initVars();
-  data_ = axisData;
+  data_ = &axisData;
   data_->control_.drvMode = ECMC_DRV_MODE_NONE;
   setExternalPtrs(&(data_->status_.errorCode), &(data_->status_.warningCode));
   asynPortDriver_ = asynPortDriver;
 
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
-
-  initAsyn();
 
   stateMachineTimeoutCycles_ = ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME /
                                data_->status_.sampleTime;
@@ -100,6 +104,20 @@ void ecmcDriveBase::initVars() {
 
 ecmcDriveBase::~ecmcDriveBase() {}
 
+bool ecmcDriveBase::entryTypeIsFloat(ecmcEcDataType type) const {
+  return type == ECMC_EC_F32 || type == ECMC_EC_F64;
+}
+
+bool ecmcDriveBase::csvUsesFloatingPoint() {
+  return entryTypeIsFloat(
+    getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT));
+}
+
+bool ecmcDriveBase::cspUsesFloatingPoint() {
+  return entryTypeIsFloat(
+    getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT));
+}
+
 int ecmcDriveBase::setVelSet(double vel) {
   if (!driveInterlocksOK()) {
     velSet_                                   = 0;
@@ -107,13 +125,14 @@ int ecmcDriveBase::setVelSet(double vel) {
     return 0;
   }
   velSet_                                   = vel;
-  data_->status_.currentVelocitySetpointRaw = velSet_ * invScale_;
+  data_->status_.currentVelocitySetpointRaw = static_cast<int64_t>(
+    std::llround(velSet_ * invScale_));
   return 0;
 }
 
 int ecmcDriveBase::setCspPosSet(double posEng) {
   cspPosSet_    = posEng; // Engineering unit
-  cspRawActPos_ = cspEnc_->getRawPosRegister();
+  cspRawActPos_ = cspEnc_->getRawPosRegisterDouble();
   cspActPos_    = cspEnc_->getActPos();
 
   if (!driveInterlocksOK()) {
@@ -121,24 +140,25 @@ int ecmcDriveBase::setCspPosSet(double posEng) {
   }
 
   if (data_->status_.statusWord_.enabled && data_->status_.statusWord_.enable) {
-    data_->status_.currentPositionSetpointRaw = cspPosSet_ * invScale_ +
-                                                cspRawPosOffset_;
+    data_->status_.currentPositionSetpointRaw = static_cast<int64_t>(
+      std::llround(cspPosSet_ * invScale_ + cspRawPosOffset_));
   } else {
-    data_->status_.currentPositionSetpointRaw = cspRawActPos_;
+    data_->status_.currentPositionSetpointRaw = static_cast<int64_t>(
+      std::llround(cspRawActPos_));
   }
 
   // Calculate new offset
   if (data_->status_.statusWord_.enable && !enableCmdOld_) {
     setCspRecalcOffset(cspPosSet_);
-    data_->status_.currentPositionSetpointRaw = cspPosSet_ * invScale_ +
-                                                cspRawPosOffset_;
+    data_->status_.currentPositionSetpointRaw = static_cast<int64_t>(
+      std::llround(cspPosSet_ * invScale_ + cspRawPosOffset_));
   }
 
   return 0;
 }
 
 // For drv at homing
-void ecmcDriveBase::setCspRef(int64_t posRaw, double posAct,  double posSet) {
+void ecmcDriveBase::setCspRef(double posRaw, double posAct,  double posSet) {
   cspRawActPos_    = posRaw;
   cspActPos_       = posAct;
   cspRawPosOffset_ = cspRawActPos_ - posSet * invScale_;  // Raw
@@ -290,32 +310,47 @@ void ecmcDriveBase::writeEntries() {
                       (uint64_t)controlWord_);
 
   if (errorCode) {
+    if (data_->status_.statusWord_.instartup &&
+        (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+      return;
+    }
     setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                ECMC_SEVERITY_EMERGENCY);
   }
 
   if (data_->control_.drvMode == ECMC_DRV_MODE_CSV) {
     // CSV:    Check so not outside allowable range
-    veloPosOutput_ = data_->status_.currentVelocitySetpointRaw +
-                     veloRawOffset_;
+    const double csvOutput = velSet_ * invScale_ + veloRawOffset_;
+    veloPosOutput_ = static_cast<int64_t>(std::llround(csvOutput));
 
-    if (veloPosOutput_ > maxVeloOutput_) {
-      veloPosOutput_ = maxVeloOutput_;
-    } else if (veloPosOutput_ < minVeloOutput_) {
-      veloPosOutput_ = minVeloOutput_;
+    if (csvUsesFloatingPoint()) {
+      errorCode =
+        writeEcEntryValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
+                                csvOutput);
+    } else {
+      if (veloPosOutput_ > maxVeloOutput_) {
+        veloPosOutput_ = maxVeloOutput_;
+      } else if (veloPosOutput_ < minVeloOutput_) {
+        veloPosOutput_ = minVeloOutput_;
+      }
+
+      errorCode =
+        writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
+                          (uint64_t)veloPosOutput_);
     }
 
-    errorCode =
-      writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
-                        (uint64_t)veloPosOutput_);
-
     if (errorCode) {
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                  ECMC_SEVERITY_EMERGENCY);
     }
   } else {
     // CSP: Check so not outside allowable range
-    veloPosOutput_ = data_->status_.currentPositionSetpointRaw;
+    const double cspOutput = cspPosSet_ * invScale_ + cspRawPosOffset_;
+    veloPosOutput_ = static_cast<int64_t>(std::llround(cspOutput));
 
     // Allow position to wrap around
     // if(veloPosOutput_ > maxVeloOutput_) {
@@ -324,11 +359,21 @@ void ecmcDriveBase::writeEntries() {
     //  veloPosOutput_ = minVeloOutput_;
     // }
 
-    errorCode =
-      writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
-                        (uint64_t)veloPosOutput_);
+    if (cspUsesFloatingPoint()) {
+      errorCode =
+        writeEcEntryValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
+                                cspOutput);
+    } else {
+      errorCode =
+        writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
+                          (uint64_t)veloPosOutput_);
+    }
 
     if (errorCode) {
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                  ECMC_SEVERITY_EMERGENCY);
     }
@@ -340,6 +385,10 @@ void ecmcDriveBase::writeEntries() {
                         (uint64_t)brakeOutputCmd_);
 
     if (errorCode) {
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                  ECMC_SEVERITY_EMERGENCY);
     }
@@ -354,6 +403,10 @@ void ecmcDriveBase::writeEntries() {
       (uint64_t)reduceTorqueOutputCmd_);
 
     if (errorCode) {
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                  ECMC_SEVERITY_EMERGENCY);
     }
@@ -367,6 +420,10 @@ void ecmcDriveBase::writeEntries() {
     hwReset_ = 0;
 
     if (errorCode) {
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode,
                  ECMC_SEVERITY_EMERGENCY);
     }
@@ -394,7 +451,7 @@ void ecmcDriveBase::writeEntries() {
   if (!localEnabledNow && localEnabledOld_ && data_->status_.statusWord_.enable) {
     data_->status_.statusWord_.enable = false;
     enableAmpCmd_          = false;
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: WARNING (axis %d): Drive enabled lost while enable cmd is high.\n",
       __FILE__,
       __FUNCTION__,
@@ -423,6 +480,11 @@ void ecmcDriveBase::readEntries(bool masterOK) {
                                    &statusWord_);
 
   if (errorCode) {
+    if (data_->status_.statusWord_.instartup &&
+        (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+      statusWord_ = 0;
+      return;
+    }
     setErrorID(__FILE__,
                __FUNCTION__,
                __LINE__,
@@ -440,6 +502,10 @@ void ecmcDriveBase::readEntries(bool masterOK) {
     if (errorCode) {
       hwWarning_    = 0;
       hwWarningOld_ = 0;
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -469,6 +535,10 @@ void ecmcDriveBase::readEntries(bool masterOK) {
     if (errorCode) {
       hwErrorAlarm0_    = 0;
       hwErrorAlarm0Old_ = 0;
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -498,6 +568,10 @@ void ecmcDriveBase::readEntries(bool masterOK) {
     if (errorCode) {
       hwErrorAlarm1_    = 0;
       hwErrorAlarm1Old_ = 0;
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -527,6 +601,10 @@ void ecmcDriveBase::readEntries(bool masterOK) {
     if (errorCode) {
       hwErrorAlarm2_    = 0;
       hwErrorAlarm2Old_ = 0;
+      if (data_->status_.statusWord_.instartup &&
+          (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
+        return;
+      }
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -582,8 +660,8 @@ int ecmcDriveBase::validate() {
     data_->control_.drvMode = ECMC_DRV_MODE_CSP;
 
     if(cspEnc_ == NULL) {
-      LOGERR(
-        "%s/%s:%d: ERROR (axis %d): No drive encoder selected for CSP operation (0x%x).\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Axis[%d]: No drive encoder selected for CSP operation (0x%x).\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -591,6 +669,27 @@ int ecmcDriveBase::validate() {
         ERROR_DRV_CSP_ENC_NULL);
   
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_DRV_CSP_ENC_NULL);      
+    }
+    const ecmcEcDataType encType = cspEnc_->getActPosEntryDataType();
+    const ecmcEcDataType posSetType =
+      getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
+    const bool encFloat = entryTypeIsFloat(encType);
+    const bool posSetFloat = entryTypeIsFloat(posSetType);
+
+    if (encFloat || posSetFloat) {
+      if (!(encFloat && posSetFloat && encType == posSetType)) {
+        ecmcRtLoggerLogError(
+          "%s/%s:%d: ERROR: Axis[%d]: Floating-point CSP requires drive encoder actual position and drive position setpoint to use the same EtherCAT datatype (0x%x).\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__,
+          data_->status_.axisId,
+          ERROR_DRV_INVALID_DRV_MODE);
+        return setErrorID(__FILE__,
+                          __FUNCTION__,
+                          __LINE__,
+                          ERROR_DRV_INVALID_DRV_MODE);
+      }
     }
     // Allow wrap around for position
     // ecmcEcDataType dt = getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
@@ -600,8 +699,8 @@ int ecmcDriveBase::validate() {
 
   // Ensure mode is CSV, CSP
   if(data_->control_.drvMode != ECMC_DRV_MODE_CSV && data_->control_.drvMode != ECMC_DRV_MODE_CSP ) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Drive Mode Invalid (must be CSV or CSP) (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Drive mode is invalid; expected CSV or CSP (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -836,8 +935,8 @@ void ecmcDriveBase::errorReset() {
 
 int ecmcDriveBase::initAsyn() {
   if (asynPortDriver_ == NULL) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Drive AsynPortDriver object NULL (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Drive AsynPortDriver object is NULL (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -858,8 +957,8 @@ int ecmcDriveBase::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate alias; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -876,8 +975,8 @@ int ecmcDriveBase::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -899,8 +998,8 @@ int ecmcDriveBase::initAsyn() {
                        data_->status_.axisId);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate alias; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -917,8 +1016,8 @@ int ecmcDriveBase::initAsyn() {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (axis %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -947,7 +1046,7 @@ int ecmcDriveBase::setStateMachineTimeout(double seconds) {
 }
 
 int ecmcDriveBase::setVelSetOffsetRaw(double offset) {
-  veloRawOffset_ = (int64_t)offset;
+  veloRawOffset_ = offset;
   return 0;
 }
 

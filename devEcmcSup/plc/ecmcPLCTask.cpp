@@ -12,11 +12,13 @@
 
 #include "ecmcPLCTask.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 #include "ecmcPLCTask_libDs.inc"
 #include "ecmcPLCTask_libEc.inc"
 #include "ecmcPLCTask_libMc.inc"
 #include "ecmcPLCTask_libFileIO.inc"
 #include "ecmcPLCTask_libMisc.inc"
+#include <new>
 
 #define ecmcPLCTaskAddFunction(cmd, func) {\
           errorCode = exprtk_->addFunction(cmd, func);\
@@ -35,10 +37,23 @@ ecmcPLCTask::ecmcPLCTask(int                 plcIndex,
   skipCycles_        = skipCycles;
   asynPortDriver_    = asynPortDriver;
   functionLibs_.clear();
-  exprtk_            = new exprtkWrap();
+  try {
+    exprtk_ = new exprtkWrap();
+  } catch (std::bad_alloc& ex) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PLC[%d]: exprtk allocation failed.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           plcIndex);
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_MAIN_EXCEPTION);
+    return;
+  }
   mcuFreq_           = mcuFreq;
   plcScanTimeInSecs_ = 1 / mcuFreq_ * (skipCycles + 1);
-  initAsyn(plcIndex);
+  int errorCode      = initAsyn(plcIndex);
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
 }
 
 ecmcPLCTask::~ecmcPLCTask() {
@@ -90,7 +105,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
 
   if ((localVariableCount_ >= ECMC_MAX_PLC_VARIABLES - 1) ||
       (localVariableCount_ < 0)) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: PLC local variable count excedded. Adding %s failed (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -111,7 +126,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
   int errorCode = localArray_[localVariableCount_]->getErrorID();
 
   if (errorCode) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: PLC local variable: Create data interface failed. Adding %s failed (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -125,7 +140,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
 
   if (exprtk_->addVariable(localVarStr,
                            localArray_[localVariableCount_]->getDataRef())) {
-    LOGERR("%s/%s:%d: Failed to add variable %s to exprtk  (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: Failed to add variable %s to exprtk  (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -149,7 +164,7 @@ int ecmcPLCTask::compile() {
 
   if (exprtk_->compile()) {
     compiled_ = false;
-    LOGERR("%s/%s:%d: Error: PLC%d compile error: %s.\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PLC%d compile error: %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -245,7 +260,7 @@ int ecmcPLCTask::appendRawExpr(const char *exprStr) {
     exprStrRaw_ += "\n";  // Add Enter
   }
   catch (const std::exception& e) {
-    LOGERR("%s/%s:%d: Append of expression line failed: %s (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: Append of expression line failed: %s (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -266,7 +281,7 @@ int ecmcPLCTask::addExprLine(const char *exprStr) {
     updateAsyn();
   }
   catch (const std::exception& e) {
-    LOGERR("%s/%s:%d: Append of expression line failed: %s (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: Append of expression line failed: %s (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -336,8 +351,8 @@ int ecmcPLCTask::validate() {
   int errorCode = compile();
 
   if (!compiled_ || errorCode) {
-    LOGERR(
-      "%s/%s:%d: Error: Validation of PLC object failed (index %d): Not compiled (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Validation of PLC object failed (index %d): Not compiled (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -357,8 +372,8 @@ int ecmcPLCTask::validate() {
       errorCode = globalArray_[i]->validate();
 
       if (errorCode) {
-        LOGERR(
-          "%s/%s:%d: Error: Validation of Global PLCDataIF  %s at index %d  failed (0x%x).\n",
+        ecmcRtLoggerLogError(
+          "%s/%s:%d: ERROR: Validation of Global PLCDataIF  %s at index %d  failed (0x%x).\n",
           __FILE__,
           __FUNCTION__,
           __LINE__,
@@ -368,8 +383,8 @@ int ecmcPLCTask::validate() {
         return errorCode;
       }
     } else {
-      LOGERR(
-        "%s/%s:%d: Error: Validation of Global PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Validation of Global PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -384,8 +399,8 @@ int ecmcPLCTask::validate() {
       errorCode = localArray_[i]->validate();
 
       if (errorCode) {
-        LOGERR(
-          "%s/%s:%d: Error: Validation of Global PLCDataIF  %s at index %d  failed (0x%x).\n",
+        ecmcRtLoggerLogError(
+          "%s/%s:%d: ERROR: Validation of Global PLCDataIF  %s at index %d  failed (0x%x).\n",
           __FILE__,
           __FUNCTION__,
           __LINE__,
@@ -395,8 +410,8 @@ int ecmcPLCTask::validate() {
         return errorCode;
       }
     } else {
-      LOGERR(
-        "%s/%s:%d: Error: Validation of Local PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Validation of Local PLCDataIF failed. PLCDataIf NULL (0x%x).\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -410,7 +425,7 @@ int ecmcPLCTask::validate() {
 
 int ecmcPLCTask::addAndReisterGlobalVar(ecmcPLCDataIF *dataIF) {
   if (!dataIF) {
-    LOGERR("%s/%s:%d: Data IF NULL  (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Data interface is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -425,7 +440,7 @@ int ecmcPLCTask::addAndReisterGlobalVar(ecmcPLCDataIF *dataIF) {
   if (!globalVarExist(dataIF->getVarName())) {
     if ((globalVariableCount_ >= ECMC_MAX_PLC_VARIABLES - 1) ||
         (globalVariableCount_ < 0)) {
-      LOGERR(
+      ecmcRtLoggerLogError(
         "%s/%s:%d: PLC global variable count excedded. Adding %s failed (0x%x).\n",
         __FILE__,
         __FUNCTION__,
@@ -440,7 +455,7 @@ int ecmcPLCTask::addAndReisterGlobalVar(ecmcPLCDataIF *dataIF) {
 
     if (exprtk_->addVariable(dataIF->getExprTkVarName(),
                              dataIF->getDataRef())) {
-      LOGERR("%s/%s:%d: Failed to add variable %s to exprtk  (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: Failed to add variable %s to exprtk  (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,
@@ -788,7 +803,7 @@ int ecmcPLCTask::loadEcLib() {
   ecmcPLCTaskAddFunction("ec_get_time_offset_mono", ec_get_time_offset_mono);
 
   if (ec_cmd_count != cmdCounter) {
-    LOGERR("%s/%s:%d: PLC Lib EC command count missmatch (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC Lib EC command count mismatch (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -879,7 +894,7 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_get_hw_ready",mc_get_hw_ready);
   
   if (mc_cmd_count != cmdCounter) {
-    LOGERR("%s/%s:%d: PLC Lib MC command count missmatch (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC Lib MC command count mismatch (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -915,7 +930,7 @@ int ecmcPLCTask::loadDsLib() {
 
 
   if (ds_cmd_count != cmdCounter) {
-    LOGERR("%s/%s:%d: PLC Lib DS command count missmatch (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC Lib DS command count mismatch (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -945,7 +960,7 @@ int ecmcPLCTask::loadMiscLib() {
   ecmcPLCTaskAddFunction("epics_get_state", epics_get_state);
   
   if (misc_cmd_count != cmdCounter) {
-    LOGERR("%s/%s:%d: PLC Lib DS command count missmatch (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC Lib DS command count mismatch (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -974,7 +989,7 @@ int ecmcPLCTask::readStaticPLCVar(const char *varName, double *data) {
   int errorCode         = findLocalVar(varName, &dataIF);
 
   if (errorCode || (dataIF == NULL)) {
-    LOGERR("%s/%s:%d: PLC static variable %s not found  (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC static variable %s not found  (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -991,7 +1006,7 @@ int ecmcPLCTask::writeStaticPLCVar(const char *varName, double data) {
   int errorCode         = findLocalVar(varName, &dataIF);
 
   if (errorCode || (dataIF == NULL)) {
-    LOGERR("%s/%s:%d: PLC static variable %s not found  (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: PLC static variable %s not found  (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1064,13 +1079,16 @@ int ecmcPLCTask::initAsyn(int plcIndex) {
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
       name);
-    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_MAIN_ASYN_CREATE_PARAM_FAIL);
   }
   paramTemp->setAllowWriteToEcmc(false);
   paramTemp->setArrayCheckSize(false);
@@ -1098,7 +1116,7 @@ int ecmcPLCTask::setPluginPointer(ecmcPluginLib *plugin, int index) {
 int ecmcPLCTask::addLib(ecmcPLCLib* lib) {
   int errorCode = 0;
   if(!lib) {
-    LOGERR("%s/%s:%d: PLC lib NULL(0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PLC library is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1113,7 +1131,7 @@ int ecmcPLCTask::addLib(ecmcPLCLib* lib) {
     functionLibs_.push_back(lib);
   }
   catch (const std::exception& e) {
-    LOGERR("%s/%s:%d: Append of PLC lib failed: %s (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: Append of PLC lib failed: %s (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1130,7 +1148,7 @@ int ecmcPLCTask::addLib(ecmcPLCLib* lib) {
     if(func) {
       errorCode = exprtk_->addCompositionFunction(func->getFuncionName(),func->getExpression(),func->getParams());
       if(errorCode) {
-        LOGERR("%s/%s:%d: Failed adding function: %s (0x%x).\n",
+        ecmcRtLoggerLogError("%s/%s:%d: Failed adding function: %s (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,

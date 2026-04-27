@@ -13,6 +13,7 @@
 #include <vector>
 #include <exception>
 #include "ecmcEcAsyncSDO.h"
+#include "ecmcRtLogger.h"
 
 
 /**
@@ -95,8 +96,8 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
     );
 
   if (sdoreq_ == NULL) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed creation of SDO async object.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed creation of SDO async object.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__);
@@ -107,8 +108,8 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
   ecrt_sdo_request_timeout(sdoreq_, DEFAULT_SDO_ASYNC_TIMOUT_MS);
 
   if (initAsyn() != 0) {
-    LOGERR(
-      "%s/%s:%d: Error: initAsyn() failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: initAsyn() failed.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__);
@@ -125,8 +126,8 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
                                         size_t        bytes,
                                         asynParamType asynParType) {
   if ((bytes != 4) || (asynParType != asynParamInt32)) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO read failed. Write cmd trigg data size or datatype missmatch.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO read failed. Write cmd trigger data size or datatype mismatch.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__);
@@ -145,8 +146,8 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
   writeTrigg_ = trigg;
 
   if (!sdoreq_) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO write failed. SDO async object NULL (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO write failed. SDO async object is NULL (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__, ERROR_EC_SDO_ASYNC_OBJ_NULL);
@@ -159,8 +160,8 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
   ec_request_state_t state = ecrt_sdo_request_state(sdoreq_);
 
   if (state == EC_REQUEST_BUSY) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO write failed. SDO object busy (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO write failed. SDO object is busy (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -187,8 +188,8 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
                                        size_t        bytes,
                                        asynParamType asynParType) {
   if ((bytes != 4) || (asynParType != asynParamInt32)) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO read failed. Read cmd trigg data size or datatype missmatch..\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO read failed. Read cmd trigger data size or datatype mismatch..\n",
       __FILE__,
       __FUNCTION__,
       __LINE__);
@@ -207,8 +208,8 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
   readTrigg_ = trigg;
 
   if (!sdoreq_) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO read failed. SDO async object NULL (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO read failed. SDO async object is NULL (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__, ERROR_EC_SDO_ASYNC_OBJ_NULL);
@@ -220,8 +221,8 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
   ec_request_state_t state = ecrt_sdo_request_state(sdoreq_);
 
   if (state == EC_REQUEST_BUSY) {
-    LOGERR(
-      "%s/%s:%d: Error: SDO read failed. SDO object busy (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: SDO read failed. SDO object is busy (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -294,8 +295,8 @@ int ecmcEcAsyncSDO::initAsyn() {
                                     idStringChar_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -314,7 +315,7 @@ int ecmcEcAsyncSDO::initAsyn() {
                                                       0);
 
   if (!asynParamValue_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -375,6 +376,13 @@ int ecmcEcAsyncSDO::initAsyn() {
     usedSizeBytes_ = 1;
     break;
 
+  case ECMC_EC_S8_TO_U8:
+    asynParamValue_->addSupportedAsynType(asynParamInt32);
+    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    usedSizeBytes_ = 1;
+    break;
+
   case ECMC_EC_U16:
     asynParamValue_->addSupportedAsynType(asynParamInt32);
     asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
@@ -383,6 +391,13 @@ int ecmcEcAsyncSDO::initAsyn() {
     break;
 
   case ECMC_EC_S16:
+    asynParamValue_->addSupportedAsynType(asynParamInt32);
+    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    usedSizeBytes_ = 2;
+    break;
+
+  case ECMC_EC_S16_TO_U16:
     asynParamValue_->addSupportedAsynType(asynParamInt32);
     asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
     asynParamValue_->addSupportedAsynType(asynParamFloat64);
@@ -403,6 +418,13 @@ int ecmcEcAsyncSDO::initAsyn() {
     usedSizeBytes_ = 4;
     break;
 
+  case ECMC_EC_S32_TO_U32:
+    asynParamValue_->addSupportedAsynType(asynParamInt32);
+    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    usedSizeBytes_ = 4;
+    break;
+
   case ECMC_EC_U64:
     asynParamValue_->addSupportedAsynType(asynParamInt32);
     asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
@@ -416,6 +438,18 @@ int ecmcEcAsyncSDO::initAsyn() {
     break;
 
   case ECMC_EC_S64:
+    asynParamValue_->addSupportedAsynType(asynParamInt32);
+    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+
+#ifdef ECMC_ASYN_ASYNPARAMINT64
+    asynParamValue_->addSupportedAsynType(asynParamInt64);
+#endif //ECMC_ASYN_ASYNPARAMINT64
+
+    usedSizeBytes_ = 8;
+    break;
+
+  case ECMC_EC_S64_TO_U64:
     asynParamValue_->addSupportedAsynType(asynParamInt32);
     asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
     asynParamValue_->addSupportedAsynType(asynParamFloat64);
@@ -455,8 +489,8 @@ int ecmcEcAsyncSDO::initAsyn() {
                        idStringChar_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -475,7 +509,7 @@ int ecmcEcAsyncSDO::initAsyn() {
                                                       0);
 
   if (!asynParamError_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -497,8 +531,8 @@ int ecmcEcAsyncSDO::initAsyn() {
                        idStringChar_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -519,7 +553,7 @@ int ecmcEcAsyncSDO::initAsyn() {
                                                      0);
 
   if (!asynParamRead_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -543,8 +577,8 @@ int ecmcEcAsyncSDO::initAsyn() {
                        idStringChar_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -564,7 +598,7 @@ int ecmcEcAsyncSDO::initAsyn() {
                                                       0);
 
   if (!asynParamWrite_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -588,8 +622,8 @@ int ecmcEcAsyncSDO::initAsyn() {
                        idStringChar_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -608,7 +642,7 @@ int ecmcEcAsyncSDO::initAsyn() {
                                                      0);
 
   if (!asynParamBusy_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed.\n",
       __FILE__,
       __FUNCTION__,
@@ -657,6 +691,10 @@ int ecmcEcAsyncSDO::readValue() {
     *int8Ptr_ = EC_READ_S8(ecrt_sdo_request_data(sdoreq_));
     break;
 
+  case ECMC_EC_S8_TO_U8:
+    *uint8Ptr_ = static_cast<uint8_t>(EC_READ_S8(ecrt_sdo_request_data(sdoreq_)));
+    break;
+
   case ECMC_EC_U16:
     *uint16Ptr_ = EC_READ_U16(ecrt_sdo_request_data(sdoreq_));
     break;
@@ -665,12 +703,20 @@ int ecmcEcAsyncSDO::readValue() {
     *int16Ptr_ = EC_READ_S16(ecrt_sdo_request_data(sdoreq_));
     break;
 
+  case ECMC_EC_S16_TO_U16:
+    *uint16Ptr_ = static_cast<uint16_t>(EC_READ_S16(ecrt_sdo_request_data(sdoreq_)));
+    break;
+
   case ECMC_EC_U32:
     *uint32Ptr_ = EC_READ_U32(ecrt_sdo_request_data(sdoreq_));
     break;
 
   case ECMC_EC_S32:
     *int32Ptr_ = EC_READ_S32(ecrt_sdo_request_data(sdoreq_));
+    break;
+
+  case ECMC_EC_S32_TO_U32:
+    *uint32Ptr_ = static_cast<uint32_t>(EC_READ_S32(ecrt_sdo_request_data(sdoreq_)));
     break;
 
 #ifdef EC_READ_U64
@@ -682,6 +728,10 @@ int ecmcEcAsyncSDO::readValue() {
 #ifdef EC_READ_S64
   case ECMC_EC_S64:
     *int64Ptr_ = EC_READ_S64(ecrt_sdo_request_data(sdoreq_));
+    break;
+
+  case ECMC_EC_S64_TO_U64:
+    *uint64Ptr_ = static_cast<uint64_t>(EC_READ_S64(ecrt_sdo_request_data(sdoreq_)));
     break;
 #endif // ifdef EC_READ_S64
 
@@ -735,6 +785,10 @@ int ecmcEcAsyncSDO::writeValue() {
     EC_WRITE_S8(ecrt_sdo_request_data(sdoreq_), *int8Ptr_);
     break;
 
+  case ECMC_EC_S8_TO_U8:
+    EC_WRITE_S8(ecrt_sdo_request_data(sdoreq_), static_cast<int8_t>(*uint8Ptr_));
+    break;
+
   case ECMC_EC_U16:
     EC_WRITE_U16(ecrt_sdo_request_data(sdoreq_), *uint16Ptr_);
     break;
@@ -743,12 +797,20 @@ int ecmcEcAsyncSDO::writeValue() {
     EC_WRITE_S16(ecrt_sdo_request_data(sdoreq_), *int16Ptr_);
     break;
 
+  case ECMC_EC_S16_TO_U16:
+    EC_WRITE_S16(ecrt_sdo_request_data(sdoreq_), static_cast<int16_t>(*uint16Ptr_));
+    break;
+
   case ECMC_EC_U32:
     EC_WRITE_U32(ecrt_sdo_request_data(sdoreq_), *uint32Ptr_);
     break;
 
   case ECMC_EC_S32:
     EC_WRITE_S32(ecrt_sdo_request_data(sdoreq_), *int32Ptr_);
+    break;
+
+  case ECMC_EC_S32_TO_U32:
+    EC_WRITE_S32(ecrt_sdo_request_data(sdoreq_), static_cast<int32_t>(*uint32Ptr_));
     break;
 
 #ifdef EC_WRITE_U64
@@ -760,6 +822,10 @@ int ecmcEcAsyncSDO::writeValue() {
 #ifdef EC_WRITE_S64
   case ECMC_EC_S64:
     EC_WRITE_S64(ecrt_sdo_request_data(sdoreq_), *int64Ptr_);
+    break;
+
+  case ECMC_EC_S64_TO_U64:
+    EC_WRITE_S64(ecrt_sdo_request_data(sdoreq_), static_cast<int64_t>(*uint64Ptr_));
     break;
 #endif // ifdef EC_WRITE_S64
 

@@ -12,12 +12,107 @@
 
 #include "ecmcAxisSequencer.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogInfo(...) \
+  ECMC_RT_LOG_AXIS_SEQ_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogError(...) \
+  ECMC_RT_LOG_AXIS_SEQ_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogWarning(...) \
+  ECMC_RT_LOG_AXIS_SEQ_WARNING((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
+#define ecmcRtLoggerLogDebug(...) \
+  ECMC_RT_LOG_AXIS_SEQ_DEBUG((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
 
 ecmcAxisSequencer::ecmcAxisSequencer() {
   initVars();
 }
 
 ecmcAxisSequencer::~ecmcAxisSequencer() {}
+
+int ecmcAxisSequencer::setErrorID(int errorID) {
+  if (errorID &&
+      data_ &&
+      data_->status_.statusWord_.inrealtime &&
+      ecmcRtLoggerIsEnabled() &&
+      (errorID != ecmcError::getErrorID())) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: %s (0x%x).\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         data_->status_.axisId,
+                         ecmcError::convertErrorIdToString(errorID),
+                         errorID);
+  }
+
+  return ecmcError::setErrorID(errorID);
+}
+
+int ecmcAxisSequencer::setErrorID(int               errorID,
+                                  ecmcAlarmSeverity severity) {
+  if (errorID &&
+      data_ &&
+      data_->status_.statusWord_.inrealtime &&
+      ecmcRtLoggerIsEnabled() &&
+      (errorID != ecmcError::getErrorID())) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: %s (0x%x).\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         data_->status_.axisId,
+                         ecmcError::convertErrorIdToString(errorID),
+                         errorID);
+    return ecmcError::setErrorID(errorID, severity);
+  }
+
+  return ecmcError::setErrorID(errorID, severity);
+}
+
+int ecmcAxisSequencer::setErrorID(const char *fileName,
+                                  const char *functionName,
+                                  int         lineNumber,
+                                  int         errorID) {
+  if (errorID &&
+      data_ &&
+      data_->status_.statusWord_.inrealtime &&
+      ecmcRtLoggerIsEnabled() &&
+      (errorID != ecmcError::getErrorID())) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: %s (0x%x).\n",
+                         fileName,
+                         functionName,
+                         lineNumber,
+                         ecmcError::convertErrorIdToString(errorID),
+                         errorID);
+    return ecmcError::setErrorID(errorID);
+  }
+
+  return ecmcError::setErrorID(fileName, functionName, lineNumber, errorID);
+}
+
+int ecmcAxisSequencer::setErrorID(const char       *fileName,
+                                  const char       *functionName,
+                                  int               lineNumber,
+                                  int               errorID,
+                                  ecmcAlarmSeverity severity) {
+  if (errorID &&
+      data_ &&
+      data_->status_.statusWord_.inrealtime &&
+      ecmcRtLoggerIsEnabled() &&
+      (errorID != ecmcError::getErrorID())) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: %s (0x%x).\n",
+                         fileName,
+                         functionName,
+                         lineNumber,
+                         ecmcError::convertErrorIdToString(errorID),
+                         errorID);
+    return ecmcError::setErrorID(errorID, severity);
+  }
+
+  return ecmcError::setErrorID(fileName,
+                               functionName,
+                               lineNumber,
+                               errorID,
+                               severity);
+}
 
 void ecmcAxisSequencer::initVars() {
   homeSensorOld_         = false;
@@ -357,6 +452,19 @@ void ecmcAxisSequencer::executeInternal() {
     setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_SEQ_CMD_UNDEFINED);
     break;
   }
+
+  if ((status.command == ECMC_CMD_HOMING) &&
+      (seqStateOld_ != seqState_) &&
+      data_->status_.statusWord_.inrealtime &&
+      ecmcRtLoggerIsEnabled()) {
+    ecmcRtLoggerLogInfo("%s/%s:%d: INFO: Axis[%d]: Homing sequence state=%d, cmdData=%d.\n",
+                        __FILE__,
+                        __FUNCTION__,
+                        __LINE__,
+                        status.axisId,
+                        seqState_,
+                        status.cmdData);
+  }
 }
 
 int ecmcAxisSequencer::setExecute(bool execute) {
@@ -366,10 +474,13 @@ int ecmcAxisSequencer::setExecute(bool execute) {
   const bool dbgPrint = control.controlWord_.enableDbgPrintout;
 
   if (dbgPrint) {
-    printf("INFO: Axis[%d]: seq::setExetute execute = %d, old %d\n",
-           status.axisId,
-           execute,
-           executeOld_);
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): execute=%d, old=%d.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         status.axisId,
+                         execute,
+                         executeOld_);
   }
   int errorCode = 0;
   int modeSet   = 0;
@@ -411,8 +522,11 @@ int ecmcAxisSequencer::setExecute(bool execute) {
 
   case ECMC_CMD_MOVEVEL:
     if (dbgPrint) {
-      printf("INFO: Axis[%d]: ecmcAxisSequencer::setExecute(): ECMC_CMD_MOVEVEL\n",
-             status.axisId);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): command=MOVE_VEL.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           status.axisId);
     }
 
     if (execRisingEdge) {
@@ -448,9 +562,12 @@ int ecmcAxisSequencer::setExecute(bool execute) {
 
   case ECMC_CMD_MOVEREL:
     if (dbgPrint) {
-      printf("INFO: Axis[%d]: ecmcAxisSequencer::setExecute(): ECMC_CMD_MOVEREL to %lf\n",
-             status.axisId,
-             status.currentTargetPosition);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): command=MOVE_REL, target=%lf.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           status.axisId,
+                           status.currentTargetPosition);
     }
     if (execRisingEdge) {
       if (!enablePos_) {
@@ -485,9 +602,12 @@ int ecmcAxisSequencer::setExecute(bool execute) {
 
   case ECMC_CMD_MOVEABS:
     if (dbgPrint) {
-      printf("INFO: Axis[%d]: ecmcAxisSequencer::setExecute(): ECMC_CMD_MOVEABS to %lf\n",
-             status.axisId,
-             status.currentTargetPosition);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): command=MOVE_ABS, target=%lf.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           status.axisId,
+                           status.currentTargetPosition);
     }
     if (execRisingEdge) {
       if (!enablePos_) {
@@ -548,9 +668,12 @@ int ecmcAxisSequencer::setExecute(bool execute) {
   // PVT is only abs here (relative is handled by the PVt controller)
   case ECMC_CMD_MOVEPVTABS:
     if (dbgPrint) {
-      printf("INFO: Axis[%d]: ecmcAxisSequencer::setExecute(): ECMC_CMD_MOVEPVTABS execute %d\n",
-             status.axisId,
-             statusWord.execute);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): command=MOVE_PVT_ABS, execute=%d.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           status.axisId,
+                           statusWord.execute);
     }
     if (execRisingEdge) {
       errorCode = validatePVT();
@@ -577,8 +700,13 @@ int ecmcAxisSequencer::setExecute(bool execute) {
 
   case ECMC_CMD_HOMING:
     if (dbgPrint) {
-      printf("INFO: Axis[%d]: ecmcAxisSequencer::setExecute(): ECMC_CMD_HOMING execute %d, proc %d\n",
-              status.axisId, statusWord.execute, status.cmdData);
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setExecute(): command=HOMING, execute=%d, cmdData=%d.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           status.axisId,
+                           statusWord.execute,
+                           status.cmdData);
     }
 
     // set mode to homing
@@ -779,9 +907,12 @@ void ecmcAxisSequencer::setTargetPos(double pos) {
     traj_->setTargetPos(status.currentTargetPosition);
   }
   if (control.controlWord_.enableDbgPrintout) {
-    printf("INFO: Axis[%d]: ecmcAxisSequencer::setTargetPos(%lf)\n",
-           status.axisId,
-           pos);
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setTargetPos(): target=%lf.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         status.axisId,
+                         pos);
   }
 }
 
@@ -823,9 +954,12 @@ void ecmcAxisSequencer::setTargetVel(double velTarget) {
     traj_->setTargetVel(velTarget);
   }
   if (control.controlWord_.enableDbgPrintout) {
-    printf("INFO: Axis[%d]: ecmcAxisSequencer::setTargetVel(%lf)\n",
-           status.axisId,
-           velTarget);
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setTargetVel(): velocity=%lf.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         status.axisId,
+                         velTarget);
   }
 }
 
@@ -898,7 +1032,6 @@ double ecmcAxisSequencer::checkSoftLimits(double posSetpoint) {
   // soft limit FWD
   if ((posSetpoint > data_->control_.softLimitFwd) &&
       data_->control_.controlWord_.enableSoftLimitFwd && (dSet > dAct)) {
-    dSet = dAct;
     setWarningID(WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION);
     warningId = WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION;
   } else if (warningId == WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION) {
@@ -909,7 +1042,6 @@ double ecmcAxisSequencer::checkSoftLimits(double posSetpoint) {
   // soft limit BWD
   if ((posSetpoint < data_->control_.softLimitBwd) &&
       data_->control_.controlWord_.enableSoftLimitBwd && (dSet < dAct)) {
-    dSet = dAct;
     setWarningID(WARNING_SEQ_SETPOINT_SOFTLIM_BWD_VILOATION);
   } else if (warningId == WARNING_SEQ_SETPOINT_SOFTLIM_BWD_VILOATION) {
     setWarningID(0);
@@ -940,7 +1072,7 @@ int ecmcAxisSequencer::seqHoming15() {  // nCmdData==15
       cntrl_->reset();
     }
 
-    // trigg post home motion if enabled and not alreday triggered
+    // trigg post home motion if enabled and not already triggered
     if (homeEnablePostMove_) {
       if (seqState_ < 1000) {
         seqState_ = 1000;
@@ -1248,12 +1380,6 @@ int ecmcAxisSequencer::seqHoming3() {  // nCmdData==3
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1367,12 +1493,6 @@ int ecmcAxisSequencer::seqHoming4() {  // nCmdData==4
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1491,12 +1611,6 @@ int ecmcAxisSequencer::seqHoming5() {  // nCmdData==5
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1515,12 +1629,6 @@ int ecmcAxisSequencer::seqHoming5() {  // nCmdData==5
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find second flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_SECOND_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1675,12 +1783,6 @@ int ecmcAxisSequencer::seqHoming6() {  // nCmdData==6
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1699,12 +1801,6 @@ int ecmcAxisSequencer::seqHoming6() {  // nCmdData==6
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find second flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_SECOND_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -1979,12 +2075,6 @@ int ecmcAxisSequencer::seqHoming9() {  // nCmdData==9
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2003,12 +2093,6 @@ int ecmcAxisSequencer::seqHoming9() {  // nCmdData==9
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find second flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_SECOND_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2127,12 +2211,6 @@ int ecmcAxisSequencer::seqHoming10() {  // nCmdData==10
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2151,12 +2229,6 @@ int ecmcAxisSequencer::seqHoming10() {  // nCmdData==10
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find second flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_SECOND_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2248,13 +2320,6 @@ int ecmcAxisSequencer::seqHoming11() {  // nCmdData==11
   }
 
   if (homeLatchCountOffset_ <= 0) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Latch count out of range (%d). Allowed: value>0 (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      homeLatchCountOffset_,
-      ERROR_SEQ_LATCH_COUNT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2330,12 +2395,6 @@ int ecmcAxisSequencer::seqHoming11() {  // nCmdData==11
     retValue = checkHWLimitsAndStop(0, 1);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2375,8 +2434,17 @@ int ecmcAxisSequencer::seqHoming11() {  // nCmdData==11
         double currPos =
           getPrimEnc()->getActPos() -
           homePosLatch1_ + homePosition_;
-        printf("currPos %lf = getPrimEnc()->getActPos() %lf - homePosLatch1_ %lf + homePosition_ %lf\n",
-        currPos,getPrimEnc()->getActPos(),homePosLatch1_, homePosition_);
+        if(data_->control_.controlWord_.enableDbgPrintout) {
+          ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Homing position calculated: current=%lf, encoder=%lf, latch=%lf, home=%lf.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               data_->status_.axisId,
+                               currPos,
+                               getPrimEnc()->getActPos(),
+                               homePosLatch1_,
+                               homePosition_);
+        }
         finalizeHomingSeq(currPos);
       }
     }
@@ -2407,13 +2475,6 @@ int ecmcAxisSequencer::seqHoming12() {  // nCmdData==12
   }
 
   if (homeLatchCountOffset_ <= 0) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Latch count out of range (%d). Allowed: value>0 (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      homeLatchCountOffset_,
-      ERROR_SEQ_LATCH_COUNT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2491,12 +2552,6 @@ int ecmcAxisSequencer::seqHoming12() {  // nCmdData==12
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2537,8 +2592,17 @@ int ecmcAxisSequencer::seqHoming12() {  // nCmdData==12
           getPrimEnc()->getActPos() -
           homePosLatch1_ + homePosition_;
         finalizeHomingSeq(currPos);
-        printf("currPos %lf = getPrimEnc()->getActPos() %lf - homePosLatch1_ %lf + homePosition_ %lf\n",
-        currPos,getPrimEnc()->getActPos(),homePosLatch1_, homePosition_);
+        if(data_->control_.controlWord_.enableDbgPrintout) {
+          ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Homing position calculated: current=%lf, encoder=%lf, latch=%lf, home=%lf.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               data_->status_.axisId,
+                               currPos,
+                               getPrimEnc()->getActPos(),
+                               homePosLatch1_,
+                               homePosition_);
+        }
       }
     }
     break;
@@ -2571,15 +2635,6 @@ int ecmcAxisSequencer::seqHoming21() {  // nCmdData==21 Resolver homing (keep ab
   const int bits = primEnc->getBits();
   if ((absBits < ECMC_ENCODER_ABS_BIT_MIN) ||
       (absBits > bits)) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Encoder absolute bit count out of range (%d). Allowed range: %d:%d. (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      absBits,
-      absBits,
-      bits,
-      ERROR_SEQ_ERROR_ABS_BIT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2587,13 +2642,6 @@ int ecmcAxisSequencer::seqHoming21() {  // nCmdData==21 Resolver homing (keep ab
   }
 
   if (homeLatchCountOffset_ <= 0) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Latch count out of range (%d). Allowed: value>0 (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      homeLatchCountOffset_,
-      ERROR_SEQ_LATCH_COUNT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2732,15 +2780,6 @@ int ecmcAxisSequencer::seqHoming22() {  // nCmdData==22 Resolver homing (keep ab
   const int bits = primEnc->getBits();
   if ((absBits < ECMC_ENCODER_ABS_BIT_MIN) ||
       (absBits > bits)) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Encoder absolute bit count out of range (%d). Allowed range: %d:%d. (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      absBits,
-      absBits,
-      bits,
-      ERROR_SEQ_ERROR_ABS_BIT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2748,13 +2787,6 @@ int ecmcAxisSequencer::seqHoming22() {  // nCmdData==22 Resolver homing (keep ab
   }
 
   if (homeLatchCountOffset_ <= 0) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Sequence aborted. Latch count out of range (%d). Allowed: value>0 (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      homeLatchCountOffset_,
-      ERROR_SEQ_LATCH_COUNT_OUT_OF_RANGE);
     return setErrorID(__FILE__,
                       __FUNCTION__,
                       __LINE__,
@@ -2840,12 +2872,6 @@ int ecmcAxisSequencer::seqHoming22() {  // nCmdData==22 Resolver homing (keep ab
     retValue = checkHWLimitsAndStop(1, 0);
 
     if (retValue) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Failed to find first flank on home sensor before limit switch (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_NO_HOME_SWITCH_FLANK);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2894,12 +2920,6 @@ int ecmcAxisSequencer::seqHoming26() {
     }
 
     if (!primEnc->getHomeExtTriggEnabled()) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Homing sequence not supported by encoder (hw links not set) (0x%x).\n",
-        __FILE__,
-        __FUNCTION__,
-        __LINE__,
-        ERROR_SEQ_HOME_SEQ_NOT_SUPPORTED);
       return setErrorID(__FILE__,
                         __FUNCTION__,
                         __LINE__,
@@ -2971,11 +2991,6 @@ int ecmcAxisSequencer::postHomeMove() {
 
     if (!traj_->getBusy()) {
       if (traj_->getCurrentPosSet() != homePostMoveTargetPos_) {
-        LOGERR("%s/%s:%d: ERROR: Post home move failed (0x%x).\n",
-               __FILE__,
-               __FUNCTION__,
-               __LINE__,
-               ERROR_SEQ_HOME_POST_MOVE_FAILED);
         setErrorID(__FILE__,
                    __FUNCTION__,
                    __LINE__,
@@ -2993,51 +3008,30 @@ int ecmcAxisSequencer::postHomeMove() {
 int ecmcAxisSequencer::checkHWLimitsAndStop(bool checkBWD, bool checkFWD) {
   if (traj_ == NULL) {
     stopSeq();
-    LOGERR("%s/%s:%d: ERROR: Trajectory object NULL (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ERROR_SEQ_TRAJ_NULL);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_SEQ_TRAJ_NULL);
   }
 
   if (mon_ == NULL) {
     stopSeq();
-    LOGERR("%s/%s:%d: ERROR: Monitor object NULL (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ERROR_SEQ_MON_NULL);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_SEQ_MON_NULL);
   }
 
   const auto &status = data_->status_;
-  const int cmdData = data_->control_.cmdData;
 
   if (checkFWD && !status.limitFwdFiltered) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Unexpected activation of forward limit switch in homing state %d of sequence %d (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      seqState_,
-      cmdData,
-      ERROR_SEQ_SEQ_FAILED);
     stopSeq();
-    return ERROR_SEQ_SEQ_FAILED;
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_SEQ_SEQ_FAILED);
   }
 
   if (checkBWD && !status.limitBwdFiltered) {
-    LOGERR(
-      "%s/%s:%d: ERROR: Unexpected activation of backward limit switch in homing state %d of sequence %d (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      seqState_,
-      cmdData,
-      ERROR_SEQ_SEQ_FAILED);
     stopSeq();
-    return ERROR_SEQ_SEQ_FAILED;
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_SEQ_SEQ_FAILED);
   }
   return 0;
 }
@@ -3073,6 +3067,25 @@ int ecmcAxisSequencer::stopSeq() {
 }
 
 int ecmcAxisSequencer::validate() {
+  auto * const primEnc = getPrimEnc();
+  if (primEnc && primEnc->actPosEntryUsesFloatingPoint()) {
+    const int homeSeqId = primEnc->getHomeSeqId();
+    if (homeSeqId == ECMC_SEQ_HOME_LOW_LIM_SINGLE_TURN_ABS ||
+        homeSeqId == ECMC_SEQ_HOME_HIGH_LIM_SINGLE_TURN_ABS) {
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Axis[%d]: Homing sequence %d requires integer absolute encoder bits and is not supported for floating-point encoder entries (0x%x).\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        data_ ? data_->status_.axisId : -1,
+        homeSeqId,
+        ERROR_SEQ_HOME_SEQ_NOT_SUPPORTED);
+      return setErrorID(__FILE__,
+                        __FUNCTION__,
+                        __LINE__,
+                        ERROR_SEQ_HOME_SEQ_NOT_SUPPORTED);
+    }
+  }
   return 0;
 }
 
@@ -3168,7 +3181,13 @@ void ecmcAxisSequencer::finalizeHomingSeq(double newPosition) {
     // Ref all encoders that are configured to be homed. Always ref primary encoder.
     if (encArray_[i]->getRefAtHoming() || i == data_->control_.primaryEncIndex ) {
       if(data_->control_.controlWord_.enableDbgPrintout) {
-        printf("INFO: Axis [%d]: Setting new position to encoder[%d]: %lf\n",data_->status_.axisId,i,newPosition);
+        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Setting encoder[%d] position to %lf.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__,
+                             data_->status_.axisId,
+                             i,
+                             newPosition);
       }
       encArray_[i]->setActPos(newPosition);
       encArray_[i]->setHomed(true);
@@ -3232,7 +3251,7 @@ void ecmcAxisSequencer::setNewPositionCtrlDrvTrajBumpless(double newPosition) {
 
   if (drv_) {
     drv_->setCspRef(
-      getCSPEnc()->getRawPosRegister(),
+      getCSPEnc()->getRawPosRegisterDouble(),
       newPosition,
       newPosition);
   }
@@ -3250,8 +3269,8 @@ void ecmcAxisSequencer::readHomingParamsFromEnc() {
 
   // Check if encoder has parameters then overwrite existing parameters if any
   if (!primEnc->getHomeParamsValid()) {
-    LOGERR(
-      "%s/%s:%d: WARNING: No valid homing info stored for encoder, falling back to axis params.\n",
+    ecmcRtLoggerLogWarning(
+      "%s/%s:%d: WARNING: No valid homing info stored for encoder; falling back to axis parameters.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__);
@@ -3490,8 +3509,8 @@ bool ecmcAxisSequencer::autoModeSetHoming() {
 int ecmcAxisSequencer::setPVTObject(ecmcAxisPVTSequence* pvt) {
   if(pvt_) {
     if(pvt_->getBusy()) {
-      LOGERR(
-        "%s/%s:%d: ERROR: Current PVT object busy (0x%x).\n",
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Current PVT object is busy (0x%x).\n",
         __FILE__,
         __FUNCTION__,
         __LINE__,
@@ -3505,7 +3524,11 @@ int ecmcAxisSequencer::setPVTObject(ecmcAxisPVTSequence* pvt) {
   pvt_->setAxisDataRef(data_);
 
   if(data_->control_.controlWord_.enableDbgPrintout) {
-    printf("INFO: Axis [%d]: ecmcAxisSequencer::setPVTObject(pvt): PVT object assigned\n", data_->status_.axisId);
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: setPVTObject(): PVT object assigned.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         data_->status_.axisId);
   }
   return 0;
 }
@@ -3513,8 +3536,8 @@ int ecmcAxisSequencer::setPVTObject(ecmcAxisPVTSequence* pvt) {
 int ecmcAxisSequencer::validatePVT() {
   pvtOk_ = false;
   if(!pvt_) {
-    LOGERR(
-      "%s/%s:%d: ERROR: PVT object not assigned (PVT == NULL) (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: PVT object is not assigned (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -3535,7 +3558,11 @@ int ecmcAxisSequencer::validatePVT() {
 
 void ecmcAxisSequencer::initStop() {
   if(data_->control_.controlWord_.enableDbgPrintout) {
-    printf("INFO: Axis [%d]: ecmcAxisSequencer::initStop(): Initiating new stopramp...\n", data_->status_.axisId);
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: initStop(): initiating new stop ramp.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         data_->status_.axisId);
   }
   
   // Inititaion of stop is made in setTrajDataSourceTypeInternal()
@@ -3543,7 +3570,13 @@ void ecmcAxisSequencer::initStop() {
   
   if(pvtmode_ && !pvtStopping_) {
     data_->status_.command = ECMC_CMD_MOVEABS;
-    printf("INFO: Axis [%d]: ecmcAxisSequencer::initStop(): PVT stopping...\n", data_->status_.axisId);
+    if(data_->control_.controlWord_.enableDbgPrintout) {
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: initStop(): PVT stopping.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           data_->status_.axisId);
+    }
     pvtStopping_ = true;  // Latch stop if in PVT
     pvt_->setExecute(0);  // stop PVT
   }

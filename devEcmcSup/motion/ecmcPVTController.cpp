@@ -11,6 +11,10 @@
 \*************************************************************************/
 
 #include "ecmcPVTController.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogDebug(...) \
+  ECMC_RT_LOG_AXIS_PVT_DEBUG(-1, __VA_ARGS__)
 
 namespace {
 const char* pvtStateToString(ecmcPVTSMType state) {
@@ -68,7 +72,10 @@ ecmcPVTController::ecmcPVTController(ecmcAsynPortDriver *asynPortDriver,
   axesBusyState_       = false;
   axesBusyStateValid_  = false;
   softTrigger_         = 0;
-  initAsyn();
+  int errorCode        = initAsyn();
+  if (errorCode) {
+    setErrorID(errorCode);
+  }
 }
 
 ecmcPVTController::~ecmcPVTController() {
@@ -79,9 +86,17 @@ void ecmcPVTController::addAxis(ecmcAxisBase* axis) {
   pvtObjs_.push_back(axis ? axis->getPVTObject() : NULL);
   axesBusyStateValid_ = false;
   if(axis) {
-    LOGINFO4("ecmcPVTController::addAxis(%d)\n", axis->getAxisID());
+    ECMC_RT_LOG_AXIS_PVT_DEBUG(axis->getAxisID(),
+                               "%s/%s:%d: DEBUG: PVT controller: axis[%d] added.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               axis->getAxisID());
   } else {
-    LOGINFO4("ecmcPVTController::addAxis(NaN)\n");
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller: NULL axis reference added.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__);
   }
 }
 
@@ -148,14 +163,23 @@ void ecmcPVTController::execute() {
     case ECMC_PVT_ENABLE_AXES:      
       if(setEnable(1) < 0) {
         state_ = ECMC_PVT_ERROR;
-        LOGERR("ecmcPVTController::execute(): Error: Enabling axes failed\n");
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller execute failed: enabling axes failed.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__);
       }
       enabledState = checkEnabledState(1);
       if(enabledState < 0) {
         state_ = ECMC_PVT_ERROR;
-        LOGERR("ecmcPVTController::execute(): Error: Enabling axes failed\n");
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller execute failed: enabled-state check failed.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__);
       } else if(enabledState == 1) {
-        LOGINFO12("ecmcPVTController::execute(): All axes enabled.\n");
+        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller: all axes enabled.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__);
         state_ = ECMC_PVT_TRIGG_MOVE_AXES_TO_START;
       }
       break;
@@ -166,7 +190,10 @@ void ecmcPVTController::execute() {
       if(error) {
         setErrorID(error);
         state_ = ECMC_PVT_ERROR;
-        LOGERR("ecmcPVTController::execute(): Error: Axis in error state when trigger move to start position\n");
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller execute failed: axis error while triggering move to start position.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__);
         break;
       }
       setAxesBusy(true);
@@ -184,7 +211,10 @@ void ecmcPVTController::execute() {
       if(axesAtStartPosition < 0) {
         setErrorID(-axesAtStartPosition);
         state_ = ECMC_PVT_ERROR;
-        LOGERR("ecmcPVTController::execute(): Error: Axis in error state when moving to start position\n");
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller execute failed: axis error while moving to start position.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__);
       }
       if(axesAtStartPosition > 0 ) {
         state_ = ECMC_PVT_TRIGG_PVT;
@@ -198,7 +228,10 @@ void ecmcPVTController::execute() {
         // get end time from first axis
         auto * const firstPvt = pvtObjs_[0];
         endTime_ = firstPvt->endTime();
-        //printf("ecmcPVTController: All axes in position, trigger PVT sequence\n");
+        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller: all axes in position, triggering PVT sequence.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__);
       }
       break;
 
@@ -207,10 +240,16 @@ void ecmcPVTController::execute() {
       if(error){
         setErrorID(error);
         state_ = ECMC_PVT_ERROR;
-        LOGERR("ecmcPVTController::execute(): Error: Triggering of PVT objects failed\n");
+        ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller execute failed: triggering PVT objects failed.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__);
         break;
       }
-      //printf("ecmcPVTController: Executing PVT sequence\n");
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller: executing PVT sequence.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__);
       state_ = ECMC_PVT_EXECUTE_PVT;      
       triggerCurrentId_ = 0;
       softTrigger_ = 0;
@@ -279,9 +318,12 @@ void ecmcPVTController::execute() {
   }
       
   if(state_!=stateOld_) {
-    LOGINFO12("PVT state changed to: %s, old state %s\n",
-              pvtStateToString(state_),
-              pvtStateToString(stateOld_));
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller state changed: %s -> %s.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         pvtStateToString(stateOld_),
+                         pvtStateToString(state_));
   }
   stateOld_=state_;
 
@@ -323,10 +365,14 @@ void ecmcPVTController::execute() {
         auto * const pvt = pvtObjs_[i];
         pvt->setTrgDAQ();
         // Compensate with one sampleTime since this is "next time"
-        LOGINFO12("axis[%d]: DAQ trigger %zu at time %lf\n",
-                  axis->getAxisID(),
-                  triggerCurrentId_ + 1,
-                  nextTime_ - sampleTime_);
+        ECMC_RT_LOG_AXIS_PVT_DEBUG(axis->getAxisID(),
+                                   "%s/%s:%d: DEBUG: Axis[%d]: PVT DAQ trigger %zu at time %lf.\n",
+                                   __FILE__,
+                                   __FUNCTION__,
+                                   __LINE__,
+                                   axis->getAxisID(),
+                                   triggerCurrentId_ + 1,
+                                   nextTime_ - sampleTime_);
       }
     }
     newTrg_ = false;
@@ -356,8 +402,15 @@ int ecmcPVTController::triggMoveAxesToStart() {
     } else {    
       pvt->setPositionOffset(0);
     }
-//    printf("ecmcPVTController::triggMoveAxesToStart(): Execute moveAbsolutePosition\n");
-//    printf("ecmcPVTController::triggMoveAxesToStart(): localBusy %d, global %d\n", axes_[i]->getLocalBusy(),axes_[i]->getGlobalBusy());
+    ECMC_RT_LOG_AXIS_PVT_DEBUG(axes_[i]->getAxisID(),
+                               "%s/%s:%d: DEBUG: PVT controller axis[%d]: execute moveAbsolutePosition to start=%lf (localBusy=%d, globalBusy=%d).\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               axes_[i]->getAxisID(),
+                               startPositions_[i],
+                               axes_[i]->getLocalBusy(),
+                               axes_[i]->getGlobalBusy());
     error = axis->moveAbsolutePosition(startPosition);
     if(error) {
       return error;
@@ -389,7 +442,14 @@ int ecmcPVTController::axesAtStart() {
       }
     }
     //if(axes_[i]->getCurrentPositionSetpoint() != startPositions_[i]) {
-    //  printf("ecmcPVTController:: target set %lf, actual set %lf\n",axes_[i]->getCurrentPositionSetpoint(), startPositions_[i]);
+    ECMC_RT_LOG_AXIS_PVT_DEBUG(axes_[i]->getAxisID(),
+                               "%s/%s:%d: DEBUG: PVT controller axis[%d]: target setpoint=%lf, requested start=%lf.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               axes_[i]->getAxisID(),
+                               axes_[i]->getCurrentPositionSetpoint(),
+                               startPositions_[i]);
     //  return 0;
     //}
   }
@@ -427,7 +487,10 @@ void ecmcPVTController::errorReset() {
 
 int ecmcPVTController::validate() {
   if(axes_.size()== 0) {
-    LOGERR("ecmcPVTController::validate(): Error axis count zero\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT validation failed: axis count is zero.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return setErrorID(ERROR_PVT_CTRL_AXIS_COUNT_ZERO);
   }
 
@@ -450,12 +513,18 @@ int ecmcPVTController::validateAxisBindings() {
   const size_t axisCount = axes_.size();
   for (size_t i = 0; i < axisCount; i++) {
     if (!axes_[i]) {
-      LOGERR("ecmcPVTController::validateAxisBindings(): Error axis pointer NULL at index %zu\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT validation failed: axis pointer is NULL at index %zu.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
              i);
       return ERROR_PVT_CTRL_AXIS_NULL;
     }
     if (!pvtObjs_[i]) {
-      LOGERR("ecmcPVTController::validateAxisBindings(): Error PVT object NULL for axis %d\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: PVT validation failed: PVT object is NULL.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
              axes_[i]->getAxisID());
       return ERROR_PVT_CTRL_PVT_NULL;
     }
@@ -529,7 +598,10 @@ int ecmcPVTController::setEcEntry(ecmcEcEntry *entry,int entryIndex, int bitInde
   }
   triggerEcEntryIndex_ = entryIndex;
   triggerDefined_ = 1;
-  LOGINFO4("ecmcPVTController::setEcEntry(): Trigger defined.\n");
+  ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller trigger defined.\n",
+                       __FILE__,
+                       __FUNCTION__,
+                       __LINE__);
   return 0;
 }
 
@@ -613,7 +685,14 @@ int ecmcPVTController::checkEnabledState(bool enabled) {
       if(axis->getEnabled() != enabled) {
         return 0;
       }
-      //printf("ecmcPVTController::triggMoveAxesToStart(): localBusy %d, global %d\n", axis->getLocalBusy(),axis->getGlobalBusy());
+      ECMC_RT_LOG_AXIS_PVT_DEBUG(axis->getAxisID(),
+                                 "%s/%s:%d: DEBUG: PVT controller axis[%d]: waiting for start position (localBusy=%d, globalBusy=%d).\n",
+                                 __FILE__,
+                                 __FUNCTION__,
+                                 __LINE__,
+                                 axis->getAxisID(),
+                                 axis->getLocalBusy(),
+                                 axis->getGlobalBusy());
     } else {
       return -1;
     }
@@ -630,15 +709,15 @@ void ecmcPVTController::refreshAsyn() {
   asynSoftTrigger_->refreshParamRT(1);
 }
 
-void ecmcPVTController::initAsyn() {
+int ecmcPVTController::initAsyn() {
 
  if (asynPortDriver_ == NULL) {
-    LOGERR("%s/%s:%d: PVT: ERROR: AsynPortDriver object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller AsynPortDriver object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
            ERROR_AXIS_ASYN_PORT_OBJ_NULL);
-           return;
+           return ERROR_AXIS_ASYN_PORT_OBJ_NULL;
   }
 
   ecmcAsynDataItem *paramTemp = NULL;
@@ -651,15 +730,19 @@ void ecmcPVTController::initAsyn() {
                               0);
 
   if (paramTemp == NULL) {
-    LOGERR("%s/%s:%d: PVT: ERROR: Failed create pvt.softtrigger asyn parameter.\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PVT controller failed to create pvt.softtrigger asyn parameter.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__);
-           return;
+           return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
   }
   paramTemp->setAllowWriteToEcmc(false);
   paramTemp->refreshParam(1);
   asynSoftTrigger_ = paramTemp;
-  LOGINFO4("ecmcPVTController::initAsyn(): pvt.softtrigger created.\n");
+  ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: PVT controller pvt.softtrigger asyn parameter created.\n",
+                       __FILE__,
+                       __FUNCTION__,
+                       __LINE__);
 
+  return 0;
 }

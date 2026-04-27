@@ -14,6 +14,7 @@
 #include "ecmcPLC.h"
 #include "ecmcOctetIF.h"        // Log Macros
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 #include "ecmcDefinitions.h"
 #include "ecmcMotion.h"
 #include "ecmcAxisBase.h"
@@ -25,6 +26,9 @@
 #include "ecmcPLCTask.h"
 #include "ecmcPLCLib.h"
 #include "ecmcLookupTable.h"
+
+#define ecmcRtLoggerLogDebugSourceIndex(plcIndex, ...) \
+  ECMC_RT_LOG_PLC_DEBUG(plcIndex, __VA_ARGS__)
 
 extern ecmcAxisBase *axes[ECMC_MAX_AXES];
 extern ecmcAxisGroup *axisGroups[ECMC_MAX_AXES];
@@ -39,13 +43,14 @@ extern ecmcShm shmObj;
 extern ecmcLookupTable<double, double>  *luts[ECMC_MAX_LUTS];
 
 int createPLC(int index,  double cycleTimeMs, int axisPLC) {
-  LOGINFO4("%s/%s:%d index=%d, cycleTimeMs=%lf, axisPLC?=%d\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           cycleTimeMs,
-           axisPLC);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC create request: index=%d, cycleTimeMs=%lf, axisPLC=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  cycleTimeMs,
+                                  axisPLC);
 
   // Set sample rate to realtime thread sample rate if -1
   if (cycleTimeMs == -1) {
@@ -53,7 +58,7 @@ int createPLC(int index,  double cycleTimeMs, int axisPLC) {
   }
 
   if (cycleTimeMs / 1000 < (1 / mcuFrequency)) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: PLC cycletime out of range."
       " Cycle time must be higher than realtime thread (time >= %lf ms)."
       " (0x%x).\n",
@@ -114,52 +119,61 @@ int createPLC(int index,  double cycleTimeMs, int axisPLC) {
 }
 
 int deletePLC(int index) {
-  LOGINFO4("%s/%s:%d index=%d\n", __FILE__, __FUNCTION__, __LINE__, index);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC delete request: index=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->deletePLC(index);
 }
 
 int setPLCExpr(int index, char *expr) {
-  LOGINFO4("%s/%s:%d index=%d value=%s\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           expr);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC set expression request: index=%d, value=%s.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  expr);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->setExpr(index, expr);
 }
 
 int appendPLCExpr(int index, char *expr) {
-  LOGINFO4("%s/%s:%d index=%d value=%s\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           expr);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC append expression request: index=%d, value=%s.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  expr);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->appendExprLine(index, expr);
 }
 
 int loadPLCFile(int index, char *fileName) {
-  LOGINFO4("%s/%s:%d index=%d value=%s\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           fileName);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC load file request: index=%d, file=%s.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  fileName);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->loadPLCFile(index, fileName);
 }
 
 int loadPLCLibFile(int   index,
                    char *fileName) {
-  LOGINFO4("%s/%s:%d index=%d value=%s\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           fileName);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC load library request: index=%d, file=%s.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  fileName);
   CHECK_PLCS_RETURN_IF_ERROR();
 
   try {
@@ -171,7 +185,7 @@ int loadPLCLibFile(int   index,
     return errorCode;
   }
   catch (const std::exception& e) {
-    LOGERR("%s/%s:%d: Invalid PLC-lib file %s: %s (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: Invalid PLC-lib file %s: %s (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -183,67 +197,109 @@ int loadPLCLibFile(int   index,
 }
 
 int clearPLCExpr(int index) {
-  LOGINFO4("%s/%s:%d index=%d\n", __FILE__, __FUNCTION__, __LINE__, index);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC clear expression request: index=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->clearExpr(index);
 }
 
 int compilePLCExpr(int index) {
-  LOGINFO4("%s/%s:%d index=%d\n", __FILE__, __FUNCTION__, __LINE__, index);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC compile expression request: index=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->compileExpr(index);
 }
 
 int writePLCVar(int index, const char *varName, double value) {
-  LOGINFO4("%s/%s:%d index=%d, varName=%s, value=%lf\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           varName,
-           value);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC write variable request: index=%d, varName=%s, value=%lf.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  varName,
+                                  value);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->writeStaticPLCVar(index, varName, value);
 }
 
 int readPLCVar(int index, const char *varName, double *value) {
-  LOGINFO4("%s/%s:%d index=%d, varName=%s\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           index,
-           varName);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC read variable request: index=%d, varName=%s.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  varName);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->readStaticPLCVar(index, varName, value);
 }
 
 int setPLCEnable(int index, int enable) {
-  LOGINFO4("%s/%s:%d index=%d\n", __FILE__, __FUNCTION__, __LINE__, index);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC enable request: index=%d, enable=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  enable);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->setEnable(index, enable);
 }
 
+int setPLCStartAfterEpics(int index, int enable) {
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC start-after-EPICS request: index=%d, enable=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index,
+                                  enable);
+  CHECK_PLCS_RETURN_IF_ERROR();
+  return plcs->setStartAfterEpics(index, enable);
+}
+
 int getPLCEnable(int index, int *enabled) {
-  LOGINFO4("%s/%s:%d index=%d\n", __FILE__, __FUNCTION__, __LINE__, index);
+  ecmcRtLoggerLogDebugSourceIndex(index,
+                                  "%s/%s:%d: DEBUG: PLC get enable request: index=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  index);
   CHECK_PLCS_RETURN_IF_ERROR();
   return plcs->getEnable(index, enabled);
 }
 
 const char* getPLCExpr(int plcIndex, int *error) {
-  LOGINFO4("%s/%s:%d plcIndex=%d\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           plcIndex);
+  ecmcRtLoggerLogDebugSourceIndex(plcIndex,
+                                  "%s/%s:%d: DEBUG: PLC get expression request: plcIndex=%d.\n",
+                                  __FILE__,
+                                  __FUNCTION__,
+                                  __LINE__,
+                                  plcIndex);
 
   if ((plcIndex >= ECMC_MAX_PLCS + ECMC_MAX_AXES) || (plcIndex < 0)) {
-    LOGERR("ERROR: PLC index out of range.\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PLC index out of range.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__);
     *error = ERROR_PLCS_INDEX_OUT_OF_RANGE;
     return "";
   }
 
   if (!plcs) {
-    LOGERR("ERROR: PLC object NULL.\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PLC object is NULL.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__);
     *error = ERROR_MAIN_PLCS_NULL;
     return "";
   }

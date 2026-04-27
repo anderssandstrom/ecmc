@@ -7,6 +7,7 @@ FILENAME... ecmcMotorRecordController.cpp
 #include <stdlib.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #include <iocsh.h>
 #include <epicsExit.h>
@@ -15,9 +16,11 @@ FILENAME... ecmcMotorRecordController.cpp
 #include <epicsExport.h>
 #include "ecmcMotorRecordAxis.h"
 #include "ecmcMotorRecordController.h"
+#include "ecmcGeneral.h"
 #include "ecmcGlobalsExtern.h"
 #include "ecmcPVTController.h"
 #include "ecmcPluginClient.h"
+#include "ecmcRtLogger.h"
 
 static const char *driverName = "ecmcMotorController";
 
@@ -26,6 +29,13 @@ static const char *driverName = "ecmcMotorController";
 #endif // ifndef ASYN_TRACE_INFO
 
 extern asynUser *pPrintOutAsynUser;
+
+#undef LOGERR
+#undef LOGINFO
+#define LOGERR(...) \
+  ECMC_RT_LOG_MOTOR_CTRL_ERROR(-1, __VA_ARGS__)
+#define LOGINFO(...) \
+  ECMC_RT_LOG_MOTOR_CTRL_INFO(-1, __VA_ARGS__)
 
 const char *modNamEMC = "ecmcMotorRecord:: ";
 
@@ -37,6 +47,15 @@ const static char *const strEcmcCreateAxisDef =
 const static unsigned reportedFeatureBits =
   FEATURE_BITS_ECMC |
   FEATURE_BITS_V2;
+
+namespace {
+void setProfileMessage(char *buffer, size_t bufferSize, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, bufferSize, format, args);
+  va_end(args);
+}
+}
 
 extern "C"
 double ecmcMotorRecordgetNowTimeSecs(void) {
@@ -156,7 +175,7 @@ ecmcMotorRecordController::ecmcMotorRecordController(const char *portName,
                          0, 0) { // Default priority and stack size
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
-  strcpy(profileMessage_, "");
+  profileMessage_[0] = '\0';
   pAxes_ = (ecmcMotorRecordAxis **)(asynMotorController::pAxes_);
   ctrlLocal.movingPollPeriod = movingPollPeriod;
   ctrlLocal.idlePollPeriod   = idlePollPeriod;
@@ -423,8 +442,10 @@ extern "C" int ecmcMotorRecordCreateController(const char *portName,
   }
 
   if (asynPortMotorRecord) {
-    printf(
-      "Error: ecmcMotorRecordController already initialized. ECMC only supports one ecmcMotorRecordController\n");
+    LOGERR("%s/%s:%d: ERROR: ecmcMotorRecordController is already initialized; ECMC only supports one motor record controller.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
 
@@ -646,21 +667,27 @@ void ecmcMotorRecordController::profilePoll() {
       pvtCtrlSMState == ECMC_PVT_WAIT_FOR_AXES_TO_REACH_START) && pvtBusy) {
     setIntegerParam(profileExecuteStatus_, PROFILE_STATUS_UNDEFINED);
     setIntegerParam(profileExecuteState_, PROFILE_EXECUTE_MOVE_START);
-    sprintf(profileMessage_, "Profile moving to start...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile moving to start...\n");
   } else if(pvtCtrlSMState == ECMC_PVT_EXECUTE_PVT && pvtBusy > 0) {
     setIntegerParam(profileExecuteStatus_, PROFILE_STATUS_UNDEFINED);
     setIntegerParam(profileExecuteState_, PROFILE_EXECUTE_EXECUTING);
-    sprintf(profileMessage_, "Profile executing...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile executing...\n");
   } else if(pvtBusy < 0 || (pvtController_->getErrorID() > 0)) {
-    printf("Busy %d or segmentindex %d invalid\n",pvtBusy ,segmentIndex);
+    LOGERR("%s/%s:%d: ERROR: Profile status invalid: busy=%d, segment=%d, controllerError=0x%x.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           pvtBusy,
+           segmentIndex,
+           pvtController_->getErrorID());
     setIntegerParam(profileExecuteStatus_, PROFILE_STATUS_UNDEFINED);
     setIntegerParam(profileExecuteState_, PROFILE_EXECUTE_DONE);
-    sprintf(profileMessage_, "Profile failure, aborting\n");    
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile failure, aborting\n");
     abortProfile();
   } else {
     setIntegerParam(profileExecuteStatus_, PROFILE_STATUS_SUCCESS);
     setIntegerParam(profileExecuteState_, PROFILE_EXECUTE_DONE);
-    sprintf(profileMessage_, "Profile done\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile done\n");
   }
   setStringParam(profileExecuteMessage_, profileMessage_);
   //setIntegerParam(profileActualPulses_, 0);
@@ -689,7 +716,12 @@ asynStatus ecmcMotorRecordController::writeFloat64(asynUser *pasynUser, epicsFlo
   // can be controller related (axisNo == 0)
   status = getAddress(pasynUser, &axisNo);
   if(status != asynSuccess || axisNo != ECMC_MR_CNTRL_ADDR) {
-    printf("ecmcMotorRecordController::writeFloat64: ERROR: getAddress returned error\n");
+    LOGERR("%s/%s:%d: ERROR: Controller float64 write rejected: invalid address %d (status=%s).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisNo,
+           ecmcMotorRecordstrStatus(status));
     return status;
   }
 
@@ -705,13 +737,13 @@ asynStatus ecmcMotorRecordController::writeFloat64(asynUser *pasynUser, epicsFlo
     }
     profileBuilt_ = false;
     setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Fixed time changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Fixed time changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   }  else if (function == profileAcceleration_) {
     profileBuilt_ = false;
     setIntegerParam(ECMC_MR_CNTRL_ADDR, profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Acceleration time changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Acceleration time changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   }
@@ -742,7 +774,12 @@ asynStatus ecmcMotorRecordController::writeInt32(asynUser *pasynUser, epicsInt32
   // can be controller related (axisNo == 0)
   status = getAddress(pasynUser, &axisNo);
   if(status != asynSuccess || axisNo!=ECMC_MR_CNTRL_ADDR) {
-    printf("ecmcMotorRecordController::writeInt32: getAddress returned error\n");
+    LOGERR("%s/%s:%d: ERROR: Controller int32 write rejected: invalid address %d (status=%s).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisNo,
+           ecmcMotorRecordstrStatus(status));
     return status;
   }
 
@@ -762,7 +799,7 @@ asynStatus ecmcMotorRecordController::writeInt32(asynUser *pasynUser, epicsInt32
     // new pulse count require rebuild
     profileBuilt_ = false;
     setIntegerParam(ECMC_MR_CNTRL_ADDR,profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Pulse count changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Pulse count changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   } else if (function == profileTimeMode_) {
@@ -773,25 +810,25 @@ asynStatus ecmcMotorRecordController::writeInt32(asynUser *pasynUser, epicsInt32
         pAxis->invalidatePVTBuild();
     }
     setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Time mode changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Time mode changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   } else if (function == profileNumPoints_) {
     profileBuilt_ = false;
     setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Num points changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Num points changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   } else if (function == profileStartPulses_) {
     profileBuilt_ = false;
     setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "Start pulses point changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Start pulses point changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   } else if (function == profileEndPulses_) {
     profileBuilt_ = false;
     setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-    sprintf(profileMessage_, "End pulses point changed, rebuild required...\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "End pulses point changed, rebuild required...\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
   }
@@ -809,7 +846,10 @@ asynStatus ecmcMotorRecordController::writeInt32(asynUser *pasynUser, epicsInt32
 
 asynStatus ecmcMotorRecordController::abortProfile()
 {
-  printf("ecmcMotorRecordAxis::abortProfile()\n");
+  LOGINFO("%s/%s:%d: INFO: abortProfile().\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__);
 
   // static const char *functionName = "abortProfile";
   int axis;
@@ -833,7 +873,7 @@ asynStatus ecmcMotorRecordController::abortProfile()
   setIntegerParam(profileCurrentPoint_, 0);
   setIntegerParam(profileActualPulses_, 0);
   setIntegerParam(profileExecuteStatus_,PROFILE_STATUS_ABORT);
-  sprintf(profileMessage_, "Profile aborted.\n");
+  setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile aborted.\n");
   setStringParam(profileExecuteMessage_, profileMessage_);
   callParamCallbacks();
   return asynSuccess;
@@ -841,25 +881,34 @@ asynStatus ecmcMotorRecordController::abortProfile()
 
 asynStatus ecmcMotorRecordController::buildProfile() {
 
-  printf("ecmcMotorRecordController::buildProfile()\n");  
+  LOGINFO("%s/%s:%d: INFO: buildProfile().\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__);
   if(!profileInitialized_) {
-    printf("ecmcMotorRecordController: Error: Profile not initialized...\n");
-    sprintf(profileMessage_, "Profile not initialized, command ignored..\n");
+    LOGERR("%s/%s:%d: ERROR: Profile build rejected: profile is not initialized.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile not initialized, command ignored..\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;
   }
 
   if(!pvtController_) {
-    printf("ecmcMotorRecordController: Error: pvtController_ == NULL...\n");
-    sprintf(profileMessage_, "Error: pvtController_ == NULL, command ignored..\n");
+    LOGERR("%s/%s:%d: ERROR: Profile build rejected: PVT controller is NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: pvtController_ == NULL, command ignored..\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;
   }
 
   if(pvtController_->getBusy()) {
-    sprintf(profileMessage_, "Profile busy, command ignored..\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile busy, command ignored..\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;
@@ -870,10 +919,10 @@ asynStatus ecmcMotorRecordController::buildProfile() {
   }
   
   profileInProgress_ = false;
-  strcpy(profileMessage_, "");
+  profileMessage_[0] = '\0';
   setIntegerParam(profileBuildState_, PROFILE_BUILD_BUSY);
   setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-  sprintf(profileMessage_, "Build in progress.\n");
+  setProfileMessage(profileMessage_, sizeof(profileMessage_), "Build in progress.\n");
   setStringParam(profileBuildMessage_, profileMessage_);
   callParamCallbacks();
   pvtController_->clearPVTAxes();
@@ -887,8 +936,11 @@ asynStatus ecmcMotorRecordController::buildProfile() {
   }
 
   if(stat) {
-    printf("ecmcMotorRecordController: Error: axis::buildProfile() returned error.\n");
-    sprintf(profileMessage_, "Error: axis::buildProfile() returned error.\n");
+    LOGERR("%s/%s:%d: ERROR: Profile build failed: at least one axis build failed.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: axis::buildProfile() returned error.\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;
@@ -899,7 +951,7 @@ asynStatus ecmcMotorRecordController::buildProfile() {
   setIntegerParam(ECMC_MR_CNTRL_ADDR,profileBuildState_, PROFILE_BUILD_DONE);
   
   setIntegerParam(ECMC_MR_CNTRL_ADDR,profileBuildStatus_, PROFILE_STATUS_SUCCESS);
-  sprintf(profileMessage_, "Build profile succeeded\n");
+  setProfileMessage(profileMessage_, sizeof(profileMessage_), "Build profile succeeded\n");
   setStringParam(profileBuildMessage_, profileMessage_);
   callParamCallbacks();
 
@@ -909,18 +961,40 @@ asynStatus ecmcMotorRecordController::buildProfile() {
 // Override in order to be able to handle status from pAxis->initializeProfile()
 asynStatus ecmcMotorRecordController::initializeProfile(size_t maxProfilePoints)
 {  
-  printf("ecmcMotorRecordController::initializeProfile(%lu)\n",maxProfilePoints);
+  LOGINFO("%s/%s:%d: INFO: initializeProfile(maxPoints=%zu).\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__,
+          maxProfilePoints);
   profileInProgress_ = false;
   // An ecmcPvtSequence is needed to keep track of time and outputs and other things...
   
   if(asynPort == NULL) {
-    printf("ecmcMotorRecordController::initializeProfile::ecmc Asyn port NULL..\n");
+    LOGERR("%s/%s:%d: ERROR: Profile initialization failed: ECMC asyn port is NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
 
   ecmcPVTController * pvtCtrl = new ecmcPVTController(asynPort, getEcmcSampleTimeMS()/1000);
   if( !pvtCtrl ) {
-    printf("ecmcMotorRecordController::initializeProfile::Error: Create ecmcPVTController() failed..\n");
+    LOGERR("%s/%s:%d: ERROR: Profile initialization failed: could not create PVT controller.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
+    return asynError;
+  }
+
+  int errorCode = pvtCtrl->getErrorID();
+  if (errorCode) {
+    LOGERR("%s/%s:%d: ERROR: Profile initialization failed: PVT controller creation failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           getErrorString(errorCode),
+           errorCode);
+    delete pvtCtrl;
     return asynError;
   }
 
@@ -938,7 +1012,11 @@ asynStatus ecmcMotorRecordController::initializeProfile(size_t maxProfilePoints)
     pAxis = getAxis(axis);
     if (!pAxis) continue;
     if(pAxis->initializeProfile(maxProfilePoints) != asynSuccess) {
-      printf("ecmcMotorRecordController::initializeProfile:: Axis[%d]: Initialize profile failed\n",pAxis->drvlocal.axisId);      
+      LOGERR("%s/%s:%d: ERROR: Axis[%d]: Profile initialization failed.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             pAxis->drvlocal.axisId);
       profileInitialized_ = 0;
       return asynError;
     }
@@ -971,7 +1049,7 @@ asynStatus ecmcMotorRecordController::writeFloat64Array(asynUser *pasynUser, epi
     if(timeMode != PROFILE_TIME_MODE_FIXED) {
       profileBuilt_ = false;
       setIntegerParam(profileBuildStatus_, PROFILE_STATUS_UNDEFINED);
-      sprintf(profileMessage_, "Time array changed, rebuild required...\n");
+      setProfileMessage(profileMessage_, sizeof(profileMessage_), "Time array changed, rebuild required...\n");
       setStringParam(profileBuildMessage_, profileMessage_);
       callParamCallbacks();
     }
@@ -979,7 +1057,10 @@ asynStatus ecmcMotorRecordController::writeFloat64Array(asynUser *pasynUser, epi
   else if (function == profilePositions_) {
     pAxis = getAxis(pasynUser);
     if (!pAxis) {
-      printf("No Axis");
+      LOGERR("%s/%s:%d: ERROR: Profile position write rejected: no axis for address.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__);
       return asynError;
     }
     pAxis->defineProfile(value, nElements);
@@ -995,28 +1076,43 @@ asynStatus ecmcMotorRecordController::writeFloat64Array(asynUser *pasynUser, epi
 
 asynStatus ecmcMotorRecordController::executeProfile() {
   if(!profileInitialized_) {
-    printf("ecmcMotorRecordController: Error: Profile not initialized...\n");
+    LOGERR("%s/%s:%d: ERROR: Profile execute rejected: profile is not initialized.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
 
   if(!profileBuilt_) {
-    printf("ecmcMotorRecordController: Error: Profile not built...\n");
+    LOGERR("%s/%s:%d: ERROR: Profile execute rejected: profile is not built.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
 
   asynStatus status = asynSuccess;
-  printf("ecmcMotorRecordController::executeProfile()\n");
+  LOGINFO("%s/%s:%d: INFO: executeProfile().\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__);
   int axis;
   ecmcMotorRecordAxis *pAxis;
   setIntegerParam(profileReadbackStatus_, PROFILE_STATUS_UNDEFINED);
 
 
   if(!pvtController_) { 
-    printf("ecmcMotorRecordController::executeProfile(): Error: PVT controller NULL.\n");
+    LOGERR("%s/%s:%d: ERROR: Profile execute rejected: PVT controller is NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
   if(pvtController_->getBusy()) {
-    printf("ecmcMotorRecordController::executeProfile(): Error: Profile move busy..\n");
+    LOGERR("%s/%s:%d: ERROR: Profile execute rejected: profile move is busy.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     return asynError;
   }
 
@@ -1061,7 +1157,7 @@ asynStatus ecmcMotorRecordController::executeProfile() {
   }
 
   if((size_t)numPulses > maxProfilePoints_) {
-    sprintf(profileMessage_, "PVT: Output pulse count cannot be higher than %zu\n",maxProfilePoints_);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "PVT: Output pulse count cannot be higher than %zu\n",maxProfilePoints_);
     setStringParam(profileExecuteMessage_, profileMessage_);
     abortProfile();
     return asynError;
@@ -1076,7 +1172,7 @@ asynStatus ecmcMotorRecordController::executeProfile() {
 
     if((status = pAxis->executeProfile()) != asynSuccess) {
       // Something went wrong. Stop all axes..      
-      sprintf(profileMessage_, "Axis [%d] reports error during profile execute, aborting profile move....\n",pAxis->drvlocal.axisId);
+      setProfileMessage(profileMessage_, sizeof(profileMessage_), "Axis %d reported an error during profile execute; aborting profile move.\n",pAxis->drvlocal.axisId);
       setStringParam(profileExecuteMessage_, profileMessage_);
       abortProfile();
       return status;
@@ -1093,7 +1189,7 @@ asynStatus ecmcMotorRecordController::executeProfile() {
   setIntegerParam(profileCurrentPoint_, 0);
   setIntegerParam(profileActualPulses_, 0);
 
-  sprintf(profileMessage_, "Profile started\n");
+  setProfileMessage(profileMessage_, sizeof(profileMessage_), "Profile started\n");
   setStringParam(profileExecuteMessage_, profileMessage_);
 
   callParamCallbacks();
@@ -1121,11 +1217,11 @@ asynStatus ecmcMotorRecordController::readbackProfile() {
   
   if(statOK) {
     setIntegerParam(profileReadbackStatus_, PROFILE_STATUS_SUCCESS);
-    sprintf(profileMessage_, "Redback Done\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Readback done\n");
     setStringParam(profileReadbackMessage_, profileMessage_);
   } else {
     setIntegerParam(profileReadbackStatus_, PROFILE_STATUS_FAILURE);
-    sprintf(profileMessage_, "Redback failed\n");
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Readback failed\n");
     setStringParam(profileReadbackMessage_, profileMessage_);
   }
   callParamCallbacks();
@@ -1167,21 +1263,35 @@ asynStatus ecmcMotorRecordController::profileValidateTime() {
   getDoubleParam(ECMC_MR_CNTRL_ADDR,  profileAcceleration_, &accTime);
 
   if(pulseCount > 0 && pulseStartId > pointsCount) {
-    printf("ecmcMotorRecordController: Error: Start pulse id higher than point count.\n");
-    sprintf(profileMessage_, "Error: Start pulse id higher than point count.\n");
+    LOGERR("%s/%s:%d: ERROR: Profile build rejected: start pulse id %d is higher than point count %d.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           pulseStartId,
+           pointsCount);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: Start pulse id higher than point count.\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;
   }
 
   if(pulseCount > 0 && pulseEndId > pointsCount) {
-    printf("ecmcMotorRecordController: Warning: End pulse id higher than point count (use last point as pulse end id).\n");
+    LOGWARNING("%s/%s:%d: WARNING: Profile end pulse id %d is higher than point count %d; using last point as pulse end id.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           pulseEndId,
+           pointsCount);
   }
 
   if(timeMode == PROFILE_TIME_MODE_FIXED) {
     if(time <= 0) {
-      printf("ecmcMotorRecordController: Error: Time invalid, must be > 0.0 seconds.\n");
-      sprintf(profileMessage_, "Error: Time invalid, must be > 0 seconds.\n");
+      LOGERR("%s/%s:%d: ERROR: Profile build rejected: fixed time %lf must be > 0.0 seconds.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             time);
+      setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: Time invalid, must be > 0 seconds.\n");
       setStringParam(profileBuildMessage_, profileMessage_);
       callParamCallbacks();
       return asynError;
@@ -1204,8 +1314,13 @@ asynStatus ecmcMotorRecordController::profileValidateTime() {
       }
       accumulatedTime+=profileTimes_[i];
       if(profileTimes_[i] <= 0) {
-        printf("ecmcMotorRecordController: Error: Invalid time in time array (time[%d]=%lf). Time must be >=  0.0 seconds\n", i,profileTimes_[i]);
-        sprintf(profileMessage_, "Error: Invalid time in time array. Time values must be >= 0.0 seconds.\n");
+        LOGERR("%s/%s:%d: ERROR: Profile build rejected: time[%d]=%lf must be > 0.0 seconds.\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               i,
+               profileTimes_[i]);
+        setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: Invalid time in time array. Time values must be >= 0.0 seconds.\n");
         setStringParam(profileBuildMessage_, profileMessage_);
         callParamCallbacks();
         return asynError;
@@ -1216,8 +1331,14 @@ asynStatus ecmcMotorRecordController::profileValidateTime() {
       pAxis = getAxis(i);
       if (!pAxis) continue;
       if(pAxis->getPVTEnabled() && (pAxis->getProfilePointCount() != profileTimeArraySize_)) {
-        printf("ecmcMotorRecordController: Error: Time array VS position array size missmatch.\n");
-        sprintf(profileMessage_, "Error: Time array VS position array size missmatch.\n");
+        LOGERR("%s/%s:%d: ERROR: Axis[%d]: Profile build rejected: time array size (%zu) does not match position array size (%zu).\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               pAxis->drvlocal.axisId,
+               profileTimeArraySize_,
+               pAxis->getProfilePointCount());
+        setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: Time array size does not match position array size.\n");
         setStringParam(profileBuildMessage_, profileMessage_);
         callParamCallbacks();
         return asynError;    
@@ -1233,12 +1354,23 @@ asynStatus ecmcMotorRecordController::profileValidateTime() {
     pulseTimeBetween = (pulseEndTime-pulseStartTime) / (pulseCount-1);
   }
 
-  printf("ecmcMotorRecordController::build(): Triggers %lf:%lf:%lf (pulse count %d)\n",
-          pulseStartTime,pulseTimeBetween,pulseEndTime,pulseCount);
+  LOGINFO("%s/%s:%d: INFO: profileValidateTime(): triggers start=%lf, interval=%lf, end=%lf, pulseCount=%d.\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__,
+          pulseStartTime,
+          pulseTimeBetween,
+          pulseEndTime,
+          pulseCount);
  
   if( (pulseCount > 0) && ((pulseStartTime < 0) || (pulseStartTime > pulseEndTime))){
-    printf("ecmcMotorRecordController: Error: Pulse time missmatch.\n");
-    sprintf(profileMessage_, "Error: Pulse time missmatch.\n");
+    LOGERR("%s/%s:%d: ERROR: Profile build rejected: pulse timing mismatch (start=%lf, end=%lf).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           pulseStartTime,
+           pulseEndTime);
+    setProfileMessage(profileMessage_, sizeof(profileMessage_), "Error: Pulse time mismatch.\n");
     setStringParam(profileBuildMessage_, profileMessage_);
     callParamCallbacks();
     return asynError;    
@@ -1285,7 +1417,12 @@ ecmcPVTController * ecmcMotorRecordController::getPVTController() {
 // Enable PVT functionalities for a certain axis
 asynStatus ecmcMotorRecordController::enableAxisPVTFunc(int axisNo, int enable) {
   if(!getAxis(axisNo)) {
-    printf("Error axis[%d]: Failed enable PVT functionalites.\n",axisNo);
+    LOGERR("%s/%s:%d: ERROR: Axis[%d]: Failed to %s PVT functionality: axis not found.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisNo,
+           enable ? "enable" : "disable");
     return asynError;
   }
   getAxis(axisNo)->setEnablePVTFunc(enable);
@@ -1388,8 +1525,12 @@ asynStatus ecmcCreateProfile(const char *asynPort,       /* specify which contro
 
   pC = (ecmcMotorRecordController*) findAsynPortDriver(asynPort);
   if (!pC) {
-    printf("%s:%s: Error port %s not found\n",
-           driverName, functionName, asynPort);
+    LOGERR("%s/%s:%d: ERROR: %s: port %s not found.\n",
+           __FILE__,
+           functionName,
+           __LINE__,
+           driverName,
+           asynPort);
     return asynError;
   }
   pC->lock();
@@ -1419,8 +1560,12 @@ asynStatus ecmcEnablePVTForAxis(const char *asynPort,         /* specify which c
 
   pC = (ecmcMotorRecordController*) findAsynPortDriver(asynPort);
   if (!pC) {
-    printf("%s:%s: Error port %s not found\n",
-           driverName, functionName, asynPort);
+    LOGERR("%s/%s:%d: ERROR: %s: port %s not found.\n",
+           __FILE__,
+           functionName,
+           __LINE__,
+           driverName,
+           asynPort);
     return asynError;
   }
   pC->lock();

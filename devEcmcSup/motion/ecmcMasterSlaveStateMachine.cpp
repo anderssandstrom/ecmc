@@ -10,6 +10,10 @@
 *
 \*************************************************************************/
 #include "ecmcMasterSlaveStateMachine.h"
+#include "ecmcRtLogger.h"
+
+#define ecmcRtLoggerLogDebug(...) \
+  ECMC_RT_LOG_DEBUG_SOURCE(ECMC_RT_LOG_SOURCE_MASTER_SLAVE, index_, __VA_ARGS__)
 
 ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asynPortDriver,
                                                          int index,
@@ -45,11 +49,17 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   slaveGrp_->setMRIgnoreDisableStatusCheck(true);
   masterGrp_->setMRIgnoreDisableStatusCheck(true);
 
-  LOGINFO("ecmcMasterSlaveStateMachine: %s:  Created master slave state machine [%d]\n",
-          name_.c_str(),
-          index_);
+  ecmcRtLoggerLogInfo("%s/%s:%d: INFO: Master/slave state machine[%d] %s created.\n",
+          __FILE__,
+          __FUNCTION__,
+          __LINE__,
+          index_,
+          name_.c_str());
 
-  initAsyn();
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(errorCode);
+  }
 };
 
 ecmcMasterSlaveStateMachine::~ecmcMasterSlaveStateMachine(){
@@ -141,8 +151,12 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
     masterGrp_->setBlocked(true);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
     if(control_.enableDbgPrintouts) {
-      LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, IDLE -> SLAVE\n",
-              name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed IDLE -> SLAVE.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
     }
 
   // State transision to MASTER
@@ -158,8 +172,12 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
         masterGrp_->setBlocked(false);
         slaveGrp_->setBlocked(true);
         if(control_.enableDbgPrintouts) {
-          LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, IDLE -> MASTER\n",
-                  name_.c_str());
+          ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed IDLE -> MASTER.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               index_,
+                               name_.c_str());
         }
       }
 
@@ -178,10 +196,18 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
           masterGrp_->setSlavedAxisInError();
         }
         if(control_.enableDbgPrintouts) {
-          LOGINFO("ecmcMasterSlaveStateMachine: %s: Error enabling axes\n",
-                  name_.c_str());
-          LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, IDLE -> IDLE\n",
-                  name_.c_str());
+          ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: enabling axes failed.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               index_,
+                               name_.c_str());
+          ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed IDLE -> IDLE.\n",
+                               __FILE__,
+                               __FUNCTION__,
+                               __LINE__,
+                               index_,
+                               name_.c_str());
         }
         state_ = ECMC_MST_SLV_STATE_IDLE;
         
@@ -225,8 +251,12 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
 
     state_ = ECMC_MST_SLV_STATE_IDLE;
     if(control_.enableDbgPrintouts) {
-      LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, SLAVE -> IDLE\n",
-              name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed SLAVE -> IDLE.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
     }
   }
 
@@ -272,9 +302,17 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     lostEnabled = lostEnabled || (slaveStatus.anyEnabled && !slaveStatus.allEnabled);
     if(lostEnabled || masterAnyError) {
       state_ = ECMC_MST_SLV_STATE_IDLE;
-      LOGERR("ecmcMasterSlaveStateMachine: %s: At least one axis lost enable during motion. Disable all axes..\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: at least one axis lost enable during motion; disabling all axes.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             index_,
              name_.c_str());
-      LOGERR("ecmcMasterSlaveStateMachine: %s: State change, MASTER -> RESET\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: state changed MASTER -> RESET.\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             index_,
              name_.c_str());
       masterGrp_->halt();
       masterGrp_->setEnable(0);
@@ -319,10 +357,18 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
     if(control_.enableDbgPrintouts) {
-      LOGINFO("ecmcMasterSlaveStateMachine: %s: Slaved axis interlock (or traj source change)\n",
-              name_.c_str());
-      LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, MASTER -> SLAVE\n",
-              name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: slaved axis interlock or trajectory source change.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> SLAVE.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
     }
   }
   
@@ -335,8 +381,12 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
     if(control_.enableDbgPrintouts) {
-      LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, MASTER -> IDLE\n",
-              name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> IDLE.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
     }
   }
   return 0;
@@ -355,8 +405,12 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   slaveGrp_->setBlocked(false);
   state_ = ECMC_MST_SLV_STATE_IDLE;
   if(control_.enableDbgPrintouts) {
-    LOGINFO("ecmcMasterSlaveStateMachine: %s: State change, RESET -> IDLE\n",
-            name_.c_str());
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed RESET -> IDLE.\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         index_,
+                         name_.c_str());
   }
   return  0;
 }
@@ -384,7 +438,7 @@ int ecmcMasterSlaveStateMachine::validate(){
 
 int ecmcMasterSlaveStateMachine::initAsyn() {
   if (asynPortDriver_ == NULL) {
-    LOGERR("%s/%s:%d: ERROR (master/slave state-machine %d): AsynPortDriver object NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d]: AsynPortDriver object is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -405,7 +459,11 @@ int ecmcMasterSlaveStateMachine::initAsyn() {
                               &paramTemp);
 
   if (errorCode) {
-    LOGERR("Error creating asyn parameter for control word\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d]: failed to create control-word asyn parameter.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index_);
     return errorCode;
   }
 
@@ -423,7 +481,11 @@ int ecmcMasterSlaveStateMachine::initAsyn() {
                               &paramTemp);
 
   if (errorCode) {
-    LOGERR("Error creating asyn parameter for state\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d]: failed to create state asyn parameter.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index_);
     return errorCode;
   }
   paramTemp->setAllowWriteToEcmc(true);
@@ -439,7 +501,11 @@ int ecmcMasterSlaveStateMachine::initAsyn() {
                               &paramTemp);
 
   if (errorCode) {
-    LOGERR("Error creating asyn parameter for status\n");
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d]: failed to create status asyn parameter.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index_);
     return errorCode;
   }
 
@@ -459,8 +525,8 @@ int ecmcMasterSlaveStateMachine::createAsynParam(const char        *nameFormat,
                                   size_t             bytes,
                                   ecmcAsynDataItem **asynParamOut) {
   if (asynPortDriver_ == NULL) {
-    LOGERR(
-      "%s/%s:%d: ERROR (master/slave state-machine %d): AsynPortDriver object NULL (%s) (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Master/slave state machine[%d]: AsynPortDriver object is NULL for %s (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -481,8 +547,8 @@ int ecmcMasterSlaveStateMachine::createAsynParam(const char        *nameFormat,
                        index_);
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: ERROR (master/slave state-machine %d): Failed to generate (%s). Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Master/slave state machine[%d]: Failed to generate %s; buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -500,8 +566,8 @@ int ecmcMasterSlaveStateMachine::createAsynParam(const char        *nameFormat,
                                                 0);
 
   if (!paramTemp) {
-    LOGERR(
-      "%s/%s:%d: ERROR (master/slave state-machine %d): Add create default parameter for %s failed.\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Master/slave state machine[%d]: Failed to create default parameter for %s.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,

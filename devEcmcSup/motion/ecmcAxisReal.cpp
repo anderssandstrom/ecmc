@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcAxisReal.h"
+#include "ecmcRtLogger.h"
 
 ecmcAxisReal::ecmcAxisReal(ecmcAsynPortDriver *asynPortDriver,
                            int                 axisID,
@@ -26,31 +27,73 @@ ecmcAxisReal::ecmcAxisReal(ecmcAsynPortDriver *asynPortDriver,
   data_.status_.axisType   = ECMC_AXIS_TYPE_REAL;
   data_.status_.sampleTime = sampleTime;
 
+  if (getError()) {
+    return;
+  }
+
   // Create drive
-  switch (drvType) {
-  case ECMC_STEPPER:
-    drv_              = new ecmcDriveStepper(asynPortDriver_, &data_);
-    currentDriveType_ = ECMC_STEPPER;
-    break;
+  try {
+    switch (drvType) {
+    case ECMC_STEPPER:
+      drv_              = new ecmcDriveStepper(asynPortDriver_, data_);
+      currentDriveType_ = ECMC_STEPPER;
+      break;
 
-  case ECMC_DS402:
-    drv_              = new ecmcDriveDS402(asynPortDriver_, &data_);
-    currentDriveType_ = ECMC_DS402;
-    break;
+    case ECMC_DS402:
+      drv_              = new ecmcDriveDS402(asynPortDriver_, data_);
+      currentDriveType_ = ECMC_DS402;
+      break;
 
-  default:
-    LOGERR("%s/%s:%d: DRIVE TYPE NOT SUPPORTED (%x).\n",
+    default:
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Drive type %d is not supported (0x%x).\n",
+             __FILE__,
+             __FUNCTION__,
+             __LINE__,
+             data_.status_.axisId,
+             drvType,
+             ERROR_AXIS_FUNCTION_NOT_SUPPRTED);
+      setErrorID(__FILE__,
+                 __FUNCTION__,
+                 __LINE__,
+                 ERROR_AXIS_FUNCTION_NOT_SUPPRTED);
+      return;
+    }
+
+    // Create PID
+    cntrl_ = new ecmcPIDController(asynPortDriver_,
+                                   data_,
+                                   data_.status_.sampleTime);
+  } catch (std::bad_alloc& ex) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Memory allocation failed.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
-           ERROR_AXIS_FUNCTION_NOT_SUPPRTED);
-    exit(1);
-
-    break;
+           data_.status_.axisId);
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_MAIN_EXCEPTION);
+    return;
   }
 
-  // Create PID
-  cntrl_ = new ecmcPIDController(asynPortDriver_, &data_, data_.status_.sampleTime);
+  if (!drv_) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_AXIS_DRV_OBJECT_NULL);
+    return;
+  }
+
+  int errorCode = drv_->getErrorID();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    return;
+  }
+
+  if (!cntrl_) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_AXIS_CNTRL_OBJECT_NULL);
+    return;
+  }
+
+  errorCode = cntrl_->getErrorID();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    return;
+  }
 
   seq_.setCntrl(cntrl_);
 }
@@ -63,6 +106,8 @@ ecmcAxisReal::~ecmcAxisReal() {
 }
 
 void ecmcAxisReal::initVars() {
+  drv_                      = NULL;
+  cntrl_                    = NULL;
   currentDriveType_         = ECMC_NO_DRIVE;
 }
 
@@ -145,7 +190,8 @@ void ecmcAxisReal::execute(bool masterOK) {
 
     // Only update if enable cmd is low to avoid change of setpoint
     // during between enable and enabled
-    if (!axisEnableCmd && !firstEnableDone_ && masterOK) {
+    if (!axisEnableCmd && !firstEnableDone_ && masterOK &&
+        shouldSyncSetpointToActual()) {
       data_.status_.currentPositionSetpoint =
         data_.status_.currentPositionActual;
       traj_->setStartPos(data_.status_.currentPositionSetpoint);
@@ -174,10 +220,14 @@ void ecmcAxisReal::execute(bool masterOK) {
     }
     cntrl_->reset();
     drv_->setVelSet(0);
-    setErrorID(__FILE__,
-               __FUNCTION__,
-               __LINE__,
-               ERROR_AXIS_HARDWARE_STATUS_NOT_OK);
+    if (data_.status_.statusWord_.instartup) {
+      setErrorID(ERROR_AXIS_HARDWARE_STATUS_NOT_OK);
+    } else {
+      setErrorID(__FILE__,
+                 __FUNCTION__,
+                 __LINE__,
+                 ERROR_AXIS_HARDWARE_STATUS_NOT_OK);
+    }
   }
 
   // Write to hardware
@@ -214,7 +264,7 @@ int ecmcAxisReal::validate() {
 
   for (int i = 0; i < data_.status_.encoderCount; i++) {
     if (encArray_[i] == NULL) {
-      LOGERR("%s/%s:%d: ax%d.enc%d NULL (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Encoder[%d] object is NULL (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,
@@ -231,7 +281,7 @@ int ecmcAxisReal::validate() {
     error = encArray_[i]->validate();
 
     if (error) {
-      LOGERR("%s/%s:%d: ax%d.enc%d (0x%x).\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Encoder[%d] validation failed (0x%x).\n",
              __FILE__,
              __FUNCTION__,
              __LINE__,

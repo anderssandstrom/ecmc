@@ -13,28 +13,16 @@
 #include "ecmcDriveStepper.h"
 
 ecmcDriveStepper::ecmcDriveStepper(ecmcAsynPortDriver *asynPortDriver,
-                                   ecmcAxisData       *axisData) :
+                                   ecmcAxisData       &axisData) :
   ecmcDriveBase(asynPortDriver, axisData) {
   initVars();
-  data_ = axisData;
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
 }
 
 ecmcDriveStepper::ecmcDriveStepper(ecmcAsynPortDriver *asynPortDriver,
-                                   ecmcAxisData       *axisData,
+                                   ecmcAxisData       &axisData,
                                    double              scale) :
   ecmcDriveBase(asynPortDriver, axisData) {
   initVars();
-  data_ = axisData;
-
-  if (!data_) {
-    LOGERR("%s/%s:%d: DATA OBJECT NULL.\n", __FILE__, __FUNCTION__, __LINE__);
-    exit(EXIT_FAILURE);
-  }
 
   scale_ = scale;
 }

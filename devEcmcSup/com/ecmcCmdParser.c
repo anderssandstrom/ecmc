@@ -719,11 +719,11 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 1) {
     if ((appModeStat == ECMC_MODE_RUNTIME) && (iValue == ECMC_MODE_RUNTIME)) {
-      LOGERR("%s/%s:%d: WARNING: Cfg.SetAppMode(%d) ignored in runtime; already in requested mode.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             iValue);
+      LOGWARNING("%s/%s:%d: WARNING: Cfg.SetAppMode(%d) ignored in runtime; already in requested mode.\n",
+              __FILE__,
+              __FUNCTION__,
+              __LINE__,
+              iValue);
       return 0;
     }
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetAppMode");
@@ -888,6 +888,13 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 2) {
     return setPLCEnable(iValue, iValue2);
+  }
+
+  /// "Cfg.SetPLCStartAfterEpics(int index,int enable)"
+  nvals = sscanf(myarg_1, "SetPLCStartAfterEpics(%d,%d)", &iValue, &iValue2);
+
+  if (nvals == 2) {
+    return setPLCStartAfterEpics(iValue, iValue2);
   }
 
   /// "Cfg.LinkEcEntryToObject(ecEntryPathString,objPathString)"
@@ -1690,11 +1697,11 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 1) {
     if (appModeStat == ECMC_MODE_RUNTIME) {
-      LOGERR("%s/%s:%d: WARNING: Cfg.EcApplyConfig(%d) ignored in runtime.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             iValue);
+      LOGWARNING("%s/%s:%d: WARNING: Cfg.EcApplyConfig(%d) ignored in runtime.\n",
+              __FILE__,
+              __FUNCTION__,
+              __LINE__,
+              iValue);
       return 0;
     }
     return ecApplyConfig(iValue);
@@ -1703,10 +1710,10 @@ static int handleCfgCommand(const char *myarg_1) {
   /*Cfg.EcApplyConfig()*/
   if (0 == strcmp(myarg_1, "EcApplyConfig()")) {
     if (appModeStat == ECMC_MODE_RUNTIME) {
-      LOGERR("%s/%s:%d: WARNING: Cfg.EcApplyConfig() ignored in runtime.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__);
+      LOGWARNING("%s/%s:%d: WARNING: Cfg.EcApplyConfig() ignored in runtime.\n",
+              __FILE__,
+              __FUNCTION__,
+              __LINE__);
       return 0;
     }
     return ecApplyConfig(-1);
@@ -1790,11 +1797,11 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 1) {
     if (appModeStat == ECMC_MODE_RUNTIME) {
-      LOGERR("%s/%s:%d: WARNING: Cfg.EcSetDelayECOkAtStartup(%d) ignored in runtime.\n",
-             __FILE__,
-             __FUNCTION__,
-             __LINE__,
-             iValue);
+      LOGWARNING("%s/%s:%d: WARNING: Cfg.EcSetDelayECOkAtStartup(%d) ignored in runtime.\n",
+              __FILE__,
+              __FUNCTION__,
+              __LINE__,
+              iValue);
       return 0;
     }
     return ecSetDelayECOkAtStartup(iValue);

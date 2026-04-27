@@ -20,6 +20,8 @@
 #include "ecmcMotion.h"
 #include "ecmcOctetIF.h"        // Log Macros
 #include "ecmcErrorsList.h"
+#include "ecmcGeneral.h"
+#include <new>
 #include "ecmcDefinitions.h"
 #include "ecmcEthercat.h"
 #include "ecmcPLC.h"
@@ -1067,7 +1069,7 @@ int setAxisTargetPos(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
   CHECK_AXIS_SEQ_RETURN_IF_ERROR(axisIndex)
 
-  axes[axisIndex]->getSeq()->setTargetPos(value);
+  axes[axisIndex]->setTargetPosAndCmd(value);
   return 0;
 }
 
@@ -1616,13 +1618,21 @@ const char* getAxisPLCExpr(int axisIndex, int *error) {
            axisIndex);
 
   if ((axisIndex >= ECMC_MAX_AXES) || (axisIndex < 0)) {
-    LOGERR("ERROR: Axis index out of range.\n");
+    LOGERR("%s/%s:%d: ERROR: Axis index %d out of range.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex);
     *error = ERROR_MAIN_AXIS_INDEX_OUT_OF_RANGE;
     return "";
   }
 
   if (axes[axisIndex] == NULL) {
-    LOGERR("ERROR: Axis object NULL\n");
+    LOGERR("%s/%s:%d: ERROR: Axis[%d]: Axis object is NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex);
     *error = ERROR_MAIN_AXIS_OBJECT_NULL;
     return "";
   }
@@ -1631,13 +1641,20 @@ const char* getAxisPLCExpr(int axisIndex, int *error) {
 
   if ((plcIndex >= ECMC_MAX_PLCS + ECMC_MAX_AXES) ||
       (plcIndex < ECMC_MAX_PLCS)) {
-    LOGERR("ERROR: PLC index out of range.\n");
+    LOGERR("%s/%s:%d: ERROR: PLC index %d out of range.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           plcIndex);
     *error = ERROR_PLCS_INDEX_OUT_OF_RANGE;
     return "";
   }
 
   if (!plcs) {
-    LOGERR("ERROR: PLC object NULL.\n");
+    LOGERR("%s/%s:%d: ERROR: PLC object is NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__);
     *error = ERROR_MAIN_PLCS_NULL;
     return "";
   }
@@ -3860,7 +3877,7 @@ int createAxis(int index, int type, int drvType, int trajType) {
   catch (std::exception& e) {
     delete axes[index];
     axes[index] = NULL;
-    LOGERR("%s/%s:%d: EXCEPTION %s WHEN ALLOCATE MEMORY FOR AXIS OBJECT.\n",
+    LOGERR("%s/%s:%d: ERROR: Exception while allocating axis object: %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -3868,6 +3885,20 @@ int createAxis(int index, int type, int drvType, int trajType) {
     return ERROR_MAIN_EXCEPTION;
   }
   axisDiagIndex = index;  // Always printout last axis added
+
+  int axisError = axes[index]->getErrorID();
+  if (axisError) {
+    LOGERR("%s/%s:%d: ERROR: Axis[%d]: Axis creation failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index,
+           getErrorString(axisError),
+           axisError);
+    delete axes[index];
+    axes[index] = NULL;
+    return axisError;
+  }
 
   int error = createPLC(AXIS_PLC_ID_TO_PLC_ID(index), mcuPeriod / 1e6, 1);
 
@@ -3908,7 +3939,7 @@ int addAxisGroup(const char *name) {
   catch (std::exception& e) {
     delete axisGroups[index];
     axisGroups[index] = NULL;
-    LOGERR("%s/%s:%d: EXCEPTION %s WHEN ALLOCATE MEMORY FOR AXISGROUP OBJECT.\n",
+    LOGERR("%s/%s:%d: ERROR: Exception while allocating axis group object: %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -3984,7 +4015,7 @@ int addAxisToGroupByIndex(int axIndex, int grpIndex) {
     axisGroups[grpIndex]->addAxis(axes[axIndex]);    
   }
   catch (std::exception& e) {
-    LOGERR("%s/%s:%d: EXCEPTION %s WHEN ADDING AXIS to GROUP.\n",
+    LOGERR("%s/%s:%d: ERROR: Exception while adding axis to group: %s.\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -4582,7 +4613,11 @@ void* getAxisPointer(int  axisIndex) {
            __LINE__,
            axisIndex);
   if (axisIndex >= ECMC_MAX_AXES || axisIndex <= 0) {
-    LOGERR("ERROR: Axis index out of range.\n");
+    LOGERR("%s/%s:%d: ERROR: Axis index %d out of range.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex);
     return NULL;
   }
   return (void*)axes[axisIndex];  
@@ -4603,7 +4638,13 @@ int createMasterSlaveSM(int index,
   ecmcAxisGroup *slaveGrp  = NULL;
   for(int i = 0;i < ECMC_MAX_AXES; i++) {
     if(axisGroups[i] != NULL) {
-      printf("Comparing %s with %s and %s\n",axisGroups[i]->getName(),masterGrpName,slaveGrpName);
+      LOGINFO4("%s/%s:%d comparing axis group %s with master=%s, slave=%s\n",
+               __FILE__,
+               __FUNCTION__,
+               __LINE__,
+               axisGroups[i]->getName(),
+               masterGrpName,
+               slaveGrpName);
       if(strcmp(axisGroups[i]->getName(),masterGrpName) == 0) {
         masterGrp = axisGroups[i];
       }
@@ -4617,13 +4658,45 @@ int createMasterSlaveSM(int index,
     return ERROR_GROUP_NULL;
   }
 
-  masterSlaveSMs[index] = new ecmcMasterSlaveStateMachine(asynPort,
-                                                          index,
-                                                          name,
-                                                          1.0 / mcuFrequency,
-                                                          masterGrp,
-                                                          slaveGrp,
-                                                          autoDisableMasters,
-                                                          autoDisableSlaves);
+  try {
+    masterSlaveSMs[index] = new ecmcMasterSlaveStateMachine(asynPort,
+                                                            index,
+                                                            name,
+                                                            1.0 / mcuFrequency,
+                                                            masterGrp,
+                                                            slaveGrp,
+                                                            autoDisableMasters,
+                                                            autoDisableSlaves);
+  } catch (std::bad_alloc& ex) {
+    LOGERR("%s/%s:%d: ERROR: Master/slave state machine[%d]: Allocation failed.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index);
+    return ERROR_MAIN_EXCEPTION;
+  }
+
+  if (!masterSlaveSMs[index]) {
+    LOGERR("%s/%s:%d: ERROR: Master/slave state machine[%d]: Object allocation returned NULL.\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index);
+    return ERROR_MAIN_EXCEPTION;
+  }
+
+  int errorCode = masterSlaveSMs[index]->getErrorID();
+  if (errorCode) {
+    LOGERR("%s/%s:%d: ERROR: Master/slave state machine[%d]: Creation failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index,
+           getErrorString(errorCode),
+           errorCode);
+    delete masterSlaveSMs[index];
+    masterSlaveSMs[index] = NULL;
+    return errorCode;
+  }
   return 0;
 }

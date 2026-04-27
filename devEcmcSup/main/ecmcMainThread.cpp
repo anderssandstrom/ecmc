@@ -40,6 +40,7 @@
 #include "ecmcOctetIF.h"
 #include "ecmcEthercat.h"
 #include "ecmcMotion.h"
+#include "ecmcRtLogger.h"
 #include "ecmcPLC.h"
 #include "ecmcMisc.h"
 #include "ecmcAsynPortDriver.h"
@@ -572,7 +573,7 @@ int ecmcInitThread(void) {
   shmAccessError = 0;
 
   if (shmInitError) {
-    LOGERR("WARNING: Shared memory unavailable at startup (0x%x).\n",
+    LOGWARNING("WARNING: Shared memory unavailable at startup (0x%x).\n",
            shmInitError);
   }
 
@@ -591,7 +592,7 @@ int waitForEcMasterScan(int timeoutSeconds) {
     clock_nanosleep(CLOCK_MONOTONIC, 0, &timeToPause, NULL);
 
     if (!ec->getScanBusyNotRT()) {
-      LOGINFO("EtherCAT bus ready (not scaning).\n");
+      LOGINFO("EtherCAT bus ready (not scanning).\n");
       return 0;
     } else {
       LOGINFO("Waiting for master to complete scan of slaves.\n");
@@ -609,14 +610,18 @@ int waitForThreadToStart(int timeoutSeconds) {
   timeToPause.tv_sec  = 1;
   timeToPause.tv_nsec = 0;
 
+  if (ec->getInitDone()) {
+    LOGINFO("Starting up EtherCAT bus. Max wait time %d second(s).\n",
+            timeoutSeconds);
+  } else {
+    LOGINFO("Starting up Realtime thread without EtherCAT support.\n");
+  }
+
   for (int i = 0; i < timeoutSeconds; i++) {
     if (ec->getInitDone()) {
-      LOGINFO(
-        "Starting up EtherCAT bus: %d second(s). Max wait time %d second(s).\n",
-        i,
-        timeoutSeconds);
+      LOGINFO(".\n");
     } else {
-      LOGINFO("Starting up Realtime thread without EtherCAT support.\n");
+      LOGINFO(".\n");
     }
     clock_nanosleep(CLOCK_MONOTONIC, 0, &timeToPause, NULL);
 
@@ -641,7 +646,7 @@ int lockMem(int size) {
 
   // lock memory
   if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-    LOGERR("WARNING: mlockall() failed (0x%x).\n", ERROR_MAIN_MLOCKALL_FAIL);
+    LOGWARNING("WARNING: mlockall() failed (0x%x).\n", ERROR_MAIN_MLOCKALL_FAIL);
 
     // return ERROR_MAIN_MLOCKALL_FAIL;
   } else {
@@ -699,6 +704,7 @@ int setAppModeCfg(int mode) {
   LOGINFO4("INFO:\t\tApplication in configuration mode.\n");
   appModeCmdOld = appModeCmd;
   appModeCmd    = (app_mode_type)mode;
+  ecmcRtLoggerSetEnabled(0);
 
   if ((appModeCmd == ECMC_MODE_CONFIG) &&
       (appModeCmdOld == ECMC_MODE_RUNTIME)) {
@@ -825,13 +831,15 @@ int setAppModeRun(int mode) {
                                  TIMESPEC2NS(masterActivationTimeRealtime));
 
     if (ec->activate()) {
-      LOGERR("INFO:\t\tActivation of master failed.\n");
+      LOGERR("ERROR:\t\tActivation of master failed.\n");
       return ERROR_MAIN_EC_ACTIVATE_FAILED;
     }
   } else {
-    LOGERR(
+    LOGWARNING(
       "WARNING: EtherCAT master not initialized. Starting ECMC without EtherCAT support.\n");
   }
+  ecmcRtLoggerStart();
+  ecmcRtLoggerSetEnabled(1);
   errorCode = startRTthread();
 
   if (errorCode) {
@@ -883,7 +891,7 @@ int setAppMode(int mode) {
     break;
 
   default:
-    LOGERR("WARNING: Mode %d not implemented. (Config=%d, Runtime=%d).\n",
+    LOGWARNING("WARNING: Mode %d not implemented. (Config=%d, Runtime=%d).\n",
            mode,
            ECMC_MODE_CONFIG,
            ECMC_MODE_RUNTIME);

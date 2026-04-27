@@ -11,6 +11,8 @@
 \*************************************************************************/
 
 #include "ecmcEcSyncManager.h"
+#include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 
 ecmcEcSyncManager::ecmcEcSyncManager(ecmcAsynPortDriver *asynPortDriver,
                                      int                 masterId,
@@ -34,7 +36,7 @@ ecmcEcSyncManager::ecmcEcSyncManager(ecmcAsynPortDriver *asynPortDriver,
                                                  EC_WD_DEFAULT);
 
   if (errorCode) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: ecrt_slave_config_sync_manager() failed with error code %d (0x%x).\n",
       __FILE__,
       __FUNCTION__,
@@ -45,12 +47,13 @@ ecmcEcSyncManager::ecmcEcSyncManager(ecmcAsynPortDriver *asynPortDriver,
   }
 
   ecrt_slave_config_pdo_assign_clear(slaveConfig_, syncMangerIndex_);
-  LOGINFO5("%s/%s:%d: INFO: Sync manager %d configured: direction %d.\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           syncMangerIndex,
-           direction);
+  ECMC_RT_LOG_ETHERCAT_DEBUG(slaveId_,
+                             "%s/%s:%d: DEBUG: Sync manager %d configured: direction %d.\n",
+                             __FILE__,
+                             __FUNCTION__,
+                             __LINE__,
+                             syncMangerIndex,
+                             direction);
 }
 
 void ecmcEcSyncManager::initVars() {
@@ -80,7 +83,7 @@ ecmcEcSyncManager::~ecmcEcSyncManager() {
 
 int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
   if (pdoCounter_ >= EC_MAX_PDOS - 1) {
-    LOGERR("%s/%s:%d: ERROR: PDO array full (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PDO array full (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -90,21 +93,35 @@ int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
                       __LINE__,
                       ERROR_EC_SM_PDO_ARRAY_FULL);
   }
-  pdoArray_[pdoCounter_] = new ecmcEcPdo(asynPortDriver_,
-                                         masterId_,
-                                         slaveId_,
-                                         domain_,
-                                         slaveConfig_,
-                                         syncMangerIndex_,
-                                         pdoIndex,
-                                         direction_);
+  ecmcEcPdo *pdo = new ecmcEcPdo(asynPortDriver_,
+                                 masterId_,
+                                 slaveId_,
+                                 domain_,
+                                 slaveConfig_,
+                                 syncMangerIndex_,
+                                 pdoIndex,
+                                 direction_);
+  if (!pdo) {
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_MAIN_EXCEPTION);
+  }
+
+  int errorCode = pdo->getErrorID();
+  if (errorCode) {
+    delete pdo;
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
+
+  pdoArray_[pdoCounter_] = pdo;
   pdoCounter_++;
   return 0;
 }
 
 ecmcEcPdo * ecmcEcSyncManager::getPdo(int index) {
   if (index >= EC_MAX_PDOS) {
-    LOGERR("%s/%s:%d: ERROR: PDO index out of range (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: PDO index out of range (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -124,7 +141,7 @@ int ecmcEcSyncManager::getPdoCount() {
 
 int ecmcEcSyncManager::getInfo(ec_sync_info_t *info) {
   if (info == NULL) {
-    LOGERR("%s/%s:%d: ERROR: Output parameter pointer NULL (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Output parameter pointer is NULL (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,

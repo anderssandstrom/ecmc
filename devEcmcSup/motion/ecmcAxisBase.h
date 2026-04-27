@@ -58,6 +58,18 @@ public:
   virtual ecmcPIDController* getCntrl()             = 0;
   virtual int                validate()             = 0;
   virtual void               execute(bool masterOK) = 0;
+  int                        setErrorID(int errorID) override;
+  int                        setErrorID(int               errorID,
+                                        ecmcAlarmSeverity severity) override;
+  int                        setErrorID(const char *fileName,
+                                        const char *functionName,
+                                        int         lineNumber,
+                                        int         errorID) override;
+  int                        setErrorID(const char       *fileName,
+                                        const char       *functionName,
+                                        int               lineNumber,
+                                        int               errorID,
+                                        ecmcAlarmSeverity severity) override;
   int                        getCntrlError(double *error);
   int                        setEnable(bool enable);
   int                        setEnableAtStartup(bool enable);
@@ -238,6 +250,7 @@ public:
   int        setAutoResetError(bool enable);
   void       setTargetVel(double velTarget);
   void       setTargetPos(double posTarget);
+  void       setTargetPosAndCmd(double posTarget);
   void       setTargetPosToCurrSetPos();
   void       setTweakDist(double dist);
   double     getTweakDist();
@@ -292,6 +305,7 @@ protected:
   void autoDisableSM();
   void refreshAsynTargetValue();
   bool commandValid(motionCommandTypes command);
+  bool shouldSyncSetpointToActual();
 
   ecmcTrajectoryBase *traj_;
   ecmcMonitor *mon_;

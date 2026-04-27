@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcPLCDataIF.h"
+#include "ecmcRtLogger.h"
 
 ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
                              double              plcSampleRateMs,
@@ -29,14 +30,17 @@ ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
   dataSourceAxis_ = parseAxisDataSource(axisVarName);
 
   if (dataSourceAxis_ == ECMC_AXIS_DATA_NONE) {
-    LOGERR("%s/%s:%d: ERROR: Axis data Source Undefined  (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ERROR_PLC_AXIS_DATA_TYPE_ERROR);
+    setErrorID(__FILE__,
+               __FUNCTION__,
+               __LINE__,
+               ERROR_PLC_AXIS_DATA_TYPE_ERROR);
+    return;
   }
   asynWriteAllow_ = 0;
-  initAsyn();
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
 }
 
 ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
@@ -56,14 +60,17 @@ ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
   dataSourceDs_   = parseDataStorageDataSource(dsVarName);
 
   if (dataSourceDs_ == ECMC_DATA_STORAGE_DATA_NONE) {
-    LOGERR("%s/%s:%d: ERROR: Axis data Source Undefined  (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ERROR_PLC_AXIS_DATA_TYPE_ERROR);
+    setErrorID(__FILE__,
+               __FUNCTION__,
+               __LINE__,
+               ERROR_PLC_DATA_STORGAE_DATA_TYPE_ERROR);
+    return;
   }
   asynWriteAllow_ = 0;
-  initAsyn();
+  int errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
 }
 
 ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
@@ -80,9 +87,16 @@ ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
   exprTkVarName_  = ecVarName;
   asynPortDriver_ = asynPortDriver;
   source_         = ECMC_RECORDER_SOURCE_ETHERCAT;
-  parseAndLinkEcDataSource(ecVarName);
+  int errorCode   = parseAndLinkEcDataSource(ecVarName);
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    return;
+  }
   asynWriteAllow_ = 0;
-  initAsyn();
+  errorCode = initAsyn();
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
 }
 
 ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
@@ -99,7 +113,10 @@ ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
   asynPortDriver_ = asynPortDriver;
   source_         = dataSource;
   asynWriteAllow_ = 1;
-  initAsyn();  // Only static and global variables accessible from PLC
+  int errorCode = initAsyn();  // Only static and global variables accessible from PLC
+  if (errorCode) {
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
 }
 
 ecmcPLCDataIF::~ecmcPLCDataIF() {}
@@ -667,7 +684,7 @@ int ecmcPLCDataIF::writeAxis() {
     break;
 
   case ECMC_AXIS_DATA_POS_TARGET:
-    axis->setTargetPos(data_);
+    axis->setTargetPosAndCmd(data_);
     return 0;
 
     break;
@@ -1339,7 +1356,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
     parseEcPath(ecDataSource, &masterId, &slaveId, alias, &bitId);
 
   if (errorCode) {
-    LOGERR("%s/%s:%d: ERROR: Parse %s failed (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Parse %s failed (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1349,7 +1366,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
   }
 
   if (ec_->getMasterIndex() != masterId) {
-    LOGERR("%s/%s:%d: ERROR: Master %s not configured (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master %s not configured (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1381,7 +1398,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
   }
 
   if (slave == NULL) {
-    LOGERR("%s/%s:%d: ERROR: Slave %s not configured (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave %s not configured (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1396,7 +1413,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
   ecmcEcEntry *entry = slave->findEntry(sEntryID);
 
   if (entry == NULL) {
-    LOGERR("%s/%s:%d: ERROR: Entry %s not configured (0x%x).\n",
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Entry %s not configured (0x%x).\n",
            __FILE__,
            __FUNCTION__,
            __LINE__,
@@ -1422,7 +1439,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
   ecmcEcDataType dt = getEntryDataType(ECMC_PLC_EC_ENTRY_INDEX);
 
   if ((dt == ECMC_EC_NONE) || (dt == ECMC_EC_U64) || (dt == ECMC_EC_S64)) {
-    LOGERR(
+    ecmcRtLoggerLogWarning(
       "%s/%s:%d: WARNING: Entry %s is of type S64, U64 or undefined. PLC values are doubles and might not be able to represent the ethercat value correct.\n",
       __FILE__,
       __FUNCTION__,
@@ -1565,8 +1582,8 @@ int ecmcPLCDataIF::initAsyn() {
   }
 
   if (charCount >= sizeof(buffer) - 1) {
-    LOGERR(
-      "%s/%s:%d: Error: Failed to generate alias. Buffer to small (0x%x).\n",
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Failed to generate alias. Buffer too small (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -1584,7 +1601,7 @@ int ecmcPLCDataIF::initAsyn() {
                                                     0);
 
   if (!asynDataItem_) {
-    LOGERR(
+    ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Add create default parameter for %s failed (0x%x).\n",
       __FILE__,
       __FUNCTION__,

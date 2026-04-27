@@ -153,11 +153,15 @@ private:
   asynStatus readBackSoftLimits(bool updateMotor);
   int        applyMotorSoftLimitChange(bool   updateFwd,
                                        double value);
+  bool       isSoftLimitSyncEnabled();
+  asynStatus updateSoftLimitSyncState(bool updateParams, bool *risingEdge);
   asynStatus syncEcmcSoftLimits();
   asynStatus syncEcmcSoftLimits(bool force, bool updateParams);
   asynStatus syncMotorSoftLimits();
   asynStatus syncMotorSoftLimits(bool force, bool updateParams);
   asynStatus syncSoftLimitInterfaces(bool updateParams);
+  asynStatus syncSoftLimitInterfaces(bool updateParams,
+                                     bool seedWritableMotorLimits);
   asynStatus readScaling(int axisID);
   asynStatus readMonitoring(int axisID);
   asynStatus readBackVelocities(int axisID);
