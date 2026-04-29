@@ -20,6 +20,7 @@ class ecmcCppLogicLib : public ecmcError {
   ~ecmcCppLogicLib() override;
 
   int load(const char* libFilenameWP, const char* configStr);
+  int appendMacros(const char* macrosText);
   void unload();
   void report();
 

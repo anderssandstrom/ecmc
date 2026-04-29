@@ -3344,6 +3344,15 @@ parse_cfg_setaxisdrv:
     return reportCppLogic(iValue);
   }
 
+  /*int Cfg.AppendCppLogicMacros(int logicId)=char *macrosText; */
+  cExprBuffer[0] = '\0';
+  nvals = sscanf(myarg_1, "AppendCppLogicMacros(%d)=%[^\n]", &iValue, cExprBuffer);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendCppLogicMacros");
+    return appendCppLogicMacros(iValue, cExprBuffer);
+  }
+
   /*int Cfg.SetAxisSeqTimeout(int axis_no, int value);  IN seconds!!*/
   nvals = sscanf(myarg_1, "SetAxisSeqTimeout(%d,%d)", &iValue, &iValue2);
 

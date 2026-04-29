@@ -19,6 +19,7 @@
 #include "ecmcOctetIF.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
@@ -82,6 +83,7 @@ struct CppLogicConfig {
   std::string asynPortName;
   double sampleRateMs {0.0};
   double updateRateMs {0.0};
+  std::string macrosText;
 };
 
 struct ResolvedItemBinding {
@@ -224,6 +226,58 @@ void trimDebugText(std::string* text) {
   }
 }
 
+std::string trimCopy(const std::string& value) {
+  size_t begin = 0u;
+  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
+    ++begin;
+  }
+
+  size_t end = value.size();
+  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1u])) != 0) {
+    --end;
+  }
+
+  return value.substr(begin, end - begin);
+}
+
+std::string stripOptionalQuotes(const std::string& value) {
+  if (value.size() >= 2u &&
+      ((value.front() == '\'' && value.back() == '\'') ||
+       (value.front() == '"' && value.back() == '"'))) {
+    return value.substr(1u, value.size() - 2u);
+  }
+  return value;
+}
+
+std::vector<std::string> splitConfigTokens(const std::string& configText) {
+  std::vector<std::string> tokens;
+  std::string current;
+  char quoteChar = '\0';
+
+  for (char c : configText) {
+    if ((c == '\'' || c == '"')) {
+      if (quoteChar == '\0') {
+        quoteChar = c;
+      } else if (quoteChar == c) {
+        quoteChar = '\0';
+      }
+      current.push_back(c);
+      continue;
+    }
+
+    if (c == ';' && quoteChar == '\0') {
+      tokens.emplace_back(std::move(current));
+      current.clear();
+      continue;
+    }
+
+    current.push_back(c);
+  }
+
+  tokens.emplace_back(std::move(current));
+  return tokens;
+}
+
 bool parseConfigString(const char* configStr, CppLogicConfig* config, std::string* errorOut) {
   if (!config) {
     return false;
@@ -234,13 +288,7 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
     return true;
   }
 
-  std::string configText(configStr);
-  size_t cursor = 0u;
-  while (cursor <= configText.size()) {
-    const size_t next = configText.find(';', cursor);
-    const size_t tokenEnd = next == std::string::npos ? configText.size() : next;
-    const std::string token = configText.substr(cursor, tokenEnd - cursor);
-
+  for (const std::string& token : splitConfigTokens(configStr)) {
     if (!token.empty()) {
       const size_t equals = token.find('=');
       if (equals == std::string::npos) {
@@ -250,11 +298,11 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
         return false;
       }
 
-      const std::string key = token.substr(0, equals);
-      const std::string value = token.substr(equals + 1u);
+      const std::string key = trimCopy(token.substr(0, equals));
+      const std::string value = trimCopy(token.substr(equals + 1u));
 
       if (key == "asyn_port") {
-        config->asynPortName = value;
+        config->asynPortName = stripOptionalQuotes(value);
       } else if (key == "sample_rate_ms") {
         if (value.empty()) {
           config->sampleRateMs = 0.0;
@@ -283,6 +331,8 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
           }
           config->updateRateMs = parsed;
         }
+      } else if (key == "macros") {
+        config->macrosText = stripOptionalQuotes(value);
       } else if (errorOut) {
         *errorOut = "Unknown C++ logic config key: " + key;
         return false;
@@ -290,11 +340,6 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
         return false;
       }
     }
-
-    if (next == std::string::npos) {
-      break;
-    }
-    cursor = next + 1u;
   }
 
   return true;
@@ -485,6 +530,14 @@ int32_t setCurrentDebugEnable(int32_t enable) {
   }
 
   return 0;
+}
+
+const char* getCurrentMacrosText() {
+  ecmcCppLogicLib::Impl* impl = g_activeCppLogic ? g_activeCppLogic : g_hostServiceCppLogic;
+  if (!impl) {
+    return "";
+  }
+  return impl->config.macrosText.c_str();
 }
 
 double currentCycleTimeS() {
@@ -1409,6 +1462,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   impl_->hostServices.get_cycle_time_s = &currentCycleTimeS;
   impl_->hostServices.publish_debug_text = &publishCurrentDebugText;
   impl_->hostServices.set_enable_dbg = &setCurrentDebugEnable;
+  impl_->hostServices.get_macros_text = &getCurrentMacrosText;
   if (impl_->api->setHostServices) {
     impl_->api->setHostServices(&impl_->hostServices);
   }
@@ -1728,6 +1782,7 @@ void ecmcCppLogicLib::report() {
   printf("  Logic name         = %s\n", impl_->logicName.c_str());
   printf("  Shared library     = %s\n", impl_->libFilename.c_str());
   printf("  Config             = %s\n", impl_->configString.c_str());
+  printf("  MACROS             = %s\n", impl_->config.macrosText.c_str());
   printf("  Asyn port          = %s\n", impl_->config.asynPortName.c_str());
   printf("  Requested rate [ms]= %.3f\n", impl_->requestedSampleRateMs);
   printf("  Actual rate [ms]   = %.3f\n", impl_->actualSampleRateMs);
@@ -1736,6 +1791,27 @@ void ecmcCppLogicLib::report() {
   printf("  Execute divider    = %d\n", impl_->executeDividerPv);
   printf("  Item bindings      = %zu\n", impl_->itemBindings.size());
   printf("  EPICS exports      = %zu\n", impl_->exportedParams.size());
+}
+
+int ecmcCppLogicLib::appendMacros(const char* macrosText) {
+  if (!impl_ || !impl_->loaded) {
+    return ERROR_MAIN_CPP_LOGIC_OBJECT_NULL;
+  }
+
+  const std::string appendText =
+    stripOptionalQuotes(trimCopy(macrosText ? std::string(macrosText) : std::string()));
+  if (appendText.empty()) {
+    return 0;
+  }
+
+  if (impl_->config.macrosText.empty()) {
+    impl_->config.macrosText = appendText;
+  } else {
+    impl_->config.macrosText += ",";
+    impl_->config.macrosText += appendText;
+  }
+
+  return 0;
 }
 
 int ecmcCppLogicLib::exeEnterRTFunc() {

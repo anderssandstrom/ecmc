@@ -36,6 +36,8 @@ class CppLogicApi(ctypes.Structure):
 
 SET_HOST = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 CREATE_INSTANCE = ctypes.CFUNCTYPE(ctypes.c_void_p)
+ENTER_REALTIME = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+EXIT_REALTIME = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 DESTROY_INSTANCE = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 RUN_CYCLE = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 GET_EXPORTED_VARS = ctypes.CFUNCTYPE(ctypes.POINTER(ExportedVar), ctypes.c_void_p)
@@ -47,6 +49,8 @@ CppLogicApi._fields_ = [
     ("name", ctypes.c_char_p),
     ("setHostServices", SET_HOST),
     ("createInstance", CREATE_INSTANCE),
+    ("enterRealtime", ENTER_REALTIME),
+    ("exitRealtime", EXIT_REALTIME),
     ("destroyInstance", DESTROY_INSTANCE),
     ("runCycle", RUN_CYCLE),
     ("getItemBindings", ctypes.c_void_p),

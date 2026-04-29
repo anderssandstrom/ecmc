@@ -12,9 +12,13 @@
 #include "ecmcCppLogic.h"
 
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstddef>
+#include <cstdlib>
+#include <deque>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -332,21 +336,54 @@ inline ecmcCppLogicExportedVar epicsWritableBytes(const char* name,
 
 class EcmcItems {
  public:
+  static const char* ownName(std::deque<std::string>* storage, std::string_view name) {
+    if (!storage) {
+      return "";
+    }
+    storage->emplace_back(name);
+    return storage->back().c_str();
+  }
+
   template <typename T>
   EcmcItems& input(const char* item_name, T& value) {
-    bindings_.push_back(ecmcInput(item_name, &value));
+    bindings_.push_back(ecmcInput(ownName(&ownedNames_, item_name ? std::string_view(item_name)
+                                                                  : std::string_view()),
+                                  &value));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& input(std::string_view item_name, T& value) {
+    bindings_.push_back(ecmcInput(ownName(&ownedNames_, item_name), &value));
     return *this;
   }
 
   template <typename T>
   EcmcItems& output(const char* item_name, T& value) {
-    bindings_.push_back(ecmcOutput(item_name, &value));
+    bindings_.push_back(ecmcOutput(ownName(&ownedNames_, item_name ? std::string_view(item_name)
+                                                                   : std::string_view()),
+                                   &value));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& output(std::string_view item_name, T& value) {
+    bindings_.push_back(ecmcOutput(ownName(&ownedNames_, item_name), &value));
     return *this;
   }
 
   template <typename T>
   EcmcItems& inputArray(const char* item_name, T* values, size_t count) {
-    bindings_.push_back(ecmcInputArray(item_name, values, count));
+    bindings_.push_back(ecmcInputArray(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputArray(std::string_view item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcInputArray(ownName(&ownedNames_, item_name), values, count));
     return *this;
   }
 
@@ -371,7 +408,16 @@ class EcmcItems {
 
   template <typename T>
   EcmcItems& outputArray(const char* item_name, T* values, size_t count) {
-    bindings_.push_back(ecmcOutputArray(item_name, values, count));
+    bindings_.push_back(ecmcOutputArray(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputArray(std::string_view item_name, T* values, size_t count) {
+    bindings_.push_back(ecmcOutputArray(ownName(&ownedNames_, item_name), values, count));
     return *this;
   }
 
@@ -396,13 +442,31 @@ class EcmcItems {
 
   template <typename T>
   EcmcItems& inputAutoArray(const char* item_name, std::vector<T>& values) {
-    bindings_.push_back(ecmcInputAutoArray(item_name, values));
+    bindings_.push_back(
+      ecmcInputAutoArray(ownName(&ownedNames_,
+                                 item_name ? std::string_view(item_name) : std::string_view()),
+                         values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& inputAutoArray(std::string_view item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcInputAutoArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
   template <typename T>
   EcmcItems& outputAutoArray(const char* item_name, std::vector<T>& values) {
-    bindings_.push_back(ecmcOutputAutoArray(item_name, values));
+    bindings_.push_back(
+      ecmcOutputAutoArray(ownName(&ownedNames_,
+                                  item_name ? std::string_view(item_name) : std::string_view()),
+                          values));
+    return *this;
+  }
+
+  template <typename T>
+  EcmcItems& outputAutoArray(std::string_view item_name, std::vector<T>& values) {
+    bindings_.push_back(ecmcOutputAutoArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -410,7 +474,19 @@ class EcmcItems {
                         void*       data,
                         uint32_t    bytes,
                         uint32_t    type = ECMC_CPP_TYPE_U8) {
-    bindings_.push_back(ecmcInputBytes(item_name, data, bytes, type));
+    bindings_.push_back(ecmcInputBytes(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EcmcItems& inputBytes(std::string_view item_name,
+                        void*            data,
+                        uint32_t         bytes,
+                        uint32_t         type = ECMC_CPP_TYPE_U8) {
+    bindings_.push_back(ecmcInputBytes(ownName(&ownedNames_, item_name), data, bytes, type));
     return *this;
   }
 
@@ -418,7 +494,19 @@ class EcmcItems {
                          void*       data,
                          uint32_t    bytes,
                          uint32_t    type = ECMC_CPP_TYPE_U8) {
-    bindings_.push_back(ecmcOutputBytes(item_name, data, bytes, type));
+    bindings_.push_back(ecmcOutputBytes(
+      ownName(&ownedNames_, item_name ? std::string_view(item_name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EcmcItems& outputBytes(std::string_view item_name,
+                         void*            data,
+                         uint32_t         bytes,
+                         uint32_t         type = ECMC_CPP_TYPE_U8) {
+    bindings_.push_back(ecmcOutputBytes(ownName(&ownedNames_, item_name), data, bytes, type));
     return *this;
   }
 
@@ -431,26 +519,60 @@ class EcmcItems {
   }
 
  private:
+  std::deque<std::string> ownedNames_;
   std::vector<ecmcCppLogicItemBinding> bindings_;
 };
 
 class EpicsExports {
  public:
+  static const char* ownName(std::deque<std::string>* storage, std::string_view name) {
+    if (!storage) {
+      return "";
+    }
+    storage->emplace_back(name);
+    return storage->back().c_str();
+  }
+
   template <typename T>
   EpicsExports& readOnly(const char* name, T& value) {
-    exports_.push_back(epicsReadOnly(name, &value));
+    exports_.push_back(epicsReadOnly(ownName(&ownedNames_,
+                                             name ? std::string_view(name) : std::string_view()),
+                                     &value));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& readOnly(std::string_view name, T& value) {
+    exports_.push_back(epicsReadOnly(ownName(&ownedNames_, name), &value));
     return *this;
   }
 
   template <typename T>
   EpicsExports& writable(const char* name, T& value) {
-    exports_.push_back(epicsWritable(name, &value));
+    exports_.push_back(epicsWritable(ownName(&ownedNames_,
+                                             name ? std::string_view(name) : std::string_view()),
+                                     &value));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& writable(std::string_view name, T& value) {
+    exports_.push_back(epicsWritable(ownName(&ownedNames_, name), &value));
     return *this;
   }
 
   template <typename T>
   EpicsExports& readOnlyArray(const char* name, T* values, size_t count) {
-    exports_.push_back(epicsReadOnlyArray(name, values, count));
+    exports_.push_back(epicsReadOnlyArray(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& readOnlyArray(std::string_view name, T* values, size_t count) {
+    exports_.push_back(epicsReadOnlyArray(ownName(&ownedNames_, name), values, count));
     return *this;
   }
 
@@ -475,7 +597,16 @@ class EpicsExports {
 
   template <typename T>
   EpicsExports& writableArray(const char* name, T* values, size_t count) {
-    exports_.push_back(epicsWritableArray(name, values, count));
+    exports_.push_back(epicsWritableArray(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      values,
+      count));
+    return *this;
+  }
+
+  template <typename T>
+  EpicsExports& writableArray(std::string_view name, T* values, size_t count) {
+    exports_.push_back(epicsWritableArray(ownName(&ownedNames_, name), values, count));
     return *this;
   }
 
@@ -502,7 +633,19 @@ class EpicsExports {
                               void*       data,
                               uint32_t    bytes,
                               uint32_t    type = ECMC_CPP_TYPE_U8) {
-    exports_.push_back(epicsReadOnlyBytes(name, data, bytes, type));
+    exports_.push_back(epicsReadOnlyBytes(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EpicsExports& readOnlyBytes(std::string_view name,
+                              void*            data,
+                              uint32_t         bytes,
+                              uint32_t         type = ECMC_CPP_TYPE_U8) {
+    exports_.push_back(epicsReadOnlyBytes(ownName(&ownedNames_, name), data, bytes, type));
     return *this;
   }
 
@@ -510,7 +653,19 @@ class EpicsExports {
                               void*       data,
                               uint32_t    bytes,
                               uint32_t    type = ECMC_CPP_TYPE_U8) {
-    exports_.push_back(epicsWritableBytes(name, data, bytes, type));
+    exports_.push_back(epicsWritableBytes(
+      ownName(&ownedNames_, name ? std::string_view(name) : std::string_view()),
+      data,
+      bytes,
+      type));
+    return *this;
+  }
+
+  EpicsExports& writableBytes(std::string_view name,
+                              void*            data,
+                              uint32_t         bytes,
+                              uint32_t         type = ECMC_CPP_TYPE_U8) {
+    exports_.push_back(epicsWritableBytes(ownName(&ownedNames_, name), data, bytes, type));
     return *this;
   }
 
@@ -523,6 +678,7 @@ class EpicsExports {
   }
 
  private:
+  std::deque<std::string> ownedNames_;
   std::vector<ecmcCppLogicExportedVar> exports_;
 };
 
@@ -649,6 +805,149 @@ inline int32_t getIocState() {
   return (g_hostServices && g_hostServices->get_ioc_state)
            ? g_hostServices->get_ioc_state()
            : -1;
+}
+
+inline std::string getMacrosString() {
+  if (!g_hostServices || !g_hostServices->get_macros_text) {
+    return {};
+  }
+
+  const char* text = g_hostServices->get_macros_text();
+  return text ? std::string(text) : std::string();
+}
+
+inline std::string getMacroValue(const std::string& macrosString, const std::string& key) {
+  auto trimCopy = [](const std::string& value) -> std::string {
+    size_t begin = 0u;
+    while (begin < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
+      ++begin;
+    }
+
+    size_t end = value.size();
+    while (end > begin &&
+           std::isspace(static_cast<unsigned char>(value[end - 1u])) != 0) {
+      --end;
+    }
+
+    return value.substr(begin, end - begin);
+  };
+
+  auto stripOptionalQuotes = [](const std::string& value) -> std::string {
+    if (value.size() >= 2u &&
+        ((value.front() == '\'' && value.back() == '\'') ||
+         (value.front() == '"' && value.back() == '"'))) {
+      return value.substr(1u, value.size() - 2u);
+    }
+    return value;
+  };
+
+  auto splitMacroTokens = [](const std::string& text) -> std::vector<std::string> {
+    std::vector<std::string> tokens;
+    std::string current;
+    char quoteChar = '\0';
+
+    for (char c : text) {
+      if (c == '\'' || c == '"') {
+        if (quoteChar == '\0') {
+          quoteChar = c;
+        } else if (quoteChar == c) {
+          quoteChar = '\0';
+        }
+        current.push_back(c);
+        continue;
+      }
+
+      if (c == ',' && quoteChar == '\0') {
+        tokens.emplace_back(std::move(current));
+        current.clear();
+        continue;
+      }
+
+      current.push_back(c);
+    }
+
+    tokens.emplace_back(std::move(current));
+    return tokens;
+  };
+
+  const std::string wantedKey = trimCopy(key);
+  if (wantedKey.empty()) {
+    return {};
+  }
+
+  for (const std::string& token : splitMacroTokens(macrosString)) {
+    if (token.empty()) {
+      continue;
+    }
+
+    const size_t equals = token.find('=');
+    if (equals == std::string::npos) {
+      continue;
+    }
+
+    const std::string tokenKey = trimCopy(token.substr(0, equals));
+    if (tokenKey != wantedKey) {
+      continue;
+    }
+
+    return stripOptionalQuotes(trimCopy(token.substr(equals + 1u)));
+  }
+
+  return {};
+}
+
+inline std::string getMacroValue(const char* macrosString, const char* key) {
+  return getMacroValue(macrosString ? std::string(macrosString) : std::string(),
+                       key ? std::string(key) : std::string());
+}
+
+inline int getMacroValueInt(const std::string& macrosString,
+                            const std::string& key,
+                            int defaultValue = 0) {
+  const std::string value = getMacroValue(macrosString, key);
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  char* endPtr = nullptr;
+  const long parsed = std::strtol(value.c_str(), &endPtr, 0);
+  if (!endPtr || *endPtr != '\0') {
+    return defaultValue;
+  }
+  return static_cast<int>(parsed);
+}
+
+inline int getMacroValueInt(const char* macrosString,
+                            const char* key,
+                            int defaultValue = 0) {
+  return getMacroValueInt(macrosString ? std::string(macrosString) : std::string(),
+                          key ? std::string(key) : std::string(),
+                          defaultValue);
+}
+
+inline double getMacroValueDouble(const std::string& macrosString,
+                                  const std::string& key,
+                                  double defaultValue = 0.0) {
+  const std::string value = getMacroValue(macrosString, key);
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  char* endPtr = nullptr;
+  const double parsed = std::strtod(value.c_str(), &endPtr);
+  if (!endPtr || *endPtr != '\0') {
+    return defaultValue;
+  }
+  return parsed;
+}
+
+inline double getMacroValueDouble(const char* macrosString,
+                                  const char* key,
+                                  double defaultValue = 0.0) {
+  return getMacroValueDouble(macrosString ? std::string(macrosString) : std::string(),
+                             key ? std::string(key) : std::string(),
+                             defaultValue);
 }
 
 inline void publishDebugText(const char* message) {
