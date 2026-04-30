@@ -902,6 +902,20 @@ inline std::string getMacroValue(const char* macrosString, const char* key) {
                        key ? std::string(key) : std::string());
 }
 
+inline std::string getMacroValueString(const std::string& macrosString,
+                                       const std::string& key,
+                                       const std::string& defaultValue = std::string()) {
+  const std::string value = getMacroValue(macrosString, key);
+  return value.empty() ? defaultValue : value;
+}
+
+inline std::string getMacroValueString(const char* macrosString,
+                                       const char* key,
+                                       const char* defaultValue = "") {
+  const std::string value = getMacroValue(macrosString, key);
+  return value.empty() ? std::string(defaultValue ? defaultValue : "") : value;
+}
+
 inline int getMacroValueInt(const std::string& macrosString,
                             const std::string& key,
                             int defaultValue = 0) {

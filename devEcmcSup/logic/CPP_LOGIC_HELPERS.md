@@ -59,13 +59,16 @@ Configuration text helper:
 
 - `ecmcCpp::getMacrosString()`
 - `ecmcCpp::getMacroValue(...)`
+- `ecmcCpp::getMacroValueString(...)`
 - `ecmcCpp::getMacroValueInt(...)`
 - `ecmcCpp::getMacroValueDouble(...)`
 
 This returns the optional `MACROS` string passed from the IOC startup path.
 Typical use is to read it once in the constructor and interpret it as a small
-configuration string for the logic module. The typed helpers return a caller-
-provided default value when the key is missing or the text cannot be parsed.
+configuration string for the logic module. `getMacroValue(...)` and
+`getMacroValueString(...)` return one macro value as a string. The typed helpers
+return a caller-provided default value when the key is missing or the text
+cannot be parsed.
 
 Array/buffer helpers:
 
@@ -130,6 +133,16 @@ These are intended to feel familiar to users coming from IEC/ST helper blocks.
 - `ecmcCpp::applyDeadband(...)`
 - `ecmcCpp::clampValue(...)`
 - `ecmcCpp::inWindow(...)`
+- `ecmcCpp::readBit(...)`
+- `ecmcCpp::writeBit(...)`
+- `ecmcCpp::setBit(...)`
+- `ecmcCpp::clearBit(...)`
+- `ecmcCpp::toggleBit(...)`
+
+The bit helpers work on integral word types such as `uint16_t`, `int32_t`, and
+`uint64_t`. Out-of-range bit indexes are handled without undefined shifts:
+`readBit(...)` returns `false`, while the write-style helpers return the
+unchanged input value.
 
 ### EtherCAT status wrappers
 

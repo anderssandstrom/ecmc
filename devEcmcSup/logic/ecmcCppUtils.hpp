@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 namespace ecmcCpp {
@@ -46,6 +47,52 @@ inline bool inWindow(double value, double low, double high, bool inclusive = tru
     std::swap(low, high);
   }
   return inclusive ? ((value >= low) && (value <= high)) : ((value > low) && (value < high));
+}
+
+template <typename T,
+          std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, int> = 0>
+constexpr bool readBit(T value, unsigned bit_index) {
+  using UnsignedT = std::make_unsigned_t<T>;
+  if (bit_index >= std::numeric_limits<UnsignedT>::digits) {
+    return false;
+  }
+  return (static_cast<UnsignedT>(value) & (UnsignedT {1u} << bit_index)) != 0u;
+}
+
+template <typename T,
+          std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, int> = 0>
+constexpr T writeBit(T value, unsigned bit_index, bool bit_value) {
+  using UnsignedT = std::make_unsigned_t<T>;
+  if (bit_index >= std::numeric_limits<UnsignedT>::digits) {
+    return value;
+  }
+
+  const UnsignedT mask = UnsignedT {1u} << bit_index;
+  UnsignedT word = static_cast<UnsignedT>(value);
+  word = bit_value ? (word | mask) : (word & ~mask);
+  return static_cast<T>(word);
+}
+
+template <typename T,
+          std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, int> = 0>
+constexpr T setBit(T value, unsigned bit_index) {
+  return writeBit(value, bit_index, true);
+}
+
+template <typename T,
+          std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, int> = 0>
+constexpr T clearBit(T value, unsigned bit_index) {
+  return writeBit(value, bit_index, false);
+}
+
+template <typename T,
+          std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, int> = 0>
+constexpr T toggleBit(T value, unsigned bit_index) {
+  using UnsignedT = std::make_unsigned_t<T>;
+  if (bit_index >= std::numeric_limits<UnsignedT>::digits) {
+    return value;
+  }
+  return static_cast<T>(static_cast<UnsignedT>(value) ^ (UnsignedT {1u} << bit_index));
 }
 
 class RTrig {

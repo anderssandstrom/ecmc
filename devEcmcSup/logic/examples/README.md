@@ -22,6 +22,7 @@ building blocks such as:
 - `ecmcCpp::Sr`, `ecmcCpp::Rs`, `ecmcCpp::FlipFlop`
 - `ecmcCpp::Blink`
 - `ecmcCpp::StateTimer<T>`
+- `ecmcCpp::readBit`, `ecmcCpp::writeBit`, `ecmcCpp::setBit`, `ecmcCpp::clearBit`, `ecmcCpp::toggleBit`
 - `ecmcCpp::MoveAverage`
 - `ecmcCpp::MinMaxHold`
 
