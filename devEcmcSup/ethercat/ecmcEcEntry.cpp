@@ -868,8 +868,11 @@ int ecmcEcEntry::initAsyn() {
 
   entryAsynParam_->setAllowWriteToEcmc(direction_ == EC_DIR_OUTPUT || sim_);
   entryAsynParam_->setEcmcBitCount(bitLength_);
-  entryAsynParam_->setEcmcMinValueInt(getEcDataTypeMinVal(dataType_));
-  entryAsynParam_->setEcmcMaxValueInt(getEcDataTypeMaxVal(dataType_));
+  
+  if(getEcDataTypeIsInt(dataType_)) {
+    entryAsynParam_->setEcmcMinValueInt(getEcDataTypeMinVal(dataType_));
+    entryAsynParam_->setEcmcMaxValueInt(getEcDataTypeMaxVal(dataType_));
+  }
 
   entryAsynParam_->refreshParam(1);
   asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
