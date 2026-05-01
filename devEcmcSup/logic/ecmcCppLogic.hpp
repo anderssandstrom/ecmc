@@ -394,8 +394,20 @@ class EcmcItems {
   }
 
   template <typename T, size_t N>
+  EcmcItems& inputArray(std::string_view item_name, T (&values)[N]) {
+    bindings_.push_back(ecmcInputArray(ownName(&ownedNames_, item_name), values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
   EcmcItems& inputArray(const char* item_name, std::array<T, N>& values) {
     bindings_.push_back(ecmcInputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& inputArray(std::string_view item_name, std::array<T, N>& values) {
+    bindings_.push_back(ecmcInputArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -403,6 +415,13 @@ class EcmcItems {
             std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
   EcmcItems& inputArray(const char* item_name, Container& values) {
     bindings_.push_back(ecmcInputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EcmcItems& inputArray(std::string_view item_name, Container& values) {
+    bindings_.push_back(ecmcInputArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -428,8 +447,20 @@ class EcmcItems {
   }
 
   template <typename T, size_t N>
+  EcmcItems& outputArray(std::string_view item_name, T (&values)[N]) {
+    bindings_.push_back(ecmcOutputArray(ownName(&ownedNames_, item_name), values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
   EcmcItems& outputArray(const char* item_name, std::array<T, N>& values) {
     bindings_.push_back(ecmcOutputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EcmcItems& outputArray(std::string_view item_name, std::array<T, N>& values) {
+    bindings_.push_back(ecmcOutputArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -437,6 +468,13 @@ class EcmcItems {
             std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
   EcmcItems& outputArray(const char* item_name, Container& values) {
     bindings_.push_back(ecmcOutputArray(item_name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EcmcItems& outputArray(std::string_view item_name, Container& values) {
+    bindings_.push_back(ecmcOutputArray(ownName(&ownedNames_, item_name), values));
     return *this;
   }
 
@@ -583,8 +621,20 @@ class EpicsExports {
   }
 
   template <typename T, size_t N>
+  EpicsExports& readOnlyArray(std::string_view name, T (&values)[N]) {
+    exports_.push_back(epicsReadOnlyArray(ownName(&ownedNames_, name), values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
   EpicsExports& readOnlyArray(const char* name, std::array<T, N>& values) {
     exports_.push_back(epicsReadOnlyArray(name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& readOnlyArray(std::string_view name, std::array<T, N>& values) {
+    exports_.push_back(epicsReadOnlyArray(ownName(&ownedNames_, name), values));
     return *this;
   }
 
@@ -592,6 +642,13 @@ class EpicsExports {
             std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
   EpicsExports& readOnlyArray(const char* name, Container& values) {
     exports_.push_back(epicsReadOnlyArray(name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EpicsExports& readOnlyArray(std::string_view name, Container& values) {
+    exports_.push_back(epicsReadOnlyArray(ownName(&ownedNames_, name), values));
     return *this;
   }
 
@@ -617,8 +674,20 @@ class EpicsExports {
   }
 
   template <typename T, size_t N>
+  EpicsExports& writableArray(std::string_view name, T (&values)[N]) {
+    exports_.push_back(epicsWritableArray(ownName(&ownedNames_, name), values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
   EpicsExports& writableArray(const char* name, std::array<T, N>& values) {
     exports_.push_back(epicsWritableArray(name, values));
+    return *this;
+  }
+
+  template <typename T, size_t N>
+  EpicsExports& writableArray(std::string_view name, std::array<T, N>& values) {
+    exports_.push_back(epicsWritableArray(ownName(&ownedNames_, name), values));
     return *this;
   }
 
@@ -626,6 +695,13 @@ class EpicsExports {
             std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
   EpicsExports& writableArray(const char* name, Container& values) {
     exports_.push_back(epicsWritableArray(name, values));
+    return *this;
+  }
+
+  template <typename Container,
+            std::enable_if_t<HasContiguousDataAndSize<Container>::value, int> = 0>
+  EpicsExports& writableArray(std::string_view name, Container& values) {
+    exports_.push_back(epicsWritableArray(ownName(&ownedNames_, name), values));
     return *this;
   }
 
