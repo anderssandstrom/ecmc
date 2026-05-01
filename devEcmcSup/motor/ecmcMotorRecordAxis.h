@@ -160,6 +160,7 @@ private:
   asynStatus syncEcmcSoftLimits(bool force, bool updateParams);
   asynStatus syncMotorSoftLimits();
   asynStatus syncMotorSoftLimits(bool force, bool updateParams);
+  asynStatus syncRestoredMotorSoftLimitsToEcmc();
   asynStatus syncSoftLimitInterfaces(bool updateParams);
   asynStatus syncSoftLimitInterfaces(bool updateParams,
                                      bool seedWritableMotorLimits);

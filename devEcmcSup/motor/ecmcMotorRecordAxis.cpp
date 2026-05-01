@@ -709,6 +709,31 @@ asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool force, bool updateParam
   return asynSuccess;
 }
 
+asynStatus ecmcMotorRecordAxis::syncRestoredMotorSoftLimitsToEcmc() {
+  double lowLimit = 0.0;
+  double highLimit = 0.0;
+  int errorCode = 0;
+
+  asynStatus status = pC_->getDoubleParam(axisNo_, pC_->motorLowLimit_, &lowLimit);
+  if (status) {
+    return status;
+  }
+  status = pC_->getDoubleParam(axisNo_, pC_->motorHighLimit_, &highLimit);
+  if (status) {
+    return status;
+  }
+
+  errorCode = applyMotorSoftLimitChange(false, lowLimit);
+  if (!errorCode) {
+    errorCode = applyMotorSoftLimitChange(true, highLimit);
+  }
+  if (errorCode) {
+    return asynError;
+  }
+
+  return syncSoftLimitInterfaces(true, false);
+}
+
 asynStatus ecmcMotorRecordAxis::syncSoftLimitInterfaces(bool updateParams) {
   return syncSoftLimitInterfaces(updateParams, false);
 }
@@ -1848,9 +1873,11 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
   // Inits first poll
   if (!updateFirstPollDone_) {
-    const bool seedWritableMotorLimits = !drvlocal.restoreMotorSoftlimits ||
-                                         !isSoftLimitSyncEnabled();
-    syncSoftLimitInterfaces(true, seedWritableMotorLimits);
+    if (drvlocal.restoreMotorSoftlimits && isSoftLimitSyncEnabled()) {
+      syncRestoredMotorSoftLimitsToEcmc();
+    } else {
+      syncSoftLimitInterfaces(true, true);
+    }
     updateFirstPollDone_ = true;
   }
 
