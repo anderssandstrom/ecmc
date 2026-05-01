@@ -2398,6 +2398,86 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20064:
+    return "ERROR_MAIN_CPP_LOGIC_LIST_FULL";
+
+    break;
+
+  case 0x20065:
+    return "ERROR_MAIN_CPP_LOGIC_OBJECT_NULL";
+
+    break;
+
+  case 0x20066:
+    return "ERROR_MAIN_CPP_LOGIC_INDEX_OUT_OF_RANGE";
+
+    break;
+
+  case 0x20067:
+    return "ERROR_MAIN_CPP_LOGIC_FILENAME_EMPTY";
+
+    break;
+
+  case 0x20068:
+    return "ERROR_MAIN_CPP_LOGIC_CONFIG_INVALID";
+
+    break;
+
+  case 0x20069:
+    return "ERROR_MAIN_CPP_LOGIC_OPEN_FAIL";
+
+    break;
+
+  case 0x2006A:
+    return "ERROR_MAIN_CPP_LOGIC_GET_API_FAIL";
+
+    break;
+
+  case 0x2006B:
+    return "ERROR_MAIN_CPP_LOGIC_API_NULL";
+
+    break;
+
+  case 0x2006C:
+    return "ERROR_MAIN_CPP_LOGIC_ABI_MISMATCH";
+
+    break;
+
+  case 0x2006D:
+    return "ERROR_MAIN_CPP_LOGIC_CREATE_INSTANCE_FAIL";
+
+    break;
+
+  case 0x2006E:
+    return "ERROR_MAIN_CPP_LOGIC_BIND_ITEM_MISSING";
+
+    break;
+
+  case 0x2006F:
+    return "ERROR_MAIN_CPP_LOGIC_BIND_ITEM_INVALID";
+
+    break;
+
+  case 0x20070:
+    return "ERROR_MAIN_CPP_LOGIC_BIND_ITEM_TYPE_MISMATCH";
+
+    break;
+
+  case 0x20071:
+    return "ERROR_MAIN_CPP_LOGIC_BIND_DIRECTION_MISMATCH";
+
+    break;
+
+  case 0x20072:
+    return "ERROR_MAIN_CPP_LOGIC_BIND_PREPARE_FAIL";
+
+    break;
+
+  case 0x20073:
+    return "ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL";
+
+    break;
+
   case 0x20100:   // Data Recorder
     return "ERROR_DATA_RECORDER_BUFFER_NULL";
 

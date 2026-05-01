@@ -13,6 +13,7 @@
 #include "ecmcPlugin.h"
 #include "ecmcOctetIF.h"        // Log Macros
 #include "ecmcDefinitions.h"
+#include "ecmcError.h"
 #include "ecmcErrorsList.h"
 
 // TODO: REMOVE GLOBALS
@@ -44,6 +45,14 @@ int loadPlugin(int pluginId, const char *filenameWP, const char *configStr) {
   int errorCode = plugins[pluginId]->load(filenameWP, configStr);
 
   if (errorCode) {
+    LOGERR("%s/%s:%d: LoadPlugin(%d, %s) failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           pluginId,
+           filenameWP ? filenameWP : "(null)",
+           ecmcError::convertErrorIdToString(errorCode),
+           errorCode);
     delete plugins[pluginId];
     plugins[pluginId] = NULL;
     return errorCode;
@@ -74,6 +83,13 @@ int loadSafetyPlugin(const char *filenameWP, const char *configStr) {
   int errorCode = safetyplugin->load(filenameWP, configStr);
 
   if (errorCode) {
+    LOGERR("%s/%s:%d: LoadSafetyPlugin(%s) failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           filenameWP ? filenameWP : "(null)",
+           ecmcError::convertErrorIdToString(errorCode),
+           errorCode);
     delete safetyplugin;
     safetyplugin = NULL;
     return errorCode;

@@ -11,6 +11,7 @@
 
 #include "ecmcCppLogicLib.h"
 #include "ecmcDefinitions.h"
+#include "ecmcError.h"
 #include "ecmcErrorsList.h"
 #include "ecmcGlobalsExtern.h"
 #include "ecmcOctetIF.h"
@@ -41,6 +42,14 @@ int loadCppLogic(int logicId, const char* filenameWP, const char* configStr) {
 
   int errorCode = cppLogics[logicId]->load(filenameWP, configStr ? configStr : "");
   if (errorCode) {
+    LOGERR("%s/%s:%d: LoadCppLogic(%d, %s) failed: %s (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           logicId,
+           filenameWP ? filenameWP : "(null)",
+           ecmcError::convertErrorIdToString(errorCode),
+           errorCode);
     delete cppLogics[logicId];
     cppLogics[logicId] = NULL;
     return errorCode;
