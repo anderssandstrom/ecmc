@@ -138,6 +138,7 @@ private:
     bool ecmcIgnoreDisableAxisStatus;
     bool syncEcmcMrSoftlimits;
     bool restoreMotorSoftlimits;
+    int  restoreMotorSoftlimitsPollsLeft;
   } drvlocal;
 
   //int       restorePowerOnOffNeeded_;

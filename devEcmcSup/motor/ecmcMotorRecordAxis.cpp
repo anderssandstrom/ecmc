@@ -157,10 +157,12 @@ static const char *ecmcInterlockToShortString(int interlock) {
 #define ECMC_AXIS_OPT_POWER_ON_DELAY    "powerOnDelay="
 #define ECMC_AXIS_OPT_SYNC_SOFT_LIMS       "syncSoftLims="
 #define ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS "restoreMotorSoftLims="
+#define ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS "restoreMotorSoftLimits="
 #define ECMC_AXIS_OPT_STR_LEN 25
 
 #define ECMC_AXIS_ENABLE_SLEEP_PERIOD 0.1
 #define ECMC_AXIS_ENABLE_MAX_SLEEP_TIME 3.0
+#define ECMC_AXIS_RESTORE_SOFT_LIMIT_POLLS 50
 
 
 /** Creates a new ecmcMotorRecordAxis object.
@@ -219,6 +221,7 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
 
   updateFirstPollDone_ = false;
   drvlocal.restoreMotorSoftlimits = false;
+  drvlocal.restoreMotorSoftlimitsPollsLeft = 0;
   if (!drvlocal.ecmcAxis) {
     LOGERR(
       "%s/%s:%d: ERROR: Axis reference is NULL.\n",
@@ -332,11 +335,22 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
                 syncLims ? "enabled" : "disabled");
 #endif //motorFlagsRwSoftLimitsString
       } else if (!strncmp(pThisOption, ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS,
-                          strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS))) {
+                          strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS)) ||
+                 !strncmp(pThisOption, ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS,
+                          strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS))) {
         int restoreMotorSoftlimits = 0;
-        pThisOption += strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS);
+        if (!strncmp(pThisOption, ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS,
+                     strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS))) {
+          pThisOption += strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS);
+        } else {
+          pThisOption += strlen(ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS);
+        }
         restoreMotorSoftlimits = atoi(pThisOption);
         drvlocal.restoreMotorSoftlimits = restoreMotorSoftlimits != 0;
+        if (drvlocal.restoreMotorSoftlimits) {
+          drvlocal.restoreMotorSoftlimitsPollsLeft =
+            ECMC_AXIS_RESTORE_SOFT_LIMIT_POLLS;
+        }
 #ifdef motorFlagsRwSoftLimitsString
         if (drvlocal.restoreMotorSoftlimits) {
           setIntegerParam(pC_->motorFlagsRwSoftLimits_, 1);
@@ -431,7 +445,7 @@ extern "C" int ecmcMotorRecordCreateAxis(const char *controllerPortName,
     printf(
       "                             -%-*s : Let autosave-restored motor DLLM/DHLM override ecmc soft limits at startup\n",
       ECMC_AXIS_OPT_STR_LEN,
-      ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMS);
+      ECMC_AXIS_OPT_RESTORE_MR_SOFT_LIMITS);
     printf(")\n");
     printf("Example:\n");
     printf("ecmcMotorRecordCreateAxis(\"ECMC_ASYN_MOTOR_PORT\",10,6,\"\")\n");
@@ -954,7 +968,9 @@ asynStatus ecmcMotorRecordAxis::readBackAllConfig(int axisID) {
 
   if (status == asynSuccess) status = readMonitoring(axisID);
 
-  if (status == asynSuccess) status = syncSoftLimitInterfaces(true);
+  if ((status == asynSuccess) && !drvlocal.restoreMotorSoftlimits) {
+    status = syncSoftLimitInterfaces(true);
+  }
 
   if (status == asynSuccess) status = readBackVelocities(axisID);
   return status;
@@ -1873,9 +1889,7 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
   // Inits first poll
   if (!updateFirstPollDone_) {
-    if (drvlocal.restoreMotorSoftlimits && isSoftLimitSyncEnabled()) {
-      syncRestoredMotorSoftLimitsToEcmc();
-    } else {
+    if (!drvlocal.restoreMotorSoftlimits) {
       syncSoftLimitInterfaces(true, true);
     }
     updateFirstPollDone_ = true;
@@ -1925,6 +1939,13 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
   status = updateSoftLimitSyncState(false, &softLimitSyncRisingEdge);
   if (status) {
     return status;
+  }
+  if (drvlocal.restoreMotorSoftlimitsPollsLeft > 0 && isSoftLimitSyncEnabled()) {
+    status = syncRestoredMotorSoftLimitsToEcmc();
+    if (status) {
+      return status;
+    }
+    drvlocal.restoreMotorSoftlimitsPollsLeft--;
   }
   if (!softLimitSyncRisingEdge) {
     syncSoftLimitInterfaces(false);
