@@ -163,7 +163,7 @@ void ecmcEncoder::initVars() {
   delayCompStateValid_    = false;
   lookupTableScale_       = 1;
   encLatchArm_            = 0;
-  encLatchControlWordArm_ = 0;
+  encLatchControlWordArm_ = 1;
   encLatchControlWordIdle_= 0;
   encLatchControlBits_    = 1;  // default to write 1 bit to arm latch
   allowOverUnderFlow_     = true;  // Allow as default
