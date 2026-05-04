@@ -1038,6 +1038,7 @@ int ecmcMonitor::checkAtTarget() {
 int  ecmcMonitor::checkStall() {
   const auto &statusWord = data_->status_.statusWord_;
   const auto &statusOldWord = data_->statusOld_.statusWord_;
+  const bool dbgPrint = data_->control_.controlWord_.enableDbgPrintout;
 
   // Do only check for stall when not busy (traj finished)
   if (!enableAtTargetMon_ || !enableStallMon_ || !statusWord.enabled ||
