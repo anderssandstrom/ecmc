@@ -428,6 +428,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
 
   if(masterStatusNow.anyBusy) {
+    if(!masterGroupWasBusy_) {
+      masterGrp_->resetPendingStallChecks();
+    }
     masterGroupWasBusy_ = true;
     if(masterGroupBusyCycles_ < UINT64_MAX) {
       masterGroupBusyCycles_++;

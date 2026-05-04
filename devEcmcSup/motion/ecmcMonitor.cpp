@@ -1143,6 +1143,12 @@ void ecmcMonitor::armStallCheckFromExternalMotion(uint64_t motionCycles) {
   stallLastMotionCmdCycles_ = 0;
 }
 
+void ecmcMonitor::resetPendingStallCheck() {
+  maxStallCounter_ = 0;
+  stallCheckAtTargetAtCycle_ = 0;
+  stallLastMotionCmdCycles_ = 0;
+}
+
 int ecmcMonitor::checkPositionLag() {
   bool lagErrorTraj  = false;
   bool lagErrorDrive = false;

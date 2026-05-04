@@ -139,6 +139,7 @@ public:
   double             getStallTime();
   double             getStallAtTime();
   void               armStallCheckFromExternalMotion(uint64_t motionCycles);
+  void               resetPendingStallCheck();
   int                setLimitSwitchFwdPLCOverride(bool overrideSwitch);
   int                setLimitSwitchBwdPLCOverride(bool overrideSwitch);
   int                setHomeSwitchPLCOverride(bool overrideSwitch);

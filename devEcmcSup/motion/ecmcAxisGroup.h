@@ -120,6 +120,8 @@ class ecmcAxisGroup : public ecmcError {
     ecmcAxisGroupStatusSummary getStatusSummary(bool includeMonFields = true);
     // Arm stall checks for axes that are still not at target after group motion.
     int armStallCheckForAxesNotAtTarget(uint64_t motionCycles);
+    // Clear pending stall checks before a new group motion window starts.
+    void resetPendingStallChecks();
 
   private:
     std::string name_;  

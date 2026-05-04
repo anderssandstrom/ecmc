@@ -283,6 +283,12 @@ int ecmcAxisGroup::armStallCheckForAxesNotAtTarget(uint64_t motionCycles) {
   return armedCount;
 }
 
+void ecmcAxisGroup::resetPendingStallChecks() {
+  for (auto *axis : axes_) {
+    axis->getMon()->resetPendingStallCheck();
+  }
+}
+
 // get all traj src in extern
 bool ecmcAxisGroup::getTrajSrcExt(){
   if (axes_.empty()) {
