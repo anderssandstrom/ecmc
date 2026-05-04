@@ -337,6 +337,31 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   const ecmcAxisGroupStatusSummary slaveStatusNow = slaveGrp_->getStatusSummary();
   const ecmcAxisGroupStatusSummary masterStatusNow = masterGrp_->getStatusSummary();
 
+  if(!slaveStatusNow.allEnableCmd) {
+    slaveGrp_->setEnable(0);
+    masterGrp_->setEnable(0);
+    slaveGrp_->setMRCnen(0);
+    masterGrp_->setMRCnen(0);
+    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+    masterGrp_->setEnableAutoDisable(1);
+    state_ = ECMC_MST_SLV_STATE_IDLE;
+    if(control_.enableDbgPrintouts) {
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: one or more slave enable commands removed.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
+      ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> IDLE.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
+    }
+    return 0;
+  }
+
   // postpone disable until all master axes are done
   //masterGrp_->setEnableAutoDisable(masterGrp_->getAnyBusy() == 0);
   const bool masterAtTarget = masterStatusNow.allAtTarget;
