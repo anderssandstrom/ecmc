@@ -1575,6 +1575,17 @@ int ecmcAxisBase::setExternalCommandBlockedError() {
                     ERROR_MAIN_AXIS_EXTERNAL_COM_DISABLED);
 }
 
+int ecmcAxisBase::setMasterSlaveCommandBlockedError() {
+  ecmcRtLoggerLogError(
+    "%s/%s:%d: ERROR: Axis[%d]: Blocked (master/slave lock) (0x%x).\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data_.status_.axisId,
+    ERROR_AXIS_BLOCKED);
+  return ERROR_AXIS_BLOCKED;
+}
+
 int ecmcAxisBase::setModRange(double mod) {
   // Must be same mod factor in traj and enc
   if (mod < 0) {
@@ -2590,6 +2601,64 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
     return asynError;
   }
 
+  if (masterSlaveBlocked_) {
+    bool allowedCommand = false;
+    bool disallowedCommandChange = false;
+    int  errorCode      = 0;
+
+    disallowedCommandChange =
+      ((controlWordNew.enableCmd != controlWordCurrent.enableCmd) &&
+       controlWordNew.enableCmd) ||
+      (controlWordNew.executeCmd != controlWordCurrent.executeCmd) ||
+      (controlWordNew.encSourceCmd != controlWordCurrent.encSourceCmd) ||
+      (controlWordNew.trajSourceCmd != controlWordCurrent.trajSourceCmd) ||
+      (controlWordNew.plcEnableCmd != controlWordCurrent.plcEnableCmd) ||
+      (controlWordNew.plcCmdsAllowCmd != controlWordCurrent.plcCmdsAllowCmd) ||
+      (controlWordNew.enableSoftLimitBwd !=
+       controlWordCurrent.enableSoftLimitBwd) ||
+      (controlWordNew.enableSoftLimitFwd !=
+       controlWordCurrent.enableSoftLimitFwd) ||
+      (controlWordNew.enableDbgPrintout !=
+       controlWordCurrent.enableDbgPrintout) ||
+      (controlWordNew.tweakBwdCmd != controlWordCurrent.tweakBwdCmd) ||
+      (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd);
+
+    if (!controlWordNew.enableCmd) {
+      errorCode = setEnable(0);
+      if (!errorCode) {
+        allowedCommand = true;
+      }
+    }
+
+    if (controlWordNew.stopCmd) {
+      int stopError = stopMotion(controlWordNew.enableCmd == 0);
+      if (!errorCode) {
+        errorCode = stopError;
+      }
+      if (!stopError) {
+        allowedCommand = true;
+      }
+    }
+
+    if (controlWordNew.resetCmd && !controlWordCurrent.resetCmd) {
+      setReset(1);
+      allowedCommand = true;
+    }
+
+    if (disallowedCommandChange) {
+      setMasterSlaveCommandBlockedError();
+      return asynError;
+    }
+
+    if (allowedCommand) {
+      refreshStatusWd();
+      return errorCode ? asynError : asynSuccess;
+    }
+
+    refreshStatusWd();
+    return asynSuccess;
+  }
+
   memcpy(&data_.control_.controlWord_, &controlWordNew, sizeof(data_.control_.controlWord_));
 
   int errorCode = 0;
@@ -3076,6 +3145,11 @@ asynStatus ecmcAxisBase::axisAsynWriteCommand(void         *data,
 
   if (getBlockCom()) {
     setExternalCommandBlockedError();
+    return asynError;
+  }
+
+  if (masterSlaveBlocked_) {
+    setMasterSlaveCommandBlockedError();
     return asynError;
   }
 

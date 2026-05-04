@@ -239,6 +239,9 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
 
 int ecmcMasterSlaveStateMachine::stateSlave(){
 
+  slaveGrp_->setBlocked(false);
+  masterGrp_->setBlocked(true);
+
   const ecmcAxisGroupStatusSummary slaveStatus = slaveGrp_->getStatusSummary(false);
   const ecmcAxisGroupStatusSummary masterStatus = masterGrp_->getStatusSummary(false);
   const bool anySlaveBusy = slaveStatus.anyBusy;
@@ -284,6 +287,9 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
 }
 
 int ecmcMasterSlaveStateMachine::stateMaster(){
+
+  masterGrp_->setBlocked(false);
+  slaveGrp_->setBlocked(true);
 
   const ecmcAxisGroupStatusSummary slaveStatus = slaveGrp_->getStatusSummary(false);
   const ecmcAxisGroupStatusSummary masterStatus = masterGrp_->getStatusSummary(false);

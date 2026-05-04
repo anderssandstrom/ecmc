@@ -1070,6 +1070,7 @@ asynStatus ecmcMotorRecordAxis::move(double position,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; motion command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1250,6 +1251,7 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; home command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1358,6 +1360,7 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; velocity command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1455,6 +1458,18 @@ asynStatus ecmcMotorRecordAxis::setEnable(int on) {
     drvlocal.ecmcAxis->setExternalCommandBlockedError();
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Communication to ECMC is blocked; enable command rejected.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisNo_);
+    return asynError;
+  }
+
+  if (drvlocal.ecmcAxis->getBlocked() && on) {
+    if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    LOGERR(
+      "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; enable command rejected (possibly master/slave related).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,

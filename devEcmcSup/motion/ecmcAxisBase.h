@@ -143,6 +143,7 @@ public:
   int                        getBlockCom();
   int                        setBlockCom(int block);
   int                        setExternalCommandBlockedError();
+  int                        setMasterSlaveCommandBlockedError();
   int                        getCycleCounter();
   void                       printAxisStatus();
   int                        initAsyn();
