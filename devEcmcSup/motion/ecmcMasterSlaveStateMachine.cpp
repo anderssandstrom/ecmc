@@ -305,22 +305,26 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     }
   }
 
-  if(masterGroupReachedTarget_ && !masterStatus.allEnableCmd) {
+  if(masterGroupReachedTarget_ &&
+     (!masterStatus.allEnableCmd || !slaveStatus.allEnableCmd ||
+      !masterStatus.allEnabled || !slaveStatus.allEnabled)) {
     masterDisableInProgress_ = true;
   }
 
-  if(masterDisableInProgress_ && masterAnyBusy && !masterAnyError) {
+  const bool recoverMasterDisable = masterDisableInProgress_ &&
+                                    masterAnyBusy &&
+                                    !masterAnyError;
+
+  if(recoverMasterDisable) {
     slaveGrp_->setEnable(1);
     masterGrp_->setEnable(1);
     slaveGrp_->setMRCnen(1);
     masterGrp_->setMRCnen(1);
-    masterGroupReachedTarget_ = false;
     masterAtTargetTimeS_ = 0;
-    return 0;
   }
   
   bool lostEnableCmd = false;
-  if(masterAnyBusy && !masterAnyError) {
+  if(masterAnyBusy && !masterAnyError && !recoverMasterDisable) {
     lostEnableCmd = !slaveStatus.allEnableCmd || !masterStatus.allEnableCmd;
   }
   
@@ -365,7 +369,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   const ecmcAxisGroupStatusSummary slaveStatusNow = slaveGrp_->getStatusSummary();
   const ecmcAxisGroupStatusSummary masterStatusNow = masterGrp_->getStatusSummary();
 
-  if(masterGroupReachedTarget_ && !masterStatusNow.allEnableCmd) {
+  if(masterGroupReachedTarget_ &&
+     (!masterStatusNow.allEnableCmd || !slaveStatusNow.allEnableCmd ||
+      !masterStatusNow.allEnabled || !slaveStatusNow.allEnabled)) {
     masterDisableInProgress_ = true;
   }
 
@@ -384,7 +390,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     return 0;
   }
 
-  if(!slaveStatusNow.allEnableCmd) {
+  if(!slaveStatusNow.allEnableCmd && !masterDisableInProgress_) {
     slaveGrp_->setEnable(0);
     masterGrp_->setEnable(0);
     slaveGrp_->setMRCnen(0);
@@ -454,7 +460,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
   
   // Done?
-  if(!masterStatusNow.anyEnabled) {
+  if(!masterStatusNow.anyEnabled && !masterDisableInProgress_) {
     slaveGrp_->setEnable(0);
     slaveGrp_->setMRCnen(0);
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
