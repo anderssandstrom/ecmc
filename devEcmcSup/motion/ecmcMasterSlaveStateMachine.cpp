@@ -304,6 +304,20 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       masterGrp_->setMRCnen(0);
     }
   }
+
+  if(masterGroupReachedTarget_ && !masterStatus.allEnableCmd) {
+    masterDisableInProgress_ = true;
+  }
+
+  if(masterDisableInProgress_ && masterAnyBusy && !masterAnyError) {
+    slaveGrp_->setEnable(1);
+    masterGrp_->setEnable(1);
+    slaveGrp_->setMRCnen(1);
+    masterGrp_->setMRCnen(1);
+    masterGroupReachedTarget_ = false;
+    masterAtTargetTimeS_ = 0;
+    return 0;
+  }
   
   bool lostEnableCmd = false;
   if(masterAnyBusy && !masterAnyError) {
