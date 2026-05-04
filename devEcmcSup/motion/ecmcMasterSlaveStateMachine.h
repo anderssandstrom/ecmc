@@ -33,6 +33,7 @@
 
 #define MST_SLV_START_DELAY_S 0.105
 #define MST_SLV_MASTER_AT_TARGET_TIMEOUT_DEFAULT_S 10.0
+#define MST_SLV_TRAJ_SRC_CHANGE_WAIT_CYCLES 5
 
 #include "ecmcError.h"
 #include "ecmcErrorsList.h"
@@ -110,6 +111,7 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     bool masterGroupWasBusy_;
     bool masterGroupReachedTarget_;
     bool masterDisableInProgress_;
+    int slaveTrajSourceExternalWaitCycles_;
     uint64_t masterGroupBusyCycles_;
     double masterAtTargetTimeoutS_;
     double masterAtTargetTimeS_;

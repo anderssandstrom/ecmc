@@ -41,6 +41,7 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   masterGroupWasBusy_       = false;
   masterGroupReachedTarget_ = false;
   masterDisableInProgress_  = false;
+  slaveTrajSourceExternalWaitCycles_ = 0;
   masterGroupBusyCycles_    = 0;
   masterAtTargetTimeoutS_ = MST_SLV_MASTER_AT_TARGET_TIMEOUT_DEFAULT_S;
   masterAtTargetTimeS_    = 0;
@@ -92,6 +93,7 @@ void ecmcMasterSlaveStateMachine::execute(){
       masterGroupWasBusy_ = false;
       masterGroupReachedTarget_ = false;
       masterDisableInProgress_ = false;
+      slaveTrajSourceExternalWaitCycles_ = 0;
       masterGroupBusyCycles_ = 0;
       masterAtTargetTimeS_ = 0;
     }
@@ -178,6 +180,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
       const bool anyMasterBusy = masterStatus.anyBusy;
       if(anyMasterBusy) {
         slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
+        slaveTrajSourceExternalWaitCycles_ =
+          MST_SLV_TRAJ_SRC_CHANGE_WAIT_CYCLES;
         state_ = ECMC_MST_SLV_STATE_MASTERS;
         masterGroupReachedTarget_ = false;
         masterDisableInProgress_ = false;
@@ -390,6 +394,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
 
     if(slaveStatusNow.allEnabled && !slaveStatusNow.anyBusy) {
       slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
+      slaveTrajSourceExternalWaitCycles_ =
+        MST_SLV_TRAJ_SRC_CHANGE_WAIT_CYCLES;
       masterDisableInProgress_ = false;
       masterGroupReachedTarget_ = false;
       masterAtTargetTimeS_ = 0;
@@ -408,6 +414,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGroupWasBusy_ = false;
     masterGroupReachedTarget_ = false;
     masterDisableInProgress_ = false;
+    slaveTrajSourceExternalWaitCycles_ = 0;
     masterGroupBusyCycles_ = 0;
     masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
@@ -430,6 +437,16 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   // Ilock or if any slaved axis is changing to internal source
   const bool anySlaveIlocked = slaveStatusNow.anyIlocked;
   const bool allSlaveTrajExternal = slaveStatusNow.allTrajExternal;
+  if(allSlaveTrajExternal) {
+    slaveTrajSourceExternalWaitCycles_ = 0;
+  }
+  if(!anySlaveIlocked && !allSlaveTrajExternal &&
+     !masterDisableInProgress_ &&
+     (slaveTrajSourceExternalWaitCycles_ > 0)) {
+    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
+    slaveTrajSourceExternalWaitCycles_--;
+    return 0;
+  }
   if((anySlaveIlocked || !allSlaveTrajExternal) && !masterDisableInProgress_){
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     slaveGrp_->setMRSync(1);
@@ -445,6 +462,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGroupWasBusy_ = false;
     masterGroupReachedTarget_ = false;
     masterDisableInProgress_ = false;
+    slaveTrajSourceExternalWaitCycles_ = 0;
     masterGroupBusyCycles_ = 0;
     masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
@@ -477,6 +495,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGroupWasBusy_ = false;
     masterGroupReachedTarget_ = false;
     masterDisableInProgress_ = false;
+    slaveTrajSourceExternalWaitCycles_ = 0;
     masterGroupBusyCycles_ = 0;
     masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
@@ -531,6 +550,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       masterGroupWasBusy_ = false;
       masterGroupReachedTarget_ = false;
       masterDisableInProgress_ = false;
+      slaveTrajSourceExternalWaitCycles_ = 0;
       masterGroupBusyCycles_ = 0;
       masterAtTargetTimeS_ = 0;
       return 0;
@@ -565,6 +585,7 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   masterGroupWasBusy_ = false;
   masterGroupReachedTarget_ = false;
   masterDisableInProgress_ = false;
+  slaveTrajSourceExternalWaitCycles_ = 0;
   masterGroupBusyCycles_ = 0;
   masterAtTargetTimeS_ = 0;
   if(control_.enableDbgPrintouts) {
