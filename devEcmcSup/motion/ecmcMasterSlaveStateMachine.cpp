@@ -38,6 +38,8 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   status_                   = 0;
   state_                    = ECMC_MST_SLV_STATE_IDLE;    
   idleCounter_              = 0;
+  masterGroupWasBusy_       = false;
+  masterGroupBusyCycles_    = 0;
   memset(&control_,0,sizeof(control_));
   memset(&controlOld_,0,sizeof(controlOld_));
 
@@ -83,6 +85,8 @@ void ecmcMasterSlaveStateMachine::execute(){
       slaveGrp_->setBlocked(false);
       slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
       state_ = ECMC_MST_SLV_STATE_IDLE;
+      masterGroupWasBusy_ = false;
+      masterGroupBusyCycles_ = 0;
     }
     controlOld_ = control_;
     return;
@@ -345,6 +349,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
+    masterGroupWasBusy_ = false;
+    masterGroupBusyCycles_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: one or more slave enable commands removed.\n",
                            __FILE__,
@@ -381,6 +387,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setSlavedAxisIlocked();
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
+    masterGroupWasBusy_ = false;
+    masterGroupBusyCycles_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: slaved axis interlock or trajectory source change.\n",
                            __FILE__,
@@ -395,6 +403,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
                            index_,
                            name_.c_str());
     }
+    return 0;
   }
   
   // Done?
@@ -405,6 +414,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     slaveGrp_->setErrorReset();
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
+    masterGroupWasBusy_ = false;
+    masterGroupBusyCycles_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> IDLE.\n",
                            __FILE__,
@@ -413,6 +424,18 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
                            index_,
                            name_.c_str());
     }
+    return 0;
+  }
+
+  if(masterStatusNow.anyBusy) {
+    masterGroupWasBusy_ = true;
+    if(masterGroupBusyCycles_ < UINT64_MAX) {
+      masterGroupBusyCycles_++;
+    }
+  } else if(masterGroupWasBusy_) {
+    masterGrp_->armStallCheckForAxesNotAtTarget(masterGroupBusyCycles_);
+    masterGroupWasBusy_ = false;
+    masterGroupBusyCycles_ = 0;
   }
   return 0;
 }
@@ -429,6 +452,8 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   masterGrp_->setBlocked(false);
   slaveGrp_->setBlocked(false);
   state_ = ECMC_MST_SLV_STATE_IDLE;
+  masterGroupWasBusy_ = false;
+  masterGroupBusyCycles_ = 0;
   if(control_.enableDbgPrintouts) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed RESET -> IDLE.\n",
                          __FILE__,

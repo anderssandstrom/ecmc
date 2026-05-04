@@ -38,6 +38,7 @@
 #include "ecmcAxisGroup.h"
 #include "ecmcDefinitions.h"
 #include "ecmcAsynPortDriver.h"
+#include <cstdint>
 #include <string>
 #include <iostream>
 
@@ -103,6 +104,8 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     ecmcMasterSlaveControlWord control_;
     ecmcMasterSlaveControlWord controlOld_;
     int idleCounter_;
+    bool masterGroupWasBusy_;
+    uint64_t masterGroupBusyCycles_;
 };
 
 #endif  /* ecmcMasterSlaveStateMachine_H_ */

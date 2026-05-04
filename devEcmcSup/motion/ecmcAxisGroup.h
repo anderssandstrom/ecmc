@@ -16,6 +16,7 @@
 #include "ecmcError.h"
 #include "ecmcAxisBase.h"
 #include "ecmcDefinitions.h"
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 #include <string>
@@ -117,6 +118,8 @@ class ecmcAxisGroup : public ecmcError {
     bool getAxisAutoDisableEnabled();
     // Collect common group state in one scan (for RT usage).
     ecmcAxisGroupStatusSummary getStatusSummary(bool includeMonFields = true);
+    // Arm stall checks for axes that are still not at target after group motion.
+    int armStallCheckForAxesNotAtTarget(uint64_t motionCycles);
 
   private:
     std::string name_;  

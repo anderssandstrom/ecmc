@@ -12,6 +12,7 @@
 
 #ifndef MOTIONMONITOR_H
 #define MOTIONMONITOR_H
+#include <cstdint>
 #include <cmath>
 #include "ecmcEcEntry.h"
 #include "ecmcError.h"
@@ -137,6 +138,7 @@ public:
   double             getStallTimeFactor();
   double             getStallTime();
   double             getStallAtTime();
+  void               armStallCheckFromExternalMotion(uint64_t motionCycles);
   int                setLimitSwitchFwdPLCOverride(bool overrideSwitch);
   int                setLimitSwitchBwdPLCOverride(bool overrideSwitch);
   int                setHomeSwitchPLCOverride(bool overrideSwitch);
@@ -162,6 +164,8 @@ private:
   int                checkVelocityDiff();
   int                checkCntrlMaxOutput();
   int                checkStall();
+  void               scheduleStallCheck(uint64_t motionCycles,
+                                        const char *reason);
   int                filterSwitches();
   int                checkPolarity(ecmcSwitchPolarity pol);
   int                setStopAtBothLimits(bool stop);

@@ -1038,7 +1038,6 @@ int ecmcMonitor::checkAtTarget() {
 int  ecmcMonitor::checkStall() {
   const auto &statusWord = data_->status_.statusWord_;
   const auto &statusOldWord = data_->statusOld_.statusWord_;
-  const bool dbgPrint = data_->control_.controlWord_.enableDbgPrintout;
 
   // Do only check for stall when not busy (traj finished)
   if (!enableAtTargetMon_ || !enableStallMon_ || !statusWord.enabled ||
@@ -1062,21 +1061,7 @@ int  ecmcMonitor::checkStall() {
     return 0;
   } else {
     if (statusOldWord.localBusy) {
-      stallCheckAtTargetAtCycle_ = stallLastMotionCmdCycles_ * stallTimeFactor_;
-      // Ensure a minimum time window 
-      if (stallCheckAtTargetAtCycle_ < stallMinTimeoutCycles_) {
-        stallCheckAtTargetAtCycle_ = stallMinTimeoutCycles_;
-      }
-      if (dbgPrint) {
-        ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Stall check scheduled after %" PRIu64 " cycles (factor=%lf, min=%lf).\n",
-                             __FILE__,
-                             __FUNCTION__,
-                             __LINE__,
-                             data_->status_.axisId,
-                             stallCheckAtTargetAtCycle_,
-                             stallTimeFactor_,
-                             stallMinTimeoutCycles_);
-      }
+      scheduleStallCheck(stallLastMotionCmdCycles_, "local motion");
     }
   }
 
@@ -1117,6 +1102,44 @@ int  ecmcMonitor::checkStall() {
                       ECMC_SEVERITY_EMERGENCY);
   }
   return 0;
+}
+
+void ecmcMonitor::scheduleStallCheck(uint64_t motionCycles,
+                                     const char *reason) {
+  const bool dbgPrint = data_->control_.controlWord_.enableDbgPrintout;
+
+  stallCheckAtTargetAtCycle_ = motionCycles * stallTimeFactor_;
+  if (stallCheckAtTargetAtCycle_ < stallMinTimeoutCycles_) {
+    stallCheckAtTargetAtCycle_ = stallMinTimeoutCycles_;
+  }
+
+  if (dbgPrint) {
+    ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: Stall check scheduled after %s: %" PRIu64 " cycles (factor=%lf, min=%lf).\n",
+                         __FILE__,
+                         __FUNCTION__,
+                         __LINE__,
+                         data_->status_.axisId,
+                         reason,
+                         stallCheckAtTargetAtCycle_,
+                         stallTimeFactor_,
+                         stallMinTimeoutCycles_);
+  }
+}
+
+void ecmcMonitor::armStallCheckFromExternalMotion(uint64_t motionCycles) {
+  const auto &statusWord = data_->status_.statusWord_;
+
+  if (!enableAtTargetMon_ || !enableStallMon_ || !statusWord.enabled ||
+      statusWord.attarget || statusWord.localBusy ||
+      (statusWord.trajsource != 0) ||
+      (data_->status_.command == ECMC_CMD_MOVEPVTABS) ||
+      (stallCheckAtTargetAtCycle_ > 0)) {
+    return;
+  }
+
+  scheduleStallCheck(motionCycles, "external group motion");
+  maxStallCounter_ = 0;
+  stallLastMotionCmdCycles_ = 0;
 }
 
 int ecmcMonitor::checkPositionLag() {

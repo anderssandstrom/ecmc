@@ -271,6 +271,18 @@ ecmcAxisGroupStatusSummary ecmcAxisGroup::getStatusSummary(bool includeMonFields
   return summary;
 }
 
+int ecmcAxisGroup::armStallCheckForAxesNotAtTarget(uint64_t motionCycles) {
+  int armedCount = 0;
+  for (auto *axis : axes_) {
+    auto * const mon = axis->getMon();
+    if (mon->getEnableAtTargetMon() && !mon->getAtTarget()) {
+      mon->armStallCheckFromExternalMotion(motionCycles);
+      armedCount++;
+    }
+  }
+  return armedCount;
+}
+
 // get all traj src in extern
 bool ecmcAxisGroup::getTrajSrcExt(){
   if (axes_.empty()) {
