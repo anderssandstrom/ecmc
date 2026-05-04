@@ -32,6 +32,7 @@
 #define ecmcMasterSlaveStateMachine_H_
 
 #define MST_SLV_START_DELAY_S 0.105
+#define MST_SLV_MASTER_AT_TARGET_TIMEOUT_DEFAULT_S 10.0
 
 #include "ecmcError.h"
 #include "ecmcErrorsList.h"
@@ -71,6 +72,8 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     const char* getName();
     void execute();
     int validate();
+    int setMasterAtTargetTimeout(double timeoutS);
+    double getMasterAtTargetTimeout() const;
 
   private:
     int stateIdle();
@@ -105,7 +108,10 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     ecmcMasterSlaveControlWord controlOld_;
     int idleCounter_;
     bool masterGroupWasBusy_;
+    bool masterGroupReachedTarget_;
     uint64_t masterGroupBusyCycles_;
+    double masterAtTargetTimeoutS_;
+    double masterAtTargetTimeS_;
 };
 
 #endif  /* ecmcMasterSlaveStateMachine_H_ */

@@ -39,7 +39,10 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   state_                    = ECMC_MST_SLV_STATE_IDLE;    
   idleCounter_              = 0;
   masterGroupWasBusy_       = false;
+  masterGroupReachedTarget_ = false;
   masterGroupBusyCycles_    = 0;
+  masterAtTargetTimeoutS_ = MST_SLV_MASTER_AT_TARGET_TIMEOUT_DEFAULT_S;
+  masterAtTargetTimeS_    = 0;
   memset(&control_,0,sizeof(control_));
   memset(&controlOld_,0,sizeof(controlOld_));
 
@@ -86,7 +89,9 @@ void ecmcMasterSlaveStateMachine::execute(){
       slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
       state_ = ECMC_MST_SLV_STATE_IDLE;
       masterGroupWasBusy_ = false;
+      masterGroupReachedTarget_ = false;
       masterGroupBusyCycles_ = 0;
+      masterAtTargetTimeS_ = 0;
     }
     controlOld_ = control_;
     return;
@@ -172,6 +177,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
       if(anyMasterBusy) {
         slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
         state_ = ECMC_MST_SLV_STATE_MASTERS;
+        masterGroupReachedTarget_ = false;
+        masterAtTargetTimeS_ = 0;
         // (un)block commands
         masterGrp_->setBlocked(false);
         slaveGrp_->setBlocked(true);
@@ -350,7 +357,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
     masterGroupWasBusy_ = false;
+    masterGroupReachedTarget_ = false;
     masterGroupBusyCycles_ = 0;
+    masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: one or more slave enable commands removed.\n",
                            __FILE__,
@@ -368,14 +377,6 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     return 0;
   }
 
-  // postpone disable until all master axes are done
-  //masterGrp_->setEnableAutoDisable(masterGrp_->getAnyBusy() == 0);
-  const bool masterAtTarget = masterStatusNow.allAtTarget;
-  masterGrp_->setEnableAutoDisable(masterAtTarget && !masterStatusNow.anyBusy);
-  // ensure attarget/reduced current of slave axes
-  const bool masterWithinCtrlDb = masterStatusNow.allWithinCtrlDb;
-  slaveGrp_->setAxisIsWithinCtrlDBExtTraj(masterWithinCtrlDb);
-  
   // Ilock or if any slaved axis is changing to internal source
   const bool anySlaveIlocked = slaveStatusNow.anyIlocked;
   const bool allSlaveTrajExternal = slaveStatusNow.allTrajExternal;
@@ -388,7 +389,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
     masterGroupWasBusy_ = false;
+    masterGroupReachedTarget_ = false;
     masterGroupBusyCycles_ = 0;
+    masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: slaved axis interlock or trajectory source change.\n",
                            __FILE__,
@@ -415,7 +418,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
     masterGroupWasBusy_ = false;
+    masterGroupReachedTarget_ = false;
     masterGroupBusyCycles_ = 0;
+    masterAtTargetTimeS_ = 0;
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> IDLE.\n",
                            __FILE__,
@@ -431,6 +436,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     if(!masterGroupWasBusy_) {
       masterGrp_->resetPendingStallChecks();
     }
+    masterGroupReachedTarget_ = false;
+    masterAtTargetTimeS_ = 0;
     masterGroupWasBusy_ = true;
     if(masterGroupBusyCycles_ < UINT64_MAX) {
       masterGroupBusyCycles_++;
@@ -439,7 +446,47 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->armStallCheckForAxesNotAtTarget(masterGroupBusyCycles_);
     masterGroupWasBusy_ = false;
     masterGroupBusyCycles_ = 0;
+  } else if(masterStatusNow.allAtTarget) {
+    masterGroupReachedTarget_ = true;
   }
+
+  if(masterGroupReachedTarget_) {
+    masterAtTargetTimeS_ += sampleTimeS_;
+    if((masterAtTargetTimeoutS_ >= 0) &&
+       (masterAtTargetTimeS_ > masterAtTargetTimeoutS_)) {
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes remained enabled after target reached for %lf s; disabling all axes.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str(),
+                           masterAtTargetTimeS_);
+      masterGrp_->setError(ERROR_MST_SLV_SM_MASTER_AT_TARGET_TIMEOUT);
+      slaveGrp_->setEnable(0);
+      masterGrp_->setEnable(0);
+      slaveGrp_->setMRCnen(0);
+      masterGrp_->setMRCnen(0);
+      slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+      masterGrp_->setEnableAutoDisable(1);
+      state_ = ECMC_MST_SLV_STATE_IDLE;
+      masterGroupWasBusy_ = false;
+      masterGroupReachedTarget_ = false;
+      masterGroupBusyCycles_ = 0;
+      masterAtTargetTimeS_ = 0;
+      return 0;
+    }
+  } else {
+    masterAtTargetTimeS_ = 0;
+  }
+
+  // Once all master axes have reached target after the last master-group move,
+  // keep auto-disable allowed even if atTarget drops during the disable sequence.
+  masterGrp_->setEnableAutoDisable(masterGroupReachedTarget_ &&
+                                   !masterStatusNow.anyBusy);
+
+  // ensure attarget/reduced current of slave axes
+  const bool masterWithinCtrlDb = masterStatusNow.allWithinCtrlDb;
+  slaveGrp_->setAxisIsWithinCtrlDBExtTraj(masterWithinCtrlDb);
   return 0;
 }
 
@@ -456,7 +503,9 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   slaveGrp_->setBlocked(false);
   state_ = ECMC_MST_SLV_STATE_IDLE;
   masterGroupWasBusy_ = false;
+  masterGroupReachedTarget_ = false;
   masterGroupBusyCycles_ = 0;
+  masterAtTargetTimeS_ = 0;
   if(control_.enableDbgPrintouts) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed RESET -> IDLE.\n",
                          __FILE__,
@@ -466,6 +515,16 @@ int ecmcMasterSlaveStateMachine::stateReset() {
                          name_.c_str());
   }
   return  0;
+}
+
+int ecmcMasterSlaveStateMachine::setMasterAtTargetTimeout(double timeoutS) {
+  masterAtTargetTimeoutS_ = timeoutS;
+  masterAtTargetTimeS_ = 0;
+  return 0;
+}
+
+double ecmcMasterSlaveStateMachine::getMasterAtTargetTimeout() const {
+  return masterAtTargetTimeoutS_;
 }
 
 int ecmcMasterSlaveStateMachine::validate(){

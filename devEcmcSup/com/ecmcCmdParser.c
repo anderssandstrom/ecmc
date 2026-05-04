@@ -687,7 +687,8 @@ static int handleCfgCommand(const char *myarg_1) {
                         !strncmp(myarg_1, "AddAxisEnc", 10) ||
                         !strncmp(myarg_1, "SelectAxisEnc", 13) ||
                         !strncmp(myarg_1, "LoadAxisEncLookupTable", 22) ||
-                        !strncmp(myarg_1, "CreateMasterSlaveSM", 19);
+                        !strncmp(myarg_1, "CreateMasterSlaveSM", 19) ||
+                        !strncmp(myarg_1, "SetMstSlvAtTgtTimeout", 21);
 
   /// "Cfg.SetBlockCfgCmdsInRuntime(block)"
   nvals = sscanf(myarg_1, "SetBlockCfgCmdsInRuntime(%d)", &iValue);
@@ -1902,7 +1903,8 @@ parse_cfg_setaxisenc:
       !strncmp(myarg_1, "AddAxisEnc", 10) ||
       !strncmp(myarg_1, "SelectAxisEnc", 13) ||
       !strncmp(myarg_1, "LoadAxisEncLookupTable", 22) ||
-      !strncmp(myarg_1, "CreateMasterSlaveSM", 19)) {
+      !strncmp(myarg_1, "CreateMasterSlaveSM", 19) ||
+      !strncmp(myarg_1, "SetMstSlvAtTgtTimeout", 21)) {
     /*int Cfg.SetAxisEncSourceType(int axis_no, int nValue);*/
     nvals = sscanf(myarg_1, "SetAxisEncSourceType(%d,%d)", &iValue, &iValue2);
 
@@ -2068,6 +2070,14 @@ parse_cfg_setaxisenc:
     if (nvals == 6) {
       RETURN_ERROR_IF_RUNTIME_CFG_CMD("CreateMasterSlaveSM");
       return createMasterSlaveSM(iValue , cIdBuffer,cIdBuffer2,cIdBuffer3,iValue2,iValue3);
+    }
+
+    /*int Cfg.SetMstSlvAtTgtTimeout(int smIndex, double timeoutS);*/
+    nvals = sscanf(myarg_1, "SetMstSlvAtTgtTimeout(%d,%lf)", &iValue, &dValue);
+
+    if (nvals == 2) {
+      RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetMstSlvAtTgtTimeout");
+      return setMasterSlaveSMMasterAtTargetTimeout(iValue, dValue);
     }
 
     /*int Cfg.LoadAxisEncLookupTable(int axis_no, char *filename); */
@@ -5009,6 +5019,14 @@ parse_getaxisdrv:
   if (nvals == 1) {
     SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEnableAutoDisable(
                                         motor_axis_no, &iValue));
+  }
+
+  /*double GetMstSlvAtTgtTimeout(int smIndex);*/
+  nvals = sscanf(myarg_1, "GetMstSlvAtTgtTimeout(%d)", &iValue);
+
+  if (nvals == 1) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getMasterSlaveSMMasterAtTargetTimeout(
+                                           iValue, &fValue));
   }
 
   /*int GetAxisTweakDist(int axis_no);*/

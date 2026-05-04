@@ -4343,6 +4343,29 @@ int createMasterSlaveSM(int index,
                         int autoDisableMasters,
                         int autoDisableSlaves);
 
+/** \brief Set master/slave timeout after all master axes reached target.\n
+ *
+ * \param[in] index index of the state machine.\n
+ * \param[in] timeoutS timeout in seconds. Negative value disables the timeout.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ *
+ * \note Example:
+ *  "Cfg.SetMstSlvAtTgtTimeout(1,10)" //Command string to ecmcCmdParser.c\n
+ */
+int setMasterSlaveSMMasterAtTargetTimeout(int index,
+                                      double timeoutS);
+
+/** \brief Get master/slave timeout after all master axes reached target.\n
+ *
+ * \param[in] index index of the state machine.\n
+ * \param[out] timeoutS timeout in seconds. Negative value means disabled.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ */
+int getMasterSlaveSMMasterAtTargetTimeout(int index,
+                                      double *timeoutS);
+
 # ifdef __cplusplus
 }
 # endif  // ifdef __cplusplus

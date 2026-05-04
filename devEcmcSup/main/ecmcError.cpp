@@ -1321,6 +1321,18 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
     return "ERROR_MST_SLV_SM_GRP_EMPTY";
 
     break;
+  case 0x17003:
+    return "ERROR_MST_SLV_SM_MASTER_AT_TARGET_TIMEOUT";
+
+    break;
+  case 0x17004:
+    return "ERROR_MST_SLV_SM_OBJECT_NULL";
+
+    break;
+  case 0x17005:
+    return "ERROR_MST_SLV_SM_PARAM_NULL";
+
+    break;
 
   case 0x30000:    // TRANSFORM
     return "ERROR_TRANSFORM_EXPR_NOT_COMPILED";

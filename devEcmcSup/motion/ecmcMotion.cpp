@@ -4700,3 +4700,35 @@ int createMasterSlaveSM(int index,
   }
   return 0;
 }
+
+int setMasterSlaveSMMasterAtTargetTimeout(int index, double timeoutS) {
+  CHECK_MST_SLBV_SM_IDNEX_RETURN_IF_ERROR(index)
+  if (masterSlaveSMs[index] == NULL) {
+    LOGERR("%s/%s:%d: ERROR: Master/slave state machine[%d]: Object is NULL (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index,
+           ERROR_MST_SLV_SM_OBJECT_NULL);
+    return ERROR_MST_SLV_SM_OBJECT_NULL;
+  }
+  return masterSlaveSMs[index]->setMasterAtTargetTimeout(timeoutS);
+}
+
+int getMasterSlaveSMMasterAtTargetTimeout(int index, double *timeoutS) {
+  CHECK_MST_SLBV_SM_IDNEX_RETURN_IF_ERROR(index)
+  if (timeoutS == NULL) {
+    return ERROR_MST_SLV_SM_PARAM_NULL;
+  }
+  if (masterSlaveSMs[index] == NULL) {
+    LOGERR("%s/%s:%d: ERROR: Master/slave state machine[%d]: Object is NULL (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           index,
+           ERROR_MST_SLV_SM_OBJECT_NULL);
+    return ERROR_MST_SLV_SM_OBJECT_NULL;
+  }
+  *timeoutS = masterSlaveSMs[index]->getMasterAtTargetTimeout();
+  return 0;
+}
