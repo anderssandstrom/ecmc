@@ -3494,6 +3494,11 @@ int ecmcAxisBase::setSlavedAxisInterlock() {
   return 0;
 }
 
+int ecmcAxisBase::setSlavedAxisTrajSourceChanged() {
+  setErrorID(ERROR_AXIS_SLAVED_AXIS_TRAJ_SOURCE_CHANGED);
+  return 0;
+}
+
 // motor.SYNC (set to act)
 void ecmcAxisBase::setMRSync(bool sync) {
   // Ensure to only trigg command once per cycle

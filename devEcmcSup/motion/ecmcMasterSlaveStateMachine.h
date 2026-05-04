@@ -109,6 +109,7 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int idleCounter_;
     bool masterGroupWasBusy_;
     bool masterGroupReachedTarget_;
+    bool masterDisableInProgress_;
     uint64_t masterGroupBusyCycles_;
     double masterAtTargetTimeoutS_;
     double masterAtTargetTimeS_;

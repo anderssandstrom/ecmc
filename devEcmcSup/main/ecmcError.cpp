@@ -527,6 +527,10 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
     return "ERROR_AXIS_BLOCKED";
 
     break;
+  case 0x14331:
+    return "ERROR_AXIS_SLAVED_AXIS_TRAJ_SOURCE_CHANGED";
+
+    break;
 
   case 0x14600:   // DRIVE
     return "ERROR_DRV_DRIVE_INTERLOCKED";

@@ -88,6 +88,8 @@ class ecmcAxisGroup : public ecmcError {
     void setSlavedAxisInError();
     // Set slaved axis interlock
     void setSlavedAxisIlocked();
+    // Set slaved axis trajectory source changed error
+    void setSlavedAxisTrajSourceChanged();
     // SYNC motor record
     void setMRSync(bool sync);
     // STOP motor record

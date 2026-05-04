@@ -133,6 +133,7 @@ public:
   void                       errorReset();
   int                        setSlavedAxisInError();
   int                        setSlavedAxisInterlock();
+  int                        setSlavedAxisTrajSourceChanged();
   int                        setEnableLocal(bool enable);
   int                        validateBase();
   bool                       getBusy();

@@ -391,6 +391,12 @@ void ecmcAxisGroup::setSlavedAxisIlocked() {
   }
 }
 
+void ecmcAxisGroup::setSlavedAxisTrajSourceChanged() {
+  for (auto *axis : axes_) {
+    axis->setSlavedAxisTrajSourceChanged();
+  }
+}
+
 void ecmcAxisGroup::setAxisIsWithinCtrlDBExtTraj(bool within) {
   for (auto *axis : axes_) {
     axis->getMon()->setAxisIsWithinCtrlDBExtTraj(within);
