@@ -320,6 +320,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setEnable(1);
     slaveGrp_->setMRCnen(1);
     masterGrp_->setMRCnen(1);
+    masterGroupReachedTarget_ = false;
     masterAtTargetTimeS_ = 0;
   }
   
@@ -460,7 +461,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
   
   // Done?
-  if(!masterStatusNow.anyEnabled && !masterDisableInProgress_) {
+  if(!masterStatusNow.anyEnabled) {
     slaveGrp_->setEnable(0);
     slaveGrp_->setMRCnen(0);
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
@@ -502,11 +503,11 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGroupReachedTarget_ = true;
   }
 
-  if(masterGroupReachedTarget_) {
+  if(masterDisableInProgress_) {
     masterAtTargetTimeS_ += sampleTimeS_;
     if((masterAtTargetTimeoutS_ >= 0) &&
        (masterAtTargetTimeS_ > masterAtTargetTimeoutS_)) {
-      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes remained enabled after target reached for %lf s; disabling all axes.\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes remained enabled after disable started for %lf s; disabling all axes.\n",
                            __FILE__,
                            __FUNCTION__,
                            __LINE__,
