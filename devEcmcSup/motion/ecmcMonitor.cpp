@@ -943,19 +943,19 @@ int ecmcMonitor::checkLimits() {
        (status.currentTargetPosition > control.softLimitFwd));
     if (virtSoftlimitFwd) {
       interlocks.fwdSoftLimitInterlock = true;
-      if (warningId != WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK) {
-        setWarningID(WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK);
-        warningId = WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK;
+      if (warningId != WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION) {
+        setWarningID(WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION);
+        warningId = WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION;
       }
     } else {
-      if (warningId == WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK) {
+      if (warningId == WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION) {
         setWarningID(0);
         warningId = 0;
       }
       interlocks.fwdSoftLimitInterlock = false;
     }
   } else {
-    if (warningId == WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK) {
+    if (warningId == WARNING_SEQ_SETPOINT_SOFTLIM_FWD_VILOATION) {
       setWarningID(0);
       warningId = 0;
     }

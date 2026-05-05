@@ -229,11 +229,6 @@ const char * ecmcError::convertWarningIdToString(int warningId) {
 
     break;
 
-  case 0x114C00: // Monitor
-    return "WARNING_MON_SOFT_LIMIT_FWD_INTERLOCK";
-
-    break;
-
   case 0x114C01: // Monitor
     return "WARNING_MON_SOFT_LIMIT_BWD_INTERLOCK";
 
