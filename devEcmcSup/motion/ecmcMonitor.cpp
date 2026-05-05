@@ -692,7 +692,6 @@ int ecmcMonitor::setEnableSoftLimitBwd(bool enable) {
   }
   data_->status_.statusWord_.softlimbwdena = enable;
   softLimitReenablePending_ = false;
-  refreshSoftLimitAsynParams();
   return 0;
 }
 
@@ -708,13 +707,7 @@ int ecmcMonitor::setEnableSoftLimitFwd(bool enable) {
   }
   data_->status_.statusWord_.softlimfwdena = enable;
   softLimitReenablePending_ = false;
-  refreshSoftLimitAsynParams();
   return 0;
-}
-
-void ecmcMonitor::refreshSoftLimitAsynParams() {
-  data_->axAsynParams_[ECMC_ASYN_AX_STATUS_ID]->refreshParamRT(1);
-  data_->axAsynParams_[ECMC_ASYN_AX_CONTROL_BIN_ID]->refreshParamRT(1);
 }
 
 bool ecmcMonitor::hasInvalidSoftLimitRange() const {
@@ -733,7 +726,6 @@ int ecmcMonitor::disableSoftLimitsForZeroRange() {
   data_->status_.statusWord_.softlimbwdena = false;
   data_->status_.statusWord_.softlimfwdena = false;
   softLimitReenablePending_ = false;
-  refreshSoftLimitAsynParams();
   return 0;
 }
 
@@ -760,7 +752,6 @@ int ecmcMonitor::setSoftLimitBwd(double limit) {
     data_->status_.statusWord_.softlimfwdena = true;
     softLimitReenablePending_ = false;
   }
-  refreshSoftLimitAsynParams();
   return 0;
 }
 
@@ -787,7 +778,6 @@ int ecmcMonitor::setSoftLimitFwd(double limit) {
     data_->status_.statusWord_.softlimfwdena = true;
     softLimitReenablePending_ = false;
   }
-  refreshSoftLimitAsynParams();
   return 0;
 }
 

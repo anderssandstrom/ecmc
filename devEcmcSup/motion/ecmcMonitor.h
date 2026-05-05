@@ -152,7 +152,6 @@ public:
   bool               getAxisIsWithinCtrlDB();
 
 private:
-  void               refreshSoftLimitAsynParams();
   bool               hasInvalidSoftLimitRange() const;
   bool               hasInvalidSoftLimitConfigForEnabledLimits() const;
   int                disableSoftLimitsForZeroRange();
