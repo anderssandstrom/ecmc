@@ -1,12 +1,27 @@
 Release Notes
 ===
-# 11.0.7-rc1
+# 11.0.7
+* Add the `cpp_logic` C/C++ runtime interface with loader support, dedicated asyn ports, EPICS bindings, string/array/waveform exports, macro parsing, helper headers, examples, and an offline substitutions generator.
+* Add PLCopen-style motion-control runtime support and C/C++ helpers, including `MC_Power`, `MC_Reset`, `MC_MoveAbsolute`, `MC_MoveRelative`, `MC_MoveVelocity`, `MC_Home`, `MC_Halt`, and readback helpers.
+* Add plugin and `cpp_logic` helpers for axis state queries, external axis sources, EtherCAT state access, EtherCAT master indexes, tracing, retained values, timers, triggers, filtering, PID control, and bit handling.
+* Add a realtime logger with a low-priority queue, asyn port access, source filtering, and debug/warning/error severity handling.
+* Standardize and reduce runtime, startup, EtherCAT, motor-record, and motion log output.
+* Improve motor-record and ecmc soft-limit synchronization, seed motor soft limits from ecmc at startup, reduce redundant soft-limit updates, and avoid soft-limit sync feedback.
+* Fix soft-limit direction handling and improve soft-limit interlock reporting.
+* Remove the duplicate forward soft-limit violation warning and use the sequencer setpoint soft-limit warning for virtual forward soft-limit violations.
+* Fix the default encoder latch arm value for incremental encoder homing on index pulse.
+* Improve master/slave handling with group stall monitoring, an overall master timeout, stall-counter reset at each master move, lost-enable handling, and support for accepting a new master command while transitioning to IDLE.
+* Add support for starting PLCs after EPICS has started and fix the PLC debug-print flag.
+* Fix PVT `setEnable` handling.
+* Stabilize encoder delay compensation, fix encoder wrap arithmetic, and improve encoder wrap diagnostics.
+* Use the current raw encoder value for motor record `EncAct`.
 * Add support for floating point encoder actual-position EtherCAT entries (`F32`, `F64`).
 * For floating point encoders, over/underflow handling, raw-mask filtering, and absolute-bit extraction are disabled. Encoder scaling and engineering offset are still applied.
 * For floating point encoders, configured encoder `bits` and `absBits` are accepted but ignored, and a warning is printed during validation.
 * Add support for floating point CSP drive position setpoints (`F32`, `F64`) when the selected CSP encoder actual-position entry uses the same EtherCAT datatype.
 * Add support for floating point CSV drive velocity setpoints (`F32`, `F64`).
 * Integer and unsigned encoder/drive behavior is unchanged. Existing integer raw-mask, abs-bit, overflow, CSV, and CSP paths are preserved.
+* Add support for converted async SDO data types, including 64-bit converted async SDO values, and avoid strict-aliasing issues in EtherCAT floating point access.
 * Floating point single-turn-absolute homing sequences are not supported and will fail validation.
 
 # 11.0.6
