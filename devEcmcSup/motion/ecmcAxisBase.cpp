@@ -1027,6 +1027,26 @@ int ecmcAxisBase::setCmdData(int cmdData) {
   return 0;
 }
 
+int ecmcAxisBase::setCustomHomingState(int state) {
+  if (state < 0) {
+    state = 0;
+  } else if (state > 999) {
+    state = 999;
+  }
+  data_.control_.customHomingState = state;
+  return 0;
+}
+
+int ecmcAxisBase::setCustomHomingDone(bool done) {
+  data_.control_.customHomingDone = done;
+  return 0;
+}
+
+int ecmcAxisBase::setCustomHomingError(bool error) {
+  data_.control_.customHomingError = error;
+  return 0;
+}
+
 motionCommandTypes ecmcAxisBase::getCommand() {
   return seq_.getCommand();
 }
@@ -2213,7 +2233,12 @@ int ecmcAxisBase::moveHome(int    nCmdData,
                            double accelerationSet,
                            double decelerationSet
                            ) {
-  if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
+  if (nCmdData <= 0) {
+    nCmdData = getPrimEnc()->getHomeSeqId();
+  }
+
+  if ((getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) &&
+      (nCmdData != ECMC_SEQ_HOME_PLC)) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Axis[%d]: Homing failed since traj source is set to PLC (0x%x).\n",
       __FILE__,
@@ -2254,10 +2279,6 @@ int ecmcAxisBase::moveHome(int    nCmdData,
     return errorCode;
   }
 
-  // if not valid then fallback on whats defined in encoder
-  if (nCmdData <= 0) {
-    nCmdData = getPrimEnc()->getHomeSeqId();
-  }
   errorCode = setCmdData(nCmdData);
 
   if (errorCode) {
@@ -2303,7 +2324,8 @@ int ecmcAxisBase::moveHome(int    nCmdData,
 
 // Homing with configs from encoder object
 int ecmcAxisBase::moveHome() {
-  if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
+  if ((getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) &&
+      (getPrimEnc()->getHomeSeqId() != ECMC_SEQ_HOME_PLC)) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Axis[%d]: Homing failed since traj source is set to PLC (0x%x).\n",
       __FILE__,

@@ -95,6 +95,9 @@ public:
   int                        setEncLookupTableEnable(int enable);
   int                        setCommand(motionCommandTypes command);
   int                        setCmdData(int cmdData);
+  int                        setCustomHomingState(int state);
+  int                        setCustomHomingDone(bool done);
+  int                        setCustomHomingError(bool error);
   motionCommandTypes         getCommand();
   int                        getCmdData();
   int                        slowExecute();

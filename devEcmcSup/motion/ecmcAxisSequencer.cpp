@@ -430,6 +430,10 @@ void ecmcAxisSequencer::executeInternal() {
       seqReturnVal = seqHoming26();
       break;
 
+    case ECMC_SEQ_HOME_PLC:
+      seqReturnVal = seqHoming27();
+      break;
+
     default:
       setErrorID(__FILE__, __FUNCTION__, __LINE__,
                  ERROR_SEQ_CMD_DATA_UNDEFINED);
@@ -2984,6 +2988,46 @@ int ecmcAxisSequencer::seqHoming26() {
   return -seqState_;
 }
 
+// PLC implemented homing. The PLC executes the actual procedure while ecmc
+// keeps normal homing bookkeeping and post-home move handling.
+int ecmcAxisSequencer::seqHoming27() {
+  switch (seqState_) {
+  case 0:
+    initHomingSeq();
+
+    data_->status_.customHomingRequest = true;
+    data_->control_.customHomingState  = 1;
+    data_->control_.customHomingDone   = false;
+    data_->control_.customHomingError  = false;
+    data_->status_.customHomingState   = data_->control_.customHomingState;
+    data_->status_.customHomingDone    = false;
+    data_->status_.customHomingError   = false;
+    seqState_ = 1;
+    break;
+
+  case 1:
+    data_->status_.customHomingRequest = true;
+    data_->status_.customHomingState   = data_->control_.customHomingState;
+    data_->status_.customHomingDone    = data_->control_.customHomingDone;
+    data_->status_.customHomingError   = data_->control_.customHomingError;
+
+    if (data_->control_.customHomingError) {
+      data_->status_.customHomingRequest = false;
+      return ERROR_SEQ_SEQ_FAILED;
+    }
+
+    if (data_->control_.customHomingDone) {
+      data_->status_.customHomingRequest = false;
+      data_->status_.customHomingState   = 1000;
+      finalizePLCSeq();
+    }
+    break;
+  }
+
+  postHomeMove();
+  return -seqState_;
+}
+
 // Issue post move after successful finalized homing (seqState_ set to 1000 in finalizeHomingSeq )
 int ecmcAxisSequencer::postHomeMove() {
   switch (seqState_) {
@@ -3098,6 +3142,12 @@ int ecmcAxisSequencer::stopSeq() {
   localSeqBusy_   = false;
   seqState_       = 0;
   seqTimeCounter_ = 0;
+  if (data_ != NULL) {
+    data_->status_.customHomingRequest = false;
+    data_->control_.customHomingState  = 0;
+    data_->control_.customHomingDone   = false;
+    data_->control_.customHomingError  = false;
+  }
   restorePosLagMonAfterSeq();
   return 0;
 }
@@ -3242,6 +3292,32 @@ void ecmcAxisSequencer::finalizeHomingSeq(double newPosition) {
   } else {
     data_->status_.currentTargetPosition = newPosition;
     data_->control_.positionTarget = newPosition;
+    stopSeq();
+  }
+}
+
+void ecmcAxisSequencer::finalizePLCSeq() {
+  const double newPosition = getPrimEnc()->getActPos();
+
+  setNewPositionCtrlDrvTrajBumpless(newPosition);
+
+  for (int i = 0; i < data_->status_.encoderCount; i++) {
+    if (encArray_[i]->getRefAtHoming() || i == data_->control_.primaryEncIndex) {
+      encArray_[i]->setHomed(true);
+      encArray_[i]->setArmLatch(false);
+    }
+  }
+
+  homePosLatch1_      = 0;
+  homePosLatch2_      = 0;
+  homeLatchCountAct_  = 0;
+  overUnderFlowLatch_ = ECMC_ENC_NORMAL;
+
+  if (homeEnablePostMove_) {
+    seqState_ = 1000;
+  } else {
+    data_->status_.currentTargetPosition = newPosition;
+    data_->control_.positionTarget       = newPosition;
     stopSeq();
   }
 }

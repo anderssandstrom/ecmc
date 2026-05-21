@@ -457,6 +457,22 @@ int ecmcPLCDataIF::readAxis() {
     data_ = static_cast<double>(axisData->statusWord_.seqstate);
     break;
 
+  case ECMC_AXIS_DATA_HOMING_REQUEST:
+    data_ = static_cast<double>(axisData->customHomingRequest);
+    break;
+
+  case ECMC_AXIS_DATA_HOMING_STATE:
+    data_ = static_cast<double>(axisData->customHomingState);
+    break;
+
+  case ECMC_AXIS_DATA_HOMING_DONE:
+    data_ = static_cast<double>(axisData->customHomingDone);
+    break;
+
+  case ECMC_AXIS_DATA_HOMING_ERROR:
+    data_ = static_cast<double>(axisData->customHomingError);
+    break;
+
   case ECMC_AXIS_DATA_INTERLOCK_TYPE:
     data_ = static_cast<double>(axis->getSumInterlock() == 0);
     break;
@@ -641,7 +657,10 @@ int ecmcPLCDataIF::writeAxis() {
 
   // Write from PLC to Axis allowed?
   if (!axis->getAllowCmdFromPLC() &&
-      (dataSourceAxis_ != ECMC_AXIS_DATA_ALLOW_PLC_WRITE)) {
+      (dataSourceAxis_ != ECMC_AXIS_DATA_ALLOW_PLC_WRITE) &&
+      (dataSourceAxis_ != ECMC_AXIS_DATA_HOMING_STATE) &&
+      (dataSourceAxis_ != ECMC_AXIS_DATA_HOMING_DONE) &&
+      (dataSourceAxis_ != ECMC_AXIS_DATA_HOMING_ERROR)) {
     return 0;
   }
 
@@ -752,6 +771,18 @@ int ecmcPLCDataIF::writeAxis() {
 
   case ECMC_AXIS_DATA_SEQ_STATE:
     return 0;
+
+  case ECMC_AXIS_DATA_HOMING_REQUEST:
+    return 0;
+
+  case ECMC_AXIS_DATA_HOMING_STATE:
+    return axis->setCustomHomingState(static_cast<int>(data_));
+
+  case ECMC_AXIS_DATA_HOMING_DONE:
+    return axis->setCustomHomingDone(data_ > 0);
+
+  case ECMC_AXIS_DATA_HOMING_ERROR:
+    return axis->setCustomHomingError(data_ > 0);
 
     break;
 
@@ -1132,6 +1163,33 @@ ecmcAxisDataType ecmcPLCDataIF::parseAxisDataSource(char *axisDataSource) {
 
   if (npos == 0) {
     return ECMC_AXIS_DATA_SEQ_STATE;
+  }
+
+  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOMING_REQUEST);
+
+  if (npos == 0) {
+    isBool_ = 1;
+    return ECMC_AXIS_DATA_HOMING_REQUEST;
+  }
+
+  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOMING_STATE);
+
+  if (npos == 0) {
+    return ECMC_AXIS_DATA_HOMING_STATE;
+  }
+
+  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOMING_DONE);
+
+  if (npos == 0) {
+    isBool_ = 1;
+    return ECMC_AXIS_DATA_HOMING_DONE;
+  }
+
+  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOMING_ERROR);
+
+  if (npos == 0) {
+    isBool_ = 1;
+    return ECMC_AXIS_DATA_HOMING_ERROR;
   }
 
   npos = strcmp(varName, ECMC_AXIS_DATA_STR_INTERLOCK_TYPE);

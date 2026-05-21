@@ -49,6 +49,9 @@ typedef struct {
   int                primaryEncIndex;    // used for control
   int                cspDrvEncIndex;     // encoder channel used for drive local CSP (defaults to primary)
   int                cfgEncIndex;        // Encoder currrently configured
+  int                customHomingState;
+  bool               customHomingDone;
+  bool               customHomingError;
   int                drvModeSet;
   double             accelerationTarget;
   double             decelerationTarget;
@@ -123,6 +126,10 @@ typedef struct {
   int     warningCode;
   int     axisId;
   int     cycleCounter;
+  int     customHomingState;
+  bool    customHomingRequest;
+  bool    customHomingDone;
+  bool    customHomingError;
   axisTypes axisType;
   double  sampleTime;
   ecmcAxisStatusWordType statusWord_;  

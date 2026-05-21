@@ -163,6 +163,7 @@ int setPLCExpr(int   index,
  *                                                 (via high limit).\n
  *                                                 ref at abs bits.\n
  *                                                 over/under-flow.\n.
+ *                                    cmddata=27 : PLC implemented homing\n
  *   20. ax<id>.traj.source           internal source or expressions   (ro)\n
  *                                    source = 0: internal traj\n
  *                                    source > 0: setpoints from expr\n
@@ -179,6 +180,12 @@ int setPLCExpr(int   index,
  *   28. ax<id>.drv.enable            enable drive command             (rw)\n
  *   29. ax<id>.drv.enabled           drive enabled                    (ro)\n
  *   30. ax<id>.seq.state             sequence state (homing)          (ro)\n
+ *       ax<id>.homing.request        PLC homing request for seq 27    (ro)\n
+ *       ax<id>.homing.state          PLC homing progress for seq 27   (rw)\n
+ *                                    PLC writes 0..999 progress states.\n
+ *                                    ecmc sets state=1000 when done.\n
+ *       ax<id>.homing.done           PLC homing done for seq 27       (rw)\n
+ *       ax<id>.homing.error          PLC homing error for seq 27      (rw)\n
  *   31. ax<id>.mon.ilock             motion interlock  (both dir)     (rw)\n
  *                                    ax<id>.mon.ilock=1: motion allowed\n
  *                                    ax<id>.mon.ilock=0: motion not allowed\n

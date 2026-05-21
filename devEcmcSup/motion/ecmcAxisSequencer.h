@@ -143,6 +143,7 @@ private:
   int          seqHoming21(); // nCmdData==21
   int          seqHoming22(); // nCmdData==22
   int          seqHoming26(); // nCmdData==26
+  int          seqHoming27(); // nCmdData==27
   int          checkHWLimitsAndStop(bool checkBWD,
                                     bool checkFWD);
   bool         isAtTargetOrAtTargetMonDisabled() const;
@@ -151,6 +152,7 @@ private:
   int          checkVelAccDec();
   void         initHomingSeq();
   void         finalizeHomingSeq(double newPosition);
+  void         finalizePLCSeq();
   int          postHomeMove();
   void         setTrajAccAndDec();
   void         initStop();

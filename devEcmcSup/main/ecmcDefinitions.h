@@ -517,6 +517,10 @@ enum axisSubObjectType {
 #define ECMC_AXIS_DATA_STR_COMMAND "traj.command"
 #define ECMC_AXIS_DATA_STR_CMD_DATA "traj.cmddata"
 #define ECMC_AXIS_DATA_STR_SEQ_STATE "seq.state"
+#define ECMC_AXIS_DATA_STR_HOMING_REQUEST "homing.request"
+#define ECMC_AXIS_DATA_STR_HOMING_STATE "homing.state"
+#define ECMC_AXIS_DATA_STR_HOMING_DONE "homing.done"
+#define ECMC_AXIS_DATA_STR_HOMING_ERROR "homing.error"
 #define ECMC_AXIS_DATA_STR_INTERLOCK_TYPE "mon.ilock"
 #define ECMC_AXIS_DATA_STR_TRAJ_SOURCE "traj.source"
 #define ECMC_AXIS_DATA_STR_ENC_SOURCE "enc.source"
@@ -596,6 +600,10 @@ enum ecmcAxisDataType {
   ECMC_AXIS_DATA_CTRL_KI               = 47,
   ECMC_AXIS_DATA_CTRL_KD               = 48,
   ECMC_AXIS_DATA_CTRL_KFF              = 49,
+  ECMC_AXIS_DATA_HOMING_REQUEST        = 50,
+  ECMC_AXIS_DATA_HOMING_STATE          = 51,
+  ECMC_AXIS_DATA_HOMING_DONE           = 52,
+  ECMC_AXIS_DATA_HOMING_ERROR          = 53,
 };
 
 enum ecmcDataStorageType {
@@ -736,6 +744,7 @@ enum ecmcHomingType {
   ECMC_SEQ_HOME_HIGH_LIM_SINGLE_TURN_ABS = 22,
   ECMC_SEQ_HOME_SET_POS_2                = 25,   // Same as ECMC_SEQ_HOME_SET_POS but not blocked by motor. Code handled in ecmcMotorRecordAxis
   ECMC_SEQ_HOME_TRIGG_EXTERN             = 26,
+  ECMC_SEQ_HOME_PLC                      = 27,
 };
 
 #endif  /* ECMC_DEFINITIONS_H_ */
