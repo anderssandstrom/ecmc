@@ -163,7 +163,7 @@ int setPLCExpr(int   index,
  *                                                 (via high limit).\n
  *                                                 ref at abs bits.\n
  *                                                 over/under-flow.\n.
- *                                    cmddata=27 : PLC implemented homing\n
+ *                                    cmddata=27 : custom PLC/C++ homing\n
  *   20. ax<id>.traj.source           internal source or expressions   (ro)\n
  *                                    source = 0: internal traj\n
  *                                    source > 0: setpoints from expr\n
@@ -180,12 +180,12 @@ int setPLCExpr(int   index,
  *   28. ax<id>.drv.enable            enable drive command             (rw)\n
  *   29. ax<id>.drv.enabled           drive enabled                    (ro)\n
  *   30. ax<id>.seq.state             sequence state (homing)          (ro)\n
- *       ax<id>.homing.request        PLC homing request for seq 27    (ro)\n
- *       ax<id>.homing.state          PLC homing progress for seq 27   (rw)\n
+ *       ax<id>.homing.request        custom homing request for seq 27 (ro)\n
+ *       ax<id>.homing.state          custom homing progress for seq 27(rw)\n
  *                                    PLC writes 0..999 progress states.\n
  *                                    ecmc sets state=1000 when done.\n
- *       ax<id>.homing.done           PLC homing done for seq 27       (rw)\n
- *       ax<id>.homing.error          PLC homing error for seq 27      (rw)\n
+ *       ax<id>.homing.done           custom homing done for seq 27    (rw)\n
+ *       ax<id>.homing.error          custom homing error for seq 27   (rw)\n
  *   31. ax<id>.mon.ilock             motion interlock  (both dir)     (rw)\n
  *                                    ax<id>.mon.ilock=1: motion allowed\n
  *                                    ax<id>.mon.ilock=0: motion not allowed\n
@@ -310,6 +310,16 @@ int setPLCExpr(int   index,
  *      Perform a homing sequence of axis <axIndex>.\n
  *      Motion is triggerd with a positive edge on <execute> input.\n
  *      returns 0 if success or error code.\n
+ *
+ *   Custom homing sequence 27 helper moves:\n
+ *      retvalue = mc_home_move_abs(<axIndex>, <execute>, <pos>, <vel>, <acc>, <dec>);\n
+ *      retvalue = mc_home_move_rel(<axIndex>, <execute>, <distance>, <vel>, <acc>, <dec>);\n
+ *      retvalue = mc_home_move_vel(<axIndex>, <execute>, <vel>, <acc>, <dec>);\n
+ *      retvalue = mc_home_halt(<axIndex>, <execute>);\n
+ *      busy     = mc_home_get_busy(<axIndex>);\n
+ *      busy     = mc_home_move_busy(<axIndex>);\n
+ *      These functions are only valid while custom homing sequence 27 is active.\n
+ *      Setting <execute>=0 resets the edge state; use mc_home_halt() to stop an active helper move.\n
  *
  *   5. retvalue = mc_halt(
  *                           <axIndex>,       : Axis index\n

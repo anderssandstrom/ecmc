@@ -151,6 +151,11 @@ void ecmcAxisSequencer::initVars() {
   enableConstVel_        = true;
   enableHome_            = true;
   homeEnablePostMove_    = false;
+  customHomingActive_           = false;
+  customHomeMoveAbsExecuteOld_ = false;
+  customHomeMoveRelExecuteOld_ = false;
+  customHomeMoveVelExecuteOld_ = false;
+  customHomeHaltExecuteOld_    = false;
   homePostMoveTargetPos_ = 0;
   seqPosHomeState_       = 0;
   modeSetEntry_          = NULL;
@@ -860,6 +865,164 @@ void ecmcAxisSequencer::setCmdData(int cmdData) {
 
 int ecmcAxisSequencer::getCmdData() {
   return data_->status_.cmdData;
+}
+
+int ecmcAxisSequencer::validateCustomHomeMove() {
+  if (traj_ == NULL) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_SEQ_TRAJ_NULL);
+  }
+
+  if (!customHomingActive_ ||
+      !seqInProgress_ ||
+      (data_->status_.command != ECMC_CMD_HOMING) ||
+      (data_->status_.cmdData != ECMC_SEQ_HOME_PLC)) {
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_SEQ_HOME_NOT_ALLOWED);
+  }
+
+  return 0;
+}
+
+int ecmcAxisSequencer::customHomeMoveAbs(bool execute,
+                                         double targetPosition,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration) {
+  const bool trigger = execute && !customHomeMoveAbsExecuteOld_;
+  customHomeMoveAbsExecuteOld_ = execute;
+  if (!execute) {
+    return 0;
+  }
+  if (!trigger) {
+    return 0;
+  }
+
+  int errorCode = validateCustomHomeMove();
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (traj_->getBusy()) {
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_AXIS_COMMAND_NOT_ALLOWED_WHEN_ENABLED);
+  }
+
+  traj_->setExecute(false);
+  traj_->setMotionMode(ECMC_MOVE_MODE_POS);
+  traj_->setStartPos(data_->status_.currentPositionSetpoint);
+  traj_->setCurrentPosSet(data_->status_.currentPositionSetpoint);
+  traj_->setAcc(acceleration);
+  traj_->setDec(deceleration);
+  traj_->setTargetVel(velocity);
+  traj_->setTargetPos(targetPosition);
+  data_->status_.currentTargetPosition = targetPosition;
+  data_->control_.positionTarget       = targetPosition;
+  return traj_->setExecute(true);
+}
+
+int ecmcAxisSequencer::customHomeMoveRel(bool execute,
+                                         double distance,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration) {
+  const bool trigger = execute && !customHomeMoveRelExecuteOld_;
+  customHomeMoveRelExecuteOld_ = execute;
+  if (!execute) {
+    return 0;
+  }
+  if (!trigger) {
+    return 0;
+  }
+
+  int errorCode = validateCustomHomeMove();
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (traj_->getBusy()) {
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_AXIS_COMMAND_NOT_ALLOWED_WHEN_ENABLED);
+  }
+
+  const double targetPosition = data_->status_.currentPositionSetpoint + distance;
+  traj_->setExecute(false);
+  traj_->setMotionMode(ECMC_MOVE_MODE_POS);
+  traj_->setStartPos(data_->status_.currentPositionSetpoint);
+  traj_->setCurrentPosSet(data_->status_.currentPositionSetpoint);
+  traj_->setAcc(acceleration);
+  traj_->setDec(deceleration);
+  traj_->setTargetVel(velocity);
+  traj_->setTargetPos(targetPosition);
+  data_->status_.currentTargetPosition = targetPosition;
+  data_->control_.positionTarget       = targetPosition;
+  return traj_->setExecute(true);
+}
+
+int ecmcAxisSequencer::customHomeMoveVel(bool execute,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration) {
+  const bool trigger = execute && !customHomeMoveVelExecuteOld_;
+  customHomeMoveVelExecuteOld_ = execute;
+  if (!execute) {
+    return 0;
+  }
+  if (!trigger) {
+    return 0;
+  }
+
+  int errorCode = validateCustomHomeMove();
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (traj_->getBusy()) {
+    return setErrorID(__FILE__,
+                      __FUNCTION__,
+                      __LINE__,
+                      ERROR_AXIS_COMMAND_NOT_ALLOWED_WHEN_ENABLED);
+  }
+
+  traj_->setExecute(false);
+  traj_->setMotionMode(ECMC_MOVE_MODE_VEL);
+  traj_->setStartPos(data_->status_.currentPositionSetpoint);
+  traj_->setCurrentPosSet(data_->status_.currentPositionSetpoint);
+  traj_->setAcc(acceleration);
+  traj_->setDec(deceleration);
+  traj_->setTargetVel(velocity);
+  return traj_->setExecute(true);
+}
+
+int ecmcAxisSequencer::customHomeHalt(bool execute) {
+  const bool trigger = execute && !customHomeHaltExecuteOld_;
+  customHomeHaltExecuteOld_ = execute;
+  if (!execute) {
+    return 0;
+  }
+  if (!trigger) {
+    return 0;
+  }
+
+  int errorCode = validateCustomHomeMove();
+  if (errorCode) {
+    return errorCode;
+  }
+
+  return traj_->setExecute(false);
+}
+
+bool ecmcAxisSequencer::getCustomHomeMoveBusy() {
+  return customHomingActive_ && traj_ && traj_->getBusy();
+}
+
+bool ecmcAxisSequencer::getCustomHomeBusy() {
+  return customHomingActive_;
 }
 
 void ecmcAxisSequencer::setTraj(ecmcTrajectoryBase *traj) {
@@ -2988,13 +3151,14 @@ int ecmcAxisSequencer::seqHoming26() {
   return -seqState_;
 }
 
-// PLC implemented homing. The PLC executes the actual procedure while ecmc
-// keeps normal homing bookkeeping and post-home move handling.
+// Custom homing. PLC or C++ logic executes the actual procedure while ecmc
+// owns the homing sequence and trajectory generator.
 int ecmcAxisSequencer::seqHoming27() {
   switch (seqState_) {
   case 0:
     initHomingSeq();
 
+    customHomingActive_ = true;
     data_->status_.customHomingRequest = true;
     data_->control_.customHomingState  = 1;
     data_->control_.customHomingDone   = false;
@@ -3016,7 +3180,7 @@ int ecmcAxisSequencer::seqHoming27() {
       return ERROR_SEQ_SEQ_FAILED;
     }
 
-    if (data_->control_.customHomingDone) {
+    if (data_->control_.customHomingDone && !traj_->getBusy()) {
       data_->status_.customHomingRequest = false;
       data_->status_.customHomingState   = 1000;
       finalizePLCSeq();
@@ -3024,7 +3188,6 @@ int ecmcAxisSequencer::seqHoming27() {
     break;
   }
 
-  postHomeMove();
   return -seqState_;
 }
 
@@ -3138,10 +3301,15 @@ int ecmcAxisSequencer::stopSeq() {
     primEnc->setHomeExtTrigg(0);
   }
 
-  seqInProgress_  = false;
-  localSeqBusy_   = false;
-  seqState_       = 0;
-  seqTimeCounter_ = 0;
+  seqInProgress_             = false;
+  localSeqBusy_              = false;
+  customHomingActive_        = false;
+  customHomeMoveAbsExecuteOld_ = false;
+  customHomeMoveRelExecuteOld_ = false;
+  customHomeMoveVelExecuteOld_ = false;
+  customHomeHaltExecuteOld_    = false;
+  seqState_                  = 0;
+  seqTimeCounter_            = 0;
   if (data_ != NULL) {
     data_->status_.customHomingRequest = false;
     data_->control_.customHomingState  = 0;
@@ -3313,13 +3481,9 @@ void ecmcAxisSequencer::finalizePLCSeq() {
   homeLatchCountAct_  = 0;
   overUnderFlowLatch_ = ECMC_ENC_NORMAL;
 
-  if (homeEnablePostMove_) {
-    seqState_ = 1000;
-  } else {
-    data_->status_.currentTargetPosition = newPosition;
-    data_->control_.positionTarget       = newPosition;
-    stopSeq();
-  }
+  data_->status_.currentTargetPosition = newPosition;
+  data_->control_.positionTarget       = newPosition;
+  stopSeq();
 }
 
 void ecmcAxisSequencer::setHomeLatchCountOffset(int count) {

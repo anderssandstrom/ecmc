@@ -1794,7 +1794,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   }
 
   getEcmcCppLogicHostServices(&impl_->hostServices);
-  impl_->hostServices.version = ECMC_CPP_LOGIC_ABI_VERSION;
+  impl_->hostServices.version = ECMC_CPP_LOGIC_HOST_SERVICES_VERSION;
   impl_->hostServices.get_cycle_time_s = &currentCycleTimeS;
   impl_->hostServices.publish_debug_text = &publishCurrentDebugText;
   impl_->hostServices.set_enable_dbg = &setCurrentDebugEnable;

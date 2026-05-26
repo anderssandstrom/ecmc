@@ -20,6 +20,9 @@ extern "C" {
 #endif
 
 #define ECMC_CPP_LOGIC_ABI_VERSION 8
+#define ECMC_CPP_LOGIC_HOST_SERVICES_VERSION 10
+#define ECMC_CPP_LOGIC_HOST_SERVICES_ENCODER_ACT_POS_VERSION 9
+#define ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION 10
 
 #define ECMC_CPP_LOGIC_CREATE_INSTANCE_FAIL 0x2006D
 
@@ -91,6 +94,27 @@ struct ecmcCppLogicHostServices {
   int32_t (*lut_exists)(int32_t lut_index);
   int32_t (*request_ioc_exit)(int32_t exit_code);
   int32_t (*set_create_error_message)(const char* message);
+  int32_t (*set_axis_enc_act_pos)(int32_t axis_index, int32_t enc_index, double value);
+  int32_t (*axis_home_move_abs)(int32_t axis_index,
+                                int32_t execute,
+                                double target_position,
+                                double velocity,
+                                double acceleration,
+                                double deceleration);
+  int32_t (*axis_home_move_rel)(int32_t axis_index,
+                                int32_t execute,
+                                double distance,
+                                double velocity,
+                                double acceleration,
+                                double deceleration);
+  int32_t (*axis_home_move_vel)(int32_t axis_index,
+                                int32_t execute,
+                                double velocity,
+                                double acceleration,
+                                double deceleration);
+  int32_t (*axis_home_halt)(int32_t axis_index, int32_t execute);
+  int32_t (*get_axis_home_busy)(int32_t axis_index);
+  int32_t (*get_axis_home_move_busy)(int32_t axis_index);
 };
 
 struct ecmcCppLogicApi {

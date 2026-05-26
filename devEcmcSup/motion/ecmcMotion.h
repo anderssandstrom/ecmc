@@ -1275,7 +1275,7 @@ int setAxisCommand(int axisIndex,
  *   Command Data 4: Ref. on home sensor via high limit switch.\n
  *   Command Data 5: Ref. on center of home sensor via low limit switch.\n
  *   Command Data 6: Ref. on center of home sensor via high limit switch.\n
- *   Command Data 27: PLC implemented homing.\n
+ *   Command Data 27: Custom PLC/C++ logic homing.\n
  *
  * \return 0 if success or otherwise an error code.\n
  *

@@ -882,6 +882,92 @@ inline int32_t axisSetExternalEncoderPos(int32_t axis_index, double value) {
            : -1;
 }
 
+inline int32_t axisSetEncoderActualPos(int32_t axis_index,
+                                       int32_t encoder_index,
+                                       double  value) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_ENCODER_ACT_POS_VERSION &&
+          g_hostServices->set_axis_enc_act_pos)
+           ? g_hostServices->set_axis_enc_act_pos(axis_index, encoder_index, value)
+           : -1;
+}
+
+inline int32_t axisHomeMoveAbs(int32_t axis_index,
+                               bool    execute,
+                               double  target_position,
+                               double  velocity,
+                               double  acceleration,
+                               double  deceleration) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->axis_home_move_abs)
+           ? g_hostServices->axis_home_move_abs(axis_index,
+                                                execute ? 1 : 0,
+                                                target_position,
+                                                velocity,
+                                                acceleration,
+                                                deceleration)
+           : -1;
+}
+
+inline int32_t axisHomeMoveRel(int32_t axis_index,
+                               bool    execute,
+                               double  distance,
+                               double  velocity,
+                               double  acceleration,
+                               double  deceleration) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->axis_home_move_rel)
+           ? g_hostServices->axis_home_move_rel(axis_index,
+                                                execute ? 1 : 0,
+                                                distance,
+                                                velocity,
+                                                acceleration,
+                                                deceleration)
+           : -1;
+}
+
+inline int32_t axisHomeMoveVel(int32_t axis_index,
+                               bool    execute,
+                               double  velocity,
+                               double  acceleration,
+                               double  deceleration) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->axis_home_move_vel)
+           ? g_hostServices->axis_home_move_vel(axis_index,
+                                                execute ? 1 : 0,
+                                                velocity,
+                                                acceleration,
+                                                deceleration)
+           : -1;
+}
+
+inline int32_t axisHomeHalt(int32_t axis_index, bool execute) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->axis_home_halt)
+           ? g_hostServices->axis_home_halt(axis_index, execute ? 1 : 0)
+           : -1;
+}
+
+inline bool axisHomeBusy(int32_t axis_index) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->get_axis_home_busy)
+           ? g_hostServices->get_axis_home_busy(axis_index) != 0
+           : false;
+}
+
+inline bool axisHomeMoveBusy(int32_t axis_index) {
+  return (g_hostServices &&
+          g_hostServices->version >= ECMC_CPP_LOGIC_HOST_SERVICES_CUSTOM_HOME_MOVE_VERSION &&
+          g_hostServices->get_axis_home_move_busy)
+           ? g_hostServices->get_axis_home_move_busy(axis_index) != 0
+           : false;
+}
+
 inline double lutGetValue(int32_t lut_index, double index) {
   return (g_hostServices && g_hostServices->get_lut_value)
            ? g_hostServices->get_lut_value(lut_index, index)

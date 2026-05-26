@@ -66,6 +66,12 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_move_rel(",
                                "mc_move_vel(",
                                "mc_home(",
+                               "mc_home_move_abs(",
+                               "mc_home_move_rel(",
+                               "mc_home_move_vel(",
+                               "mc_home_halt(",
+                               "mc_home_get_busy(",
+                               "mc_home_move_busy(",
                                "mc_halt(",
                                "mc_power(",    
                                "mc_get_err(",
@@ -137,8 +143,12 @@ static int statLastAxesExecuteRel_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteVel_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteHalt_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
+static int statLastAxesExecuteHomeAbs_[ECMC_MAX_AXES]={};
+static int statLastAxesExecuteHomeRel_[ECMC_MAX_AXES]={};
+static int statLastAxesExecuteHomeVel_[ECMC_MAX_AXES]={};
+static int statLastAxesExecuteHomeHalt_[ECMC_MAX_AXES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 65;
+static int mc_cmd_count = 71;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -332,6 +342,116 @@ inline double mc_home(double axIndex,double execute,double seqId, double velTwoa
   }
 
   return 0.0;
+}
+
+inline double mc_home_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  int trigg=!statLastAxesExecuteHomeAbs_[index] && (bool)execute;
+  statLastAxesExecuteHomeAbs_[index]=execute;
+
+  if (!(bool)execute){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveAbs(false, pos, vel, acc, dec);
+    return mc_errorCode;
+  }
+
+  if(trigg){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveAbs(true, pos, vel, acc, dec);
+    if(mc_errorCode){
+      return mc_errorCode;
+    }
+  }
+
+  return 0.0;
+}
+
+inline double mc_home_move_rel(double axIndex,double execute,double pos, double vel, double acc,double dec)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  int trigg=!statLastAxesExecuteHomeRel_[index] && (bool)execute;
+  statLastAxesExecuteHomeRel_[index]=execute;
+
+  if (!(bool)execute){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveRel(false, pos, vel, acc, dec);
+    return mc_errorCode;
+  }
+
+  if(trigg){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveRel(true, pos, vel, acc, dec);
+    if(mc_errorCode){
+      return mc_errorCode;
+    }
+  }
+
+  return 0.0;
+}
+
+inline double mc_home_move_vel(double axIndex,double execute, double vel, double acc,double dec)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  int trigg=!statLastAxesExecuteHomeVel_[index] && (bool)execute;
+  statLastAxesExecuteHomeVel_[index]=execute;
+
+  if (!(bool)execute){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveVel(false, vel, acc, dec);
+    return mc_errorCode;
+  }
+
+  if(trigg){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeMoveVel(true, vel, acc, dec);
+    if(mc_errorCode){
+      return mc_errorCode;
+    }
+  }
+
+  return 0.0;
+}
+
+inline double mc_home_halt(double axIndex,double execute)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  int trigg=!statLastAxesExecuteHomeHalt_[index] && (bool)execute;
+  statLastAxesExecuteHomeHalt_[index]=execute;
+
+  if (!(bool)execute){
+    mc_errorCode=0;
+    return 0;
+  }
+
+  if(trigg){
+    mc_errorCode=(double)axes[index]->getSeq()->customHomeHalt(true);
+    if(mc_errorCode){
+      return mc_errorCode;
+    }
+  }
+
+  return 0.0;
+}
+
+inline double mc_home_move_busy(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  return (double)axes[index]->getSeq()->getCustomHomeMoveBusy();
+}
+
+inline double mc_home_get_busy(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  return (double)axes[index]->getSeq()->getCustomHomeBusy();
 }
 
 inline double mc_home_pos(double axIndex,double execute,double seqId, double velTwoardsCam,double velOffCam, double homePos)

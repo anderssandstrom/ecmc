@@ -76,6 +76,40 @@ created. The C++ logic ABI returns an error code from `createInstance()` and
 passes the created object through an out pointer. If creation fails,
 `Cfg.LoadCppLogic` returns the message in its command error text.
 
+Axis host-service helpers:
+
+- `ecmcCpp::axisUseInternalTraj(axisIndex)`
+- `ecmcCpp::axisUseExternalTraj(axisIndex)`
+- `ecmcCpp::axisUseInternalEnc(axisIndex)`
+- `ecmcCpp::axisUseExternalEnc(axisIndex)`
+- `ecmcCpp::axisGetActualPos(axisIndex)`
+- `ecmcCpp::axisGetSetpointPos(axisIndex)`
+- `ecmcCpp::axisGetActualVel(axisIndex)`
+- `ecmcCpp::axisGetSetpointVel(axisIndex)`
+- `ecmcCpp::axisIsEnabled(axisIndex)`
+- `ecmcCpp::axisIsBusy(axisIndex)`
+- `ecmcCpp::axisHasError(axisIndex)`
+- `ecmcCpp::axisGetErrorId(axisIndex)`
+- `ecmcCpp::axisSetExternalSetpointPos(axisIndex, value)`
+- `ecmcCpp::axisSetExternalEncoderPos(axisIndex, value)`
+- `ecmcCpp::axisSetEncoderActualPos(axisIndex, encoderIndex, value)`
+- `ecmcCpp::axisHomeMoveAbs(axisIndex, execute, targetPosition, velocity, acceleration, deceleration)`
+- `ecmcCpp::axisHomeMoveRel(axisIndex, execute, distance, velocity, acceleration, deceleration)`
+- `ecmcCpp::axisHomeMoveVel(axisIndex, execute, velocity, acceleration, deceleration)`
+- `ecmcCpp::axisHomeHalt(axisIndex, execute)`
+- `ecmcCpp::axisHomeBusy(axisIndex)`
+- `ecmcCpp::axisHomeMoveBusy(axisIndex)`
+
+`axisSetEncoderActualPos()` directly sets one encoder actual position. The
+`encoderIndex` argument is 1-based, matching the PLC `mc_set_act_pos()` helper.
+
+The `axisHome*()` motion helpers are only valid while custom homing sequence
+`27` is active. They use the active homing sequence trajectory generator instead
+of the normal motion command channel. The move and halt helpers are edge
+triggered on `execute`; use `axisHomeHalt()` to stop an active helper move.
+`axisHomeBusy()` returns only the custom homing active state and does not include
+the global axis busy bit.
+
 With the default registration macro, user logic can reject creation after the
 object has been constructed by adding a validation hook:
 

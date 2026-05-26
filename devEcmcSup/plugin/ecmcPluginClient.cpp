@@ -16,6 +16,7 @@
 #include "ecmcDefinitions.h"
 #include "ecmcErrorsList.h"
 #include "ecmcMainThread.h"
+#include "ecmcMotion.h"
 
 // TODO: REMOVE GLOBALS
 #include "ecmcGlobalsExtern.h"
@@ -127,6 +128,75 @@ int setEcmcAxisExtSetPos(int axisIndex, double value) {
 
 int setEcmcAxisExtActPos(int axisIndex, double value) {
   return setAxisExtActPos(axisIndex, value);
+}
+
+int setEcmcAxisEncActPos(int axisIndex, int encIndex, double value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  int error = 0;
+  ecmcEncoder *enc = axes[axisIndex]->getEnc(encIndex - 1, &error);
+  if (error) {
+    return error;
+  }
+  if (!enc) {
+    return ERROR_MAIN_ENCODER_OBJECT_NULL;
+  }
+  enc->setActPos(value);
+  return 0;
+}
+
+int setEcmcAxisHomeMoveAbs(int axisIndex,
+                           int execute,
+                           double targetPosition,
+                           double velocity,
+                           double acceleration,
+                           double deceleration) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->customHomeMoveAbs(execute != 0,
+                                                      targetPosition,
+                                                      velocity,
+                                                      acceleration,
+                                                      deceleration);
+}
+
+int setEcmcAxisHomeMoveRel(int axisIndex,
+                           int execute,
+                           double distance,
+                           double velocity,
+                           double acceleration,
+                           double deceleration) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->customHomeMoveRel(execute != 0,
+                                                      distance,
+                                                      velocity,
+                                                      acceleration,
+                                                      deceleration);
+}
+
+int setEcmcAxisHomeMoveVel(int axisIndex,
+                           int execute,
+                           double velocity,
+                           double acceleration,
+                           double deceleration) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->customHomeMoveVel(execute != 0,
+                                                      velocity,
+                                                      acceleration,
+                                                      deceleration);
+}
+
+int setEcmcAxisHomeHalt(int axisIndex, int execute) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->customHomeHalt(execute != 0);
+}
+
+int getEcmcAxisHomeBusy(int axisIndex) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->getCustomHomeBusy() ? 1 : 0;
+}
+
+int getEcmcAxisHomeMoveBusy(int axisIndex) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  return axes[axisIndex]->getSeq()->getCustomHomeMoveBusy() ? 1 : 0;
 }
 
 int getEcmcAxisTrajSource(int axisIndex) {
@@ -277,7 +347,7 @@ void getEcmcCppLogicHostServices(struct ecmcCppLogicHostServices* services) {
   }
 
   *services = {};
-  services->version = ECMC_CPP_LOGIC_ABI_VERSION;
+  services->version = ECMC_CPP_LOGIC_HOST_SERVICES_VERSION;
   services->get_cycle_time_s = []() -> double { return getEcmcSampleTimeMS() * 1e-3; };
   services->get_ec_master_state_word = &getEcmcMasterStateWord;
   services->get_ec_slave_state_word = &getEcmcSlaveStateWord;
@@ -295,6 +365,13 @@ void getEcmcCppLogicHostServices(struct ecmcCppLogicHostServices* services) {
   services->set_axis_enc_source = &setEcmcAxisEncSource;
   services->set_axis_ext_set_pos = &setEcmcAxisExtSetPos;
   services->set_axis_ext_act_pos = &setEcmcAxisExtActPos;
+  services->set_axis_enc_act_pos = &setEcmcAxisEncActPos;
+  services->axis_home_move_abs = &setEcmcAxisHomeMoveAbs;
+  services->axis_home_move_rel = &setEcmcAxisHomeMoveRel;
+  services->axis_home_move_vel = &setEcmcAxisHomeMoveVel;
+  services->axis_home_halt = &setEcmcAxisHomeHalt;
+  services->get_axis_home_busy = &getEcmcAxisHomeBusy;
+  services->get_axis_home_move_busy = &getEcmcAxisHomeMoveBusy;
   services->get_ioc_state = &getEcmcEpicsIOCState;
   services->publish_debug_text = &publishEcmcDebugText;
   services->get_lut_value = &getEcmcLutValue;

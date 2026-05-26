@@ -825,6 +825,12 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_move_rel",     mc_move_rel);
   ecmcPLCTaskAddFunction("mc_move_vel",     mc_move_vel);
   ecmcPLCTaskAddFunction("mc_home",         mc_home);
+  ecmcPLCTaskAddFunction("mc_home_move_abs", mc_home_move_abs);
+  ecmcPLCTaskAddFunction("mc_home_move_rel", mc_home_move_rel);
+  ecmcPLCTaskAddFunction("mc_home_move_vel", mc_home_move_vel);
+  ecmcPLCTaskAddFunction("mc_home_halt",    mc_home_halt);
+  ecmcPLCTaskAddFunction("mc_home_get_busy", mc_home_get_busy);
+  ecmcPLCTaskAddFunction("mc_home_move_busy", mc_home_move_busy);
   ecmcPLCTaskAddFunction("mc_halt",         mc_halt);
   ecmcPLCTaskAddFunction("mc_power",        mc_power);
   ecmcPLCTaskAddFunction("mc_get_err",      ec_get_err);

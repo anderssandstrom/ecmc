@@ -73,6 +73,23 @@ public:
   void                 setDefaultDec(double dec);
   void                 setAcc(double acc);
   void                 setDec(double dec);
+  int                  customHomeMoveAbs(bool execute,
+                                         double targetPosition,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration);
+  int                  customHomeMoveRel(bool execute,
+                                         double distance,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration);
+  int                  customHomeMoveVel(bool execute,
+                                         double velocity,
+                                         double acceleration,
+                                         double deceleration);
+  int                  customHomeHalt(bool execute);
+  bool                 getCustomHomeBusy();
+  bool                 getCustomHomeMoveBusy();
   int                  setPVTObject(ecmcAxisPVTSequence* pvt);
   ecmcAxisPVTSequence* getPVTObject();
   int                  validatePVT();
@@ -153,6 +170,7 @@ private:
   void         initHomingSeq();
   void         finalizeHomingSeq(double newPosition);
   void         finalizePLCSeq();
+  int          validateCustomHomeMove();
   int          postHomeMove();
   void         setTrajAccAndDec();
   void         initStop();
@@ -178,6 +196,11 @@ private:
   bool executeOld_;
   bool localSeqBusy_;
   bool homeEnablePostMove_;
+  bool customHomingActive_;
+  bool customHomeMoveAbsExecuteOld_;
+  bool customHomeMoveRelExecuteOld_;
+  bool customHomeMoveVelExecuteOld_;
+  bool customHomeHaltExecuteOld_;
   double homePostMoveTargetPos_;
   double jogVel_;
   double homeVelTowardsCam_;

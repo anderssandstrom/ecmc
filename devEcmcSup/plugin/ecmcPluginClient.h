@@ -144,6 +144,36 @@ int setEcmcAxisExtSetPos(int axisIndex, double value);
  */
 int setEcmcAxisExtActPos(int axisIndex, double value);
 
+/** \brief Set axis encoder actual position
+ *
+ * \param[in] axisIndex Axis index.
+ * \param[in] encIndex Encoder index, 1-based to match PLC mc_set_act_pos().
+ * \param[in] value Actual encoder position.
+ *
+ * \return 0 if success or otherwise an error code.
+ */
+int setEcmcAxisEncActPos(int axisIndex, int encIndex, double value);
+int setEcmcAxisHomeMoveAbs(int axisIndex,
+                           int execute,
+                           double targetPosition,
+                           double velocity,
+                           double acceleration,
+                           double deceleration);
+int setEcmcAxisHomeMoveRel(int axisIndex,
+                           int execute,
+                           double distance,
+                           double velocity,
+                           double acceleration,
+                           double deceleration);
+int setEcmcAxisHomeMoveVel(int axisIndex,
+                           int execute,
+                           double velocity,
+                           double acceleration,
+                           double deceleration);
+int setEcmcAxisHomeHalt(int axisIndex, int execute);
+int getEcmcAxisHomeBusy(int axisIndex);
+int getEcmcAxisHomeMoveBusy(int axisIndex);
+
 int getEcmcAxisTrajSource(int axisIndex);
 int getEcmcAxisEncSource(int axisIndex);
 double getEcmcAxisActualPos(int axisIndex);

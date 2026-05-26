@@ -1,5 +1,14 @@
 Release Notes
 ===
+# Next release candidate
+* Add custom PLC/C++ logic homing sequence `ECMC_SEQ_HOME_PLC` (`cmddata=27`).
+* Add custom homing handshake variables `ax<id>.homing.request`, `ax<id>.homing.state`, `ax<id>.homing.done`, and `ax<id>.homing.error`.
+* For custom homing, PLC or C++ logic owns homing decisions and encoder positioning through helpers such as `mc_set_act_pos()` or `ecmcCpp::axisSetEncoderActualPos()`. Sequence 27 remains active like other homing sequences and owns the trajectory generator.
+* Add scoped custom-homing motion helpers `mc_home_move_abs()`, `mc_home_move_rel()`, `mc_home_move_vel()`, `mc_home_halt()`, `mc_home_get_busy()`, and `mc_home_move_busy()` for PLC code, plus equivalent C++ logic helpers.
+* When `homing.done` is set, ecmc waits for any custom-homing helper move to be idle, marks the configured homing encoders as homed, and aligns internal setpoints to the current primary encoder position. Sequence 27 does not run the configured ecmc post-home move; custom logic should perform any final move before setting `homing.done`.
+* Add C++ logic helper `ecmcCpp::axisSetEncoderActualPos(axisIndex, encoderIndex, value)` for direct encoder position setting from native C++ logic.
+* Document custom homing sequence 27 and the new homing variables in the ecmccfg Hugo manual.
+
 # 11.0.7
 * Add LUT (lookup table) support for cpp-logic plugins
 * Add the `cpp_logic` C/C++ runtime interface with loader support, dedicated asyn ports, EPICS bindings, string/array/waveform exports, macro parsing, helper headers, examples, and an offline substitutions generator.
@@ -24,7 +33,6 @@ Release Notes
 * Integer and unsigned encoder/drive behavior is unchanged. Existing integer raw-mask, abs-bit, overflow, CSV, and CSP paths are preserved.
 * Add support for converted async SDO data types, including 64-bit converted async SDO values, and avoid strict-aliasing issues in EtherCAT floating point access.
 * Floating point single-turn-absolute homing sequences are not supported and will fail validation.
-
 # 11.0.6
 * Fix issue with softlimits (actually fixed in ecmccfg). In certain cases verification of softlimits failed because enabling of softlimits was made before setting the softlimit value.
 * Reset stall monitoring time counter for the case when update of target position is made during a move.
