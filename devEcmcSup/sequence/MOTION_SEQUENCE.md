@@ -1,0 +1,373 @@
+# Motion Sequence
+
+This is an initial runtime-editable motion sequencer for ecmc. The sequencer is
+intended for deterministic command sequencing inside the ecmc realtime loop,
+while still allowing the sequence definition to be inspected and edited from
+EPICS/asyn or defined from the startup script.
+
+The current implementation is experimental and should be treated as a first
+basic approach. It is designed to avoid changing existing motion behavior unless
+a sequence is explicitly created, armed, and started.
+
+## Architecture
+
+- A maximum of `ECMC_MAX_MOTION_SEQUENCES` sequences can be created.
+- Each sequence has a dedicated asyn port, default name `ECMC_SEQ<index>`.
+- Sequences must be created before steps or PV parameters are used.
+- Steps can be edited at runtime via the sequence asyn port.
+- Steps can also be defined in the startup script through `Cfg.Seq*` commands.
+- Compile runs in a low-priority EPICS thread owned by the sequence.
+- Runtime execution is handled from the main ecmc realtime loop.
+- Sequence execution runs before normal axis motion, plugins, C++ logic, and
+  the safety plugin in the realtime loop.
+
+The basic flow is:
+
+```text
+Cfg.CreateMotionSeq(...)
+Cfg.Seq...(define steps)
+Cfg.CompileMotionSeq(...)
+Cfg.ArmMotionSeq(...)
+Cfg.StartMotionSeq(...)
+```
+
+Compile validates the configured steps and resolves item bindings. Arm copies
+the compiled plan to the active realtime plan. Start requests realtime execution
+of the active plan.
+
+## Actions
+
+The currently defined action IDs are:
+
+```text
+0  NOP
+1  MC_Reset
+2  MC_Power
+3  MC_Home
+4  MC_MoveAbsolute
+5  MC_MoveRelative
+6  WaitInPosition
+7  SetItem
+8  WaitItem
+9  WaitTime
+10 RunSequence
+11 ArmPositionTrigger
+12 WaitTriggerDone
+13 ArmTimeTrigger
+```
+
+Most users should prefer the `Cfg.Seq*` helper commands instead of writing the
+numeric action IDs directly.
+
+## Startup Commands
+
+Create a sequence:
+
+```text
+Cfg.CreateMotionSeq(seqIndex)
+Cfg.CreateMotionSeq(seqIndex,maxSteps)
+Cfg.CreateMotionSeq(seqIndex,maxSteps,portName)
+```
+
+Generic step definition:
+
+```text
+Cfg.SetMotionSeqStep(seqIndex,stepIndex,enabled,action,axis,position,velocity,acceleration,deceleration,timeoutMs)
+Cfg.SetMotionSeqStepText(seqIndex,stepIndex,name,transition,onError)
+Cfg.SetMotionSeqStepText(seqIndex,stepIndex,name,transition,onError,args)
+```
+
+Simplified step helpers:
+
+```text
+Cfg.SeqNop(seqIndex,stepIndex)
+Cfg.SeqWaitTime(seqIndex,stepIndex,waitMs)
+Cfg.SeqReset(seqIndex,stepIndex,axis,timeoutMs)
+Cfg.SeqPower(seqIndex,stepIndex,axis,enable,timeoutMs)
+Cfg.SeqHome(seqIndex,stepIndex,axis,homeSeq,homePos,velTowardsCam,velOffCam,acc,dec,timeoutMs)
+Cfg.SeqMoveAbs(seqIndex,stepIndex,axis,pos,vel,acc,dec,timeoutMs)
+Cfg.SeqMoveRel(seqIndex,stepIndex,axis,dist,vel,acc,dec,timeoutMs)
+Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)
+Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)
+Cfg.SeqWaitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
+Cfg.SeqRunSeq(seqIndex,stepIndex,childSeqIndex,timeoutMs)
+Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,period,count,value,pulseMs)
+Cfg.SeqArmTimeTrigger(seqIndex,stepIndex,triggerId,item,delayMs,periodMs,count,value,pulseMs)
+Cfg.SeqWaitTriggerDone(seqIndex,stepIndex,triggerId,timeoutMs)
+```
+
+Sequence control:
+
+```text
+Cfg.CompileMotionSeq(seqIndex)
+Cfg.ArmMotionSeq(seqIndex)
+Cfg.StartMotionSeq(seqIndex)
+Cfg.StopMotionSeq(seqIndex)
+Cfg.ResetMotionSeq(seqIndex)
+Cfg.ReportMotionSeq(seqIndex)
+Cfg.ReportMotionSeq(seqIndex,stepIndex)
+```
+
+These configuration commands are blocked in runtime through
+`ecmc_commands_blocklist_rt.json`.
+
+## WaitItem Operators
+
+`SeqWaitItem` supports:
+
+```text
+==
+!=
+>
+>=
+<
+<=
+eq
+ne
+```
+
+Example:
+
+```text
+Cfg.SeqWaitItem(0,0,ec0.s1.status,>=,1,5000)
+```
+
+This waits until the scalar data item `ec0.s1.status` is greater than or equal
+to `1`, or until the step timeout expires.
+
+## Asyn Port Interface
+
+Each sequence has a dedicated asyn port. Parameters are unprefixed on that port.
+
+Editable step row:
+
+```text
+edit.index
+edit.enabled
+edit.action
+edit.axis
+edit.position
+edit.velocity
+edit.acceleration
+edit.deceleration
+edit.timeout_ms
+edit.name
+edit.transition
+edit.onerror
+edit.args
+```
+
+Readback step row:
+
+```text
+read.index
+read.enabled
+read.action
+read.axis
+read.position
+read.velocity
+read.acceleration
+read.deceleration
+read.timeout_ms
+read.name
+read.transition
+read.onerror
+read.args
+```
+
+Commands:
+
+```text
+cmd.apply
+cmd.read
+cmd.read_next
+cmd.read_prev
+cmd.compile
+cmd.arm
+cmd.start
+cmd.stop
+cmd.reset
+```
+
+Status:
+
+```text
+stat.state
+stat.valid
+stat.armed
+stat.running
+stat.compile_busy
+stat.step_index
+stat.action
+stat.error_id
+stat.step_count
+stat.elapsed_ms
+stat.step_name
+stat.error_text
+stat.validation_text
+stat.soft_trigger_id
+stat.soft_trigger_count
+```
+
+The readback row is selected with `read.index`. Writing `cmd.read`,
+`cmd.read_next`, or `cmd.read_prev` refreshes the `read.*` parameters.
+
+## Sequence Calls
+
+A sequence can call another sequence with `SeqRunSeq`.
+
+```text
+Cfg.SeqRunSeq(parentSeq,step,childSeq,timeoutMs)
+```
+
+Example:
+
+```text
+Cfg.SeqRunSeq(1,0,0,10000)
+Cfg.SeqWaitTime(1,1,500)
+Cfg.SeqRunSeq(1,2,0,10000)
+```
+
+This means sequence `1` runs sequence `0`, waits 500 ms, then runs sequence `0`
+again.
+
+The parent waits for the child sequence to reach `DONE`. If the child errors or
+stops, the parent errors. Direct self-call is rejected at compile time. More
+advanced recursive graph validation is not implemented yet.
+
+## Position Triggers
+
+Position triggers are armed by a step and then evaluated every realtime cycle
+while later steps execute.
+
+```text
+Cfg.SeqArmPosTrigger(seq,step,triggerId,axis,item,startPos,period,count,value,pulseMs)
+```
+
+Example:
+
+```text
+Cfg.SeqArmPosTrigger(0,0,0,1,ec0.s1.output01,10.0,1.0,20,1,5)
+Cfg.SeqMoveAbs(0,1,1,50.0,10.0,20.0,20.0,10000)
+Cfg.SeqWaitTriggerDone(0,2,0,1000)
+```
+
+This arms trigger `0` on axis `1`. It fires at:
+
+```text
+10.0
+11.0
+12.0
+...
+29.0
+```
+
+It writes `1` to `ec0.s1.output01` for 5 ms at each trigger point.
+
+Negative position periods can be used for reverse motion.
+
+## Time Triggers
+
+Time triggers use the same background trigger engine as position triggers, but
+fire based on elapsed time after arming.
+
+```text
+Cfg.SeqArmTimeTrigger(seq,step,triggerId,item,delayMs,periodMs,count,value,pulseMs)
+```
+
+Example:
+
+```text
+Cfg.SeqArmTimeTrigger(0,0,0,ec0.s1.output01,10,5,100,1,1)
+Cfg.SeqMoveAbs(0,1,1,50.0,10.0,20.0,20.0,10000)
+Cfg.SeqWaitTriggerDone(0,2,0,1000)
+```
+
+This fires first after 10 ms, then every 5 ms, for 100 pulses. Each pulse writes
+`1` for 1 ms.
+
+Time trigger periods must be positive.
+
+## Soft Triggers
+
+For software-only triggers, use `soft` as the trigger item.
+
+```text
+Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,20,1,5)
+Cfg.SeqArmTimeTrigger(0,1,1,soft,10,5,100,1,1)
+```
+
+Soft triggers do not write a data item. Instead, each trigger fire increments:
+
+```text
+stat.soft_trigger_count
+```
+
+and updates:
+
+```text
+stat.soft_trigger_id
+```
+
+The EPICS layer can monitor `stat.soft_trigger_count` as the edge source. If
+multiple soft triggers fire in the same realtime cycle, the counter increments
+for each trigger, but `stat.soft_trigger_id` only contains the last trigger ID
+processed in that cycle.
+
+## Example: Reusable X Scan Line
+
+Sequence `0` defines one X line with detector triggers:
+
+```text
+Cfg.CreateMotionSeq(0)
+Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,100,1,0)
+Cfg.SeqMoveAbs(0,1,1,110.0,20.0,50.0,50.0,20000)
+Cfg.SeqWaitTriggerDone(0,2,0,2000)
+Cfg.CompileMotionSeq(0)
+Cfg.ArmMotionSeq(0)
+```
+
+Sequence `1` calls the X scan line, steps Y, then calls it again:
+
+```text
+Cfg.CreateMotionSeq(1)
+Cfg.SeqRunSeq(1,0,0,25000)
+Cfg.SeqMoveRel(1,1,2,0.1,2.0,10.0,10.0,5000)
+Cfg.SeqRunSeq(1,2,0,25000)
+Cfg.CompileMotionSeq(1)
+Cfg.ArmMotionSeq(1)
+Cfg.StartMotionSeq(1)
+```
+
+For a raster scan, either include an X return move in the child sequence or
+define separate forward and backward X-line sequences and call them alternately.
+
+## Current Limitations
+
+- This has not yet been built or tested in the target ecmc environment.
+- EPICS database templates have not been added yet.
+- The PV interface is generic. Action-specific PV convenience should probably
+  be handled in the EPICS database layer first.
+- Compile currently uses one low-priority worker thread per sequence.
+- Recursive sequence graph validation only rejects direct self-call.
+- Soft triggers expose a shared counter and last trigger ID, not a full event
+  FIFO.
+- Trigger timing is evaluated once per realtime cycle.
+- Real output trigger pulse clearing writes `0`; this assumes the trigger item
+  is used as a pulse output.
+
+## Files
+
+Implementation:
+
+```text
+devEcmcSup/sequence/ecmcMotionSequence.h
+devEcmcSup/sequence/ecmcMotionSequence.cpp
+```
+
+Command parser integration:
+
+```text
+devEcmcSup/com/ecmcCmdParser.c
+devEcmcSup/ecmc_commands_blocklist_rt.json
+```
