@@ -790,6 +790,7 @@ static int handleCfgCommand(const char *myarg_1) {
   double   dValue3  = 0;
   double   dValue4  = 0;
   double   dValue5  = 0;
+  double   dValue6  = 0;
   int      cfgFastSetAxisCntrl = 0;
   int      cfgFastSetAxisMon   = 0;
   int      cfgFastSetAxisDrv   = 0;
@@ -958,6 +959,148 @@ static int handleCfgCommand(const char *myarg_1) {
   if (nvals == 1) {
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("CreateMotionSeq");
     return createMotionSeq(iValue, 32, NULL);
+  }
+
+  /// "Cfg.SeqNop(seqIndex,stepIndex)"
+  nvals = sscanf(myarg_1, "SeqNop(%d,%d)", &iValue, &iValue2);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqNop");
+    return setMotionSeqNop(iValue, iValue2);
+  }
+
+  /// "Cfg.SeqWaitTime(seqIndex,stepIndex,waitMs)"
+  nvals = sscanf(myarg_1, "SeqWaitTime(%d,%d,%lf)", &iValue, &iValue2, &dValue);
+
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqWaitTime");
+    return setMotionSeqWaitTime(iValue, iValue2, dValue);
+  }
+
+  /// "Cfg.SeqRunSeq(seqIndex,stepIndex,childSeqIndex,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqRunSeq(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqRunSeq");
+    return setMotionSeqRunSeq(iValue, iValue2, iValue3, dValue);
+  }
+
+  /// "Cfg.SeqReset(seqIndex,stepIndex,axis,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqReset(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqReset");
+    return setMotionSeqReset(iValue, iValue2, iValue3, dValue);
+  }
+
+  /// "Cfg.SeqPower(seqIndex,stepIndex,axis,enable,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqPower(%d,%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &iValue4, &dValue);
+
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqPower");
+    return setMotionSeqPower(iValue, iValue2, iValue3, iValue4, dValue);
+  }
+
+  /// "Cfg.SeqHome(seqIndex,stepIndex,axis,homeSeq,homePos,velTowardsCam,velOffCam,acc,dec,timeoutMs)"
+  nvals = sscanf(myarg_1,
+                 "SeqHome(%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &iValue4,
+                 &dValue,
+                 &dValue2,
+                 &dValue3,
+                 &dValue4,
+                 &dValue5,
+                 &dValue6);
+
+  if (nvals == 10) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqHome");
+    return setMotionSeqHome(iValue,
+                            iValue2,
+                            iValue3,
+                            iValue4,
+                            dValue,
+                            dValue2,
+                            dValue3,
+                            dValue4,
+                            dValue5,
+                            dValue6);
+  }
+
+  /// "Cfg.SeqMoveAbs(seqIndex,stepIndex,axis,pos,vel,acc,dec,timeoutMs)"
+  nvals = sscanf(myarg_1,
+                 "SeqMoveAbs(%d,%d,%d,%lf,%lf,%lf,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &dValue,
+                 &dValue2,
+                 &dValue3,
+                 &dValue4,
+                 &dValue5);
+
+  if (nvals == 8) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqMoveAbs");
+    return setMotionSeqMoveAbs(iValue, iValue2, iValue3, dValue, dValue2, dValue3, dValue4, dValue5);
+  }
+
+  /// "Cfg.SeqMoveRel(seqIndex,stepIndex,axis,dist,vel,acc,dec,timeoutMs)"
+  nvals = sscanf(myarg_1,
+                 "SeqMoveRel(%d,%d,%d,%lf,%lf,%lf,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &dValue,
+                 &dValue2,
+                 &dValue3,
+                 &dValue4,
+                 &dValue5);
+
+  if (nvals == 8) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqMoveRel");
+    return setMotionSeqMoveRel(iValue, iValue2, iValue3, dValue, dValue2, dValue3, dValue4, dValue5);
+  }
+
+  /// "Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqWaitInPos(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqWaitInPos");
+    return setMotionSeqWaitInPos(iValue, iValue2, iValue3, dValue);
+  }
+
+  /// "Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)"
+  cIdBuffer[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqSetItem(%d,%d,%[^,],%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 &dValue,
+                 &dValue2);
+
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqSetItem");
+    return setMotionSeqSetItem(iValue, iValue2, cIdBuffer, dValue, dValue2);
+  }
+
+  /// "Cfg.SeqWaitItem(seqIndex,stepIndex,item,op,value,timeoutMs)"
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqWaitItem(%d,%d,%[^,],%[^,],%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 cIdBuffer2,
+                 &dValue,
+                 &dValue2);
+
+  if (nvals == 6) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqWaitItem");
+    return setMotionSeqWaitItem(iValue, iValue2, cIdBuffer, cIdBuffer2, dValue, dValue2);
   }
 
   /// "Cfg.SetMotionSeqStep(seqIndex,stepIndex,enabled,action,axis,position,velocity,acceleration,deceleration,timeoutMs)"

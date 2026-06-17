@@ -69,7 +69,7 @@ bool actionNeedsAxis(int action) {
 }
 
 bool validAction(int action) {
-  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_WAIT_ITEM;
+  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_RUN_SEQUENCE;
 }
 
 std::string getArgValue(const char *args, const char *key) {
@@ -109,6 +109,28 @@ bool isScalarNumericType(ecmcEcDataType type) {
   default:
     return false;
   }
+}
+
+bool parseCompareOp(const std::string &text, int32_t *op) {
+  if (!op) {
+    return false;
+  }
+  if (text.empty() || text == "==" || text == "eq") {
+    *op = ECMC_SEQ_CMP_EQ;
+  } else if (text == "!=" || text == "ne") {
+    *op = ECMC_SEQ_CMP_NE;
+  } else if (text == ">") {
+    *op = ECMC_SEQ_CMP_GT;
+  } else if (text == ">=") {
+    *op = ECMC_SEQ_CMP_GE;
+  } else if (text == "<") {
+    *op = ECMC_SEQ_CMP_LT;
+  } else if (text == "<=") {
+    *op = ECMC_SEQ_CMP_LE;
+  } else {
+    return false;
+  }
+  return true;
 }
 
 size_t scalarTypeSize(ecmcEcDataType type) {
@@ -457,10 +479,35 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
       step.action == ECMC_SEQ_ACTION_WAIT_ITEM) {
     return prepareItemStep(stepIndex, step);
   }
+  if (step.action == ECMC_SEQ_ACTION_RUN_SEQUENCE) {
+    const int childIndex = step.axis;
+    if (childIndex < 0 || childIndex >= ECMC_MAX_MOTION_SEQUENCES) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d child sequence out of range.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    if (childIndex == index_) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d cannot run its own sequence.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    if (!motionSeqs[childIndex]) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d child sequence %d does not exist.", stepIndex, childIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    step.childSeq = motionSeqs[childIndex];
+  }
   if (step.action == ECMC_SEQ_ACTION_MC_HOME) {
     const std::string seqText = getArgValue(step.args, "seq");
     if (!seqText.empty()) {
       step.cmdData = atoi(seqText.c_str());
+    }
+    const std::string decText = getArgValue(step.args, "dec");
+    if (!decText.empty()) {
+      step.itemValue = strtod(decText.c_str(), nullptr);
+    } else {
+      step.itemValue = step.deceleration;
     }
   }
   if (step.action == ECMC_SEQ_ACTION_MC_POWER) {
@@ -475,6 +522,7 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
 int ecmcMotionSequence::prepareItemStep(int stepIndex, ecmcSeqStep &step) {
   const std::string itemName = getArgValue(step.args, "item");
   const std::string valueText = getArgValue(step.args, "value");
+  const std::string opText = getArgValue(step.args, "op");
   if (itemName.empty() || valueText.empty()) {
     char msg[ECMC_SEQ_TEXT_LEN] = {0};
     snprintf(msg, sizeof(msg), "Step %d missing item/value args.", stepIndex);
@@ -516,6 +564,11 @@ int ecmcMotionSequence::prepareItemStep(int stepIndex, ecmcSeqStep &step) {
 
   step.item = item;
   step.itemValue = value;
+  if (!parseCompareOp(opText, &step.compareOp)) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d compare op invalid.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
   return 0;
 }
 
@@ -823,6 +876,10 @@ int ecmcMotionSequence::reset() {
 
 void ecmcMotionSequence::executeRT(double cycleTimeS) {
   if (requestReset_.exchange(0, std::memory_order_acq_rel)) {
+    if (rtChildSeq_) {
+      rtChildSeq_->stopRT();
+      rtChildSeq_ = nullptr;
+    }
     statRunning_ = 0;
     statArmed_ = 0;
     statStepIndex_ = -1;
@@ -837,6 +894,10 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
   }
 
   if (requestStop_.exchange(0, std::memory_order_acq_rel)) {
+    if (rtChildSeq_) {
+      rtChildSeq_->stopRT();
+      rtChildSeq_ = nullptr;
+    }
     statRunning_ = 0;
     statArmed_ = 0;
     statState_ = ECMC_SEQ_STATE_STOPPED;
@@ -881,7 +942,9 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
   }
   statElapsedMs_ = rtStepElapsedMs_;
 
-  if (step.timeoutMs > 0.0 && rtStepElapsedMs_ > step.timeoutMs) {
+  if (step.action != ECMC_SEQ_ACTION_WAIT_TIME &&
+      step.timeoutMs > 0.0 &&
+      rtStepElapsedMs_ > step.timeoutMs) {
     failStepRT(ERROR_AXIS_BUSY, "Sequence step timeout.");
     return;
   }
@@ -917,7 +980,7 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
                 step.velocity,
                 step.acceleration,
                 step.deceleration,
-                step.deceleration);
+                step.itemValue);
     if (rtHome_.Error) {
       failStepRT(static_cast<int>(rtHome_.ErrorID), "MC_Home failed.");
     } else if (rtHome_.CommandAborted) {
@@ -974,12 +1037,38 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "WaitItem read failed.");
       break;
     }
-    const double diff = value - step.itemValue;
-    if (diff < 1.0e-9 && diff > -1.0e-9) {
+    if (compareItemValue(value, step)) {
       advanceStepRT();
     }
     break;
   }
+  case ECMC_SEQ_ACTION_WAIT_TIME:
+    if (rtStepElapsedMs_ >= step.timeoutMs) {
+      advanceStepRT();
+    }
+    break;
+  case ECMC_SEQ_ACTION_RUN_SEQUENCE:
+    if (!step.childSeq) {
+      failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "RunSequence child missing.");
+      break;
+    }
+    if (rtStepElapsedMs_ <= 0.0) {
+      if (!step.childSeq->startFromActivePlanRT()) {
+        failStepRT(ERROR_AXIS_BUSY, "RunSequence child start failed.");
+        break;
+      }
+      rtChildSeq_ = step.childSeq;
+    }
+    if (step.childSeq->statState_ == ECMC_SEQ_STATE_ERROR) {
+      failStepRT(step.childSeq->statErrorId_, "RunSequence child failed.");
+    } else if (step.childSeq->statState_ == ECMC_SEQ_STATE_STOPPED) {
+      failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "RunSequence child stopped.");
+    } else if (step.childSeq->statState_ == ECMC_SEQ_STATE_DONE) {
+      advanceStepRT();
+    } else if (!step.childSeq->statRunning_) {
+      failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "RunSequence child not running.");
+    }
+    break;
   default:
     failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL,
                "Sequence RT runner does not support this action.");
@@ -988,11 +1077,16 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
 }
 
 void ecmcMotionSequence::advanceStepRT() {
+  rtChildSeq_ = nullptr;
   resetStepRuntimeRT();
   statStepIndex_++;
 }
 
 void ecmcMotionSequence::failStepRT(int errorId, const char *message) {
+  if (rtChildSeq_) {
+    rtChildSeq_->stopRT();
+    rtChildSeq_ = nullptr;
+  }
   statErrorId_ = errorId;
   statState_ = ECMC_SEQ_STATE_ERROR;
   statRunning_ = 0;
@@ -1142,6 +1236,56 @@ bool ecmcMotionSequence::readItemScalarRT(ecmcSeqStep &step, double *value) {
   }
   default:
     return false;
+  }
+}
+
+bool ecmcMotionSequence::compareItemValue(double actual, const ecmcSeqStep &step) const {
+  const double diff = actual - step.itemValue;
+  switch (step.compareOp) {
+  case ECMC_SEQ_CMP_EQ:
+    return diff < 1.0e-9 && diff > -1.0e-9;
+  case ECMC_SEQ_CMP_NE:
+    return !(diff < 1.0e-9 && diff > -1.0e-9);
+  case ECMC_SEQ_CMP_GT:
+    return actual > step.itemValue;
+  case ECMC_SEQ_CMP_GE:
+    return actual >= step.itemValue;
+  case ECMC_SEQ_CMP_LT:
+    return actual < step.itemValue;
+  case ECMC_SEQ_CMP_LE:
+    return actual <= step.itemValue;
+  default:
+    return false;
+  }
+}
+
+bool ecmcMotionSequence::startFromActivePlanRT() {
+  if (statRunning_) {
+    return false;
+  }
+  if (activePlan_.empty()) {
+    return false;
+  }
+  statRunning_ = 1;
+  statState_ = ECMC_SEQ_STATE_RUNNING;
+  statStepIndex_ = 0;
+  statAction_ = ECMC_SEQ_ACTION_NOP;
+  statElapsedMs_ = 0.0;
+  statErrorId_ = 0;
+  copyText(statStepName_, sizeof(statStepName_), "");
+  copyText(statErrorText_, sizeof(statErrorText_), "");
+  resetStepRuntimeRT();
+  return true;
+}
+
+void ecmcMotionSequence::stopRT() {
+  statRunning_ = 0;
+  statArmed_ = 0;
+  statState_ = ECMC_SEQ_STATE_STOPPED;
+  resetStepRuntimeRT();
+  if (rtChildSeq_) {
+    rtChildSeq_->stopRT();
+    rtChildSeq_ = nullptr;
   }
 }
 
@@ -1404,4 +1548,279 @@ int reportMotionSeq(int seqIndex, int stepIndex) {
   int error = 0;
   auto *seq = getMotionSeq(seqIndex, &error);
   return seq ? seq->report(stepIndex) : error;
+}
+
+namespace {
+int setStepAndText(int seqIndex,
+                   int stepIndex,
+                   int action,
+                   int axis,
+                   double position,
+                   double velocity,
+                   double acceleration,
+                   double deceleration,
+                   double timeoutMs,
+                   const char *name,
+                   const char *transition,
+                   const char *onError,
+                   const char *args) {
+  int error = setMotionSeqStep(seqIndex,
+                               stepIndex,
+                               1,
+                               action,
+                               axis,
+                               position,
+                               velocity,
+                               acceleration,
+                               deceleration,
+                               timeoutMs);
+  if (error) {
+    return error;
+  }
+  return setMotionSeqStepText(seqIndex,
+                              stepIndex,
+                              name,
+                              transition ? transition : "Done",
+                              onError ? onError : "Abort",
+                              args ? args : "");
+}
+}
+
+int setMotionSeqNop(int seqIndex, int stepIndex) {
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_NOP,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        "NOP",
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqWaitTime(int seqIndex, int stepIndex, double waitMs) {
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_WAIT_TIME,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        waitMs,
+                        "Wait time",
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqRunSeq(int seqIndex, int stepIndex, int childSeqIndex, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "Run sequence %d", childSeqIndex);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_RUN_SEQUENCE,
+                        childSeqIndex,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqReset(int seqIndex, int stepIndex, int axis, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "Reset axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_RESET,
+                        axis,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqPower(int seqIndex, int stepIndex, int axis, int enable, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "%s axis %d", enable ? "Power" : "Disable", axis);
+  snprintf(args, sizeof(args), "enable=%d", enable ? 1 : 0);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_POWER,
+                        axis,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        enable ? "Enabled" : "Disabled",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqHome(int seqIndex,
+                     int stepIndex,
+                     int axis,
+                     int homeSeq,
+                     double homePosition,
+                     double velocityTowardsCam,
+                     double velocityOffCam,
+                     double acceleration,
+                     double deceleration,
+                     double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "Home axis %d", axis);
+  snprintf(args, sizeof(args), "seq=%d;dec=%g", homeSeq, deceleration);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_HOME,
+                        axis,
+                        homePosition,
+                        velocityTowardsCam,
+                        velocityOffCam,
+                        acceleration,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqMoveAbs(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double position,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "MoveAbs axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE,
+                        axis,
+                        position,
+                        velocity,
+                        acceleration,
+                        deceleration,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqMoveRel(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double distance,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "MoveRel axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_MOVE_RELATIVE,
+                        axis,
+                        distance,
+                        velocity,
+                        acceleration,
+                        deceleration,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqWaitInPos(int seqIndex, int stepIndex, int axis, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "WaitInPos axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_WAIT_IN_POSITION,
+                        axis,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqSetItem(int seqIndex,
+                        int stepIndex,
+                        const char *item,
+                        double value,
+                        double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "SetItem %s", item ? item : "");
+  snprintf(args, sizeof(args), "item=%s;value=%g", item ? item : "", value);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_SET_ITEM,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqWaitItem(int seqIndex,
+                         int stepIndex,
+                         const char *item,
+                         const char *op,
+                         double value,
+                         double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "WaitItem %s", item ? item : "");
+  snprintf(args,
+           sizeof(args),
+           "item=%s;op=%s;value=%g",
+           item ? item : "",
+           op ? op : "==",
+           value);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_WAIT_ITEM,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        args);
 }

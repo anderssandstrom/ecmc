@@ -24,7 +24,18 @@ enum ecmcSeqAction {
   ECMC_SEQ_ACTION_MC_MOVE_RELATIVE = 5,
   ECMC_SEQ_ACTION_WAIT_IN_POSITION = 6,
   ECMC_SEQ_ACTION_SET_ITEM = 7,
-  ECMC_SEQ_ACTION_WAIT_ITEM = 8
+  ECMC_SEQ_ACTION_WAIT_ITEM = 8,
+  ECMC_SEQ_ACTION_WAIT_TIME = 9,
+  ECMC_SEQ_ACTION_RUN_SEQUENCE = 10
+};
+
+enum ecmcSeqCompareOp {
+  ECMC_SEQ_CMP_EQ = 0,
+  ECMC_SEQ_CMP_NE = 1,
+  ECMC_SEQ_CMP_GT = 2,
+  ECMC_SEQ_CMP_GE = 3,
+  ECMC_SEQ_CMP_LT = 4,
+  ECMC_SEQ_CMP_LE = 5
 };
 
 enum ecmcSeqState {
@@ -50,6 +61,7 @@ enum ecmcSeqState {
 #include "ecmcMcRuntime.h"
 
 class ecmcAsynPortDriver;
+class ecmcMotionSequence;
 class ecmcMotionSequencePort;
 class ecmcDataItem;
 
@@ -64,11 +76,13 @@ struct ecmcSeqStep {
   double timeoutMs = 0.0;
   int32_t cmdData = 0;
   int32_t enable = 1;
+  int32_t compareOp = ECMC_SEQ_CMP_EQ;
   char name[ECMC_SEQ_TEXT_LEN] = {0};
   char transition[ECMC_SEQ_TEXT_LEN] = {0};
   char onError[ECMC_SEQ_TEXT_LEN] = {0};
   char args[ECMC_SEQ_TEXT_LEN] = {0};
   ecmcDataItem *item = nullptr;
+  ecmcMotionSequence *childSeq = nullptr;
   double itemValue = 0.0;
 };
 
@@ -152,6 +166,9 @@ private:
   bool axisInPosition(int axisIndex) const;
   bool writeItemScalarRT(ecmcSeqStep &step);
   bool readItemScalarRT(ecmcSeqStep &step, double *value);
+  bool compareItemValue(double actual, const ecmcSeqStep &step) const;
+  bool startFromActivePlanRT();
+  void stopRT();
   void refreshStatus();
 
   int index_ = -1;
@@ -232,6 +249,7 @@ private:
   std::atomic<int> requestReset_ {0};
   bool rtStepEntered_ = false;
   double rtStepElapsedMs_ = 0.0;
+  ecmcMotionSequence *rtChildSeq_ = nullptr;
   ecmcMcReset rtReset_;
   ecmcMcPower rtPower_;
   ecmcMcHome rtHome_;
@@ -265,6 +283,49 @@ int startMotionSeq(int seqIndex);
 int stopMotionSeq(int seqIndex);
 int resetMotionSeq(int seqIndex);
 int reportMotionSeq(int seqIndex, int stepIndex);
+int setMotionSeqNop(int seqIndex, int stepIndex);
+int setMotionSeqWaitTime(int seqIndex, int stepIndex, double waitMs);
+int setMotionSeqRunSeq(int seqIndex, int stepIndex, int childSeqIndex, double timeoutMs);
+int setMotionSeqReset(int seqIndex, int stepIndex, int axis, double timeoutMs);
+int setMotionSeqPower(int seqIndex, int stepIndex, int axis, int enable, double timeoutMs);
+int setMotionSeqHome(int seqIndex,
+                     int stepIndex,
+                     int axis,
+                     int homeSeq,
+                     double homePosition,
+                     double velocityTowardsCam,
+                     double velocityOffCam,
+                     double acceleration,
+                     double deceleration,
+                     double timeoutMs);
+int setMotionSeqMoveAbs(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double position,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs);
+int setMotionSeqMoveRel(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double distance,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs);
+int setMotionSeqWaitInPos(int seqIndex, int stepIndex, int axis, double timeoutMs);
+int setMotionSeqSetItem(int seqIndex,
+                        int stepIndex,
+                        const char *item,
+                        double value,
+                        double timeoutMs);
+int setMotionSeqWaitItem(int seqIndex,
+                         int stepIndex,
+                         const char *item,
+                         const char *op,
+                         double value,
+                         double timeoutMs);
 
 #ifdef __cplusplus
 }
