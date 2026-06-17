@@ -72,6 +72,18 @@ int setAppMode(int mode);
  */
 int setEcStartupTimeout(int time_seconds);
 
+/** \brief Configure low-level EtherCAT frame delay test before runtime.
+ *
+ * The test runs after master activation and before the normal realtime loop.
+ * It sends raw queued EtherCAT domains, waits, receives, and records the
+ * minimum delay that produces a non-zero working counter for each sample.
+ */
+int setEcFrameDelayTest(int enable,
+                        uint32_t samples,
+                        uint32_t startDelayNs,
+                        uint32_t stepDelayNs,
+                        uint32_t maxDelayNs);
+
 /** \brief Set EtherCAT bus frame rate in [Hz]
  *  EtherCAT bus period is only allowed to be changed prior any object creation.\n
  *

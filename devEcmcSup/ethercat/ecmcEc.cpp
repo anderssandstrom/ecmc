@@ -17,6 +17,8 @@
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 
+#define ECMC_ESC_REG_DC_SYSTEM_TIME_DELAY 0x0928
+
 #define ecmcRtLoggerLogWarning(...) \
   ECMC_RT_LOG_WARNING_SOURCE(ECMC_RT_LOG_SOURCE_ETHERCAT, -1, __VA_ARGS__)
 
@@ -78,6 +80,10 @@ void ecmcEc::initVars() {
   clock_gettime(CLOCK_REALTIME, &timeAbs_);
   lastReceiveTimeNs_ = 0;
   lastSendTimeNs_    = 0;
+  physicalFirstDcSystemTimeDelayReq_ = NULL;
+  physicalLastDcSystemTimeDelayReq_ = NULL;
+  physicalFirstSlavePosition_ = -1;
+  physicalLastSlavePosition_ = -1;
 
   for (int i = 0; i < EC_MAX_SLAVES; i++) {
     slaveArray_[i] = NULL;
@@ -299,12 +305,113 @@ ecmcEcSlave * ecmcEc::getSlave(int slaveIndex) {
   return slaveArray_[slaveIndex];
 }
 
+int ecmcEc::preparePhysicalDcSystemTimeDelayRequests() {
+  if (!master_) {
+    return ERROR_EC_MASTER_NULL;
+  }
+
+  physicalFirstDcSystemTimeDelayReq_ = NULL;
+  physicalLastDcSystemTimeDelayReq_ = NULL;
+  physicalFirstSlavePosition_ = -1;
+  physicalLastSlavePosition_ = -1;
+
+  ec_master_info_t masterInfo;
+  memset(&masterInfo, 0, sizeof(masterInfo));
+  int errorCode = ecrt_master(master_, &masterInfo);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (masterInfo.slave_count <= 0) {
+    return ERROR_EC_MAIN_SLAVE_NULL;
+  }
+
+  ec_slave_info_t firstInfo;
+  ec_slave_info_t lastInfo;
+  memset(&firstInfo, 0, sizeof(firstInfo));
+  memset(&lastInfo, 0, sizeof(lastInfo));
+
+  physicalFirstSlavePosition_ = 0;
+  physicalLastSlavePosition_ = masterInfo.slave_count - 1;
+
+  errorCode = ecrt_master_get_slave(master_,
+                                    physicalFirstSlavePosition_,
+                                    &firstInfo);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  errorCode = ecrt_master_get_slave(master_,
+                                    physicalLastSlavePosition_,
+                                    &lastInfo);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  ec_slave_config_t *firstConfig =
+    ecrt_master_slave_config(master_,
+                             firstInfo.alias,
+                             physicalFirstSlavePosition_,
+                             firstInfo.vendor_id,
+                             firstInfo.product_code);
+  if (!firstConfig) {
+    return ERROR_EC_SLAVE_REG_REQUEST_CREATE_FAIL;
+  }
+
+  physicalFirstDcSystemTimeDelayReq_ =
+    ecrt_slave_config_create_reg_request(firstConfig, 4);
+  if (!physicalFirstDcSystemTimeDelayReq_) {
+    return ERROR_EC_SLAVE_REG_REQUEST_CREATE_FAIL;
+  }
+
+  if (physicalLastSlavePosition_ == physicalFirstSlavePosition_) {
+    physicalLastDcSystemTimeDelayReq_ = physicalFirstDcSystemTimeDelayReq_;
+    return 0;
+  }
+
+  ec_slave_config_t *lastConfig =
+    ecrt_master_slave_config(master_,
+                             lastInfo.alias,
+                             physicalLastSlavePosition_,
+                             lastInfo.vendor_id,
+                             lastInfo.product_code);
+  if (!lastConfig) {
+    return ERROR_EC_SLAVE_REG_REQUEST_CREATE_FAIL;
+  }
+
+  physicalLastDcSystemTimeDelayReq_ =
+    ecrt_slave_config_create_reg_request(lastConfig, 4);
+  if (!physicalLastDcSystemTimeDelayReq_) {
+    return ERROR_EC_SLAVE_REG_REQUEST_CREATE_FAIL;
+  }
+
+  ecmcRtLoggerLogInfo(
+    "%s/%s:%d: INFO: Prepared physical DC delay register requests: first slave position %d, last slave position %d.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    physicalFirstSlavePosition_,
+    physicalLastSlavePosition_);
+
+  return 0;
+}
+
 int ecmcEc::activate() {
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Activating master...\n",
                              __FILE__,
                              __FUNCTION__,
                              __LINE__);
+
+  int dcRegError = preparePhysicalDcSystemTimeDelayRequests();
+  if (dcRegError) {
+    ecmcRtLoggerLogWarning(
+      "%s/%s:%d: WARNING: Failed to prepare optional physical DC delay register requests (0x%x).\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      dcRegError);
+  }
 
   if (ecrt_master_activate(master_)) {
     ecmcRtLoggerLogError("%s/%s:%d: ERROR: ecrt_master_activate() failed (0x%x).\n",
@@ -2638,6 +2745,216 @@ int ecmcEc::getDomState(int domId) {
 
   // just use getOK, because state is checke cyclically with other function
   return domains_[domId]->getOK();
+}
+
+int ecmcEc::readDcSystemTimeDelayRange(uint32_t *firstDelayNs,
+                                       uint32_t *lastDelayNs,
+                                       uint32_t *diffDelayNs) {
+  if (!master_) {
+    return ERROR_EC_MASTER_NULL;
+  }
+
+  if (!physicalFirstDcSystemTimeDelayReq_ ||
+      !physicalLastDcSystemTimeDelayReq_) {
+    return ERROR_EC_SLAVE_REG_REQUEST_NULL;
+  }
+
+  ecrt_reg_request_read(physicalFirstDcSystemTimeDelayReq_,
+                        ECMC_ESC_REG_DC_SYSTEM_TIME_DELAY,
+                        4);
+
+  if (physicalLastDcSystemTimeDelayReq_ !=
+      physicalFirstDcSystemTimeDelayReq_) {
+    ecrt_reg_request_read(physicalLastDcSystemTimeDelayReq_,
+                          ECMC_ESC_REG_DC_SYSTEM_TIME_DELAY,
+                          4);
+  }
+
+  const struct timespec pollDelay = { 0, 1000000 };
+  uint32_t firstDelay = 0;
+  uint32_t lastDelay = 0;
+
+  for (int i = 0; i < 1000; i++) {
+    int firstDone = 0;
+    int lastDone = 0;
+
+    ecrt_master_send(master_);
+    clock_nanosleep(CLOCK_MONOTONIC, 0, &pollDelay, NULL);
+    ecrt_master_receive(master_);
+
+    ec_request_state_t firstState =
+      ecrt_reg_request_state(physicalFirstDcSystemTimeDelayReq_);
+
+    if (firstState == EC_REQUEST_ERROR) {
+      return ERROR_EC_SLAVE_REG_REQUEST_FAIL;
+    }
+
+    if (firstState == EC_REQUEST_SUCCESS) {
+      const uint8_t *data =
+        ecrt_reg_request_data(physicalFirstDcSystemTimeDelayReq_);
+      firstDelay = ((uint32_t)data[0]) |
+                   ((uint32_t)data[1] << 8) |
+                   ((uint32_t)data[2] << 16) |
+                   ((uint32_t)data[3] << 24);
+      firstDone = 1;
+    }
+
+    if (physicalLastDcSystemTimeDelayReq_ ==
+        physicalFirstDcSystemTimeDelayReq_) {
+      lastDelay = firstDelay;
+      lastDone = firstDone;
+    } else {
+      ec_request_state_t lastState =
+        ecrt_reg_request_state(physicalLastDcSystemTimeDelayReq_);
+
+      if (lastState == EC_REQUEST_ERROR) {
+        return ERROR_EC_SLAVE_REG_REQUEST_FAIL;
+      }
+
+      if (lastState == EC_REQUEST_SUCCESS) {
+        const uint8_t *data =
+          ecrt_reg_request_data(physicalLastDcSystemTimeDelayReq_);
+        lastDelay = ((uint32_t)data[0]) |
+                    ((uint32_t)data[1] << 8) |
+                    ((uint32_t)data[2] << 16) |
+                    ((uint32_t)data[3] << 24);
+        lastDone = 1;
+      }
+    }
+
+    if (firstDone && lastDone) {
+      if (firstDelayNs) {
+        *firstDelayNs = firstDelay;
+      }
+
+      if (lastDelayNs) {
+        *lastDelayNs = lastDelay;
+      }
+
+      if (diffDelayNs) {
+        *diffDelayNs = lastDelay >= firstDelay ?
+                       lastDelay - firstDelay :
+                       firstDelay - lastDelay;
+      }
+      return 0;
+    }
+  }
+
+  return ERROR_EC_SLAVE_REG_REQUEST_FAIL;
+}
+
+int ecmcEc::measureFrameDelaySample(uint32_t startDelayNs,
+                                    uint32_t stepDelayNs,
+                                    uint32_t maxDelayNs,
+                                    timespec timeOffset,
+                                    uint32_t *delayNs,
+                                    uint32_t *workingCounter,
+                                    uint32_t *wcState) {
+  if (!master_) {
+    return ERROR_EC_MASTER_NULL;
+  }
+
+  if (domainCounter_ <= 0) {
+    return ERROR_EC_MAIN_DOMAIN_NULL;
+  }
+
+  if (stepDelayNs == 0) {
+    stepDelayNs = 1;
+  }
+
+  if (startDelayNs > maxDelayNs) {
+    startDelayNs = maxDelayNs;
+  }
+
+  // Drain already pending datagrams so this sample starts from a clean receive.
+  ecrt_master_receive(master_);
+  for (int i = 0; i < domainCounter_; i++) {
+    domains_[i]->processRaw();
+  }
+
+  for (uint32_t waitNs = startDelayNs; waitNs <= maxDelayNs;) {
+    uint32_t wcSum      = 0;
+    uint32_t wcStateMax = EC_WC_ZERO;
+    bool     wcComplete = true;
+    struct timespec sendMonoTime = {};
+    struct timespec receiveMonoTime = {};
+
+    for (int i = 0; i < domainCounter_; i++) {
+      domains_[i]->queueRaw();
+    }
+
+    if (useClockRealtime_) {
+      clock_gettime(CLOCK_REALTIME, &timeAbs_);
+    } else {
+      clock_gettime(CLOCK_MONOTONIC, &timeRel_);
+      timeAbs_ = timespecAdd(timeRel_, timeOffset);
+    }
+
+    ecrt_master_application_time(master_, TIMESPEC2NS(timeAbs_));
+    clock_gettime(CLOCK_MONOTONIC, &sendMonoTime);
+    ecrt_master_send(master_);
+
+    struct timespec waitTime = {
+      static_cast<time_t>(waitNs / MCU_NSEC_PER_SEC),
+      static_cast<long>(waitNs % MCU_NSEC_PER_SEC)
+    };
+    clock_nanosleep(CLOCK_MONOTONIC, 0, &waitTime, NULL);
+
+    clock_gettime(CLOCK_MONOTONIC, &receiveMonoTime);
+    ecrt_master_receive(master_);
+    for (int i = 0; i < domainCounter_; i++) {
+      uint32_t wc = 0;
+      uint32_t state = EC_WC_ZERO;
+      domains_[i]->processRaw();
+      domains_[i]->readRawState(&wc, &state);
+      wcSum += wc;
+
+      if (state > wcStateMax) {
+        wcStateMax = state;
+      }
+
+      if (state != EC_WC_COMPLETE) {
+        wcComplete = false;
+      }
+    }
+
+    if (wcComplete && (wcSum > 0)) {
+      if (delayNs) {
+        uint64_t elapsedNs = DIFF_NS(sendMonoTime, receiveMonoTime);
+        if (elapsedNs > 0xffffffff) {
+          elapsedNs = 0xffffffff;
+        }
+        *delayNs = elapsedNs;
+      }
+
+      if (workingCounter) {
+        *workingCounter = wcSum;
+      }
+
+      if (wcState) {
+        *wcState = wcStateMax;
+      }
+      return 0;
+    }
+
+    if ((maxDelayNs - waitNs) < stepDelayNs) {
+      break;
+    }
+    waitNs += stepDelayNs;
+  }
+
+  if (delayNs) {
+    *delayNs = 0;
+  }
+
+  if (workingCounter) {
+    *workingCounter = 0;
+  }
+
+  if (wcState) {
+    *wcState = EC_WC_ZERO;
+  }
+  return -1;
 }
 
 int ecmcEc::addSimEntry(int            position,     // Slave position.

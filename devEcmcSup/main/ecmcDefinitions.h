@@ -642,6 +642,38 @@ typedef struct ecmcMainThreadDiag {
   int32_t  status;
 } ecmcMainThreadDiag;
 
+typedef struct ecmcEcFrameDelayTestConfig {
+  int      enable;
+  uint32_t samples;
+  uint32_t startDelayNs;
+  uint32_t stepDelayNs;
+  uint32_t maxDelayNs;
+} ecmcEcFrameDelayTestConfig;
+
+typedef struct ecmcEcFrameDelayTestResult {
+  int      done;
+  uint32_t samples;
+  uint32_t validSamples;
+  uint32_t failedSamples;
+  uint32_t minDelayNs;
+  uint32_t minRepeatedDelayNs;
+  uint32_t minRepeatedCount;
+  uint32_t modeDelayNs;
+  uint32_t modeCount;
+  uint32_t elapsedP50Ns;
+  uint32_t elapsedP90Ns;
+  uint32_t elapsedP99Ns;
+  uint32_t bucketSizeNs;
+  uint32_t maxDelayNs;
+  uint32_t avgDelayNs;
+  uint32_t lastDelayNs;
+  uint32_t lastWorkingCounter;
+  uint32_t lastWcState;
+  uint32_t firstSlaveDcDelayNs;
+  uint32_t lastSlaveDcDelayNs;
+  uint32_t firstToLastSlaveDcDelayNs;
+} ecmcEcFrameDelayTestResult;
+
 #define BIT_SET(a, b) ((a) |= (1 << (b)))
 #define BIT_CLEAR(a, b) ((a) &= ~(1 << (b)))
 #define BIT_FLIP(a, b) ((a) ^= (1 << (b)))

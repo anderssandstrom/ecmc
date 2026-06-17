@@ -153,6 +153,27 @@ void ecmcEcDomain::queue() {
   }
 }
 
+void ecmcEcDomain::processRaw() {
+  ecrt_domain_process(domain_);
+}
+
+void ecmcEcDomain::queueRaw() {
+  ecrt_domain_queue(domain_);
+}
+
+void ecmcEcDomain::readRawState(uint32_t *workingCounter,
+                                uint32_t *wcState) {
+  ecrt_domain_state(domain_, &state_);
+
+  if (workingCounter) {
+    *workingCounter = state_.working_counter;
+  }
+
+  if (wcState) {
+    *wcState = state_.wc_state;
+  }
+}
+
 void ecmcEcDomain::updateAsyn() {
   asynParFailCount_->refreshParamRT(0);
   asynParStat_->refreshParamRT(0);

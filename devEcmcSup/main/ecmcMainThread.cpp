@@ -29,6 +29,7 @@
 #include <exception>
 #include <algorithm>
 #include <atomic>
+#include <map>
 #include <string>
 
 #include "epicsThread.h"
@@ -630,6 +631,177 @@ int waitForEcMasterScan(int timeoutSeconds) {
   return ERROR_MAIN_EC_SCAN_TIMEOUT;
 }
 
+static int runEcFrameDelayTestBeforeRuntime() {
+  if (!ecFrameDelayTestConfig.enable) {
+    return 0;
+  }
+
+  if (!ec->getInitDone()) {
+    LOGWARNING("WARNING: EtherCAT frame delay test skipped; master not initialized.\n");
+    return 0;
+  }
+
+  memset(&ecFrameDelayTestResult, 0, sizeof(ecFrameDelayTestResult));
+  ecFrameDelayTestResult.minDelayNs = 0xffffffff;
+  ecFrameDelayTestResult.samples    = ecFrameDelayTestConfig.samples;
+  ecFrameDelayTestResult.bucketSizeNs =
+    ecFrameDelayTestConfig.stepDelayNs ? ecFrameDelayTestConfig.stepDelayNs : 1;
+
+  LOGINFO("INFO:\t\tStarting low-level EtherCAT frame delay test: samples=%u, start=%u ns, step=%u ns, max=%u ns.\n",
+          ecFrameDelayTestConfig.samples,
+          ecFrameDelayTestConfig.startDelayNs,
+          ecFrameDelayTestConfig.stepDelayNs,
+          ecFrameDelayTestConfig.maxDelayNs);
+
+  int dcDelayError = ec->readDcSystemTimeDelayRange(
+    &ecFrameDelayTestResult.firstSlaveDcDelayNs,
+    &ecFrameDelayTestResult.lastSlaveDcDelayNs,
+    &ecFrameDelayTestResult.firstToLastSlaveDcDelayNs);
+
+  if (dcDelayError) {
+    LOGWARNING("WARNING: Failed to read EtherCAT DC system time delay registers 0x0928 from physical first/last slaves (0x%x).\n",
+               dcDelayError);
+  } else {
+    LOGINFO("INFO:\t\tEtherCAT DC delay registers 0x0928 physical first/last: first=%u ns, last=%u ns, first_to_last=%u ns.\n",
+            ecFrameDelayTestResult.firstSlaveDcDelayNs,
+            ecFrameDelayTestResult.lastSlaveDcDelayNs,
+            ecFrameDelayTestResult.firstToLastSlaveDcDelayNs);
+  }
+
+  uint64_t delaySum = 0;
+  std::map<uint32_t, std::pair<uint32_t, uint32_t> > delayBuckets;
+
+  for (uint32_t sample = 0; sample < ecFrameDelayTestConfig.samples; sample++) {
+    uint32_t delayNs = 0;
+    uint32_t workingCounter = 0;
+    uint32_t wcState = 0;
+    const int errorCode = ec->measureFrameDelaySample(
+      ecFrameDelayTestConfig.startDelayNs,
+      ecFrameDelayTestConfig.stepDelayNs,
+      ecFrameDelayTestConfig.maxDelayNs,
+      masterActivationTimeOffset,
+      &delayNs,
+      &workingCounter,
+      &wcState);
+
+    if (errorCode > 0) {
+      LOGERR("ERROR:\t\tEtherCAT frame delay test failed during sample %u (0x%x).\n",
+             sample,
+             errorCode);
+      return errorCode;
+    }
+
+    if (errorCode < 0) {
+      ecFrameDelayTestResult.failedSamples++;
+      continue;
+    }
+
+    ecFrameDelayTestResult.validSamples++;
+    ecFrameDelayTestResult.lastDelayNs = delayNs;
+    ecFrameDelayTestResult.lastWorkingCounter = workingCounter;
+    ecFrameDelayTestResult.lastWcState = wcState;
+    delaySum += delayNs;
+
+    const uint32_t bucketIndex =
+      delayNs / ecFrameDelayTestResult.bucketSizeNs;
+    auto &bucket = delayBuckets[bucketIndex];
+    if (bucket.first == 0) {
+      bucket.second = 0xffffffff;
+    }
+    bucket.first++;
+    if (delayNs < bucket.second) {
+      bucket.second = delayNs;
+    }
+
+    if (delayNs < ecFrameDelayTestResult.minDelayNs) {
+      ecFrameDelayTestResult.minDelayNs = delayNs;
+    }
+
+    if (delayNs > ecFrameDelayTestResult.maxDelayNs) {
+      ecFrameDelayTestResult.maxDelayNs = delayNs;
+    }
+  }
+
+  ecFrameDelayTestResult.done = 1;
+
+  if (ecFrameDelayTestResult.validSamples == 0) {
+    ecFrameDelayTestResult.minDelayNs = 0;
+    LOGERR("ERROR:\t\tEtherCAT frame delay test got no returned frames within %u ns over %u samples (0x%x).\n",
+           ecFrameDelayTestConfig.maxDelayNs,
+           ecFrameDelayTestConfig.samples,
+           ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED);
+    return ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED;
+  }
+
+  ecFrameDelayTestResult.avgDelayNs =
+    delaySum / ecFrameDelayTestResult.validSamples;
+
+  for (const auto &bucket : delayBuckets) {
+    if (bucket.second.first > 1) {
+      ecFrameDelayTestResult.minRepeatedDelayNs = bucket.second.second;
+      ecFrameDelayTestResult.minRepeatedCount = bucket.second.first;
+      break;
+    }
+  }
+
+  for (const auto &bucket : delayBuckets) {
+    if (bucket.second.first > ecFrameDelayTestResult.modeCount) {
+      ecFrameDelayTestResult.modeCount = bucket.second.first;
+      ecFrameDelayTestResult.modeDelayNs = bucket.second.second;
+    }
+  }
+
+  const uint64_t p50Rank =
+    ((uint64_t)ecFrameDelayTestResult.validSamples * 50 + 99) / 100;
+  const uint64_t p90Rank =
+    ((uint64_t)ecFrameDelayTestResult.validSamples * 90 + 99) / 100;
+  const uint64_t p99Rank =
+    ((uint64_t)ecFrameDelayTestResult.validSamples * 99 + 99) / 100;
+  uint64_t cumulativeElapsedCount = 0;
+
+  for (const auto &bucket : delayBuckets) {
+    cumulativeElapsedCount += bucket.second.first;
+
+    if (!ecFrameDelayTestResult.elapsedP50Ns &&
+        (cumulativeElapsedCount >= p50Rank)) {
+      ecFrameDelayTestResult.elapsedP50Ns = bucket.second.second;
+    }
+
+    if (!ecFrameDelayTestResult.elapsedP90Ns &&
+        (cumulativeElapsedCount >= p90Rank)) {
+      ecFrameDelayTestResult.elapsedP90Ns = bucket.second.second;
+    }
+
+    if (!ecFrameDelayTestResult.elapsedP99Ns &&
+        (cumulativeElapsedCount >= p99Rank)) {
+      ecFrameDelayTestResult.elapsedP99Ns = bucket.second.second;
+      break;
+    }
+  }
+
+  LOGINFO("INFO:\t\tEtherCAT frame delay test done: valid=%u, failed=%u, min=%u ns, min_repeat=%u ns, repeat_count=%u, mode=%u ns, mode_count=%u, elapsed_p50=%u ns, elapsed_p90=%u ns, elapsed_p99=%u ns, bucket=%u ns, avg=%u ns, max=%u ns, dc_first=%u ns, dc_last=%u ns, dc_first_to_last=%u ns, last_wc=%u, last_wc_state=%u.\n",
+          ecFrameDelayTestResult.validSamples,
+          ecFrameDelayTestResult.failedSamples,
+          ecFrameDelayTestResult.minDelayNs,
+          ecFrameDelayTestResult.minRepeatedDelayNs,
+          ecFrameDelayTestResult.minRepeatedCount,
+          ecFrameDelayTestResult.modeDelayNs,
+          ecFrameDelayTestResult.modeCount,
+          ecFrameDelayTestResult.elapsedP50Ns,
+          ecFrameDelayTestResult.elapsedP90Ns,
+          ecFrameDelayTestResult.elapsedP99Ns,
+          ecFrameDelayTestResult.bucketSizeNs,
+          ecFrameDelayTestResult.avgDelayNs,
+          ecFrameDelayTestResult.maxDelayNs,
+          ecFrameDelayTestResult.firstSlaveDcDelayNs,
+          ecFrameDelayTestResult.lastSlaveDcDelayNs,
+          ecFrameDelayTestResult.firstToLastSlaveDcDelayNs,
+          ecFrameDelayTestResult.lastWorkingCounter,
+          ecFrameDelayTestResult.lastWcState);
+
+  return 0;
+}
+
 int waitForThreadToStart(int timeoutSeconds) {
   struct timespec timeToPause;
 
@@ -864,6 +1036,11 @@ int setAppModeRun(int mode) {
       LOGERR("ERROR:\t\tActivation of master failed.\n");
       return ERROR_MAIN_EC_ACTIVATE_FAILED;
     }
+
+    errorCode = runEcFrameDelayTestBeforeRuntime();
+    if (errorCode) {
+      return errorCode;
+    }
   } else {
     LOGWARNING(
       "WARNING: EtherCAT master not initialized. Starting ECMC without EtherCAT support.\n");
@@ -947,6 +1124,52 @@ int setEcStartupTimeout(int timeSeconds) {
   }
 
   ecTimeoutSeconds = timeSeconds;
+
+  return 0;
+}
+
+int setEcFrameDelayTest(int enable,
+                        uint32_t samples,
+                        uint32_t startDelayNs,
+                        uint32_t stepDelayNs,
+                        uint32_t maxDelayNs) {
+  LOGINFO4("%s/%s:%d enable=%d samples=%u startDelayNs=%u stepDelayNs=%u maxDelayNs=%u\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           enable,
+           samples,
+           startDelayNs,
+           stepDelayNs,
+           maxDelayNs);
+
+  if (appModeStat == ECMC_MODE_RUNTIME) {
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  }
+
+  if (!enable) {
+    ecFrameDelayTestConfig.enable = 0;
+    return 0;
+  }
+
+  if ((samples == 0) || (stepDelayNs == 0) || (maxDelayNs == 0) ||
+      (startDelayNs > maxDelayNs)) {
+    LOGERR("ERROR:\t\tInvalid EtherCAT frame delay test configuration (0x%x).\n",
+           ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED);
+    return ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED;
+  }
+
+  ecFrameDelayTestConfig.enable       = 1;
+  ecFrameDelayTestConfig.samples      = samples;
+  ecFrameDelayTestConfig.startDelayNs = startDelayNs;
+  ecFrameDelayTestConfig.stepDelayNs  = stepDelayNs;
+  ecFrameDelayTestConfig.maxDelayNs   = maxDelayNs;
+
+  LOGINFO("INFO:\t\tConfigured EtherCAT frame delay test: samples=%u, start=%u ns, step=%u ns, max=%u ns.\n",
+          samples,
+          startDelayNs,
+          stepDelayNs,
+          maxDelayNs);
 
   return 0;
 }

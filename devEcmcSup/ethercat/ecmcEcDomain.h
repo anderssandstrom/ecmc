@@ -34,6 +34,10 @@ public:
   int          checkState();
   void         process();
   void         queue();
+  void         processRaw();
+  void         queueRaw();
+  void         readRawState(uint32_t *workingCounter,
+                            uint32_t *wcState);
   void         updateAsyn();
   int          initAsyn();
   size_t       getSize();

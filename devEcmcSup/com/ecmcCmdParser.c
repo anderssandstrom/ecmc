@@ -860,6 +860,27 @@ static int handleCfgCommand(const char *myarg_1) {
     return setEcStartupTimeout(iValue);
   }
 
+  /// "Cfg.SetEcFrameDelayTest(enable,samples,startDelayNs,stepDelayNs,maxDelayNs)"
+  nvals = sscanf(myarg_1,
+                 "SetEcFrameDelayTest(%d,%d,%d,%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &iValue4,
+                 &iValue5);
+
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetEcFrameDelayTest");
+    if ((iValue2 < 0) || (iValue3 < 0) || (iValue4 < 0) || (iValue5 < 0)) {
+      return ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED;
+    }
+    return setEcFrameDelayTest(iValue,
+                               (uint32_t)iValue2,
+                               (uint32_t)iValue3,
+                               (uint32_t)iValue4,
+                               (uint32_t)iValue5);
+  }
+
   /// "Cfg.SetSampleRate(double sampleRate)"
   nvals = sscanf(myarg_1, "SetSampleRate(%lf)", &dValue);
 

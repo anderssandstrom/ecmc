@@ -227,11 +227,22 @@ public:
   int      getDomState(int domId);
   int      getDomAllowOffline(int *allow);
   int      getEcAllowOffline();
+  int      readDcSystemTimeDelayRange(uint32_t *firstDelayNs,
+                                      uint32_t *lastDelayNs,
+                                      uint32_t *diffDelayNs);
+  int      measureFrameDelaySample(uint32_t startDelayNs,
+                                   uint32_t stepDelayNs,
+                                   uint32_t maxDelayNs,
+                                   timespec timeOffset,
+                                   uint32_t *delayNs,
+                                   uint32_t *workingCounter,
+                                   uint32_t *wcState);
 
 private:
   void     initVars();
   int      updateInputProcessImage();
   int      updateOutProcessImage();
+  int      preparePhysicalDcSystemTimeDelayRequests();
   timespec timespecAdd(timespec time1,
                        timespec time2);
   bool     validEntryType(ecmcEcDataType dt);
@@ -279,6 +290,10 @@ private:
   struct timespec timeAbs_;
   uint64_t lastReceiveTimeNs_;
   uint64_t lastSendTimeNs_;
+  ec_reg_request_t *physicalFirstDcSystemTimeDelayReq_;
+  ec_reg_request_t *physicalLastDcSystemTimeDelayReq_;
+  int physicalFirstSlavePosition_;
+  int physicalLastSlavePosition_;
   int delayEcOKCycles_;
   int startupCounter_;
   ecmcEcDomain *currentDomain_;

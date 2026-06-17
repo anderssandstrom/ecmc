@@ -1682,6 +1682,26 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x24018:
+    return "ERROR_EC_SLAVE_ENTRY_ALIAS_EXISTS";
+
+    break;
+
+  case 0x24019:
+    return "ERROR_EC_SLAVE_REG_REQUEST_CREATE_FAIL";
+
+    break;
+
+  case 0x2401A:
+    return "ERROR_EC_SLAVE_REG_REQUEST_NULL";
+
+    break;
+
+  case 0x2401B:
+    return "ERROR_EC_SLAVE_REG_REQUEST_FAIL";
+
+    break;
+
   case 0x25000:  // ECSYNCMANAGER
     return "ERROR_EC_SM_PDO_ARRAY_FULL";
 
@@ -2490,6 +2510,11 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
   case 0x20074:
     return "ERROR_MAIN_PARSER_INVALID_FORMAT";
+
+    break;
+
+  case 0x20075:
+    return "ERROR_MAIN_EC_FRAME_DELAY_TEST_FAILED";
 
     break;
 

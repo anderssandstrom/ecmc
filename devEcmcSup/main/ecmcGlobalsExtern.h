@@ -38,6 +38,8 @@ extern ecmcPLCMain *plcs;
 extern ecmcAsynPortDriver *asynPort;
 extern ecmcAsynDataItem   *mainAsynParams[ECMC_ASYN_MAIN_PAR_COUNT];
 extern ecmcMainThreadDiag  threadDiag;
+extern ecmcEcFrameDelayTestConfig ecFrameDelayTestConfig;
+extern ecmcEcFrameDelayTestResult ecFrameDelayTestResult;
 extern app_mode_type appModeCmd, appModeCmdOld, appModeStat;
 extern ecmcMotorRecordController *asynPortMotorRecord;
 extern ecmcPluginLib *plugins[ECMC_MAX_PLUGINS];

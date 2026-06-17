@@ -36,6 +36,8 @@ ecmcPLCMain *plcs;
 ecmcAsynPortDriver *asynPort = NULL;
 ecmcAsynDataItem   *mainAsynParams[ECMC_ASYN_MAIN_PAR_COUNT];
 ecmcMainThreadDiag  threadDiag = { 0 };
+ecmcEcFrameDelayTestConfig ecFrameDelayTestConfig = { 0, 1000, 100000, 10000, 1000000 };
+ecmcEcFrameDelayTestResult ecFrameDelayTestResult = { 0 };
 app_mode_type appModeCmd, appModeCmdOld, appModeStat;
 ecmcMotorRecordController *asynPortMotorRecord;
 ecmcPluginLib *plugins[ECMC_MAX_PLUGINS];
