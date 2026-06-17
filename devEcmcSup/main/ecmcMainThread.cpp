@@ -47,6 +47,7 @@
 #include "ecmcAsynPortDriver.h"
 #include "ecmcMotorRecordController.h"
 #include "ecmcCom.h"
+#include "ecmcMotionSequence.h"
 
 /****************************************************************************/
 extern int allowCallbackEpicsState;
@@ -316,6 +317,8 @@ void cyclic_task(void *usr) {
   ecmcPluginLib *activePlugins[ECMC_MAX_PLUGINS] = {};
   int activeCppLogicCount      = 0;
   ecmcCppLogicLib *activeCppLogics[ECMC_MAX_PLUGINS] = {};
+  int activeMotionSeqCount = 0;
+  ecmcMotionSequence *activeMotionSeqs[ECMC_MAX_MOTION_SEQUENCES] = {};
 
   int writeToShm = masterId < ECMC_SHM_MAX_MASTERS &&
                    masterId > -ECMC_SHM_MAX_MASTERS;
@@ -354,6 +357,13 @@ void cyclic_task(void *usr) {
     if (nativeLogic != NULL) {
       activeCppLogics[activeCppLogicCount] = nativeLogic;
       activeCppLogicCount++;
+    }
+  }
+  for (int seqIndex = 0; seqIndex < ECMC_MAX_MOTION_SEQUENCES; ++seqIndex) {
+    auto * const motionSeq = motionSeqs[seqIndex];
+    if (motionSeq != NULL) {
+      activeMotionSeqs[activeMotionSeqCount] = motionSeq;
+      activeMotionSeqCount++;
     }
   }
 
@@ -450,6 +460,10 @@ void cyclic_task(void *usr) {
       } else {   // NO ec master
         writeMasterStatus(masterId, 1);
       }
+    }
+
+    for (i = 0; i < activeMotionSeqCount; i++) {
+      activeMotionSeqs[i]->executeRT(mcuPeriod / 1.0e9);
     }
 
     // Motion

@@ -53,6 +53,7 @@ SRC_DIRS += ${ECMC}/plc
 SRC_DIRS += ${ECMC}/plugin
 SRC_DIRS += ${ECMC}/logic
 SRC_DIRS += ${ECMC}/misc
+SRC_DIRS += ${ECMC}/sequence
 
 ecmc_SRCS += $(notdir $(foreach d,$(SRC_DIRS),$(wildcard $d/*.c)))
 ecmc_SRCS += $(notdir $(foreach d,$(SRC_DIRS),$(wildcard $d/*.cpp)))

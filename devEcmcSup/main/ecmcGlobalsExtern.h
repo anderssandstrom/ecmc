@@ -28,6 +28,7 @@
 #include "ecmcLookupTable.h"
 #include "epicsMutex.h"
 #include "ecmcMasterSlaveStateMachine.h"
+#include "ecmcMotionSequence.h"
 
 extern ecmcAxisBase *axes[ECMC_MAX_AXES];
 extern ecmcAxisGroup *axisGroups[ECMC_MAX_AXES];
@@ -47,6 +48,7 @@ extern ecmcShm shmObj;
 extern ecmcPVTController *pvtCtrl_;
 extern ecmcLookupTable<double, double>  *luts[ECMC_MAX_LUTS];
 extern ecmcMasterSlaveStateMachine *masterSlaveSMs[ECMC_MAX_MST_SLVS_SMS];
+extern ecmcMotionSequence *motionSeqs[ECMC_MAX_MOTION_SEQUENCES];
 
 // Mutex for motor record access
 extern epicsMutexId ecmcRTMutex;
