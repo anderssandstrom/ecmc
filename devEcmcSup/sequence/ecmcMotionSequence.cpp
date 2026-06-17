@@ -62,6 +62,7 @@ bool actionNeedsAxis(int action) {
   case ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE:
   case ECMC_SEQ_ACTION_MC_MOVE_RELATIVE:
   case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
+  case ECMC_SEQ_ACTION_ARM_POS_TRIGGER:
     return true;
   default:
     return false;
@@ -69,7 +70,7 @@ bool actionNeedsAxis(int action) {
 }
 
 bool validAction(int action) {
-  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_RUN_SEQUENCE;
+  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_ARM_TIME_TRIGGER;
 }
 
 std::string getArgValue(const char *args, const char *key) {
@@ -302,6 +303,7 @@ ecmcMotionSequence *motionSeqs[ECMC_MAX_MOTION_SEQUENCES] = {nullptr};
 
 ecmcMotionSequence::ecmcMotionSequence(int index, int maxSteps, const char *portName)
   : index_(index), maxSteps_(maxSteps), steps_(maxSteps) {
+  rtTriggers_.reserve(maxSteps > 0 ? maxSteps : 1);
   copyText(portName_, sizeof(portName_), portName);
   copyText(edit_.name, sizeof(edit_.name), "Step");
   copyText(edit_.transition, sizeof(edit_.transition), "Done");
@@ -419,6 +421,8 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "stat.step_name", statStepName_, sizeof(statStepName_), false, &statStepNameParam_));
   ADD_PARAM(addStringParam(port, "stat.error_text", statErrorText_, sizeof(statErrorText_), false, &statErrorTextParam_));
   ADD_PARAM(addStringParam(port, "stat.validation_text", statValidationText_, sizeof(statValidationText_), false, &statValidationTextParam_));
+  ADD_PARAM(addIntParam(port, "stat.soft_trigger_id", &statSoftTriggerId_, false, &statSoftTriggerIdParam_));
+  ADD_PARAM(addIntParam(port, "stat.soft_trigger_count", &statSoftTriggerCount_, false, &statSoftTriggerCountParam_));
   ADD_PARAM(startCompileWorker());
 
 #undef ADD_PARAM
@@ -479,6 +483,26 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
       step.action == ECMC_SEQ_ACTION_WAIT_ITEM) {
     return prepareItemStep(stepIndex, step);
   }
+  if (step.action == ECMC_SEQ_ACTION_ARM_POS_TRIGGER ||
+      step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER) {
+    return preparePosTriggerStep(stepIndex, step);
+  }
+  if (step.action == ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE) {
+    const std::string idText = getArgValue(step.args, "id");
+    if (idText.empty()) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d missing trigger id arg.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    char *end = nullptr;
+    const long triggerId = strtol(idText.c_str(), &end, 10);
+    if (end == idText.c_str() || triggerId < 0) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d trigger id parse failed.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    step.cmdData = static_cast<int32_t>(triggerId);
+  }
   if (step.action == ECMC_SEQ_ACTION_RUN_SEQUENCE) {
     const int childIndex = step.axis;
     if (childIndex < 0 || childIndex >= ECMC_MAX_MOTION_SEQUENCES) {
@@ -516,6 +540,94 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
       step.enable = atoi(enableText.c_str()) ? 1 : 0;
     }
   }
+  return 0;
+}
+
+int ecmcMotionSequence::preparePosTriggerStep(int stepIndex, ecmcSeqStep &step) {
+  const std::string idText = getArgValue(step.args, "id");
+  const std::string itemName = getArgValue(step.args, "item");
+  const std::string valueText = getArgValue(step.args, "value");
+  const bool softTrigger = itemName == "soft";
+  if (idText.empty() || itemName.empty() || valueText.empty()) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d missing trigger id/item/value args.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.velocity == 0.0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger period is zero.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER &&
+      step.velocity < 0.0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger period is negative.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER &&
+      step.position < 0.0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger delay is negative.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.acceleration <= 0.0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger count is invalid.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.deceleration < 0.0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger pulse time is negative.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (!softTrigger && !asynPort) {
+    return setError(ERROR_MAIN_ASYN_PORT_DRIVER_NULL, "Asyn port unavailable.");
+  }
+
+  char *end = nullptr;
+  const long triggerId = strtol(idText.c_str(), &end, 10);
+  if (end == idText.c_str() || triggerId < 0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger id parse failed.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+
+  end = nullptr;
+  const double value = strtod(valueText.c_str(), &end);
+  if (end == valueText.c_str()) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger value parse failed.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+
+  step.cmdData = static_cast<int32_t>(triggerId);
+  step.triggerSoft = softTrigger ? 1 : 0;
+  step.itemValue = value;
+
+  if (softTrigger) {
+    step.item = nullptr;
+    return 0;
+  }
+
+  ecmcDataItem *item = asynPort->findAvailDataItem(itemName.c_str());
+  if (!item || !item->getDataItemInfo() || !item->getDataItemInfo()->dataPointerValid) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger item not found.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (!isScalarNumericType(item->getEcmcDataType()) ||
+      item->getEcmcDataSize() < scalarTypeSize(item->getEcmcDataType())) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger item type unsupported.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (!item->getAllowWriteToEcmc()) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d trigger item is not writable.", stepIndex);
+    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+
+  step.item = item;
   return 0;
 }
 
@@ -880,6 +992,7 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       rtChildSeq_->stopRT();
       rtChildSeq_ = nullptr;
     }
+    clearTriggersRT();
     statRunning_ = 0;
     statArmed_ = 0;
     statStepIndex_ = -1;
@@ -898,6 +1011,7 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       rtChildSeq_->stopRT();
       rtChildSeq_ = nullptr;
     }
+    clearTriggersRT();
     statRunning_ = 0;
     statArmed_ = 0;
     statState_ = ECMC_SEQ_STATE_STOPPED;
@@ -910,6 +1024,7 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       statRunning_ = 1;
       statState_ = ECMC_SEQ_STATE_RUNNING;
       statStepIndex_ = 0;
+      clearTriggersRT();
       resetStepRuntimeRT();
     }
   }
@@ -927,9 +1042,12 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
     statAction_ = ECMC_SEQ_ACTION_NOP;
     statElapsedMs_ = 0.0;
     copyText(statStepName_, sizeof(statStepName_), "");
+    clearTriggersRT();
     resetStepRuntimeRT();
     return;
   }
+
+  evalTriggersRT(cycleTimeS);
 
   auto &step = activePlan_[statStepIndex_];
   if (!rtStepEntered_) {
@@ -1069,6 +1187,16 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "RunSequence child not running.");
     }
     break;
+  case ECMC_SEQ_ACTION_ARM_POS_TRIGGER:
+  case ECMC_SEQ_ACTION_ARM_TIME_TRIGGER:
+    armPosTriggerRT(step);
+    advanceStepRT();
+    break;
+  case ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE:
+    if (waitTriggerDoneRT(step.cmdData)) {
+      advanceStepRT();
+    }
+    break;
   default:
     failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL,
                "Sequence RT runner does not support this action.");
@@ -1091,6 +1219,7 @@ void ecmcMotionSequence::failStepRT(int errorId, const char *message) {
   statState_ = ECMC_SEQ_STATE_ERROR;
   statRunning_ = 0;
   statArmed_ = 0;
+  clearTriggersRT();
   resetStepRuntimeRT();
   copyText(statErrorText_, sizeof(statErrorText_), message);
 }
@@ -1274,6 +1403,7 @@ bool ecmcMotionSequence::startFromActivePlanRT() {
   statErrorId_ = 0;
   copyText(statStepName_, sizeof(statStepName_), "");
   copyText(statErrorText_, sizeof(statErrorText_), "");
+  clearTriggersRT();
   resetStepRuntimeRT();
   return true;
 }
@@ -1282,11 +1412,148 @@ void ecmcMotionSequence::stopRT() {
   statRunning_ = 0;
   statArmed_ = 0;
   statState_ = ECMC_SEQ_STATE_STOPPED;
+  clearTriggersRT();
   resetStepRuntimeRT();
   if (rtChildSeq_) {
     rtChildSeq_->stopRT();
     rtChildSeq_ = nullptr;
   }
+}
+
+void ecmcMotionSequence::clearTriggersRT() {
+  for (auto &trig : rtTriggers_) {
+    if (trig.pulseActive) {
+      writeTriggerOutputRT(trig, 0.0, 0);
+    }
+  }
+  rtTriggers_.clear();
+}
+
+void ecmcMotionSequence::evalTriggersRT(double cycleTimeS) {
+  for (auto &trig : rtTriggers_) {
+    if (!trig.active && !trig.pulseActive) {
+      continue;
+    }
+
+    if (trig.pulseActive) {
+      trig.pulseElapsedMs += cycleTimeS * 1000.0;
+      if (trig.pulseMs > 0.0 && trig.pulseElapsedMs >= trig.pulseMs) {
+        writeTriggerOutputRT(trig, 0.0, 0);
+        trig.pulseActive = 0;
+      }
+    }
+
+    if (!trig.active) {
+      continue;
+    }
+
+    bool crossed = false;
+    double pos = 0.0;
+    if (trig.timeBased) {
+      trig.elapsedMs += cycleTimeS * 1000.0;
+      crossed = trig.elapsedMs >= trig.nextTimeMs;
+    } else {
+      if (trig.axis < 0 ||
+          trig.axis >= ECMC_MAX_AXES ||
+          !axes[trig.axis] ||
+          axes[trig.axis]->getPosAct(&pos)) {
+        continue;
+      }
+
+      const bool forward = trig.period > 0.0;
+      crossed = forward
+        ? (trig.lastPos < trig.nextPos && pos >= trig.nextPos)
+        : (trig.lastPos > trig.nextPos && pos <= trig.nextPos);
+    }
+
+    if (crossed) {
+      writeTriggerOutputRT(trig, trig.value, 1);
+      trig.fired++;
+      trig.nextPos = trig.startPos + trig.period * trig.fired;
+      trig.nextTimeMs = trig.startPos + trig.period * trig.fired;
+      if (trig.pulseMs > 0.0) {
+        trig.pulseActive = 1;
+        trig.pulseElapsedMs = 0.0;
+      }
+      if (trig.fired >= trig.count) {
+        trig.active = 0;
+      }
+    }
+    if (!trig.timeBased) {
+      trig.lastPos = pos;
+    }
+  }
+}
+
+void ecmcMotionSequence::armPosTriggerRT(const ecmcSeqStep &step) {
+  double pos = 0.0;
+  if (step.axis >= 0 && step.axis < ECMC_MAX_AXES && axes[step.axis]) {
+    axes[step.axis]->getPosAct(&pos);
+  }
+
+  for (auto &trig : rtTriggers_) {
+    if (trig.id == step.cmdData) {
+      trig = ecmcSeqPosTrigger();
+      trig.id = step.cmdData;
+      trig.axis = step.axis;
+      trig.count = static_cast<int32_t>(step.acceleration);
+      trig.startPos = step.position;
+      trig.period = step.velocity;
+      trig.value = step.itemValue;
+      trig.pulseMs = step.deceleration;
+      trig.nextPos = step.position;
+      trig.nextTimeMs = step.position;
+      trig.lastPos = pos;
+      trig.timeBased = step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER ? 1 : 0;
+      trig.soft = step.triggerSoft;
+      trig.item = step.item;
+      trig.active = 1;
+      return;
+    }
+  }
+
+  ecmcSeqPosTrigger trig;
+  trig.id = step.cmdData;
+  trig.axis = step.axis;
+  trig.count = static_cast<int32_t>(step.acceleration);
+  trig.startPos = step.position;
+  trig.period = step.velocity;
+  trig.value = step.itemValue;
+  trig.pulseMs = step.deceleration;
+  trig.nextPos = step.position;
+  trig.nextTimeMs = step.position;
+  trig.lastPos = pos;
+  trig.timeBased = step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER ? 1 : 0;
+  trig.soft = step.triggerSoft;
+  trig.item = step.item;
+  trig.active = 1;
+  rtTriggers_.push_back(trig);
+}
+
+bool ecmcMotionSequence::waitTriggerDoneRT(int triggerId) const {
+  for (const auto &trig : rtTriggers_) {
+    if (trig.id == triggerId) {
+      return !trig.active && !trig.pulseActive && trig.fired >= trig.count;
+    }
+  }
+  return false;
+}
+
+void ecmcMotionSequence::writeTriggerOutputRT(ecmcSeqPosTrigger &trig,
+                                              double value,
+                                              int pulseActive) {
+  if (trig.soft) {
+    if (pulseActive) {
+      statSoftTriggerId_ = trig.id;
+      statSoftTriggerCount_++;
+    }
+    return;
+  }
+
+  ecmcSeqStep pulseStep;
+  pulseStep.item = trig.item;
+  pulseStep.itemValue = value;
+  writeItemScalarRT(pulseStep);
 }
 
 int ecmcMotionSequence::report(int stepIndex) {
@@ -1305,6 +1572,8 @@ int ecmcMotionSequence::report(int stepIndex) {
   printf("  error_id       = 0x%x\n", statErrorId_);
   printf("  error_text     = %s\n", statErrorText_);
   printf("  validation     = %s\n", statValidationText_);
+  printf("  soft_trig_id   = %d\n", statSoftTriggerId_);
+  printf("  soft_trig_cnt  = %d\n", statSoftTriggerCount_);
 
   std::vector<ecmcSeqStep> stepsSnapshot;
   {
@@ -1354,6 +1623,8 @@ void ecmcMotionSequence::refreshStatus() {
   seqAsynPort_->refreshParam(statStepNameParam_);
   seqAsynPort_->refreshParam(statErrorTextParam_);
   seqAsynPort_->refreshParam(statValidationTextParam_);
+  seqAsynPort_->refreshParam(statSoftTriggerIdParam_);
+  seqAsynPort_->refreshParam(statSoftTriggerCountParam_);
 }
 
 asynStatus ecmcMotionSequence::asynWriteApply(void *, size_t, asynParamType, void *userObj) {
@@ -1634,6 +1905,93 @@ int setMotionSeqRunSeq(int seqIndex, int stepIndex, int childSeqIndex, double ti
                         "Done",
                         "Abort",
                         "");
+}
+
+int setMotionSeqArmPosTrigger(int seqIndex,
+                              int stepIndex,
+                              int triggerId,
+                              int axis,
+                              const char *item,
+                              double startPos,
+                              double period,
+                              int count,
+                              double value,
+                              double pulseMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "ArmPosTrigger %d", triggerId);
+  snprintf(args,
+           sizeof(args),
+           "id=%d;item=%s;value=%g",
+           triggerId,
+           item ? item : "",
+           value);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_ARM_POS_TRIGGER,
+                        axis,
+                        startPos,
+                        period,
+                        static_cast<double>(count),
+                        pulseMs,
+                        0.0,
+                        name,
+                        "Armed",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqArmTimeTrigger(int seqIndex,
+                               int stepIndex,
+                               int triggerId,
+                               const char *item,
+                               double delayMs,
+                               double periodMs,
+                               int count,
+                               double value,
+                               double pulseMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "ArmTimeTrigger %d", triggerId);
+  snprintf(args,
+           sizeof(args),
+           "id=%d;item=%s;value=%g",
+           triggerId,
+           item ? item : "",
+           value);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_ARM_TIME_TRIGGER,
+                        -1,
+                        delayMs,
+                        periodMs,
+                        static_cast<double>(count),
+                        pulseMs,
+                        0.0,
+                        name,
+                        "Armed",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqWaitTriggerDone(int seqIndex, int stepIndex, int triggerId, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "WaitTriggerDone %d", triggerId);
+  snprintf(args, sizeof(args), "id=%d", triggerId);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        args);
 }
 
 int setMotionSeqReset(int seqIndex, int stepIndex, int axis, double timeoutMs) {

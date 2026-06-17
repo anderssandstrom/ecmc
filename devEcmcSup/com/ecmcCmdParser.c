@@ -985,6 +985,70 @@ static int handleCfgCommand(const char *myarg_1) {
     return setMotionSeqRunSeq(iValue, iValue2, iValue3, dValue);
   }
 
+  /// "Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,period,count,value,pulseMs)"
+  cIdBuffer[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqArmPosTrigger(%d,%d,%d,%d,%[^,],%lf,%lf,%d,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &iValue4,
+                 cIdBuffer,
+                 &dValue,
+                 &dValue2,
+                 &iValue5,
+                 &dValue3,
+                 &dValue4);
+
+  if (nvals == 10) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqArmPosTrigger");
+    return setMotionSeqArmPosTrigger(iValue,
+                                     iValue2,
+                                     iValue3,
+                                     iValue4,
+                                     cIdBuffer,
+                                     dValue,
+                                     dValue2,
+                                     iValue5,
+                                     dValue3,
+                                     dValue4);
+  }
+
+  /// "Cfg.SeqArmTimeTrigger(seqIndex,stepIndex,triggerId,item,delayMs,periodMs,count,value,pulseMs)"
+  cIdBuffer[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqArmTimeTrigger(%d,%d,%d,%[^,],%lf,%lf,%d,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 cIdBuffer,
+                 &dValue,
+                 &dValue2,
+                 &iValue4,
+                 &dValue3,
+                 &dValue4);
+
+  if (nvals == 9) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqArmTimeTrigger");
+    return setMotionSeqArmTimeTrigger(iValue,
+                                      iValue2,
+                                      iValue3,
+                                      cIdBuffer,
+                                      dValue,
+                                      dValue2,
+                                      iValue4,
+                                      dValue3,
+                                      dValue4);
+  }
+
+  /// "Cfg.SeqWaitTriggerDone(seqIndex,stepIndex,triggerId,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqWaitTriggerDone(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqWaitTriggerDone");
+    return setMotionSeqWaitTriggerDone(iValue, iValue2, iValue3, dValue);
+  }
+
   /// "Cfg.SeqReset(seqIndex,stepIndex,axis,timeoutMs)"
   nvals = sscanf(myarg_1, "SeqReset(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
 

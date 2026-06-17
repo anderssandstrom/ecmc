@@ -26,7 +26,10 @@ enum ecmcSeqAction {
   ECMC_SEQ_ACTION_SET_ITEM = 7,
   ECMC_SEQ_ACTION_WAIT_ITEM = 8,
   ECMC_SEQ_ACTION_WAIT_TIME = 9,
-  ECMC_SEQ_ACTION_RUN_SEQUENCE = 10
+  ECMC_SEQ_ACTION_RUN_SEQUENCE = 10,
+  ECMC_SEQ_ACTION_ARM_POS_TRIGGER = 11,
+  ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE = 12,
+  ECMC_SEQ_ACTION_ARM_TIME_TRIGGER = 13
 };
 
 enum ecmcSeqCompareOp {
@@ -83,7 +86,29 @@ struct ecmcSeqStep {
   char args[ECMC_SEQ_TEXT_LEN] = {0};
   ecmcDataItem *item = nullptr;
   ecmcMotionSequence *childSeq = nullptr;
+  int32_t triggerSoft = 0;
   double itemValue = 0.0;
+};
+
+struct ecmcSeqPosTrigger {
+  int32_t id = -1;
+  int32_t axis = -1;
+  int32_t count = 0;
+  int32_t fired = 0;
+  int32_t active = 0;
+  int32_t pulseActive = 0;
+  double startPos = 0.0;
+  double period = 0.0;
+  double value = 0.0;
+  double pulseMs = 0.0;
+  double pulseElapsedMs = 0.0;
+  double nextPos = 0.0;
+  double lastPos = 0.0;
+  double elapsedMs = 0.0;
+  double nextTimeMs = 0.0;
+  int32_t timeBased = 0;
+  int32_t soft = 0;
+  ecmcDataItem *item = nullptr;
 };
 
 class ecmcMotionSequence {
@@ -169,6 +194,12 @@ private:
   bool compareItemValue(double actual, const ecmcSeqStep &step) const;
   bool startFromActivePlanRT();
   void stopRT();
+  int preparePosTriggerStep(int stepIndex, ecmcSeqStep &step);
+  void clearTriggersRT();
+  void evalTriggersRT(double cycleTimeS);
+  void armPosTriggerRT(const ecmcSeqStep &step);
+  bool waitTriggerDoneRT(int triggerId) const;
+  void writeTriggerOutputRT(ecmcSeqPosTrigger &trig, double value, int pulseActive);
   void refreshStatus();
 
   int index_ = -1;
@@ -221,6 +252,8 @@ private:
   char statStepName_[ECMC_SEQ_TEXT_LEN] = {0};
   char statErrorText_[ECMC_SEQ_TEXT_LEN] = {0};
   char statValidationText_[ECMC_SEQ_TEXT_LEN] = {0};
+  int32_t statSoftTriggerId_ = -1;
+  int32_t statSoftTriggerCount_ = 0;
 
   int statStateParam_ = -1;
   int statValidParam_ = -1;
@@ -235,6 +268,8 @@ private:
   int statStepNameParam_ = -1;
   int statErrorTextParam_ = -1;
   int statValidationTextParam_ = -1;
+  int statSoftTriggerIdParam_ = -1;
+  int statSoftTriggerCountParam_ = -1;
 
   epicsEventId compileRequestEvent_ = nullptr;
   epicsEventId compileDoneEvent_ = nullptr;
@@ -250,6 +285,7 @@ private:
   bool rtStepEntered_ = false;
   double rtStepElapsedMs_ = 0.0;
   ecmcMotionSequence *rtChildSeq_ = nullptr;
+  std::vector<ecmcSeqPosTrigger> rtTriggers_;
   ecmcMcReset rtReset_;
   ecmcMcPower rtPower_;
   ecmcMcHome rtHome_;
@@ -286,6 +322,26 @@ int reportMotionSeq(int seqIndex, int stepIndex);
 int setMotionSeqNop(int seqIndex, int stepIndex);
 int setMotionSeqWaitTime(int seqIndex, int stepIndex, double waitMs);
 int setMotionSeqRunSeq(int seqIndex, int stepIndex, int childSeqIndex, double timeoutMs);
+int setMotionSeqArmPosTrigger(int seqIndex,
+                              int stepIndex,
+                              int triggerId,
+                              int axis,
+                              const char *item,
+                              double startPos,
+                              double period,
+                              int count,
+                              double value,
+                              double pulseMs);
+int setMotionSeqArmTimeTrigger(int seqIndex,
+                               int stepIndex,
+                               int triggerId,
+                               const char *item,
+                               double delayMs,
+                               double periodMs,
+                               int count,
+                               double value,
+                               double pulseMs);
+int setMotionSeqWaitTriggerDone(int seqIndex, int stepIndex, int triggerId, double timeoutMs);
 int setMotionSeqReset(int seqIndex, int stepIndex, int axis, double timeoutMs);
 int setMotionSeqPower(int seqIndex, int stepIndex, int axis, int enable, double timeoutMs);
 int setMotionSeqHome(int seqIndex,
