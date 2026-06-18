@@ -29,7 +29,9 @@ enum ecmcSeqAction {
   ECMC_SEQ_ACTION_RUN_SEQUENCE = 10,
   ECMC_SEQ_ACTION_ARM_POS_TRIGGER = 11,
   ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE = 12,
-  ECMC_SEQ_ACTION_ARM_TIME_TRIGGER = 13
+  ECMC_SEQ_ACTION_ARM_TIME_TRIGGER = 13,
+  ECMC_SEQ_ACTION_MC_MOVE_VELOCITY = 14,
+  ECMC_SEQ_ACTION_MC_HALT = 15
 };
 
 enum ecmcSeqCompareOp {
@@ -291,6 +293,8 @@ private:
   ecmcMcHome rtHome_;
   ecmcMcMoveAbsolute rtMoveAbsolute_;
   ecmcMcMoveRelative rtMoveRelative_;
+  ecmcMcMoveVelocity rtMoveVelocity_;
+  ecmcMcHalt rtHalt_;
 };
 
 extern "C" {
@@ -370,6 +374,23 @@ int setMotionSeqMoveRel(int seqIndex,
                         double acceleration,
                         double deceleration,
                         double timeoutMs);
+int setMotionSeqMoveVel(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs);
+int setMotionSeqMoveVelWait(int seqIndex,
+                            int stepIndex,
+                            int axis,
+                            double velocity,
+                            double acceleration,
+                            double deceleration,
+                            double timeoutMs,
+                            int waitForVelocity,
+                            double tolerance);
+int setMotionSeqHalt(int seqIndex, int stepIndex, int axis, double timeoutMs);
 int setMotionSeqWaitInPos(int seqIndex, int stepIndex, int axis, double timeoutMs);
 int setMotionSeqSetItem(int seqIndex,
                         int stepIndex,

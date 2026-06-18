@@ -54,6 +54,8 @@ The currently defined action IDs are:
 11 ArmPositionTrigger
 12 WaitTriggerDone
 13 ArmTimeTrigger
+14 MC_MoveVelocity
+15 MC_Halt
 ```
 
 Most users should prefer the `Cfg.Seq*` helper commands instead of writing the
@@ -87,6 +89,9 @@ Cfg.SeqPower(seqIndex,stepIndex,axis,enable,timeoutMs)
 Cfg.SeqHome(seqIndex,stepIndex,axis,homeSeq,homePos,velTowardsCam,velOffCam,acc,dec,timeoutMs)
 Cfg.SeqMoveAbs(seqIndex,stepIndex,axis,pos,vel,acc,dec,timeoutMs)
 Cfg.SeqMoveRel(seqIndex,stepIndex,axis,dist,vel,acc,dec,timeoutMs)
+Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs)
+Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs,wait,tolerance)
+Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs)
 Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)
 Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)
 Cfg.SeqWaitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
@@ -134,6 +139,44 @@ Cfg.SeqWaitItem(0,0,ec0.s1.status,>=,1,5000)
 
 This waits until the scalar data item `ec0.s1.status` is greater than or equal
 to `1`, or until the step timeout expires.
+
+## Velocity Move and Halt
+
+`SeqMoveVel` is deliberately nonblocking. It issues the velocity command and
+advances to the next sequence step immediately. It does not wait for the axis to
+reach the requested velocity.
+
+The extended form can optionally wait until actual velocity is within the
+configured tolerance:
+
+```text
+Cfg.SeqMoveVel(0,0,1,10.0,20.0,20.0,5000,1,0.1)
+```
+
+This waits until the actual velocity is between `9.9` and `10.1`, or until the
+5000 ms timeout expires. Internally this is stored in the generic step args:
+
+```text
+wait=1;tol=0.1
+```
+
+Using `wait=0` keeps the immediate nonblocking behavior. The short command form
+also defaults to `wait=0`.
+
+`SeqHalt` issues `MC_Halt` and waits until the axis is no longer busy.
+
+This allows a sequence to move continuously until an item condition becomes
+true:
+
+```text
+Cfg.SeqMoveVel(0,0,1,10.0,20.0,20.0,1000)
+Cfg.SeqWaitItem(0,1,ec0.s1.stopInput,==,1,30000)
+Cfg.SeqHalt(0,2,1,5000)
+```
+
+The `SeqMoveVel` timeout only covers issuing the command. Since the action
+normally completes in one realtime cycle, the wait condition timeout belongs
+on `SeqWaitItem`, and the stopping timeout belongs on `SeqHalt`.
 
 ## Asyn Port Interface
 
@@ -345,9 +388,8 @@ define separate forward and backward X-line sequences and call them alternately.
 ## Current Limitations
 
 - This has not yet been built or tested in the target ecmc environment.
-- EPICS database templates have not been added yet.
-- The PV interface is generic. Action-specific PV convenience should probably
-  be handled in the EPICS database layer first.
+- Generic EPICS records are provided by ecmccfg. Action-specific operator
+  screens and convenience records can still be added in the EPICS layer.
 - Compile currently uses one low-priority worker thread per sequence.
 - Recursive sequence graph validation only rejects direct self-call.
 - Soft triggers expose a shared counter and last trigger ID, not a full event
@@ -370,4 +412,12 @@ Command parser integration:
 ```text
 devEcmcSup/com/ecmcCmdParser.c
 devEcmcSup/ecmc_commands_blocklist_rt.json
+```
+
+EPICS records, startup helper, and user documentation are provided by ecmccfg:
+
+```text
+db/sequencer/ecmcMotionSequence.template
+scripts/loadMotionSequence.cmd
+hugo/content/manual/motion_cfg/sequencer.md
 ```

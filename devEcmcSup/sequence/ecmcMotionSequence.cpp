@@ -61,6 +61,8 @@ bool actionNeedsAxis(int action) {
   case ECMC_SEQ_ACTION_MC_HOME:
   case ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE:
   case ECMC_SEQ_ACTION_MC_MOVE_RELATIVE:
+  case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY:
+  case ECMC_SEQ_ACTION_MC_HALT:
   case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
   case ECMC_SEQ_ACTION_ARM_POS_TRIGGER:
     return true;
@@ -70,7 +72,7 @@ bool actionNeedsAxis(int action) {
 }
 
 bool validAction(int action) {
-  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_ARM_TIME_TRIGGER;
+  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_MC_HALT;
 }
 
 std::string getArgValue(const char *args, const char *key) {
@@ -538,6 +540,17 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
     const std::string enableText = getArgValue(step.args, "enable");
     if (!enableText.empty()) {
       step.enable = atoi(enableText.c_str()) ? 1 : 0;
+    }
+  }
+  if (step.action == ECMC_SEQ_ACTION_MC_MOVE_VELOCITY) {
+    const std::string waitText = getArgValue(step.args, "wait");
+    const std::string toleranceText = getArgValue(step.args, "tol");
+    step.cmdData = waitText.empty() ? 0 : (atoi(waitText.c_str()) ? 1 : 0);
+    step.itemValue = toleranceText.empty() ? 0.0 : strtod(toleranceText.c_str(), nullptr);
+    if (step.itemValue < 0.0) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d velocity tolerance is negative.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
     }
   }
   return 0;
@@ -1137,6 +1150,35 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       advanceStepRT();
     }
     break;
+  case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY:
+    rtMoveVelocity_.run(axisRef,
+                        true,
+                        step.velocity,
+                        step.acceleration,
+                        step.deceleration);
+    if (rtMoveVelocity_.Error) {
+      failStepRT(static_cast<int>(rtMoveVelocity_.ErrorID), "MC_MoveVelocity failed.");
+    } else if (step.cmdData) {
+      double actualVelocity = 0.0;
+      if (!axes[step.axis] ||
+          axes[step.axis]->getVelAct(&actualVelocity)) {
+        failStepRT(ERROR_MAIN_AXIS_OBJECT_NULL, "MC_MoveVelocity velocity read failed.");
+      } else if (actualVelocity >= step.velocity - step.itemValue &&
+                 actualVelocity <= step.velocity + step.itemValue) {
+        advanceStepRT();
+      }
+    } else {
+      advanceStepRT();
+    }
+    break;
+  case ECMC_SEQ_ACTION_MC_HALT:
+    rtHalt_.run(axisRef, true);
+    if (rtHalt_.Error) {
+      failStepRT(static_cast<int>(rtHalt_.ErrorID), "MC_Halt failed.");
+    } else if (rtHalt_.Done) {
+      advanceStepRT();
+    }
+    break;
   case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
     if (axisInPosition(step.axis)) {
       advanceStepRT();
@@ -1232,6 +1274,8 @@ void ecmcMotionSequence::resetStepRuntimeRT() {
   rtHome_ = ecmcMcHome();
   rtMoveAbsolute_ = ecmcMcMoveAbsolute();
   rtMoveRelative_ = ecmcMcMoveRelative();
+  rtMoveVelocity_ = ecmcMcMoveVelocity();
+  rtHalt_ = ecmcMcHalt();
 }
 
 bool ecmcMotionSequence::axisInPosition(int axisIndex) const {
@@ -2104,6 +2148,80 @@ int setMotionSeqMoveRel(int seqIndex,
                         velocity,
                         acceleration,
                         deceleration,
+                        timeoutMs,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqMoveVel(int seqIndex,
+                        int stepIndex,
+                        int axis,
+                        double velocity,
+                        double acceleration,
+                        double deceleration,
+                        double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "MoveVel axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_MOVE_VELOCITY,
+                        axis,
+                        0.0,
+                        velocity,
+                        acceleration,
+                        deceleration,
+                        timeoutMs,
+                        name,
+                        "Started",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqMoveVelWait(int seqIndex,
+                            int stepIndex,
+                            int axis,
+                            double velocity,
+                            double acceleration,
+                            double deceleration,
+                            double timeoutMs,
+                            int waitForVelocity,
+                            double tolerance) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "MoveVel axis %d", axis);
+  snprintf(args,
+           sizeof(args),
+           "wait=%d;tol=%g",
+           waitForVelocity ? 1 : 0,
+           tolerance);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_MOVE_VELOCITY,
+                        axis,
+                        0.0,
+                        velocity,
+                        acceleration,
+                        deceleration,
+                        timeoutMs,
+                        name,
+                        waitForVelocity ? "InVelocity" : "Started",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqHalt(int seqIndex, int stepIndex, int axis, double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "Halt axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_MC_HALT,
+                        axis,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
                         timeoutMs,
                         name,
                         "Done",

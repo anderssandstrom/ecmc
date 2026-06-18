@@ -1127,6 +1127,56 @@ static int handleCfgCommand(const char *myarg_1) {
     return setMotionSeqMoveRel(iValue, iValue2, iValue3, dValue, dValue2, dValue3, dValue4, dValue5);
   }
 
+  /// "Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs,wait,tolerance)"
+  nvals = sscanf(myarg_1,
+                 "SeqMoveVel(%d,%d,%d,%lf,%lf,%lf,%lf,%d,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &dValue,
+                 &dValue2,
+                 &dValue3,
+                 &dValue4,
+                 &iValue4,
+                 &dValue5);
+
+  if (nvals == 9) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqMoveVel");
+    return setMotionSeqMoveVelWait(iValue,
+                                   iValue2,
+                                   iValue3,
+                                   dValue,
+                                   dValue2,
+                                   dValue3,
+                                   dValue4,
+                                   iValue4,
+                                   dValue5);
+  }
+
+  /// "Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs)"
+  nvals = sscanf(myarg_1,
+                 "SeqMoveVel(%d,%d,%d,%lf,%lf,%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &dValue,
+                 &dValue2,
+                 &dValue3,
+                 &dValue4);
+
+  if (nvals == 7) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqMoveVel");
+    return setMotionSeqMoveVel(iValue, iValue2, iValue3, dValue, dValue2, dValue3, dValue4);
+  }
+
+  /// "Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs)"
+  nvals = sscanf(myarg_1, "SeqHalt(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqHalt");
+    return setMotionSeqHalt(iValue, iValue2, iValue3, dValue);
+  }
+
   /// "Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)"
   nvals = sscanf(myarg_1, "SeqWaitInPos(%d,%d,%d,%lf)", &iValue, &iValue2, &iValue3, &dValue);
 
