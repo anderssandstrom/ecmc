@@ -53,6 +53,16 @@ enum ecmcSeqState {
 };
 
 #ifdef __cplusplus
+extern "C" {
+#endif
+
+int createMotionSeq(int index, int maxSteps, const char *portName);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
 
 #include <atomic>
 #include <mutex>
@@ -301,7 +311,6 @@ private:
 extern "C" {
 #endif
 
-int createMotionSeq(int index, int maxSteps, const char *portName);
 int setMotionSeqStep(int seqIndex,
                      int stepIndex,
                      int enabled,
