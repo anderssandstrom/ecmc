@@ -85,13 +85,19 @@ Simplified step helpers:
 Cfg.SeqNop(seqIndex,stepIndex)
 Cfg.SeqWaitTime(seqIndex,stepIndex,waitMs)
 Cfg.SeqReset(seqIndex,stepIndex,axis,timeoutMs)
+Cfg.SeqReset(seqIndex,stepIndex,axis,timeoutMs,wait)
 Cfg.SeqPower(seqIndex,stepIndex,axis,enable,timeoutMs)
+Cfg.SeqPower(seqIndex,stepIndex,axis,enable,timeoutMs,wait)
 Cfg.SeqHome(seqIndex,stepIndex,axis,homeSeq,homePos,velTowardsCam,velOffCam,acc,dec,timeoutMs)
+Cfg.SeqHome(seqIndex,stepIndex,axis,homeSeq,homePos,velTowardsCam,velOffCam,acc,dec,timeoutMs,wait)
 Cfg.SeqMoveAbs(seqIndex,stepIndex,axis,pos,vel,acc,dec,timeoutMs)
+Cfg.SeqMoveAbs(seqIndex,stepIndex,axis,pos,vel,acc,dec,timeoutMs,wait)
 Cfg.SeqMoveRel(seqIndex,stepIndex,axis,dist,vel,acc,dec,timeoutMs)
+Cfg.SeqMoveRel(seqIndex,stepIndex,axis,dist,vel,acc,dec,timeoutMs,wait)
 Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs)
 Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs,wait,tolerance)
 Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs)
+Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs,wait)
 Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)
 Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)
 Cfg.SeqWaitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
@@ -177,6 +183,36 @@ Cfg.SeqHalt(0,2,1,5000)
 The `SeqMoveVel` timeout only covers issuing the command. Since the action
 normally completes in one realtime cycle, the wait condition timeout belongs
 on `SeqWaitItem`, and the stopping timeout belongs on `SeqHalt`.
+
+## Blocking and Nonblocking Motion
+
+Motion helpers accept an optional final `wait` argument. Existing short forms
+retain their original behavior:
+
+- reset, power, home, absolute move, relative move, and halt default to `wait=1`
+- velocity move defaults to `wait=0`
+
+With `wait=0`, the command is issued and the sequence advances in the same
+realtime cycle. The axis continues executing independently.
+
+Example starting two axes in consecutive cycles and then waiting for both:
+
+```text
+Cfg.SeqMoveAbs(0,0,1,100.0,10.0,20.0,20.0,1000,0)
+Cfg.SeqMoveAbs(0,1,2,50.0,5.0,10.0,10.0,1000,0)
+Cfg.SeqWaitInPos(0,2,1,15000)
+Cfg.SeqWaitInPos(0,3,2,15000)
+```
+
+Internally, the option is stored in `args`:
+
+```text
+wait=0
+```
+
+This also allows runtime PV editing through `edit.args`. A nonblocking command's
+timeout only covers command issue; completion should be checked with a later
+wait step.
 
 ## Asyn Port Interface
 
@@ -418,6 +454,6 @@ EPICS records, startup helper, and user documentation are provided by ecmccfg:
 
 ```text
 db/sequencer/ecmcMotionSequence.template
-scripts/loadMotionSequence.cmd
+scripts/addMotionSequence.cmd
 hugo/content/manual/motion_cfg/sequencer.md
 ```

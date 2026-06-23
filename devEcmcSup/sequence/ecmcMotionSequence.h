@@ -81,6 +81,7 @@ struct ecmcSeqStep {
   double timeoutMs = 0.0;
   int32_t cmdData = 0;
   int32_t enable = 1;
+  int32_t waitForDone = 1;
   int32_t compareOp = ECMC_SEQ_CMP_EQ;
   char name[ECMC_SEQ_TEXT_LEN] = {0};
   char transition[ECMC_SEQ_TEXT_LEN] = {0};
@@ -347,7 +348,14 @@ int setMotionSeqArmTimeTrigger(int seqIndex,
                                double pulseMs);
 int setMotionSeqWaitTriggerDone(int seqIndex, int stepIndex, int triggerId, double timeoutMs);
 int setMotionSeqReset(int seqIndex, int stepIndex, int axis, double timeoutMs);
+int setMotionSeqResetWait(int seqIndex, int stepIndex, int axis, double timeoutMs, int waitForDone);
 int setMotionSeqPower(int seqIndex, int stepIndex, int axis, int enable, double timeoutMs);
+int setMotionSeqPowerWait(int seqIndex,
+                          int stepIndex,
+                          int axis,
+                          int enable,
+                          double timeoutMs,
+                          int waitForDone);
 int setMotionSeqHome(int seqIndex,
                      int stepIndex,
                      int axis,
@@ -358,6 +366,17 @@ int setMotionSeqHome(int seqIndex,
                      double acceleration,
                      double deceleration,
                      double timeoutMs);
+int setMotionSeqHomeWait(int seqIndex,
+                         int stepIndex,
+                         int axis,
+                         int homeSeq,
+                         double homePosition,
+                         double velocityTowardsCam,
+                         double velocityOffCam,
+                         double acceleration,
+                         double deceleration,
+                         double timeoutMs,
+                         int waitForDone);
 int setMotionSeqMoveAbs(int seqIndex,
                         int stepIndex,
                         int axis,
@@ -366,6 +385,15 @@ int setMotionSeqMoveAbs(int seqIndex,
                         double acceleration,
                         double deceleration,
                         double timeoutMs);
+int setMotionSeqMoveAbsWait(int seqIndex,
+                            int stepIndex,
+                            int axis,
+                            double position,
+                            double velocity,
+                            double acceleration,
+                            double deceleration,
+                            double timeoutMs,
+                            int waitForDone);
 int setMotionSeqMoveRel(int seqIndex,
                         int stepIndex,
                         int axis,
@@ -374,6 +402,15 @@ int setMotionSeqMoveRel(int seqIndex,
                         double acceleration,
                         double deceleration,
                         double timeoutMs);
+int setMotionSeqMoveRelWait(int seqIndex,
+                            int stepIndex,
+                            int axis,
+                            double distance,
+                            double velocity,
+                            double acceleration,
+                            double deceleration,
+                            double timeoutMs,
+                            int waitForDone);
 int setMotionSeqMoveVel(int seqIndex,
                         int stepIndex,
                         int axis,
@@ -391,6 +428,7 @@ int setMotionSeqMoveVelWait(int seqIndex,
                             int waitForVelocity,
                             double tolerance);
 int setMotionSeqHalt(int seqIndex, int stepIndex, int axis, double timeoutMs);
+int setMotionSeqHaltWait(int seqIndex, int stepIndex, int axis, double timeoutMs, int waitForDone);
 int setMotionSeqWaitInPos(int seqIndex, int stepIndex, int axis, double timeoutMs);
 int setMotionSeqSetItem(int seqIndex,
                         int stepIndex,
