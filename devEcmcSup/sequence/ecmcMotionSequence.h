@@ -154,6 +154,8 @@ public:
                   const char *args);
   int applyEditStep();
   int applyCommandLine();
+  int insertStep(int stepIndex);
+  int deleteStep(int stepIndex);
   int requestCompile(bool waitForCompletion);
   int arm();
   int start();
@@ -173,6 +175,8 @@ private:
 
   static asynStatus asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj);
+  static asynStatus asynWriteInsert(void *data, size_t bytes, asynParamType type, void *userObj);
+  static asynStatus asynWriteDelete(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteCompile(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteArm(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteStart(void *data, size_t bytes, asynParamType type, void *userObj);
@@ -249,6 +253,8 @@ private:
   int32_t readIndex_ = 0;
   int32_t cmdApply_ = 0;
   int32_t cmdLineApply_ = 0;
+  int32_t cmdInsert_ = 0;
+  int32_t cmdDelete_ = 0;
   int32_t cmdRead_ = 0;
   int32_t cmdReadNext_ = 0;
   int32_t cmdReadPrev_ = 0;
@@ -493,6 +499,8 @@ int setMotionSeqBranchItem(int seqIndex,
                            int trueStep,
                            int falseStep);
 int setMotionSeqGotoStep(int seqIndex, int stepIndex, int targetStep);
+int insertMotionSeqStep(int seqIndex, int stepIndex);
+int deleteMotionSeqStep(int seqIndex, int stepIndex);
 
 #ifdef __cplusplus
 }

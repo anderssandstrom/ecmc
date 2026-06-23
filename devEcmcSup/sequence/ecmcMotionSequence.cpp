@@ -250,6 +250,113 @@ bool readDoubleKey(const std::vector<std::string> &tokens,
   return text.empty() ? false : parseDoubleText(text, value);
 }
 
+bool readStepTargetArg(const char *args,
+                       const char *key,
+                       const char *alias,
+                       int *target) {
+  if (!target) {
+    return false;
+  }
+  std::string text = getArgValue(args, key);
+  if (text.empty() && alias) {
+    text = getArgValue(args, alias);
+  }
+  return text.empty() ? false : parseIntText(text, target);
+}
+
+int adjustTargetForTableEdit(int target,
+                             int pivot,
+                             int delta,
+                             bool deleting,
+                             bool *deletedTarget) {
+  if (deletedTarget) {
+    *deletedTarget = false;
+  }
+  if (target < 0) {
+    return target;
+  }
+  if (deleting) {
+    if (target == pivot) {
+      if (deletedTarget) {
+        *deletedTarget = true;
+      }
+      return target;
+    }
+    return target > pivot ? target - 1 : target;
+  }
+  return target >= pivot ? target + delta : target;
+}
+
+bool rewriteBranchTargets(ecmcSeqStep *step,
+                          int pivot,
+                          int delta,
+                          bool deleting,
+                          bool *deletedTarget) {
+  if (deletedTarget) {
+    *deletedTarget = false;
+  }
+  if (!step) {
+    return true;
+  }
+
+  if (step->action == ECMC_SEQ_ACTION_GOTO_STEP) {
+    int target = step->branchTrueStep;
+    readStepTargetArg(step->args, "target", nullptr, &target);
+    bool targetDeleted = false;
+    target = adjustTargetForTableEdit(target, pivot, delta, deleting, &targetDeleted);
+    if (targetDeleted) {
+      if (deletedTarget) *deletedTarget = true;
+      return false;
+    }
+    step->branchTrueStep = target;
+    snprintf(step->args, sizeof(step->args), "target=%d", target);
+    return true;
+  }
+
+  if (step->action != ECMC_SEQ_ACTION_BRANCH_ITEM) {
+    return true;
+  }
+
+  const std::string item = getArgValue(step->args, "item");
+  const std::string op = getArgValue(step->args, "op");
+  const std::string value = getArgValue(step->args, "value");
+  int trueStep = step->branchTrueStep;
+  int falseStep = step->branchFalseStep;
+  readStepTargetArg(step->args, "true_step", "true", &trueStep);
+  readStepTargetArg(step->args, "false_step", "false", &falseStep);
+
+  bool trueDeleted = false;
+  bool falseDeleted = false;
+  trueStep = adjustTargetForTableEdit(trueStep, pivot, delta, deleting, &trueDeleted);
+  falseStep = adjustTargetForTableEdit(falseStep, pivot, delta, deleting, &falseDeleted);
+  if (trueDeleted || falseDeleted) {
+    if (deletedTarget) *deletedTarget = true;
+    return false;
+  }
+
+  step->branchTrueStep = trueStep;
+  step->branchFalseStep = falseStep;
+  if (falseStep >= 0) {
+    snprintf(step->args,
+             sizeof(step->args),
+             "item=%s;op=%s;value=%s;true_step=%d;false_step=%d",
+             item.c_str(),
+             op.empty() ? "eq" : op.c_str(),
+             value.empty() ? "0" : value.c_str(),
+             trueStep,
+             falseStep);
+  } else {
+    snprintf(step->args,
+             sizeof(step->args),
+             "item=%s;op=%s;value=%s;true_step=%d",
+             item.c_str(),
+             op.empty() ? "eq" : op.c_str(),
+             value.empty() ? "0" : value.c_str(),
+             trueStep);
+  }
+  return true;
+}
+
 int actionFromText(const std::string &action) {
   const std::string text = lowerText(action);
   if (text == "nop") return ECMC_SEQ_ACTION_NOP;
@@ -539,6 +646,10 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   port->setWriteCallback(cmdParam, asynWriteApply, this);
   ADD_PARAM(addIntParam(port, "cmd.cmdline_apply", &cmdLineApply_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteCommandLineApply, this);
+  ADD_PARAM(addIntParam(port, "cmd.insert", &cmdInsert_, true, &cmdParam));
+  port->setWriteCallback(cmdParam, asynWriteInsert, this);
+  ADD_PARAM(addIntParam(port, "cmd.delete", &cmdDelete_, true, &cmdParam));
+  port->setWriteCallback(cmdParam, asynWriteDelete, this);
   ADD_PARAM(addIntParam(port, "cmd.read", &cmdRead_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteRead, this);
   ADD_PARAM(addIntParam(port, "cmd.read_next", &cmdReadNext_, true, &cmdParam));
@@ -1301,6 +1412,104 @@ int ecmcMotionSequence::applyEditStep() {
                      edit_.transition,
                      edit_.onError,
                      edit_.args);
+}
+
+int ecmcMotionSequence::insertStep(int stepIndex) {
+  if (statRunning_) {
+    return setError(ERROR_AXIS_BUSY, "Cannot insert while sequence is running.");
+  }
+  if (stepIndex < 0 || stepIndex >= maxSteps_) {
+    return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "Insert step index out of range.");
+  }
+
+  {
+    std::lock_guard<std::mutex> guard(stepsMutex_);
+    if (steps_[maxSteps_ - 1].enabled) {
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "Cannot insert: last step is enabled.");
+    }
+    for (auto &step : steps_) {
+      bool deletedTarget = false;
+      rewriteBranchTargets(&step, stepIndex, 1, false, &deletedTarget);
+      if ((step.action == ECMC_SEQ_ACTION_BRANCH_ITEM ||
+           step.action == ECMC_SEQ_ACTION_GOTO_STEP) &&
+          step.branchTrueStep >= maxSteps_) {
+        return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE,
+                        "Cannot insert: branch/goto target would exceed max steps.");
+      }
+      if (step.action == ECMC_SEQ_ACTION_BRANCH_ITEM &&
+          step.branchFalseStep >= maxSteps_) {
+        return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE,
+                        "Cannot insert: branch false target would exceed max steps.");
+      }
+    }
+    for (int i = maxSteps_ - 1; i > stepIndex; --i) {
+      steps_[i] = steps_[i - 1];
+    }
+    steps_[stepIndex] = ecmcSeqStep();
+  }
+
+  statValid_ = 0;
+  statArmed_ = 0;
+  if (statState_ == ECMC_SEQ_STATE_ARMED) {
+    statState_ = ECMC_SEQ_STATE_IDLE;
+  }
+  statErrorId_ = 0;
+  copyText(statErrorText_, sizeof(statErrorText_), "");
+  setValidationText("Step inserted. Compile required.");
+  readIndex_ = stepIndex;
+  readStep();
+  refreshStatus();
+  return 0;
+}
+
+int ecmcMotionSequence::deleteStep(int stepIndex) {
+  if (statRunning_) {
+    return setError(ERROR_AXIS_BUSY, "Cannot delete while sequence is running.");
+  }
+  if (stepIndex < 0 || stepIndex >= maxSteps_) {
+    return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "Delete step index out of range.");
+  }
+
+  {
+    std::lock_guard<std::mutex> guard(stepsMutex_);
+    for (int i = 0; i < maxSteps_; ++i) {
+      if (i == stepIndex) {
+        continue;
+      }
+      auto candidate = steps_[i];
+      bool deletedTarget = false;
+      rewriteBranchTargets(&candidate, stepIndex, -1, true, &deletedTarget);
+      if (deletedTarget) {
+        char msg[ECMC_SEQ_TEXT_LEN] = {0};
+        snprintf(msg, sizeof(msg), "Cannot delete step %d: branch/goto target exists.", stepIndex);
+        return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+      }
+    }
+    for (int i = 0; i < maxSteps_; ++i) {
+      if (i == stepIndex) {
+        continue;
+      }
+      bool deletedTarget = false;
+      rewriteBranchTargets(&steps_[i], stepIndex, -1, true, &deletedTarget);
+    }
+    for (int i = stepIndex; i < maxSteps_ - 1; ++i) {
+      steps_[i] = steps_[i + 1];
+    }
+    steps_[maxSteps_ - 1] = ecmcSeqStep();
+  }
+
+  statValid_ = 0;
+  statArmed_ = 0;
+  if (statState_ == ECMC_SEQ_STATE_ARMED) {
+    statState_ = ECMC_SEQ_STATE_IDLE;
+  }
+  statErrorId_ = 0;
+  copyText(statErrorText_, sizeof(statErrorText_), "");
+  setValidationText("Step deleted. Compile required.");
+  readIndex_ = stepIndex >= maxSteps_ ? maxSteps_ - 1 : stepIndex;
+  readStep();
+  refreshStatus();
+  return 0;
 }
 
 int ecmcMotionSequence::setStep(int stepIndex,
@@ -2372,6 +2581,16 @@ asynStatus ecmcMotionSequence::asynWriteCommandLineApply(void *, size_t, asynPar
   return static_cast<ecmcMotionSequence *>(userObj)->applyCommandLine() ? asynError : asynSuccess;
 }
 
+asynStatus ecmcMotionSequence::asynWriteInsert(void *, size_t, asynParamType, void *userObj) {
+  auto *seq = static_cast<ecmcMotionSequence *>(userObj);
+  return seq->insertStep(seq->editIndex_) ? asynError : asynSuccess;
+}
+
+asynStatus ecmcMotionSequence::asynWriteDelete(void *, size_t, asynParamType, void *userObj) {
+  auto *seq = static_cast<ecmcMotionSequence *>(userObj);
+  return seq->deleteStep(seq->editIndex_) ? asynError : asynSuccess;
+}
+
 asynStatus ecmcMotionSequence::asynWriteCompile(void *, size_t, asynParamType, void *userObj) {
   return static_cast<ecmcMotionSequence *>(userObj)->requestCompile(false) ? asynError : asynSuccess;
 }
@@ -2528,6 +2747,18 @@ int setMotionSeqStepText(int seqIndex,
     return error;
   }
   return seq->setStepText(stepIndex, name, transition, onError, args);
+}
+
+int insertMotionSeqStep(int seqIndex, int stepIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->insertStep(stepIndex) : error;
+}
+
+int deleteMotionSeqStep(int seqIndex, int stepIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->deleteStep(stepIndex) : error;
 }
 
 int compileMotionSeq(int seqIndex) {

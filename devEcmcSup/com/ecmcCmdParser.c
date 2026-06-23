@@ -1398,6 +1398,22 @@ static int handleCfgCommand(const char *myarg_1) {
     return setMotionSeqGotoStep(iValue, iValue2, iValue3);
   }
 
+  /// "Cfg.InsertMotionSeqStep(seqIndex,stepIndex)"
+  nvals = sscanf(myarg_1, "InsertMotionSeqStep(%d,%d)", &iValue, &iValue2);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("InsertMotionSeqStep");
+    return insertMotionSeqStep(iValue, iValue2);
+  }
+
+  /// "Cfg.DeleteMotionSeqStep(seqIndex,stepIndex)"
+  nvals = sscanf(myarg_1, "DeleteMotionSeqStep(%d,%d)", &iValue, &iValue2);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("DeleteMotionSeqStep");
+    return deleteMotionSeqStep(iValue, iValue2);
+  }
+
   /// "Cfg.SetMotionSeqStep(seqIndex,stepIndex,enabled,action,axis,position,velocity,acceleration,deceleration,timeoutMs)"
   nvals = sscanf(myarg_1,
                  "SetMotionSeqStep(%d,%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf)",

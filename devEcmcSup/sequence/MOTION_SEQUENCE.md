@@ -110,6 +110,8 @@ Cfg.SeqExitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
 Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep)
 Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep,falseStep)
 Cfg.SeqGotoStep(seqIndex,stepIndex,targetStep)
+Cfg.InsertMotionSeqStep(seqIndex,stepIndex)
+Cfg.DeleteMotionSeqStep(seqIndex,stepIndex)
 Cfg.SeqRunSeq(seqIndex,stepIndex,childSeqIndex,timeoutMs)
 Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,period,count,value,pulseMs)
 Cfg.SeqArmTimeTrigger(seqIndex,stepIndex,triggerId,item,delayMs,periodMs,count,value,pulseMs)
@@ -180,6 +182,11 @@ Cfg.SeqBranchItem(0,3,ec0.s1.mode,==,2,20,30)
 ```text
 Cfg.SeqGotoStep(0,9,2)
 ```
+
+`InsertMotionSeqStep` and `DeleteMotionSeqStep` edit the configured step table.
+Insert shifts steps at and after the index up by one. Delete shifts later steps
+down by one. Branch and goto targets are adjusted when shifted; delete fails if
+another step targets the deleted step.
 
 ## Velocity Move and Halt
 
