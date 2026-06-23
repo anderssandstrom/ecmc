@@ -347,17 +347,6 @@ int ecmcMcMoveRelative::run(ecmcMcAxisRef axisRef,
     }
     issuedCommand_      = true;
     awaitingStandstill_ = false;
-  } else if (issuedCommand_ && isMoveRelativeActive(axis)) {
-    errorCode = axis->moveRelativePosition(distance,
-                                           velocity,
-                                           acceleration,
-                                           deceleration);
-    if (errorCode) {
-      issuedCommand_      = false;
-      awaitingStandstill_ = false;
-      setError(errorCode);
-      return errorCode;
-    }
   }
 
   const bool moveRelActive = isMoveRelativeActive(axis);
