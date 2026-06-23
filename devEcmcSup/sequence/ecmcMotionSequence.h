@@ -308,6 +308,8 @@ private:
   ecmcMcHalt rtHalt_;
 };
 
+extern ecmcMotionSequence *motionSeqs[ECMC_MAX_MOTION_SEQUENCES];
+
 extern "C" {
 #endif
 

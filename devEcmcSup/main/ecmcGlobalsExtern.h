@@ -48,7 +48,6 @@ extern ecmcShm shmObj;
 extern ecmcPVTController *pvtCtrl_;
 extern ecmcLookupTable<double, double>  *luts[ECMC_MAX_LUTS];
 extern ecmcMasterSlaveStateMachine *masterSlaveSMs[ECMC_MAX_MST_SLVS_SMS];
-extern ecmcMotionSequence *motionSeqs[ECMC_MAX_MOTION_SEQUENCES];
 
 // Mutex for motor record access
 extern epicsMutexId ecmcRTMutex;
