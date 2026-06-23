@@ -56,10 +56,14 @@ The currently defined action IDs are:
 13 ArmTimeTrigger
 14 MC_MoveVelocity
 15 MC_Halt
+16 ExitItem
+17 SetEncHomed
+18 BranchItem
+19 GotoStep
 ```
 
-Most users should prefer the `Cfg.Seq*` helper commands instead of writing the
-numeric action IDs directly.
+Most users should prefer the `Cfg.Seq*` helper commands or the `CmdLine` text
+interface instead of writing the numeric action IDs directly.
 
 ## Startup Commands
 
@@ -99,13 +103,21 @@ Cfg.SeqMoveVel(seqIndex,stepIndex,axis,vel,acc,dec,timeoutMs,wait,tolerance)
 Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs)
 Cfg.SeqHalt(seqIndex,stepIndex,axis,timeoutMs,wait)
 Cfg.SeqWaitInPos(seqIndex,stepIndex,axis,timeoutMs)
+Cfg.SeqSetEncHomed(seqIndex,stepIndex,axis,homed)
 Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)
 Cfg.SeqWaitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
+Cfg.SeqExitItem(seqIndex,stepIndex,item,op,value,timeoutMs)
+Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep)
+Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep,falseStep)
+Cfg.SeqGotoStep(seqIndex,stepIndex,targetStep)
 Cfg.SeqRunSeq(seqIndex,stepIndex,childSeqIndex,timeoutMs)
 Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,period,count,value,pulseMs)
 Cfg.SeqArmTimeTrigger(seqIndex,stepIndex,triggerId,item,delayMs,periodMs,count,value,pulseMs)
 Cfg.SeqWaitTriggerDone(seqIndex,stepIndex,triggerId,timeoutMs)
 ```
+
+`SeqSetEncHomed` sets the homed flag on the axis primary/current encoder and
+then advances immediately.
 
 Sequence control:
 
@@ -122,9 +134,9 @@ Cfg.ReportMotionSeq(seqIndex,stepIndex)
 These configuration commands are blocked in runtime through
 `ecmc_commands_blocklist_rt.json`.
 
-## WaitItem Operators
+## Item Condition Operators
 
-`SeqWaitItem` supports:
+`SeqWaitItem` and `SeqExitItem` support:
 
 ```text
 ==
@@ -145,6 +157,29 @@ Cfg.SeqWaitItem(0,0,ec0.s1.status,>=,1,5000)
 
 This waits until the scalar data item `ec0.s1.status` is greater than or equal
 to `1`, or until the step timeout expires.
+
+`SeqExitItem` evaluates the same condition but exits the current sequence when
+the condition is fulfilled. If the condition is false, execution continues with
+the next step:
+
+```text
+Cfg.SeqExitItem(0,1,ec0.s1.abort,==,1,0)
+```
+
+`SeqBranchItem` evaluates the condition once and jumps to a configured step ID
+when the condition is true. If `falseStep` is provided, a false condition jumps
+there; otherwise false continues to the next enabled step:
+
+```text
+Cfg.SeqBranchItem(0,2,ec0.s1.ready,==,1,10)
+Cfg.SeqBranchItem(0,3,ec0.s1.mode,==,2,20,30)
+```
+
+`SeqGotoStep` unconditionally jumps to a configured step ID:
+
+```text
+Cfg.SeqGotoStep(0,9,2)
+```
 
 ## Velocity Move and Halt
 

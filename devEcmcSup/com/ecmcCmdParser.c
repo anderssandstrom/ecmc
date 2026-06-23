@@ -1298,6 +1298,14 @@ static int handleCfgCommand(const char *myarg_1) {
     return setMotionSeqWaitInPos(iValue, iValue2, iValue3, dValue);
   }
 
+  /// "Cfg.SeqSetEncHomed(seqIndex,stepIndex,axis,homed)"
+  nvals = sscanf(myarg_1, "SeqSetEncHomed(%d,%d,%d,%d)", &iValue, &iValue2, &iValue3, &iValue4);
+
+  if (nvals == 4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqSetEncHomed");
+    return setMotionSeqSetEncHomed(iValue, iValue2, iValue3, iValue4);
+  }
+
   /// "Cfg.SeqSetItem(seqIndex,stepIndex,item,value,timeoutMs)"
   cIdBuffer[0] = '\0';
   nvals = sscanf(myarg_1,
@@ -1328,6 +1336,66 @@ static int handleCfgCommand(const char *myarg_1) {
   if (nvals == 6) {
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqWaitItem");
     return setMotionSeqWaitItem(iValue, iValue2, cIdBuffer, cIdBuffer2, dValue, dValue2);
+  }
+
+  /// "Cfg.SeqExitItem(seqIndex,stepIndex,item,op,value,timeoutMs)"
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqExitItem(%d,%d,%[^,],%[^,],%lf,%lf)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 cIdBuffer2,
+                 &dValue,
+                 &dValue2);
+
+  if (nvals == 6) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqExitItem");
+    return setMotionSeqExitItem(iValue, iValue2, cIdBuffer, cIdBuffer2, dValue, dValue2);
+  }
+
+  /// "Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep,falseStep)"
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqBranchItem(%d,%d,%[^,],%[^,],%lf,%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 cIdBuffer2,
+                 &dValue,
+                 &iValue3,
+                 &iValue4);
+
+  if (nvals == 7) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqBranchItem");
+    return setMotionSeqBranchItem(iValue, iValue2, cIdBuffer, cIdBuffer2, dValue, iValue3, iValue4);
+  }
+
+  /// "Cfg.SeqBranchItem(seqIndex,stepIndex,item,op,value,trueStep)"
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "SeqBranchItem(%d,%d,%[^,],%[^,],%lf,%d)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 cIdBuffer2,
+                 &dValue,
+                 &iValue3);
+
+  if (nvals == 6) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqBranchItem");
+    return setMotionSeqBranchItem(iValue, iValue2, cIdBuffer, cIdBuffer2, dValue, iValue3, -1);
+  }
+
+  /// "Cfg.SeqGotoStep(seqIndex,stepIndex,targetStep)"
+  nvals = sscanf(myarg_1, "SeqGotoStep(%d,%d,%d)", &iValue, &iValue2, &iValue3);
+
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SeqGotoStep");
+    return setMotionSeqGotoStep(iValue, iValue2, iValue3);
   }
 
   /// "Cfg.SetMotionSeqStep(seqIndex,stepIndex,enabled,action,axis,position,velocity,acceleration,deceleration,timeoutMs)"

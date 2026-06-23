@@ -14,6 +14,7 @@
 
 #define ECMC_MAX_MOTION_SEQUENCES 16
 #define ECMC_SEQ_TEXT_LEN 128
+#define ECMC_SEQ_CMD_LEN 256
 
 enum ecmcSeqAction {
   ECMC_SEQ_ACTION_NOP = 0,
@@ -31,7 +32,11 @@ enum ecmcSeqAction {
   ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE = 12,
   ECMC_SEQ_ACTION_ARM_TIME_TRIGGER = 13,
   ECMC_SEQ_ACTION_MC_MOVE_VELOCITY = 14,
-  ECMC_SEQ_ACTION_MC_HALT = 15
+  ECMC_SEQ_ACTION_MC_HALT = 15,
+  ECMC_SEQ_ACTION_EXIT_ITEM = 16,
+  ECMC_SEQ_ACTION_SET_ENC_HOMED = 17,
+  ECMC_SEQ_ACTION_BRANCH_ITEM = 18,
+  ECMC_SEQ_ACTION_GOTO_STEP = 19
 };
 
 enum ecmcSeqCompareOp {
@@ -93,6 +98,9 @@ struct ecmcSeqStep {
   int32_t enable = 1;
   int32_t waitForDone = 1;
   int32_t compareOp = ECMC_SEQ_CMP_EQ;
+  int32_t sourceStepIndex = -1;
+  int32_t branchTrueStep = -1;
+  int32_t branchFalseStep = -1;
   char name[ECMC_SEQ_TEXT_LEN] = {0};
   char transition[ECMC_SEQ_TEXT_LEN] = {0};
   char onError[ECMC_SEQ_TEXT_LEN] = {0};
@@ -145,6 +153,7 @@ public:
                   const char *onError,
                   const char *args);
   int applyEditStep();
+  int applyCommandLine();
   int requestCompile(bool waitForCompletion);
   int arm();
   int start();
@@ -154,6 +163,7 @@ public:
   int report(int stepIndex);
   int readStep();
   int readStepOffset(int offset);
+  int copyReadToCommandLine();
 
   int getIndex() const { return index_; }
   int getMaxSteps() const { return maxSteps_; }
@@ -162,6 +172,7 @@ private:
   friend int createMotionSeq(int index, int maxSteps, const char *portName);
 
   static asynStatus asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj);
+  static asynStatus asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteCompile(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteArm(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteStart(void *data, size_t bytes, asynParamType type, void *userObj);
@@ -170,6 +181,7 @@ private:
   static asynStatus asynWriteRead(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteReadNext(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteReadPrev(void *data, size_t bytes, asynParamType type, void *userObj);
+  static asynStatus asynWriteReadToCommandLine(void *data, size_t bytes, asynParamType type, void *userObj);
   static void compileThreadEntry(void *userObj);
 
   int addIntParam(ecmcMotionSequencePort *port,
@@ -191,14 +203,20 @@ private:
   std::string paramName(const char *suffix) const;
   int setError(int errorId, const char *message);
   void setValidationText(const char *message);
+  void setCommandLineResult(const char *message);
+  int parseCommandLine(const char *line);
+  void formatStepCommandLine(int stepIndex, const ecmcSeqStep &step, char *buffer, size_t bytes) const;
   int validateStep(int stepIndex, const ecmcSeqStep &step);
   int prepareStep(int stepIndex, ecmcSeqStep &step);
   int prepareItemStep(int stepIndex, ecmcSeqStep &step);
+  int prepareBranchStep(int stepIndex, ecmcSeqStep &step);
+  bool jumpToConfiguredStepRT(int configuredStepIndex);
   int runCompile();
   void compileLoop();
   int startCompileWorker();
   void stopCompileWorker();
   void advanceStepRT();
+  void finishSequenceRT();
   void failStepRT(int errorId, const char *message);
   void resetStepRuntimeRT();
   bool axisInPosition(int axisIndex) const;
@@ -230,14 +248,22 @@ private:
   int32_t editIndex_ = 0;
   int32_t readIndex_ = 0;
   int32_t cmdApply_ = 0;
+  int32_t cmdLineApply_ = 0;
   int32_t cmdRead_ = 0;
   int32_t cmdReadNext_ = 0;
   int32_t cmdReadPrev_ = 0;
+  int32_t cmdReadToCmdLine_ = 0;
   int32_t cmdCompile_ = 0;
   int32_t cmdArm_ = 0;
   int32_t cmdStart_ = 0;
   int32_t cmdStop_ = 0;
   int32_t cmdReset_ = 0;
+  char cmdLine_[ECMC_SEQ_CMD_LEN] = {0};
+  char cmdLineResult_[ECMC_SEQ_TEXT_LEN] = {0};
+  char readCommandLine_[ECMC_SEQ_CMD_LEN] = {0};
+  int cmdLineParam_ = -1;
+  int cmdLineResultParam_ = -1;
+  int readCommandLineParam_ = -1;
   int readIndexParam_ = -1;
   int readEnabledParam_ = -1;
   int readActionParam_ = -1;
@@ -452,6 +478,21 @@ int setMotionSeqWaitItem(int seqIndex,
                          const char *op,
                          double value,
                          double timeoutMs);
+int setMotionSeqExitItem(int seqIndex,
+                         int stepIndex,
+                         const char *item,
+                         const char *op,
+                         double value,
+                         double timeoutMs);
+int setMotionSeqSetEncHomed(int seqIndex, int stepIndex, int axis, int homed);
+int setMotionSeqBranchItem(int seqIndex,
+                           int stepIndex,
+                           const char *item,
+                           const char *op,
+                           double value,
+                           int trueStep,
+                           int falseStep);
+int setMotionSeqGotoStep(int seqIndex, int stepIndex, int targetStep);
 
 #ifdef __cplusplus
 }

@@ -10,6 +10,7 @@
 #include "ecmcMotionSequence.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <new>
 #include <stdio.h>
@@ -64,6 +65,7 @@ bool actionNeedsAxis(int action) {
   case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY:
   case ECMC_SEQ_ACTION_MC_HALT:
   case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
+  case ECMC_SEQ_ACTION_SET_ENC_HOMED:
   case ECMC_SEQ_ACTION_ARM_POS_TRIGGER:
     return true;
   default:
@@ -72,7 +74,7 @@ bool actionNeedsAxis(int action) {
 }
 
 bool validAction(int action) {
-  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_MC_HALT;
+  return action >= ECMC_SEQ_ACTION_NOP && action <= ECMC_SEQ_ACTION_GOTO_STEP;
 }
 
 std::string getArgValue(const char *args, const char *key) {
@@ -122,18 +124,155 @@ bool parseCompareOp(const std::string &text, int32_t *op) {
     *op = ECMC_SEQ_CMP_EQ;
   } else if (text == "!=" || text == "ne") {
     *op = ECMC_SEQ_CMP_NE;
-  } else if (text == ">") {
+  } else if (text == ">" || text == "gt") {
     *op = ECMC_SEQ_CMP_GT;
-  } else if (text == ">=") {
+  } else if (text == ">=" || text == "ge" || text == "gte") {
     *op = ECMC_SEQ_CMP_GE;
-  } else if (text == "<") {
+  } else if (text == "<" || text == "lt") {
     *op = ECMC_SEQ_CMP_LT;
-  } else if (text == "<=") {
+  } else if (text == "<=" || text == "le" || text == "lte") {
     *op = ECMC_SEQ_CMP_LE;
   } else {
     return false;
   }
   return true;
+}
+
+std::string lowerText(const std::string &text) {
+  std::string result = text;
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return result;
+}
+
+std::vector<std::string> tokenizeCommandLine(const char *line) {
+  std::vector<std::string> tokens;
+  std::string token;
+  bool inQuote = false;
+  char quote = '\0';
+
+  for (const char *p = line ? line : ""; *p; ++p) {
+    const char c = *p;
+    if (inQuote) {
+      if (c == quote) {
+        inQuote = false;
+      } else {
+        token.push_back(c);
+      }
+      continue;
+    }
+    if (c == '\'' || c == '"') {
+      inQuote = true;
+      quote = c;
+      continue;
+    }
+    if (std::isspace(static_cast<unsigned char>(c)) || c == ',') {
+      if (!token.empty()) {
+        tokens.push_back(token);
+        token.clear();
+      }
+      continue;
+    }
+    if (c == ':') {
+      if (!token.empty()) {
+        tokens.push_back(token);
+        token.clear();
+      }
+      tokens.push_back(":");
+      continue;
+    }
+    token.push_back(c);
+  }
+  if (!token.empty()) {
+    tokens.push_back(token);
+  }
+  return tokens;
+}
+
+bool parseIntText(const std::string &text, int *value) {
+  if (!value || text.empty()) {
+    return false;
+  }
+  char *end = nullptr;
+  const long parsed = std::strtol(text.c_str(), &end, 0);
+  if (!end || *end != '\0') {
+    return false;
+  }
+  *value = static_cast<int>(parsed);
+  return true;
+}
+
+bool parseDoubleText(const std::string &text, double *value) {
+  if (!value || text.empty()) {
+    return false;
+  }
+  char *end = nullptr;
+  const double parsed = std::strtod(text.c_str(), &end);
+  if (!end || *end != '\0') {
+    return false;
+  }
+  *value = parsed;
+  return true;
+}
+
+std::string valueForKey(const std::vector<std::string> &tokens,
+                        const char *key,
+                        const char *alias = nullptr) {
+  const std::string keyText = key ? key : "";
+  const std::string aliasText = alias ? alias : "";
+  for (const auto &token : tokens) {
+    const size_t eq = token.find('=');
+    if (eq == std::string::npos) {
+      continue;
+    }
+    const std::string lhs = lowerText(token.substr(0, eq));
+    if (lhs == keyText || (!aliasText.empty() && lhs == aliasText)) {
+      return token.substr(eq + 1);
+    }
+  }
+  return "";
+}
+
+bool readIntKey(const std::vector<std::string> &tokens,
+                const char *key,
+                int *value,
+                const char *alias = nullptr) {
+  const auto text = valueForKey(tokens, key, alias);
+  return text.empty() ? false : parseIntText(text, value);
+}
+
+bool readDoubleKey(const std::vector<std::string> &tokens,
+                   const char *key,
+                   double *value,
+                   const char *alias = nullptr) {
+  const auto text = valueForKey(tokens, key, alias);
+  return text.empty() ? false : parseDoubleText(text, value);
+}
+
+int actionFromText(const std::string &action) {
+  const std::string text = lowerText(action);
+  if (text == "nop") return ECMC_SEQ_ACTION_NOP;
+  if (text == "reset" || text == "mc_reset") return ECMC_SEQ_ACTION_MC_RESET;
+  if (text == "power" || text == "mc_power") return ECMC_SEQ_ACTION_MC_POWER;
+  if (text == "home" || text == "mc_home") return ECMC_SEQ_ACTION_MC_HOME;
+  if (text == "move_abs" || text == "moveabsolute" || text == "mc_moveabsolute") return ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE;
+  if (text == "move_rel" || text == "moverelative" || text == "mc_moverelative") return ECMC_SEQ_ACTION_MC_MOVE_RELATIVE;
+  if (text == "move_vel" || text == "move_velocity" || text == "mc_movevelocity") return ECMC_SEQ_ACTION_MC_MOVE_VELOCITY;
+  if (text == "halt" || text == "mc_halt") return ECMC_SEQ_ACTION_MC_HALT;
+  if (text == "wait_inpos" || text == "wait_in_position" || text == "waitinposition") return ECMC_SEQ_ACTION_WAIT_IN_POSITION;
+  if (text == "set_enc_homed" || text == "setenchomed") return ECMC_SEQ_ACTION_SET_ENC_HOMED;
+  if (text == "branch_item" || text == "branchitem") return ECMC_SEQ_ACTION_BRANCH_ITEM;
+  if (text == "goto_step" || text == "gotostep" || text == "goto") return ECMC_SEQ_ACTION_GOTO_STEP;
+  if (text == "set_item" || text == "setitem") return ECMC_SEQ_ACTION_SET_ITEM;
+  if (text == "wait_item" || text == "waititem") return ECMC_SEQ_ACTION_WAIT_ITEM;
+  if (text == "exit_item" || text == "exititem") return ECMC_SEQ_ACTION_EXIT_ITEM;
+  if (text == "wait_time" || text == "wait" || text == "pause") return ECMC_SEQ_ACTION_WAIT_TIME;
+  if (text == "run_seq" || text == "run_sequence" || text == "runseq") return ECMC_SEQ_ACTION_RUN_SEQUENCE;
+  if (text == "arm_pos_trigger" || text == "arm_postrig") return ECMC_SEQ_ACTION_ARM_POS_TRIGGER;
+  if (text == "wait_trigger_done" || text == "wait_trig") return ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE;
+  if (text == "arm_time_trigger" || text == "arm_timetrig") return ECMC_SEQ_ACTION_ARM_TIME_TRIGGER;
+  return -1;
 }
 
 size_t scalarTypeSize(ecmcEcDataType type) {
@@ -313,6 +452,8 @@ ecmcMotionSequence::ecmcMotionSequence(int index, int maxSteps, const char *port
   copyText(read_.name, sizeof(read_.name), "");
   copyText(read_.transition, sizeof(read_.transition), "");
   copyText(read_.onError, sizeof(read_.onError), "");
+  copyText(readCommandLine_, sizeof(readCommandLine_), "");
+  copyText(cmdLineResult_, sizeof(cmdLineResult_), "Idle.");
   copyText(statValidationText_, sizeof(statValidationText_), "Not compiled.");
 }
 
@@ -375,6 +516,8 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "edit.transition", edit_.transition, sizeof(edit_.transition), true));
   ADD_PARAM(addStringParam(port, "edit.onerror", edit_.onError, sizeof(edit_.onError), true));
   ADD_PARAM(addStringParam(port, "edit.args", edit_.args, sizeof(edit_.args), true));
+  ADD_PARAM(addStringParam(port, "cmdline", cmdLine_, sizeof(cmdLine_), true, &cmdLineParam_));
+  ADD_PARAM(addStringParam(port, "cmdline.result", cmdLineResult_, sizeof(cmdLineResult_), false, &cmdLineResultParam_));
 
   ADD_PARAM(addIntParam(port, "read.index", &readIndex_, true, &readIndexParam_));
   ADD_PARAM(addIntParam(port, "read.enabled", &read_.enabled, false, &readEnabledParam_));
@@ -389,16 +532,21 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "read.transition", read_.transition, sizeof(read_.transition), false, &readTransitionParam_));
   ADD_PARAM(addStringParam(port, "read.onerror", read_.onError, sizeof(read_.onError), false, &readOnErrorParam_));
   ADD_PARAM(addStringParam(port, "read.args", read_.args, sizeof(read_.args), false, &readArgsParam_));
+  ADD_PARAM(addStringParam(port, "read.cmdline", readCommandLine_, sizeof(readCommandLine_), false, &readCommandLineParam_));
 
   int cmdParam = -1;
   ADD_PARAM(addIntParam(port, "cmd.apply", &cmdApply_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteApply, this);
+  ADD_PARAM(addIntParam(port, "cmd.cmdline_apply", &cmdLineApply_, true, &cmdParam));
+  port->setWriteCallback(cmdParam, asynWriteCommandLineApply, this);
   ADD_PARAM(addIntParam(port, "cmd.read", &cmdRead_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteRead, this);
   ADD_PARAM(addIntParam(port, "cmd.read_next", &cmdReadNext_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteReadNext, this);
   ADD_PARAM(addIntParam(port, "cmd.read_prev", &cmdReadPrev_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteReadPrev, this);
+  ADD_PARAM(addIntParam(port, "cmd.read_to_cmdline", &cmdReadToCmdLine_, true, &cmdParam));
+  port->setWriteCallback(cmdParam, asynWriteReadToCommandLine, this);
   ADD_PARAM(addIntParam(port, "cmd.compile", &cmdCompile_, true, &cmdParam));
   port->setWriteCallback(cmdParam, asynWriteCompile, this);
   ADD_PARAM(addIntParam(port, "cmd.arm", &cmdArm_, true, &cmdParam));
@@ -446,6 +594,369 @@ void ecmcMotionSequence::setValidationText(const char *message) {
   copyText(statValidationText_, sizeof(statValidationText_), message);
   if (seqAsynPort_ && statValidationTextParam_ >= 0) {
     seqAsynPort_->refreshParam(statValidationTextParam_);
+  }
+}
+
+void ecmcMotionSequence::setCommandLineResult(const char *message) {
+  copyText(cmdLineResult_, sizeof(cmdLineResult_), message);
+  if (seqAsynPort_ && cmdLineResultParam_ >= 0) {
+    seqAsynPort_->refreshParam(cmdLineResultParam_);
+  }
+}
+
+int ecmcMotionSequence::parseCommandLine(const char *line) {
+  const auto tokens = tokenizeCommandLine(line);
+  if (tokens.size() < 2) {
+    setCommandLineResult("Syntax: <step>: <action> key=value ...");
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+
+  int tokenIndex = 0;
+  int stepIndex = -1;
+  if (!parseIntText(tokens[tokenIndex], &stepIndex)) {
+    setCommandLineResult("Command line step index parse failed.");
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+  tokenIndex++;
+  if (tokenIndex < static_cast<int>(tokens.size()) && tokens[tokenIndex] == ":") {
+    tokenIndex++;
+  }
+  if (tokenIndex >= static_cast<int>(tokens.size())) {
+    setCommandLineResult("Command line action missing.");
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+
+  const std::string actionText = tokens[tokenIndex++];
+  const int action = actionFromText(actionText);
+  if (action < 0) {
+    setCommandLineResult("Command line action unknown.");
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+
+  std::vector<std::string> argsTokens(tokens.begin() + tokenIndex, tokens.end());
+  ecmcSeqStep parsed;
+  parsed.enabled = 1;
+  parsed.action = action;
+  parsed.axis = -1;
+  parsed.timeoutMs = 0.0;
+  parsed.waitForDone = 1;
+  copyText(parsed.name, sizeof(parsed.name), actionText.c_str());
+  copyText(parsed.transition, sizeof(parsed.transition), "Done");
+  copyText(parsed.onError, sizeof(parsed.onError), "Abort");
+
+  int intValue = 0;
+  double doubleValue = 0.0;
+  std::string argText;
+  if (readIntKey(argsTokens, "enabled", &intValue, "step_enable")) parsed.enabled = intValue ? 1 : 0;
+  if (readIntKey(argsTokens, "axis", &intValue, "ax")) parsed.axis = intValue;
+  if (readIntKey(argsTokens, "wait", &intValue)) {
+    parsed.waitForDone = intValue ? 1 : 0;
+    argText += "wait=" + std::to_string(parsed.waitForDone);
+  }
+  if (readDoubleKey(argsTokens, "timeout", &doubleValue, "timeout_ms")) parsed.timeoutMs = doubleValue;
+  const auto name = valueForKey(argsTokens, "name");
+  if (!name.empty()) copyText(parsed.name, sizeof(parsed.name), name.c_str());
+  const auto transition = valueForKey(argsTokens, "transition");
+  if (!transition.empty()) copyText(parsed.transition, sizeof(parsed.transition), transition.c_str());
+  const auto onError = valueForKey(argsTokens, "onerror", "on_error");
+  if (!onError.empty()) copyText(parsed.onError, sizeof(parsed.onError), onError.c_str());
+
+  switch (action) {
+  case ECMC_SEQ_ACTION_NOP:
+    break;
+  case ECMC_SEQ_ACTION_MC_RESET:
+  case ECMC_SEQ_ACTION_MC_HOME:
+  case ECMC_SEQ_ACTION_MC_HALT:
+  case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
+    break;
+  case ECMC_SEQ_ACTION_SET_ENC_HOMED:
+    if (readIntKey(argsTokens, "homed", &intValue, "value")) parsed.position = intValue ? 1.0 : 0.0;
+    break;
+  case ECMC_SEQ_ACTION_MC_POWER:
+    if (readIntKey(argsTokens, "enable", &intValue, "en")) {
+      parsed.enable = intValue ? 1 : 0;
+      parsed.position = static_cast<double>(parsed.enable);
+      if (!argText.empty()) argText += ";";
+      argText += "enable=" + std::to_string(parsed.enable);
+    }
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE:
+    if (readDoubleKey(argsTokens, "pos", &doubleValue, "position")) parsed.position = doubleValue;
+    if (readDoubleKey(argsTokens, "vel", &doubleValue, "velocity")) parsed.velocity = doubleValue;
+    if (readDoubleKey(argsTokens, "acc", &doubleValue, "acceleration")) parsed.acceleration = doubleValue;
+    if (readDoubleKey(argsTokens, "dec", &doubleValue, "deceleration")) parsed.deceleration = doubleValue;
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_RELATIVE:
+    if (readDoubleKey(argsTokens, "dist", &doubleValue, "distance")) parsed.position = doubleValue;
+    if (readDoubleKey(argsTokens, "pos", &doubleValue, "position")) parsed.position = doubleValue;
+    if (readDoubleKey(argsTokens, "vel", &doubleValue, "velocity")) parsed.velocity = doubleValue;
+    if (readDoubleKey(argsTokens, "acc", &doubleValue, "acceleration")) parsed.acceleration = doubleValue;
+    if (readDoubleKey(argsTokens, "dec", &doubleValue, "deceleration")) parsed.deceleration = doubleValue;
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY:
+    if (readDoubleKey(argsTokens, "vel", &doubleValue, "velocity")) parsed.velocity = doubleValue;
+    if (readDoubleKey(argsTokens, "acc", &doubleValue, "acceleration")) parsed.acceleration = doubleValue;
+    if (readDoubleKey(argsTokens, "dec", &doubleValue, "deceleration")) parsed.deceleration = doubleValue;
+    break;
+  case ECMC_SEQ_ACTION_WAIT_TIME:
+    if (readDoubleKey(argsTokens, "ms", &doubleValue, "time")) parsed.timeoutMs = doubleValue;
+    break;
+  case ECMC_SEQ_ACTION_RUN_SEQUENCE:
+    if (readIntKey(argsTokens, "seq", &intValue, "child")) parsed.axis = intValue;
+    break;
+  case ECMC_SEQ_ACTION_GOTO_STEP:
+    if (readIntKey(argsTokens, "step", &intValue, "target")) parsed.branchTrueStep = intValue;
+    snprintf(parsed.args, sizeof(parsed.args), "target=%d", parsed.branchTrueStep);
+    break;
+  case ECMC_SEQ_ACTION_BRANCH_ITEM: {
+    std::string item = valueForKey(argsTokens, "item");
+    std::string op = valueForKey(argsTokens, "op");
+    std::string value = valueForKey(argsTokens, "value", "val");
+    int trueStep = -1;
+    int falseStep = -1;
+    readIntKey(argsTokens, "true_step", &trueStep, "then");
+    readIntKey(argsTokens, "false_step", &falseStep, "else");
+    if (trueStep < 0) readIntKey(argsTokens, "true", &trueStep);
+    if (falseStep < 0) readIntKey(argsTokens, "false", &falseStep);
+    int positional = 0;
+    for (const auto &token : argsTokens) {
+      if (token.find('=') != std::string::npos) continue;
+      if (positional == 0 && item.empty()) item = token;
+      else if (positional == 1 && op.empty()) op = token;
+      else if (positional == 2 && value.empty()) value = token;
+      else if (positional == 3 && trueStep < 0) parseIntText(token, &trueStep);
+      else if (positional == 4 && falseStep < 0) parseIntText(token, &falseStep);
+      positional++;
+    }
+    if (item.empty() || value.empty() || trueStep < 0) {
+      setCommandLineResult("Command line branch item/targets missing.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    if (!parseDoubleText(value, &doubleValue)) {
+      setCommandLineResult("Command line branch value invalid.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    int32_t compareOp = ECMC_SEQ_CMP_EQ;
+    if (!parseCompareOp(op, &compareOp)) {
+      setCommandLineResult("Command line branch compare operator invalid.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    parsed.position = doubleValue;
+    parsed.compareOp = compareOp;
+    parsed.branchTrueStep = trueStep;
+    parsed.branchFalseStep = falseStep;
+    if (parsed.branchFalseStep >= 0) {
+      snprintf(parsed.args,
+               sizeof(parsed.args),
+               "item=%s;op=%s;value=%g;true_step=%d;false_step=%d",
+               item.c_str(),
+               op.empty() ? "eq" : op.c_str(),
+               parsed.position,
+               parsed.branchTrueStep,
+               parsed.branchFalseStep);
+    } else {
+      snprintf(parsed.args,
+               sizeof(parsed.args),
+               "item=%s;op=%s;value=%g;true_step=%d",
+               item.c_str(),
+               op.empty() ? "eq" : op.c_str(),
+               parsed.position,
+               parsed.branchTrueStep);
+    }
+    break;
+  }
+  case ECMC_SEQ_ACTION_SET_ITEM:
+  case ECMC_SEQ_ACTION_WAIT_ITEM:
+  case ECMC_SEQ_ACTION_EXIT_ITEM: {
+    std::string item = valueForKey(argsTokens, "item");
+    std::string op = valueForKey(argsTokens, "op");
+    std::string value = valueForKey(argsTokens, "value", "val");
+    int positional = 0;
+    for (const auto &token : argsTokens) {
+      if (token.find('=') != std::string::npos) continue;
+      if (positional == 0 && item.empty()) item = token;
+      else if (action == ECMC_SEQ_ACTION_SET_ITEM && positional == 1 && value.empty()) value = token;
+      else if (action != ECMC_SEQ_ACTION_SET_ITEM && positional == 1 && op.empty()) op = token;
+      else if (action != ECMC_SEQ_ACTION_SET_ITEM && positional == 2 && value.empty()) value = token;
+      positional++;
+    }
+    if (item.empty()) {
+      setCommandLineResult("Command line item missing.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    if (!value.empty() && parseDoubleText(value, &doubleValue)) parsed.position = doubleValue;
+    int32_t compareOp = ECMC_SEQ_CMP_EQ;
+    if ((action == ECMC_SEQ_ACTION_WAIT_ITEM ||
+         action == ECMC_SEQ_ACTION_EXIT_ITEM) &&
+        !parseCompareOp(op, &compareOp)) {
+      setCommandLineResult("Command line compare operator invalid.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    parsed.compareOp = compareOp;
+    snprintf(parsed.args,
+             sizeof(parsed.args),
+             "item=%s;value=%g;op=%s",
+             item.c_str(),
+             parsed.position,
+             op.empty() ? "eq" : op.c_str());
+    break;
+  }
+  default:
+    setCommandLineResult("Command line action not supported yet.");
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+
+  if (action != ECMC_SEQ_ACTION_SET_ITEM &&
+      action != ECMC_SEQ_ACTION_WAIT_ITEM &&
+      action != ECMC_SEQ_ACTION_EXIT_ITEM &&
+      action != ECMC_SEQ_ACTION_BRANCH_ITEM &&
+      action != ECMC_SEQ_ACTION_GOTO_STEP &&
+      !argText.empty()) {
+    copyText(parsed.args, sizeof(parsed.args), argText.c_str());
+  }
+
+  editIndex_ = stepIndex;
+  edit_ = parsed;
+  return 0;
+}
+
+int ecmcMotionSequence::applyCommandLine() {
+  const int error = parseCommandLine(cmdLine_);
+  if (error) {
+    setValidationText(cmdLineResult_);
+    return error;
+  }
+  const int applyError = applyEditStep();
+  if (applyError) {
+    setCommandLineResult("Command line apply failed.");
+    return applyError;
+  }
+  setCommandLineResult("OK");
+  return 0;
+}
+
+void ecmcMotionSequence::formatStepCommandLine(int stepIndex,
+                                               const ecmcSeqStep &step,
+                                               char *buffer,
+                                               size_t bytes) const {
+  if (!buffer || bytes == 0) {
+    return;
+  }
+
+  const char *action = "nop";
+  switch (step.action) {
+  case ECMC_SEQ_ACTION_MC_RESET: action = "reset"; break;
+  case ECMC_SEQ_ACTION_MC_POWER: action = "power"; break;
+  case ECMC_SEQ_ACTION_MC_HOME: action = "home"; break;
+  case ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE: action = "move_abs"; break;
+  case ECMC_SEQ_ACTION_MC_MOVE_RELATIVE: action = "move_rel"; break;
+  case ECMC_SEQ_ACTION_WAIT_IN_POSITION: action = "wait_inpos"; break;
+  case ECMC_SEQ_ACTION_SET_ITEM: action = "set_item"; break;
+  case ECMC_SEQ_ACTION_WAIT_ITEM: action = "wait_item"; break;
+  case ECMC_SEQ_ACTION_EXIT_ITEM: action = "exit_item"; break;
+  case ECMC_SEQ_ACTION_WAIT_TIME: action = "wait_time"; break;
+  case ECMC_SEQ_ACTION_RUN_SEQUENCE: action = "run_seq"; break;
+  case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY: action = "move_vel"; break;
+  case ECMC_SEQ_ACTION_MC_HALT: action = "halt"; break;
+  case ECMC_SEQ_ACTION_SET_ENC_HOMED: action = "set_enc_homed"; break;
+  case ECMC_SEQ_ACTION_BRANCH_ITEM: action = "branch_item"; break;
+  case ECMC_SEQ_ACTION_GOTO_STEP: action = "goto_step"; break;
+  default: break;
+  }
+
+  const std::string item = getArgValue(step.args, "item");
+  const std::string value = getArgValue(step.args, "value");
+  const std::string op = getArgValue(step.args, "op");
+  const std::string wait = getArgValue(step.args, "wait");
+  const std::string enable = getArgValue(step.args, "enable");
+  const std::string target = getArgValue(step.args, "target");
+  std::string trueTarget = getArgValue(step.args, "true_step");
+  std::string falseTarget = getArgValue(step.args, "false_step");
+  if (trueTarget.empty()) trueTarget = getArgValue(step.args, "true");
+  if (falseTarget.empty()) falseTarget = getArgValue(step.args, "false");
+  const std::string targetText = target.empty() ? std::to_string(step.branchTrueStep) : target;
+  const std::string trueText = trueTarget.empty() ? std::to_string(step.branchTrueStep) : trueTarget;
+  const std::string falseText = falseTarget.empty() ? std::to_string(step.branchFalseStep) : falseTarget;
+
+  switch (step.action) {
+  case ECMC_SEQ_ACTION_MC_RESET:
+  case ECMC_SEQ_ACTION_MC_HOME:
+  case ECMC_SEQ_ACTION_MC_HALT:
+  case ECMC_SEQ_ACTION_WAIT_IN_POSITION:
+    snprintf(buffer, bytes, "%d: %s axis=%d timeout=%g%s%s",
+             stepIndex, action, step.axis, step.timeoutMs,
+             wait.empty() ? "" : " wait=",
+             wait.empty() ? "" : wait.c_str());
+    break;
+  case ECMC_SEQ_ACTION_SET_ENC_HOMED:
+    snprintf(buffer, bytes, "%d: set_enc_homed axis=%d homed=%d",
+             stepIndex, step.axis, step.position != 0.0 ? 1 : 0);
+    break;
+  case ECMC_SEQ_ACTION_MC_POWER:
+    snprintf(buffer, bytes, "%d: power axis=%d enable=%s timeout=%g%s%s",
+             stepIndex,
+             step.axis,
+             enable.empty() ? (step.position != 0.0 ? "1" : "0") : enable.c_str(),
+             step.timeoutMs,
+             wait.empty() ? "" : " wait=",
+             wait.empty() ? "" : wait.c_str());
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_ABSOLUTE:
+    snprintf(buffer, bytes, "%d: move_abs axis=%d pos=%g vel=%g acc=%g dec=%g timeout=%g%s%s",
+             stepIndex, step.axis, step.position, step.velocity, step.acceleration,
+             step.deceleration, step.timeoutMs, wait.empty() ? "" : " wait=",
+             wait.empty() ? "" : wait.c_str());
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_RELATIVE:
+    snprintf(buffer, bytes, "%d: move_rel axis=%d dist=%g vel=%g acc=%g dec=%g timeout=%g%s%s",
+             stepIndex, step.axis, step.position, step.velocity, step.acceleration,
+             step.deceleration, step.timeoutMs, wait.empty() ? "" : " wait=",
+             wait.empty() ? "" : wait.c_str());
+    break;
+  case ECMC_SEQ_ACTION_MC_MOVE_VELOCITY:
+    snprintf(buffer, bytes, "%d: move_vel axis=%d vel=%g acc=%g dec=%g",
+             stepIndex, step.axis, step.velocity, step.acceleration, step.deceleration);
+    break;
+  case ECMC_SEQ_ACTION_WAIT_TIME:
+    snprintf(buffer, bytes, "%d: wait_time ms=%g", stepIndex, step.timeoutMs);
+    break;
+  case ECMC_SEQ_ACTION_RUN_SEQUENCE:
+    snprintf(buffer, bytes, "%d: run_seq seq=%d timeout=%g", stepIndex, step.axis, step.timeoutMs);
+    break;
+  case ECMC_SEQ_ACTION_GOTO_STEP:
+    snprintf(buffer, bytes, "%d: goto_step target=%s",
+             stepIndex,
+             targetText.c_str());
+    break;
+  case ECMC_SEQ_ACTION_BRANCH_ITEM:
+    snprintf(buffer, bytes, "%d: branch_item item=%s value=%s op=%s true_step=%s%s%s",
+             stepIndex, item.c_str(), value.empty() ? "0" : value.c_str(),
+             op.empty() ? "eq" : op.c_str(),
+             trueText.c_str(),
+             falseTarget.empty() && step.branchFalseStep < 0 ? "" : " false_step=",
+             falseTarget.empty() && step.branchFalseStep < 0 ? "" : falseText.c_str());
+    break;
+  case ECMC_SEQ_ACTION_SET_ITEM:
+  case ECMC_SEQ_ACTION_WAIT_ITEM:
+  case ECMC_SEQ_ACTION_EXIT_ITEM:
+    snprintf(buffer, bytes, "%d: %s item=%s value=%s op=%s timeout=%g",
+             stepIndex, action, item.c_str(), value.empty() ? "0" : value.c_str(),
+             op.empty() ? "eq" : op.c_str(), step.timeoutMs);
+    break;
+  default:
+    snprintf(buffer, bytes, "%d: %s enabled=%d action=%d axis=%d pos=%g vel=%g acc=%g dec=%g timeout=%g args='%s'",
+             stepIndex, action, step.enabled, step.action, step.axis, step.position,
+             step.velocity, step.acceleration, step.deceleration, step.timeoutMs, step.args);
+    break;
+  }
+
+  if (!step.enabled) {
+    const size_t used = strlen(buffer);
+    snprintf(buffer + used, bytes > used ? bytes - used : 0, " enabled=0");
+  }
+  if (step.name[0]) {
+    const size_t used = strlen(buffer);
+    snprintf(buffer + used, bytes > used ? bytes - used : 0, " name='%s'", step.name);
   }
 }
 
@@ -502,8 +1013,23 @@ int ecmcMotionSequence::prepareStep(int stepIndex, ecmcSeqStep &step) {
   }
 
   if (step.action == ECMC_SEQ_ACTION_SET_ITEM ||
-      step.action == ECMC_SEQ_ACTION_WAIT_ITEM) {
+      step.action == ECMC_SEQ_ACTION_WAIT_ITEM ||
+      step.action == ECMC_SEQ_ACTION_EXIT_ITEM) {
     return prepareItemStep(stepIndex, step);
+  }
+  if (step.action == ECMC_SEQ_ACTION_BRANCH_ITEM) {
+    return prepareBranchStep(stepIndex, step);
+  }
+  if (step.action == ECMC_SEQ_ACTION_GOTO_STEP) {
+    const std::string targetText = getArgValue(step.args, "target");
+    char *end = nullptr;
+    const long target = targetText.empty() ? step.branchTrueStep : strtol(targetText.c_str(), &end, 10);
+    if ((!targetText.empty() && end == targetText.c_str()) || target < 0 || target >= maxSteps_) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d goto target invalid.", stepIndex);
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+    }
+    step.branchTrueStep = static_cast<int32_t>(target);
   }
   if (step.action == ECMC_SEQ_ACTION_ARM_POS_TRIGGER ||
       step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER) {
@@ -662,6 +1188,39 @@ int ecmcMotionSequence::preparePosTriggerStep(int stepIndex, ecmcSeqStep &step) 
   return 0;
 }
 
+int ecmcMotionSequence::prepareBranchStep(int stepIndex, ecmcSeqStep &step) {
+  std::string trueText = getArgValue(step.args, "true_step");
+  std::string falseText = getArgValue(step.args, "false_step");
+  if (trueText.empty()) trueText = getArgValue(step.args, "true");
+  if (falseText.empty()) falseText = getArgValue(step.args, "false");
+  if (!trueText.empty()) {
+    char *end = nullptr;
+    const long target = strtol(trueText.c_str(), &end, 10);
+    if (end == trueText.c_str() || target < 0 || target >= maxSteps_) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d branch true target invalid.", stepIndex);
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+    }
+    step.branchTrueStep = static_cast<int32_t>(target);
+  }
+  if (!falseText.empty()) {
+    char *end = nullptr;
+    const long target = strtol(falseText.c_str(), &end, 10);
+    if (end == falseText.c_str() || target < 0 || target >= maxSteps_) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d branch false target invalid.", stepIndex);
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+    }
+    step.branchFalseStep = static_cast<int32_t>(target);
+  }
+  if (step.branchTrueStep < 0) {
+    char msg[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(msg, sizeof(msg), "Step %d branch true target missing.", stepIndex);
+    return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+  }
+  return prepareItemStep(stepIndex, step);
+}
+
 int ecmcMotionSequence::prepareItemStep(int stepIndex, ecmcSeqStep &step) {
   const std::string itemName = getArgValue(step.args, "item");
   const std::string valueText = getArgValue(step.args, "value");
@@ -707,10 +1266,15 @@ int ecmcMotionSequence::prepareItemStep(int stepIndex, ecmcSeqStep &step) {
 
   step.item = item;
   step.itemValue = value;
-  if (!parseCompareOp(opText, &step.compareOp)) {
-    char msg[ECMC_SEQ_TEXT_LEN] = {0};
-    snprintf(msg, sizeof(msg), "Step %d compare op invalid.", stepIndex);
-    return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  step.compareOp = ECMC_SEQ_CMP_EQ;
+  if (step.action == ECMC_SEQ_ACTION_WAIT_ITEM ||
+      step.action == ECMC_SEQ_ACTION_EXIT_ITEM ||
+      step.action == ECMC_SEQ_ACTION_BRANCH_ITEM) {
+    if (!parseCompareOp(opText, &step.compareOp)) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d compare op invalid.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
   }
   return 0;
 }
@@ -812,6 +1376,7 @@ int ecmcMotionSequence::readStep() {
     std::lock_guard<std::mutex> guard(stepsMutex_);
     read_ = steps_[readIndex_];
   }
+  formatStepCommandLine(readIndex_, read_, readCommandLine_, sizeof(readCommandLine_));
 
   if (seqAsynPort_) {
     seqAsynPort_->refreshParam(readIndexParam_);
@@ -827,6 +1392,7 @@ int ecmcMotionSequence::readStep() {
     seqAsynPort_->refreshParam(readTransitionParam_);
     seqAsynPort_->refreshParam(readOnErrorParam_);
     seqAsynPort_->refreshParam(readArgsParam_);
+    seqAsynPort_->refreshParam(readCommandLineParam_);
   }
   return 0;
 }
@@ -841,6 +1407,19 @@ int ecmcMotionSequence::readStepOffset(int offset) {
   }
   readIndex_ = newIndex;
   return readStep();
+}
+
+int ecmcMotionSequence::copyReadToCommandLine() {
+  const int error = readStep();
+  if (error) {
+    return error;
+  }
+  copyText(cmdLine_, sizeof(cmdLine_), readCommandLine_);
+  setCommandLineResult("Read step copied to command line.");
+  if (seqAsynPort_ && cmdLineParam_ >= 0) {
+    seqAsynPort_->refreshParam(cmdLineParam_);
+  }
+  return 0;
 }
 
 int ecmcMotionSequence::requestCompile(bool waitForCompletion) {
@@ -887,12 +1466,43 @@ int ecmcMotionSequence::runCompile() {
     if (!step.enabled) {
       continue;
     }
+    step.sourceStepIndex = i;
     enabledCount++;
     const int error = prepareStep(i, step);
     if (error) {
       return error;
     }
     compiledPlan.push_back(step);
+  }
+
+  for (const auto &step : compiledPlan) {
+    const auto hasTarget = [&compiledPlan](int target) {
+      return std::any_of(compiledPlan.begin(), compiledPlan.end(), [target](const ecmcSeqStep &candidate) {
+        return candidate.sourceStepIndex == target;
+      });
+    };
+    if ((step.action == ECMC_SEQ_ACTION_BRANCH_ITEM ||
+         step.action == ECMC_SEQ_ACTION_GOTO_STEP) &&
+        !hasTarget(step.branchTrueStep)) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg,
+               sizeof(msg),
+               "Step %d target step %d is not enabled.",
+               step.sourceStepIndex,
+               step.branchTrueStep);
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+    }
+    if (step.action == ECMC_SEQ_ACTION_BRANCH_ITEM &&
+        step.branchFalseStep >= 0 &&
+        !hasTarget(step.branchFalseStep)) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg,
+               sizeof(msg),
+               "Step %d false target step %d is not enabled.",
+               step.sourceStepIndex,
+               step.branchFalseStep);
+      return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, msg);
+    }
   }
 
   {
@@ -1066,15 +1676,7 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
 
   if (statStepIndex_ < 0 ||
       statStepIndex_ >= static_cast<int32_t>(activePlan_.size())) {
-    statRunning_ = 0;
-    statArmed_ = 0;
-    statState_ = ECMC_SEQ_STATE_DONE;
-    statStepIndex_ = -1;
-    statAction_ = ECMC_SEQ_ACTION_NOP;
-    statElapsedMs_ = 0.0;
-    copyText(statStepName_, sizeof(statStepName_), "");
-    clearTriggersRT();
-    resetStepRuntimeRT();
+    finishSequenceRT();
     return;
   }
 
@@ -1202,6 +1804,14 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
       advanceStepRT();
     }
     break;
+  case ECMC_SEQ_ACTION_SET_ENC_HOMED:
+    if (!axes[step.axis] ||
+        axes[step.axis]->setAxisHomed(step.position != 0.0)) {
+      failStepRT(ERROR_MAIN_AXIS_OBJECT_NULL, "SetEncHomed failed.");
+    } else {
+      advanceStepRT();
+    }
+    break;
   case ECMC_SEQ_ACTION_SET_ITEM:
     if (writeItemScalarRT(step)) {
       advanceStepRT();
@@ -1220,6 +1830,43 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
     }
     break;
   }
+  case ECMC_SEQ_ACTION_EXIT_ITEM: {
+    double value = 0.0;
+    if (!readItemScalarRT(step, &value)) {
+      failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "ExitItem read failed.");
+      break;
+    }
+    if (compareItemValue(value, step)) {
+      finishSequenceRT();
+    } else {
+      advanceStepRT();
+    }
+    break;
+  }
+  case ECMC_SEQ_ACTION_BRANCH_ITEM: {
+    double value = 0.0;
+    if (!readItemScalarRT(step, &value)) {
+      failStepRT(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "BranchItem read failed.");
+      break;
+    }
+    if (compareItemValue(value, step)) {
+      if (!jumpToConfiguredStepRT(step.branchTrueStep)) {
+        failStepRT(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "BranchItem true target missing.");
+      }
+    } else if (step.branchFalseStep >= 0) {
+      if (!jumpToConfiguredStepRT(step.branchFalseStep)) {
+        failStepRT(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "BranchItem false target missing.");
+      }
+    } else {
+      advanceStepRT();
+    }
+    break;
+  }
+  case ECMC_SEQ_ACTION_GOTO_STEP:
+    if (!jumpToConfiguredStepRT(step.branchTrueStep)) {
+      failStepRT(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE, "GotoStep target missing.");
+    }
+    break;
   case ECMC_SEQ_ACTION_WAIT_TIME:
     if (rtStepElapsedMs_ >= step.timeoutMs) {
       advanceStepRT();
@@ -1268,6 +1915,34 @@ void ecmcMotionSequence::advanceStepRT() {
   rtChildSeq_ = nullptr;
   resetStepRuntimeRT();
   statStepIndex_++;
+}
+
+bool ecmcMotionSequence::jumpToConfiguredStepRT(int configuredStepIndex) {
+  for (size_t i = 0; i < activePlan_.size(); ++i) {
+    if (activePlan_[i].sourceStepIndex == configuredStepIndex) {
+      rtChildSeq_ = nullptr;
+      resetStepRuntimeRT();
+      statStepIndex_ = static_cast<int32_t>(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+void ecmcMotionSequence::finishSequenceRT() {
+  if (rtChildSeq_) {
+    rtChildSeq_->stopRT();
+    rtChildSeq_ = nullptr;
+  }
+  statRunning_ = 0;
+  statArmed_ = 0;
+  statState_ = ECMC_SEQ_STATE_DONE;
+  statStepIndex_ = -1;
+  statAction_ = ECMC_SEQ_ACTION_NOP;
+  statElapsedMs_ = 0.0;
+  copyText(statStepName_, sizeof(statStepName_), "");
+  clearTriggersRT();
+  resetStepRuntimeRT();
 }
 
 void ecmcMotionSequence::failStepRT(int errorId, const char *message) {
@@ -1693,6 +2368,10 @@ asynStatus ecmcMotionSequence::asynWriteApply(void *, size_t, asynParamType, voi
   return static_cast<ecmcMotionSequence *>(userObj)->applyEditStep() ? asynError : asynSuccess;
 }
 
+asynStatus ecmcMotionSequence::asynWriteCommandLineApply(void *, size_t, asynParamType, void *userObj) {
+  return static_cast<ecmcMotionSequence *>(userObj)->applyCommandLine() ? asynError : asynSuccess;
+}
+
 asynStatus ecmcMotionSequence::asynWriteCompile(void *, size_t, asynParamType, void *userObj) {
   return static_cast<ecmcMotionSequence *>(userObj)->requestCompile(false) ? asynError : asynSuccess;
 }
@@ -1723,6 +2402,10 @@ asynStatus ecmcMotionSequence::asynWriteReadNext(void *, size_t, asynParamType, 
 
 asynStatus ecmcMotionSequence::asynWriteReadPrev(void *, size_t, asynParamType, void *userObj) {
   return static_cast<ecmcMotionSequence *>(userObj)->readStepOffset(-1) ? asynError : asynSuccess;
+}
+
+asynStatus ecmcMotionSequence::asynWriteReadToCommandLine(void *, size_t, asynParamType, void *userObj) {
+  return static_cast<ecmcMotionSequence *>(userObj)->copyReadToCommandLine() ? asynError : asynSuccess;
 }
 
 void ecmcMotionSequence::compileThreadEntry(void *userObj) {
@@ -2371,6 +3054,87 @@ int setMotionSeqWaitInPos(int seqIndex, int stepIndex, int axis, double timeoutM
                         "");
 }
 
+int setMotionSeqSetEncHomed(int seqIndex, int stepIndex, int axis, int homed) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "SetEncHomed axis %d", axis);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_SET_ENC_HOMED,
+                        axis,
+                        homed ? 1.0 : 0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        name,
+                        "Done",
+                        "Abort",
+                        "");
+}
+
+int setMotionSeqBranchItem(int seqIndex,
+                           int stepIndex,
+                           const char *item,
+                           const char *op,
+                           double value,
+                           int trueStep,
+                           int falseStep) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "BranchItem %s", item ? item : "");
+  if (falseStep >= 0) {
+    snprintf(args,
+             sizeof(args),
+             "item=%s;op=%s;value=%g;true_step=%d;false_step=%d",
+             item ? item : "",
+             op ? op : "==",
+             value,
+             trueStep,
+             falseStep);
+  } else {
+    snprintf(args,
+             sizeof(args),
+             "item=%s;op=%s;value=%g;true_step=%d",
+             item ? item : "",
+             op ? op : "==",
+             value,
+             trueStep);
+  }
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_BRANCH_ITEM,
+                        -1,
+                        value,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        name,
+                        "Branched",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqGotoStep(int seqIndex, int stepIndex, int targetStep) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "GotoStep %d", targetStep);
+  snprintf(args, sizeof(args), "target=%d", targetStep);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_GOTO_STEP,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        name,
+                        "Jump",
+                        "Abort",
+                        args);
+}
+
 int setMotionSeqSetItem(int seqIndex,
                         int stepIndex,
                         const char *item,
@@ -2421,6 +3185,36 @@ int setMotionSeqWaitItem(int seqIndex,
                         timeoutMs,
                         name,
                         "Done",
+                        "Abort",
+                        args);
+}
+
+int setMotionSeqExitItem(int seqIndex,
+                         int stepIndex,
+                         const char *item,
+                         const char *op,
+                         double value,
+                         double timeoutMs) {
+  char name[ECMC_SEQ_TEXT_LEN] = {0};
+  char args[ECMC_SEQ_TEXT_LEN] = {0};
+  snprintf(name, sizeof(name), "ExitItem %s", item ? item : "");
+  snprintf(args,
+           sizeof(args),
+           "item=%s;op=%s;value=%g",
+           item ? item : "",
+           op ? op : "==",
+           value);
+  return setStepAndText(seqIndex,
+                        stepIndex,
+                        ECMC_SEQ_ACTION_EXIT_ITEM,
+                        -1,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        timeoutMs,
+                        name,
+                        "Exit",
                         "Abort",
                         args);
 }
