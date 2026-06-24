@@ -1757,6 +1757,7 @@ int ecmcMotionSequence::runCompile() {
   {
     std::lock_guard<std::mutex> guard(planMutex_);
     compiledPlan_ = compiledPlan;
+    activePlan_ = compiledPlan_;
   }
   statStepCount_ = enabledCount;
   statValid_ = 1;
@@ -1827,10 +1828,6 @@ int ecmcMotionSequence::arm() {
   if (!statValid_) {
     return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, "Cannot arm uncompiled sequence.");
   }
-  {
-    std::lock_guard<std::mutex> guard(planMutex_);
-    activePlan_ = compiledPlan_;
-  }
   statArmed_ = 1;
   statState_ = ECMC_SEQ_STATE_ARMED;
   statStepIndex_ = -1;
@@ -1838,6 +1835,17 @@ int ecmcMotionSequence::arm() {
   statElapsedMs_ = 0.0;
   copyText(statStepName_, sizeof(statStepName_), "");
   refreshStatus();
+  return 0;
+}
+
+int ecmcMotionSequence::requestArmRTSafe() {
+  if (statRunning_) {
+    return ERROR_AXIS_BUSY;
+  }
+  if (!statValid_) {
+    return ERROR_MAIN_SEQUENCE_OBJECT_NULL;
+  }
+  requestArm_.store(1, std::memory_order_release);
   return 0;
 }
 
@@ -1892,6 +1900,19 @@ int ecmcMotionSequence::setCurrentStep(int configuredStepIndex) {
   return 0;
 }
 
+int ecmcMotionSequence::requestCurrentStepRTSafe(int configuredStepIndex) {
+  if (configuredStepIndex < 0) {
+    return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+  }
+  if (!statArmed_ && !statRunning_ &&
+      !requestArm_.load(std::memory_order_acquire)) {
+    return ERROR_AXIS_BUSY;
+  }
+  requestStepSetConfigured_.store(configuredStepIndex, std::memory_order_release);
+  requestStepSetPending_.store(1, std::memory_order_release);
+  return 0;
+}
+
 int ecmcMotionSequence::getStepId() const {
   if (statStepIndex_ < 0 ||
       statStepIndex_ >= static_cast<int32_t>(activePlan_.size())) {
@@ -1931,6 +1952,18 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
     statState_ = ECMC_SEQ_STATE_STOPPED;
     resetStepRuntimeRT();
     return;
+  }
+
+  if (requestArm_.exchange(0, std::memory_order_acq_rel)) {
+    if (!statRunning_ && statValid_) {
+      statArmed_ = 1;
+      statState_ = ECMC_SEQ_STATE_ARMED;
+      statStepIndex_ = -1;
+      statAction_ = ECMC_SEQ_ACTION_NOP;
+      statElapsedMs_ = 0.0;
+      copyText(statStepName_, sizeof(statStepName_), "");
+      resetStepRuntimeRT();
+    }
   }
 
   if (requestStart_.exchange(0, std::memory_order_acq_rel)) {
@@ -2863,6 +2896,12 @@ int armMotionSeq(int seqIndex) {
   return seq ? seq->arm() : error;
 }
 
+int requestMotionSeqArmRTSafe(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->requestArmRTSafe() : error;
+}
+
 int startMotionSeq(int seqIndex) {
   int error = 0;
   auto *seq = getMotionSeq(seqIndex, &error);
@@ -2885,6 +2924,12 @@ int setMotionSeqCurrentStep(int seqIndex, int configuredStepIndex) {
   int error = 0;
   auto *seq = getMotionSeq(seqIndex, &error);
   return seq ? seq->setCurrentStep(configuredStepIndex) : error;
+}
+
+int requestMotionSeqCurrentStepRTSafe(int seqIndex, int configuredStepIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->requestCurrentStepRTSafe(configuredStepIndex) : error;
 }
 
 int reportMotionSeq(int seqIndex, int stepIndex) {

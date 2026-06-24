@@ -162,6 +162,8 @@ public:
   int stop();
   int reset();
   int setCurrentStep(int configuredStepIndex);
+  int requestArmRTSafe();
+  int requestCurrentStepRTSafe(int configuredStepIndex);
   void executeRT(double cycleTimeS);
   int report(int stepIndex);
   int readStep();
@@ -350,6 +352,7 @@ private:
   std::atomic<int> compileResult_ {0};
   std::atomic<int> compileRequestGeneration_ {0};
   std::atomic<int> compileCompletedGeneration_ {0};
+  std::atomic<int> requestArm_ {0};
   std::atomic<int> requestStart_ {0};
   std::atomic<int> requestStop_ {0};
   std::atomic<int> requestReset_ {0};
@@ -391,10 +394,12 @@ int setMotionSeqStepText(int seqIndex,
                          const char *args);
 int compileMotionSeq(int seqIndex);
 int armMotionSeq(int seqIndex);
+int requestMotionSeqArmRTSafe(int seqIndex);
 int startMotionSeq(int seqIndex);
 int stopMotionSeq(int seqIndex);
 int resetMotionSeq(int seqIndex);
 int setMotionSeqCurrentStep(int seqIndex, int configuredStepIndex);
+int requestMotionSeqCurrentStepRTSafe(int seqIndex, int configuredStepIndex);
 int reportMotionSeq(int seqIndex, int stepIndex);
 int getMotionSeqState(int seqIndex);
 int getMotionSeqValid(int seqIndex);

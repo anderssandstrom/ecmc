@@ -601,7 +601,7 @@ inline double seq_arm(double seqIndex, double execute)
     return 0.0;
   }
 
-  mc_errorCode = armMotionSeq(index);
+  mc_errorCode = requestMotionSeqArmRTSafe(index);
   return (double)mc_errorCode;
 }
 
@@ -618,7 +618,7 @@ inline double seq_set_step(double seqIndex, double execute, double stepId)
     return 0.0;
   }
 
-  mc_errorCode = setMotionSeqCurrentStep(index, (int)stepId);
+  mc_errorCode = requestMotionSeqCurrentStepRTSafe(index, (int)stepId);
   return (double)mc_errorCode;
 }
 
