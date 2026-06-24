@@ -326,6 +326,8 @@ private:
   char statStepName_[ECMC_SEQ_TEXT_LEN] = {0};
   char statErrorText_[ECMC_SEQ_TEXT_LEN] = {0};
   char statValidationText_[ECMC_SEQ_TEXT_LEN] = {0};
+  int32_t statTriggerId_ = -1;
+  int32_t statTriggerCount_ = 0;
   int32_t statSoftTriggerId_ = -1;
   int32_t statSoftTriggerCount_ = 0;
   int32_t statSoftTriggerCounts_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {0};
@@ -344,6 +346,8 @@ private:
   int statStepNameParam_ = -1;
   int statErrorTextParam_ = -1;
   int statValidationTextParam_ = -1;
+  int statTriggerIdParam_ = -1;
+  int statTriggerCountParam_ = -1;
   int statSoftTriggerIdParam_ = -1;
   int statSoftTriggerCountParam_ = -1;
   int statSoftTriggerCountParams_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {-1};

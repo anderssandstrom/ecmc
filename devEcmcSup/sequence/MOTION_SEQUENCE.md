@@ -424,7 +424,7 @@ Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,29.0,1,5)
 Cfg.SeqArmTimeTrigger(0,1,1,soft,10,5,100,1,1)
 ```
 
-Soft triggers do not write a data item. Instead, each trigger fire increments:
+Soft triggers do not write a data item. Instead, each soft trigger fire increments:
 
 ```text
 stat.soft_trigger_count
@@ -441,17 +441,27 @@ multiple soft triggers fire in the same realtime cycle, the counter increments
 for each trigger, but `stat.soft_trigger_id` only contains the last trigger ID
 processed in that cycle.
 
-Trigger IDs `0..7` also expose dedicated counters and pulse-active status:
+All trigger fires, both hard and soft, also update the generic trigger status:
+
+```text
+stat.trigger_count
+stat.trigger_id
+```
+
+Trigger IDs `0..7` expose dedicated counters and pulse-active status:
 
 ```text
 stat.soft_trigger.<id>.count
 stat.soft_trigger.<id>.pulse
 ```
 
-The ecmccfg database maps these to `SoftTrig0Count`/`SoftTrig0Pulse` through
-`SoftTrig7Count`/`SoftTrig7Pulse`. Use the counters as the reliable EPICS event
-source. The pulse flags are only high while a soft trigger pulse is active and
-therefore require a nonzero `pulseMs`.
+The internal asyn parameter names keep the original `soft_trigger` prefix for
+compatibility, but they now count both hard and soft trigger IDs. The ecmccfg
+database maps these to `Trigger0Count`/`Trigger0Pulse` through
+`Trigger7Count`/`Trigger7Pulse`, and keeps the old
+`SoftTrig0Count`/`SoftTrig0Pulse` aliases for compatibility. Use the counters as
+the reliable EPICS event source. The pulse flags are only high while a trigger
+pulse is active and therefore require a nonzero `pulseMs`.
 
 ## Example: Reusable X Scan Line
 

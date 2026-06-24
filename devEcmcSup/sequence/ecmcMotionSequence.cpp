@@ -706,6 +706,8 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "stat.step_name", statStepName_, sizeof(statStepName_), false, &statStepNameParam_));
   ADD_PARAM(addStringParam(port, "stat.error_text", statErrorText_, sizeof(statErrorText_), false, &statErrorTextParam_));
   ADD_PARAM(addStringParam(port, "stat.validation_text", statValidationText_, sizeof(statValidationText_), false, &statValidationTextParam_));
+  ADD_PARAM(addIntParam(port, "stat.trigger_id", &statTriggerId_, false, &statTriggerIdParam_));
+  ADD_PARAM(addIntParam(port, "stat.trigger_count", &statTriggerCount_, false, &statTriggerCountParam_));
   ADD_PARAM(addIntParam(port, "stat.soft_trigger_id", &statSoftTriggerId_, false, &statSoftTriggerIdParam_));
   ADD_PARAM(addIntParam(port, "stat.soft_trigger_count", &statSoftTriggerCount_, false, &statSoftTriggerCountParam_));
   for (int i = 0; i < ECMC_SEQ_SOFT_TRIGGER_COUNT; ++i) {
@@ -2700,16 +2702,21 @@ bool ecmcMotionSequence::waitTriggerDoneRT(int triggerId) const {
 void ecmcMotionSequence::writeTriggerOutputRT(ecmcSeqPosTrigger &trig,
                                               double value,
                                               int pulseActive) {
+  if (pulseActive) {
+    statTriggerId_ = trig.id;
+    statTriggerCount_++;
+    if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
+      statSoftTriggerCounts_[trig.id]++;
+      statSoftTriggerPulses_[trig.id] = trig.pulseMs > 0.0 ? 1 : 0;
+    }
+  } else if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
+    statSoftTriggerPulses_[trig.id] = 0;
+  }
+
   if (trig.soft) {
     if (pulseActive) {
       statSoftTriggerId_ = trig.id;
       statSoftTriggerCount_++;
-      if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
-        statSoftTriggerCounts_[trig.id]++;
-        statSoftTriggerPulses_[trig.id] = trig.pulseMs > 0.0 ? 1 : 0;
-      }
-    } else if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
-      statSoftTriggerPulses_[trig.id] = 0;
     }
     return;
   }
@@ -2736,6 +2743,8 @@ int ecmcMotionSequence::report(int stepIndex) {
   printf("  error_id       = 0x%x\n", statErrorId_);
   printf("  error_text     = %s\n", statErrorText_);
   printf("  validation     = %s\n", statValidationText_);
+  printf("  trig_id        = %d\n", statTriggerId_);
+  printf("  trig_cnt       = %d\n", statTriggerCount_);
   printf("  soft_trig_id   = %d\n", statSoftTriggerId_);
   printf("  soft_trig_cnt  = %d\n", statSoftTriggerCount_);
 
@@ -2787,6 +2796,8 @@ void ecmcMotionSequence::refreshStatus() {
   seqAsynPort_->refreshParam(statStepNameParam_);
   seqAsynPort_->refreshParam(statErrorTextParam_);
   seqAsynPort_->refreshParam(statValidationTextParam_);
+  seqAsynPort_->refreshParam(statTriggerIdParam_);
+  seqAsynPort_->refreshParam(statTriggerCountParam_);
   seqAsynPort_->refreshParam(statSoftTriggerIdParam_);
   seqAsynPort_->refreshParam(statSoftTriggerCountParam_);
   for (int i = 0; i < ECMC_SEQ_SOFT_TRIGGER_COUNT; ++i) {
