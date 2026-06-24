@@ -161,6 +161,7 @@ public:
   int start();
   int stop();
   int reset();
+  int setCurrentStep(int configuredStepIndex);
   void executeRT(double cycleTimeS);
   int report(int stepIndex);
   int readStep();
@@ -169,12 +170,22 @@ public:
 
   int getIndex() const { return index_; }
   int getMaxSteps() const { return maxSteps_; }
+  int getState() const { return statState_; }
+  int getValid() const { return statValid_; }
+  int getArmed() const { return statArmed_; }
+  int getRunning() const { return statRunning_; }
+  int getCompileBusy() const { return statCompileBusy_; }
+  int getStepIndex() const { return statStepIndex_; }
+  int getStepId() const;
+  int getAction() const { return statAction_; }
+  int getErrorId() const { return statErrorId_; }
+  int getStepCount() const { return statStepCount_; }
+  double getElapsedMs() const { return statElapsedMs_; }
 
 private:
   friend int createMotionSeq(int index, int maxSteps, const char *portName);
 
   static asynStatus asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj);
-  static asynStatus asynWriteCommandLine(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteInsert(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteDelete(void *data, size_t bytes, asynParamType type, void *userObj);
@@ -269,7 +280,6 @@ private:
   char cmdLineResult_[ECMC_SEQ_TEXT_LEN] = {0};
   char readCommandLine_[ECMC_SEQ_CMD_LEN] = {0};
   int cmdLineParam_ = -1;
-  int cmdLineReadbackParam_ = -1;
   int cmdLineResultParam_ = -1;
   int readCommandLineParam_ = -1;
   int readIndexParam_ = -1;
@@ -329,6 +339,8 @@ private:
   std::atomic<int> requestStart_ {0};
   std::atomic<int> requestStop_ {0};
   std::atomic<int> requestReset_ {0};
+  std::atomic<int> requestStepSetPending_ {0};
+  std::atomic<int> requestStepSetConfigured_ {-1};
   bool rtStepEntered_ = false;
   double rtStepElapsedMs_ = 0.0;
   ecmcMotionSequence *rtChildSeq_ = nullptr;
@@ -368,7 +380,19 @@ int armMotionSeq(int seqIndex);
 int startMotionSeq(int seqIndex);
 int stopMotionSeq(int seqIndex);
 int resetMotionSeq(int seqIndex);
+int setMotionSeqCurrentStep(int seqIndex, int configuredStepIndex);
 int reportMotionSeq(int seqIndex, int stepIndex);
+int getMotionSeqState(int seqIndex);
+int getMotionSeqValid(int seqIndex);
+int getMotionSeqArmed(int seqIndex);
+int getMotionSeqRunning(int seqIndex);
+int getMotionSeqCompileBusy(int seqIndex);
+int getMotionSeqStepIndex(int seqIndex);
+int getMotionSeqStepId(int seqIndex);
+int getMotionSeqAction(int seqIndex);
+int getMotionSeqErrorId(int seqIndex);
+int getMotionSeqStepCount(int seqIndex);
+double getMotionSeqElapsedMs(int seqIndex);
 int setMotionSeqNop(int seqIndex, int stepIndex);
 int setMotionSeqWaitTime(int seqIndex, int stepIndex, double waitMs);
 int setMotionSeqRunSeq(int seqIndex, int stepIndex, int childSeqIndex, double timeoutMs);

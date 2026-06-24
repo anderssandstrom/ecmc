@@ -898,6 +898,20 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_grp_get_ctrl_within_db",mc_grp_get_ctrl_within_db);
   ecmcPLCTaskAddFunction("mc_grp_get_any_ilocked",mc_grp_get_any_ilocked);
   ecmcPLCTaskAddFunction("mc_get_hw_ready",mc_get_hw_ready);
+
+  // motion sequencer
+  ecmcPLCTaskAddFunction("seq_arm",seq_arm);
+  ecmcPLCTaskAddFunction("seq_set_step",seq_set_step);
+  ecmcPLCTaskAddFunction("seq_get_state",seq_get_state);
+  ecmcPLCTaskAddFunction("seq_get_valid",seq_get_valid);
+  ecmcPLCTaskAddFunction("seq_get_armed",seq_get_armed);
+  ecmcPLCTaskAddFunction("seq_get_running",seq_get_running);
+  ecmcPLCTaskAddFunction("seq_get_compile_busy",seq_get_compile_busy);
+  ecmcPLCTaskAddFunction("seq_get_step",seq_get_step);
+  ecmcPLCTaskAddFunction("seq_get_action",seq_get_action);
+  ecmcPLCTaskAddFunction("seq_get_error",seq_get_error);
+  ecmcPLCTaskAddFunction("seq_get_step_count",seq_get_step_count);
+  ecmcPLCTaskAddFunction("seq_get_elapsed_ms",seq_get_elapsed_ms);
   
   if (mc_cmd_count != cmdCounter) {
     ecmcRtLoggerLogError("%s/%s:%d: PLC Lib MC command count mismatch (0x%x).\n",

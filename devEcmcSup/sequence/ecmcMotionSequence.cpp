@@ -631,8 +631,6 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "edit.onerror", edit_.onError, sizeof(edit_.onError), true));
   ADD_PARAM(addStringParam(port, "edit.args", edit_.args, sizeof(edit_.args), true));
   ADD_PARAM(addStringParam(port, "cmdline", cmdLine_, sizeof(cmdLine_), true, &cmdLineParam_));
-  port->setWriteCallback(cmdLineParam_, asynWriteCommandLine, this);
-  ADD_PARAM(addStringParam(port, "cmdline.rb", cmdLine_, sizeof(cmdLine_), false, &cmdLineReadbackParam_));
   ADD_PARAM(addStringParam(port, "cmdline.result", cmdLineResult_, sizeof(cmdLineResult_), false, &cmdLineResultParam_));
 
   ADD_PARAM(addIntParam(port, "read.index", &readIndex_, true, &readIndexParam_));
@@ -1637,9 +1635,6 @@ int ecmcMotionSequence::copyReadToCommandLine() {
   if (seqAsynPort_ && cmdLineParam_ >= 0) {
     seqAsynPort_->refreshParam(cmdLineParam_);
   }
-  if (seqAsynPort_ && cmdLineReadbackParam_ >= 0) {
-    seqAsynPort_->refreshParam(cmdLineReadbackParam_);
-  }
   return 0;
 }
 
@@ -1848,6 +1843,30 @@ int ecmcMotionSequence::reset() {
   return 0;
 }
 
+int ecmcMotionSequence::setCurrentStep(int configuredStepIndex) {
+  if (configuredStepIndex < 0) {
+    return setError(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE,
+                    "Sequence step id out of range.");
+  }
+  if (!statArmed_ && !statRunning_) {
+    return setError(ERROR_AXIS_BUSY,
+                    "Cannot set sequence step unless armed or running.");
+  }
+  requestStepSetConfigured_.store(configuredStepIndex, std::memory_order_release);
+  requestStepSetPending_.store(1, std::memory_order_release);
+  setValidationText("Step jump requested.");
+  refreshStatus();
+  return 0;
+}
+
+int ecmcMotionSequence::getStepId() const {
+  if (statStepIndex_ < 0 ||
+      statStepIndex_ >= static_cast<int32_t>(activePlan_.size())) {
+    return -1;
+  }
+  return activePlan_[statStepIndex_].sourceStepIndex;
+}
+
 void ecmcMotionSequence::executeRT(double cycleTimeS) {
   if (requestReset_.exchange(0, std::memory_order_acq_rel)) {
     if (rtChildSeq_) {
@@ -1885,9 +1904,22 @@ void ecmcMotionSequence::executeRT(double cycleTimeS) {
     if (statArmed_) {
       statRunning_ = 1;
       statState_ = ECMC_SEQ_STATE_RUNNING;
-      statStepIndex_ = 0;
+      if (statStepIndex_ < 0) {
+        statStepIndex_ = 0;
+      }
       clearTriggersRT();
       resetStepRuntimeRT();
+    }
+  }
+
+  if (requestStepSetPending_.exchange(0, std::memory_order_acq_rel)) {
+    const int configuredStep =
+      requestStepSetConfigured_.load(std::memory_order_acquire);
+    if (statArmed_ || statRunning_) {
+      if (!jumpToConfiguredStepRT(configuredStep)) {
+        failStepRT(ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE,
+                   "Requested sequence step target missing.");
+      }
     }
   }
 
@@ -2590,14 +2622,6 @@ asynStatus ecmcMotionSequence::asynWriteApply(void *data, size_t bytes, asynPara
   return static_cast<ecmcMotionSequence *>(userObj)->applyEditStep() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteCommandLine(void *, size_t, asynParamType, void *userObj) {
-  auto *seq = static_cast<ecmcMotionSequence *>(userObj);
-  if (seq->seqAsynPort_ && seq->cmdLineReadbackParam_ >= 0) {
-    seq->seqAsynPort_->refreshParam(seq->cmdLineReadbackParam_);
-  }
-  return asynSuccess;
-}
-
 asynStatus ecmcMotionSequence::asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj) {
   if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->applyCommandLine() ? asynError : asynSuccess;
@@ -2824,10 +2848,82 @@ int resetMotionSeq(int seqIndex) {
   return seq ? seq->reset() : error;
 }
 
+int setMotionSeqCurrentStep(int seqIndex, int configuredStepIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->setCurrentStep(configuredStepIndex) : error;
+}
+
 int reportMotionSeq(int seqIndex, int stepIndex) {
   int error = 0;
   auto *seq = getMotionSeq(seqIndex, &error);
   return seq ? seq->report(stepIndex) : error;
+}
+
+int getMotionSeqState(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getState() : error;
+}
+
+int getMotionSeqValid(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getValid() : error;
+}
+
+int getMotionSeqArmed(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getArmed() : error;
+}
+
+int getMotionSeqRunning(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getRunning() : error;
+}
+
+int getMotionSeqCompileBusy(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getCompileBusy() : error;
+}
+
+int getMotionSeqStepIndex(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getStepIndex() : error;
+}
+
+int getMotionSeqStepId(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getStepId() : error;
+}
+
+int getMotionSeqAction(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getAction() : error;
+}
+
+int getMotionSeqErrorId(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getErrorId() : error;
+}
+
+int getMotionSeqStepCount(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getStepCount() : error;
+}
+
+double getMotionSeqElapsedMs(int seqIndex) {
+  int error = 0;
+  auto *seq = getMotionSeq(seqIndex, &error);
+  return seq ? seq->getElapsedMs() : static_cast<double>(error);
 }
 
 namespace {

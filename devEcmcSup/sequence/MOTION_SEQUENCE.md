@@ -463,6 +463,47 @@ Cfg.StartMotionSeq(1)
 For a raster scan, either include an X return move in the child sequence or
 define separate forward and backward X-line sequences and call them alternately.
 
+## PLC Functions
+
+The ecmc PLC library exposes sequence control and status helpers. Command-style
+functions are rising-edge triggered on the `execute` argument.
+
+```text
+seq_arm(seq,execute)
+seq_set_step(seq,execute,step_id)
+```
+
+`seq_arm` arms an already compiled sequence. `seq_set_step` requests a jump to a
+configured step ID. The sequence must be armed or running; missing target steps
+put the sequence in error.
+
+Status getters:
+
+```text
+seq_get_state(seq)
+seq_get_valid(seq)
+seq_get_armed(seq)
+seq_get_running(seq)
+seq_get_compile_busy(seq)
+seq_get_step(seq)
+seq_get_action(seq)
+seq_get_error(seq)
+seq_get_step_count(seq)
+seq_get_elapsed_ms(seq)
+```
+
+`seq_get_step` returns the configured step ID of the active step. It returns
+`-1` when no step is active.
+
+Example:
+
+```text
+arm_err := seq_arm(0, arm_exec);
+jump_err := seq_set_step(0, jump_exec, 20);
+seq_running := seq_get_running(0);
+seq_step := seq_get_step(0);
+```
+
 ## Current Limitations
 
 - This has not yet been built or tested in the target ecmc environment.

@@ -15,6 +15,7 @@
 
 #include "ecmcErrorsList.h"
 #include "ecmcAxisGroup.h"
+#include "ecmcMotionSequence.h"
 
 #define CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndex) {             \
   if(axIndex>=ECMC_MAX_AXES || axIndex<0){                    \
@@ -59,6 +60,18 @@
   if(!axes[index]->getAllowCmdFromPLC()) {  \
     mc_errorCode=ERROR_MAIN_AXIS_COM_BLOCKED;                 \
     return ERROR_MAIN_AXIS_COM_BLOCKED;                       \
+  }                                                           \
+}                                                             \
+
+#define CHECK_PLC_SEQ_RETURN_IF_ERROR(seqIndex) {             \
+  if(seqIndex>=ECMC_MAX_MOTION_SEQUENCES || seqIndex<0){      \
+    mc_errorCode=ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;  \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Sequence index out of range.\n", __FILE__, __FUNCTION__, __LINE__); \
+    return (double)mc_errorCode;}                             \
+  if(motionSeqs[seqIndex]==NULL){                             \
+    mc_errorCode=ERROR_MAIN_SEQUENCE_OBJECT_NULL;             \
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Sequence object is NULL.\n", __FILE__, __FUNCTION__, __LINE__); \
+    return (double)mc_errorCode;                              \
   }                                                           \
 }                                                             \
 
@@ -127,6 +140,18 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_grp_get_ctrl_within_db(,"
                                "mc_grp_get_any_ilocked(",
                                "mc_get_hw_ready(",
+                               "seq_arm(",
+                               "seq_set_step(",
+                               "seq_get_state(",
+                               "seq_get_valid(",
+                               "seq_get_armed(",
+                               "seq_get_running(",
+                               "seq_get_compile_busy(",
+                               "seq_get_step(",
+                               "seq_get_action(",
+                               "seq_get_error(",
+                               "seq_get_step_count(",
+                               "seq_get_elapsed_ms(",
                               };
 
 extern ecmcAxisGroup   *axisGroups[ECMC_MAX_AXES];
@@ -137,8 +162,10 @@ static int statLastAxesExecuteRel_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteVel_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteHalt_[ECMC_MAX_AXES]={};
 static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
+static int statLastSeqExecuteArm_[ECMC_MAX_MOTION_SEQUENCES]={};
+static int statLastSeqExecuteSetStep_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 65;
+static int mc_cmd_count = 77;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -559,6 +586,110 @@ inline double mc_get_hw_ready(double axIndex)
   CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
 
   return (double)axes[axIndexInt]->getHwReady();
+}
+
+inline double seq_arm(double seqIndex, double execute)
+{
+  int index=(int)seqIndex;
+  int executeInt=(int)execute;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+
+  int trigg = !statLastSeqExecuteArm_[index] && executeInt;
+  statLastSeqExecuteArm_[index] = executeInt;
+
+  if(!executeInt || !trigg) {
+    return 0.0;
+  }
+
+  mc_errorCode = armMotionSeq(index);
+  return (double)mc_errorCode;
+}
+
+inline double seq_set_step(double seqIndex, double execute, double stepId)
+{
+  int index=(int)seqIndex;
+  int executeInt=(int)execute;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+
+  int trigg = !statLastSeqExecuteSetStep_[index] && executeInt;
+  statLastSeqExecuteSetStep_[index] = executeInt;
+
+  if(!executeInt || !trigg) {
+    return 0.0;
+  }
+
+  mc_errorCode = setMotionSeqCurrentStep(index, (int)stepId);
+  return (double)mc_errorCode;
+}
+
+inline double seq_get_state(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqState(index);
+}
+
+inline double seq_get_valid(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqValid(index);
+}
+
+inline double seq_get_armed(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqArmed(index);
+}
+
+inline double seq_get_running(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqRunning(index);
+}
+
+inline double seq_get_compile_busy(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqCompileBusy(index);
+}
+
+inline double seq_get_step(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqStepId(index);
+}
+
+inline double seq_get_action(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqAction(index);
+}
+
+inline double seq_get_error(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqErrorId(index);
+}
+
+inline double seq_get_step_count(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return (double)getMotionSeqStepCount(index);
+}
+
+inline double seq_get_elapsed_ms(double seqIndex)
+{
+  int index=(int)seqIndex;
+  CHECK_PLC_SEQ_RETURN_IF_ERROR(index);
+  return getMotionSeqElapsedMs(index);
 }
 
 inline double mc_get_axis_err(double axIndex)
