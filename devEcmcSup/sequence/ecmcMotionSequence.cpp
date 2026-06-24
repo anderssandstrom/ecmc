@@ -708,6 +708,21 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "stat.validation_text", statValidationText_, sizeof(statValidationText_), false, &statValidationTextParam_));
   ADD_PARAM(addIntParam(port, "stat.soft_trigger_id", &statSoftTriggerId_, false, &statSoftTriggerIdParam_));
   ADD_PARAM(addIntParam(port, "stat.soft_trigger_count", &statSoftTriggerCount_, false, &statSoftTriggerCountParam_));
+  for (int i = 0; i < ECMC_SEQ_SOFT_TRIGGER_COUNT; ++i) {
+    char paramName[ECMC_SEQ_TEXT_LEN] = {0};
+    snprintf(paramName, sizeof(paramName), "stat.soft_trigger.%d.count", i);
+    ADD_PARAM(addIntParam(port,
+                          paramName,
+                          &statSoftTriggerCounts_[i],
+                          false,
+                          &statSoftTriggerCountParams_[i]));
+    snprintf(paramName, sizeof(paramName), "stat.soft_trigger.%d.pulse", i);
+    ADD_PARAM(addIntParam(port,
+                          paramName,
+                          &statSoftTriggerPulses_[i],
+                          false,
+                          &statSoftTriggerPulseParams_[i]));
+  }
   ADD_PARAM(startCompileWorker());
 
 #undef ADD_PARAM
@@ -2689,6 +2704,12 @@ void ecmcMotionSequence::writeTriggerOutputRT(ecmcSeqPosTrigger &trig,
     if (pulseActive) {
       statSoftTriggerId_ = trig.id;
       statSoftTriggerCount_++;
+      if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
+        statSoftTriggerCounts_[trig.id]++;
+        statSoftTriggerPulses_[trig.id] = trig.pulseMs > 0.0 ? 1 : 0;
+      }
+    } else if (trig.id >= 0 && trig.id < ECMC_SEQ_SOFT_TRIGGER_COUNT) {
+      statSoftTriggerPulses_[trig.id] = 0;
     }
     return;
   }
@@ -2768,6 +2789,10 @@ void ecmcMotionSequence::refreshStatus() {
   seqAsynPort_->refreshParam(statValidationTextParam_);
   seqAsynPort_->refreshParam(statSoftTriggerIdParam_);
   seqAsynPort_->refreshParam(statSoftTriggerCountParam_);
+  for (int i = 0; i < ECMC_SEQ_SOFT_TRIGGER_COUNT; ++i) {
+    seqAsynPort_->refreshParam(statSoftTriggerCountParams_[i]);
+    seqAsynPort_->refreshParam(statSoftTriggerPulseParams_[i]);
+  }
 }
 
 asynStatus ecmcMotionSequence::asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj) {

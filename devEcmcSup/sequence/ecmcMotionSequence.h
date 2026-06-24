@@ -15,6 +15,7 @@
 #define ECMC_MAX_MOTION_SEQUENCES 16
 #define ECMC_SEQ_TEXT_LEN 128
 #define ECMC_SEQ_CMD_LEN 256
+#define ECMC_SEQ_SOFT_TRIGGER_COUNT 8
 
 enum ecmcSeqAction {
   ECMC_SEQ_ACTION_NOP = 0,
@@ -327,6 +328,8 @@ private:
   char statValidationText_[ECMC_SEQ_TEXT_LEN] = {0};
   int32_t statSoftTriggerId_ = -1;
   int32_t statSoftTriggerCount_ = 0;
+  int32_t statSoftTriggerCounts_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {0};
+  int32_t statSoftTriggerPulses_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {0};
 
   int statStateParam_ = -1;
   int statValidParam_ = -1;
@@ -343,6 +346,8 @@ private:
   int statValidationTextParam_ = -1;
   int statSoftTriggerIdParam_ = -1;
   int statSoftTriggerCountParam_ = -1;
+  int statSoftTriggerCountParams_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {-1};
+  int statSoftTriggerPulseParams_[ECMC_SEQ_SOFT_TRIGGER_COUNT] = {-1};
 
   epicsEventId compileRequestEvent_ = nullptr;
   epicsEventId compileDoneEvent_ = nullptr;

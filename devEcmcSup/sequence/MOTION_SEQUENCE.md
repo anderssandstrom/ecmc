@@ -441,6 +441,18 @@ multiple soft triggers fire in the same realtime cycle, the counter increments
 for each trigger, but `stat.soft_trigger_id` only contains the last trigger ID
 processed in that cycle.
 
+Trigger IDs `0..7` also expose dedicated counters and pulse-active status:
+
+```text
+stat.soft_trigger.<id>.count
+stat.soft_trigger.<id>.pulse
+```
+
+The ecmccfg database maps these to `SoftTrig0Count`/`SoftTrig0Pulse` through
+`SoftTrig7Count`/`SoftTrig7Pulse`. Use the counters as the reliable EPICS event
+source. The pulse flags are only high while a soft trigger pulse is active and
+therefore require a nonzero `pulseMs`.
+
 ## Example: Reusable X Scan Line
 
 Sequence `0` defines one X line with detector triggers:
