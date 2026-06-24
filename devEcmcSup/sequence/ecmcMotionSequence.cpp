@@ -617,19 +617,19 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   int error = 0;
 #define ADD_PARAM(call) do { error = (call); if (error) return error; } while (0)
 
-  ADD_PARAM(addIntParam(port, "edit.index", &editIndex_, true));
-  ADD_PARAM(addIntParam(port, "edit.enabled", &edit_.enabled, true));
-  ADD_PARAM(addIntParam(port, "edit.action", &edit_.action, true));
-  ADD_PARAM(addIntParam(port, "edit.axis", &edit_.axis, true));
-  ADD_PARAM(addDoubleParam(port, "edit.position", &edit_.position, true));
-  ADD_PARAM(addDoubleParam(port, "edit.velocity", &edit_.velocity, true));
-  ADD_PARAM(addDoubleParam(port, "edit.acceleration", &edit_.acceleration, true));
-  ADD_PARAM(addDoubleParam(port, "edit.deceleration", &edit_.deceleration, true));
-  ADD_PARAM(addDoubleParam(port, "edit.timeout_ms", &edit_.timeoutMs, true));
-  ADD_PARAM(addStringParam(port, "edit.name", edit_.name, sizeof(edit_.name), true));
-  ADD_PARAM(addStringParam(port, "edit.transition", edit_.transition, sizeof(edit_.transition), true));
-  ADD_PARAM(addStringParam(port, "edit.onerror", edit_.onError, sizeof(edit_.onError), true));
-  ADD_PARAM(addStringParam(port, "edit.args", edit_.args, sizeof(edit_.args), true));
+  ADD_PARAM(addIntParam(port, "edit.index", &editIndex_, true, &editIndexParam_));
+  ADD_PARAM(addIntParam(port, "edit.enabled", &edit_.enabled, true, &editEnabledParam_));
+  ADD_PARAM(addIntParam(port, "edit.action", &edit_.action, true, &editActionParam_));
+  ADD_PARAM(addIntParam(port, "edit.axis", &edit_.axis, true, &editAxisParam_));
+  ADD_PARAM(addDoubleParam(port, "edit.position", &edit_.position, true, &editPositionParam_));
+  ADD_PARAM(addDoubleParam(port, "edit.velocity", &edit_.velocity, true, &editVelocityParam_));
+  ADD_PARAM(addDoubleParam(port, "edit.acceleration", &edit_.acceleration, true, &editAccelerationParam_));
+  ADD_PARAM(addDoubleParam(port, "edit.deceleration", &edit_.deceleration, true, &editDecelerationParam_));
+  ADD_PARAM(addDoubleParam(port, "edit.timeout_ms", &edit_.timeoutMs, true, &editTimeoutMsParam_));
+  ADD_PARAM(addStringParam(port, "edit.name", edit_.name, sizeof(edit_.name), true, &editNameParam_));
+  ADD_PARAM(addStringParam(port, "edit.transition", edit_.transition, sizeof(edit_.transition), true, &editTransitionParam_));
+  ADD_PARAM(addStringParam(port, "edit.onerror", edit_.onError, sizeof(edit_.onError), true, &editOnErrorParam_));
+  ADD_PARAM(addStringParam(port, "edit.args", edit_.args, sizeof(edit_.args), true, &editArgsParam_));
   ADD_PARAM(addStringParam(port, "cmdline", cmdLine_, sizeof(cmdLine_), true, &cmdLineParam_));
   ADD_PARAM(addStringParam(port, "cmdline.result", cmdLineResult_, sizeof(cmdLineResult_), false, &cmdLineResultParam_));
 
@@ -720,6 +720,25 @@ void ecmcMotionSequence::setCommandLineResult(const char *message) {
   if (seqAsynPort_ && cmdLineResultParam_ >= 0) {
     seqAsynPort_->refreshParam(cmdLineResultParam_);
   }
+}
+
+void ecmcMotionSequence::refreshEditParams() {
+  if (!seqAsynPort_) {
+    return;
+  }
+  seqAsynPort_->refreshParam(editIndexParam_);
+  seqAsynPort_->refreshParam(editEnabledParam_);
+  seqAsynPort_->refreshParam(editActionParam_);
+  seqAsynPort_->refreshParam(editAxisParam_);
+  seqAsynPort_->refreshParam(editPositionParam_);
+  seqAsynPort_->refreshParam(editVelocityParam_);
+  seqAsynPort_->refreshParam(editAccelerationParam_);
+  seqAsynPort_->refreshParam(editDecelerationParam_);
+  seqAsynPort_->refreshParam(editTimeoutMsParam_);
+  seqAsynPort_->refreshParam(editNameParam_);
+  seqAsynPort_->refreshParam(editTransitionParam_);
+  seqAsynPort_->refreshParam(editOnErrorParam_);
+  seqAsynPort_->refreshParam(editArgsParam_);
 }
 
 int ecmcMotionSequence::parseCommandLine(const char *line) {
@@ -935,6 +954,7 @@ int ecmcMotionSequence::parseCommandLine(const char *line) {
 
   editIndex_ = stepIndex;
   edit_ = parsed;
+  refreshEditParams();
   return 0;
 }
 
@@ -1614,12 +1634,22 @@ int ecmcMotionSequence::readStep() {
 }
 
 int ecmcMotionSequence::readStepOffset(int offset) {
-  int newIndex = readIndex_ + offset;
-  if (newIndex < 0) {
-    newIndex = 0;
+  if (offset == 0) {
+    return readStep();
   }
-  if (newIndex >= maxSteps_) {
-    newIndex = maxSteps_ - 1;
+
+  int newIndex = readIndex_;
+  {
+    std::lock_guard<std::mutex> guard(stepsMutex_);
+    const int direction = offset > 0 ? 1 : -1;
+    for (int candidate = readIndex_ + direction;
+         candidate >= 0 && candidate < maxSteps_;
+         candidate += direction) {
+      if (steps_[candidate].enabled) {
+        newIndex = candidate;
+        break;
+      }
+    }
   }
   readIndex_ = newIndex;
   return readStep();
@@ -1631,6 +1661,9 @@ int ecmcMotionSequence::copyReadToCommandLine() {
     return error;
   }
   copyText(cmdLine_, sizeof(cmdLine_), readCommandLine_);
+  editIndex_ = readIndex_;
+  edit_ = read_;
+  refreshEditParams();
   setCommandLineResult("Read step copied to command line.");
   if (seqAsynPort_ && cmdLineParam_ >= 0) {
     seqAsynPort_->refreshParam(cmdLineParam_);

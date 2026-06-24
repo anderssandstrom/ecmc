@@ -220,6 +220,7 @@ private:
   int setError(int errorId, const char *message);
   void setValidationText(const char *message);
   void setCommandLineResult(const char *message);
+  void refreshEditParams();
   int parseCommandLine(const char *line);
   void formatStepCommandLine(int stepIndex, const ecmcSeqStep &step, char *buffer, size_t bytes) const;
   int validateStep(int stepIndex, const ecmcSeqStep &step);
@@ -279,6 +280,19 @@ private:
   char cmdLine_[ECMC_SEQ_CMD_LEN] = {0};
   char cmdLineResult_[ECMC_SEQ_TEXT_LEN] = {0};
   char readCommandLine_[ECMC_SEQ_CMD_LEN] = {0};
+  int editIndexParam_ = -1;
+  int editEnabledParam_ = -1;
+  int editActionParam_ = -1;
+  int editAxisParam_ = -1;
+  int editPositionParam_ = -1;
+  int editVelocityParam_ = -1;
+  int editAccelerationParam_ = -1;
+  int editDecelerationParam_ = -1;
+  int editTimeoutMsParam_ = -1;
+  int editNameParam_ = -1;
+  int editTransitionParam_ = -1;
+  int editOnErrorParam_ = -1;
+  int editArgsParam_ = -1;
   int cmdLineParam_ = -1;
   int cmdLineResultParam_ = -1;
   int readCommandLineParam_ = -1;

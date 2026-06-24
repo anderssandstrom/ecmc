@@ -188,6 +188,10 @@ Insert shifts steps at and after the index up by one. Delete shifts later steps
 down by one. Branch and goto targets are adjusted when shifted; delete fails if
 another step targets the deleted step.
 
+`Read-Next` and `Read-Prev` skip disabled/unconfigured step slots. Direct
+`Read-Index` plus `Read-Cmd` can still inspect any slot, including empty gaps
+left for sparse numbering.
+
 ## Velocity Move and Halt
 
 `SeqMoveVel` is deliberately nonblocking. It issues the velocity command and
