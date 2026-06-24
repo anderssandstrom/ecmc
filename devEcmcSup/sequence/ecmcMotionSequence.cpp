@@ -250,6 +250,13 @@ bool readDoubleKey(const std::vector<std::string> &tokens,
   return text.empty() ? false : parseDoubleText(text, value);
 }
 
+bool commandWriteAsserted(void *data, size_t bytes, asynParamType type) {
+  if (type != asynParamInt32 || !data || bytes < sizeof(epicsInt32)) {
+    return true;
+  }
+  return *static_cast<epicsInt32 *>(data) != 0;
+}
+
 bool readStepTargetArg(const char *args,
                        const char *key,
                        const char *alias,
@@ -624,6 +631,8 @@ int ecmcMotionSequence::createAsynParams(ecmcMotionSequencePort *port) {
   ADD_PARAM(addStringParam(port, "edit.onerror", edit_.onError, sizeof(edit_.onError), true));
   ADD_PARAM(addStringParam(port, "edit.args", edit_.args, sizeof(edit_.args), true));
   ADD_PARAM(addStringParam(port, "cmdline", cmdLine_, sizeof(cmdLine_), true, &cmdLineParam_));
+  port->setWriteCallback(cmdLineParam_, asynWriteCommandLine, this);
+  ADD_PARAM(addStringParam(port, "cmdline.rb", cmdLine_, sizeof(cmdLine_), false, &cmdLineReadbackParam_));
   ADD_PARAM(addStringParam(port, "cmdline.result", cmdLineResult_, sizeof(cmdLineResult_), false, &cmdLineResultParam_));
 
   ADD_PARAM(addIntParam(port, "read.index", &readIndex_, true, &readIndexParam_));
@@ -1628,6 +1637,9 @@ int ecmcMotionSequence::copyReadToCommandLine() {
   if (seqAsynPort_ && cmdLineParam_ >= 0) {
     seqAsynPort_->refreshParam(cmdLineParam_);
   }
+  if (seqAsynPort_ && cmdLineReadbackParam_ >= 0) {
+    seqAsynPort_->refreshParam(cmdLineReadbackParam_);
+  }
   return 0;
 }
 
@@ -2573,57 +2585,78 @@ void ecmcMotionSequence::refreshStatus() {
   seqAsynPort_->refreshParam(statSoftTriggerCountParam_);
 }
 
-asynStatus ecmcMotionSequence::asynWriteApply(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->applyEditStep() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteCommandLineApply(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteCommandLine(void *, size_t, asynParamType, void *userObj) {
+  auto *seq = static_cast<ecmcMotionSequence *>(userObj);
+  if (seq->seqAsynPort_ && seq->cmdLineReadbackParam_ >= 0) {
+    seq->seqAsynPort_->refreshParam(seq->cmdLineReadbackParam_);
+  }
+  return asynSuccess;
+}
+
+asynStatus ecmcMotionSequence::asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->applyCommandLine() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteInsert(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteInsert(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   auto *seq = static_cast<ecmcMotionSequence *>(userObj);
   return seq->insertStep(seq->editIndex_) ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteDelete(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteDelete(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   auto *seq = static_cast<ecmcMotionSequence *>(userObj);
   return seq->deleteStep(seq->editIndex_) ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteCompile(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteCompile(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->requestCompile(false) ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteArm(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteArm(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->arm() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteStart(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteStart(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->start() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteStop(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteStop(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->stop() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteReset(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteReset(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->reset() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteRead(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteRead(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->readStep() ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteReadNext(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteReadNext(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->readStepOffset(1) ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteReadPrev(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteReadPrev(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->readStepOffset(-1) ? asynError : asynSuccess;
 }
 
-asynStatus ecmcMotionSequence::asynWriteReadToCommandLine(void *, size_t, asynParamType, void *userObj) {
+asynStatus ecmcMotionSequence::asynWriteReadToCommandLine(void *data, size_t bytes, asynParamType type, void *userObj) {
+  if (!commandWriteAsserted(data, bytes, type)) return asynSuccess;
   return static_cast<ecmcMotionSequence *>(userObj)->copyReadToCommandLine() ? asynError : asynSuccess;
 }
 

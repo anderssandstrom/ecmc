@@ -174,6 +174,7 @@ private:
   friend int createMotionSeq(int index, int maxSteps, const char *portName);
 
   static asynStatus asynWriteApply(void *data, size_t bytes, asynParamType type, void *userObj);
+  static asynStatus asynWriteCommandLine(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteCommandLineApply(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteInsert(void *data, size_t bytes, asynParamType type, void *userObj);
   static asynStatus asynWriteDelete(void *data, size_t bytes, asynParamType type, void *userObj);
@@ -268,6 +269,7 @@ private:
   char cmdLineResult_[ECMC_SEQ_TEXT_LEN] = {0};
   char readCommandLine_[ECMC_SEQ_CMD_LEN] = {0};
   int cmdLineParam_ = -1;
+  int cmdLineReadbackParam_ = -1;
   int cmdLineResultParam_ = -1;
   int readCommandLineParam_ = -1;
   int readIndexParam_ = -1;
