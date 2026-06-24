@@ -71,6 +71,12 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
                                 int autoDisbleSlaves);
     ~ecmcMasterSlaveStateMachine();
     const char* getName();
+    int getIndex() const;
+    int getState() const;
+    int getStatus() const;
+    int getEnabled() const;
+    int getAutoDisableMasters() const;
+    int getAutoDisableSlaves() const;
     void execute();
     int validate();
     int setMasterAtTargetTimeout(double timeoutS);

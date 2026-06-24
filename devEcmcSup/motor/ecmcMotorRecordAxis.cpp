@@ -1048,6 +1048,7 @@ asynStatus ecmcMotorRecordAxis::move(double position,
                                      double maxVelocity,
                                      double acceleration) {
   bool commandAccepted = false;
+  drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   LOGINFO(
       "%s/%s:%d: INFO: Axis[%d]: Motor record request: execute %s requested (target=%lf, velocity=%lf, acceleration=%lf).\n",
       __FILE__,
@@ -1157,6 +1158,7 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
                                      double acceleration,
                                      int    forwards) {
   bool commandAccepted = false;
+  drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   // cmd, nCmddata,homepos,velhigh,vellow,acc
   //printf("velo min max acc= %lf %lf, %lf \n",minVelocity,maxVelocity,acceleration);
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,
@@ -1330,6 +1332,7 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
                                              double maxVelocity,
                                              double acceleration) {
   bool commandAccepted = false;
+  drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,
             "%s/%s:%d: INFO: Axis[%d]: Motor record request: execute MOVE_VEL requested (velocity=%lf..%lf, acceleration=%lf).\n",
             __FILE__, __FUNCTION__, __LINE__,
@@ -1652,6 +1655,7 @@ asynStatus ecmcMotorRecordAxis::enableAmplifier(int on) {
  */
 asynStatus ecmcMotorRecordAxis::stopAxisInternal(const char *function_name,
                                                  double      acceleration) {
+  drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,
             "%s/%s:%d: INFO: Axis[%d]: Motor record request: execute STOP requested (caller=%s, acceleration=%lf).\n",
             __FILE__, __FUNCTION__, __LINE__,

@@ -17,7 +17,9 @@
 #include <stdexcept>
 
 #include "asynPortDriver.h"
+#include "ecmcDefinitions.h"
 #include "ecmcOctetIF.h"
+#include "ecmcMotionDiag.h"
 #include "ecmcRtLogger.h"
 
 namespace {
@@ -35,6 +37,23 @@ const char *ECMC_RT_LOGGER_PAR_LAST_SOURCE_INDEX = "RTLOG_LAST_SOURCE_INDEX";
 const char *ECMC_RT_LOGGER_PAR_FILTER_MODE = "RTLOG_FILTER_MODE";
 const char *ECMC_RT_LOGGER_PAR_FILTER_TYPE_MASK = "RTLOG_FILTER_TYPE_MASK";
 const char *ECMC_RT_LOGGER_PAR_FILTER_INDEX = "RTLOG_FILTER_INDEX";
+const char *ECMC_RT_LOGGER_PAR_DIAG_DUMP = "RTLOG_DIAG_DUMP";
+const char *ECMC_RT_LOGGER_PAR_DIAG_LEVEL = "RTLOG_DIAG_LEVEL";
+const char *ECMC_RT_LOGGER_PAR_DIAG_BUSY = "RTLOG_DIAG_BUSY";
+const char *ECMC_RT_LOGGER_PAR_DIAG_STATUS = "RTLOG_DIAG_STATUS";
+const char *ECMC_RT_LOGGER_PAR_DIAG_FILE = "RTLOG_DIAG_FILE";
+const char *ECMC_RT_LOGGER_PAR_DIAG_AXIS = "RTLOG_DIAG_AXIS";
+const char *ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT = "RTLOG_DIAG_AXIS_REPORT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_MR_REQUEST_COUNT = "RTLOG_AXIS_CMD_MR_REQUEST_COUNT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_REQUEST_COUNT = "RTLOG_AXIS_CMD_REQUEST_COUNT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT = "RTLOG_AXIS_CMD_EXECUTE_COUNT";
+
+constexpr size_t ECMC_RT_LOGGER_DIAG_FILE_SIZE = 512;
+constexpr size_t ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE = 1024;
+
+std::atomic<unsigned int> axisCmdRequestCounts_[ECMC_MAX_AXES];
+std::atomic<unsigned int> axisCmdExecuteCounts_[ECMC_MAX_AXES];
+std::atomic<unsigned int> axisCmdMotorRecordRequestCounts_[ECMC_MAX_AXES];
 
 enum ecmcRtLoggerPortLevel {
   ECMC_RT_LOGGER_PORT_LEVEL_INFO = 0,
@@ -47,7 +66,7 @@ class ecmcRtLoggerPortDriver : public asynPortDriver {
 public:
   explicit ecmcRtLoggerPortDriver(const char *portName)
     : asynPortDriver(portName,
-                     1,
+                     ECMC_MAX_AXES,
                      asynInt32Mask | asynOctetMask | asynDrvUserMask,
                      asynInt32Mask | asynOctetMask,
                      0,
@@ -65,8 +84,23 @@ public:
       filterModeParam_(0),
       filterTypeMaskParam_(0),
       filterIndexParam_(0),
+      diagDumpParam_(0),
+      diagLevelParam_(0),
+      diagBusyParam_(0),
+      diagStatusParam_(0),
+      diagFileParam_(0),
+      diagAxisParam_(0),
+      diagAxisReportParam_(0),
+      axisCmdMotorRecordRequestCountParam_(0),
+      axisCmdRequestCountParam_(0),
+      axisCmdExecuteCountParam_(0),
       messageCount_(0),
       droppedCount_(0),
+      diagLevel_(1),
+      diagBusy_(0),
+      diagStatus_(0),
+      diagAxis_(0),
+      diagDumpPending_(0),
       filterMode_(ECMC_RT_LOG_FILTER_NONE),
       filterTypeMask_(INT_MAX),
       filterIndex_(-1) {
@@ -103,6 +137,36 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_FILTER_INDEX,
                         asynParamInt32,
                         &filterIndexParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_DUMP,
+                        asynParamInt32,
+                        &diagDumpParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_LEVEL,
+                        asynParamInt32,
+                        &diagLevelParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_BUSY,
+                        asynParamInt32,
+                        &diagBusyParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_STATUS,
+                        asynParamInt32,
+                        &diagStatusParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_FILE,
+                        asynParamOctet,
+                        &diagFileParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS,
+                        asynParamInt32,
+                        &diagAxisParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT,
+                        asynParamOctet,
+                        &diagAxisReportParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_MR_REQUEST_COUNT,
+                        asynParamInt32,
+                        &axisCmdMotorRecordRequestCountParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_REQUEST_COUNT,
+                        asynParamInt32,
+                        &axisCmdRequestCountParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT,
+                        asynParamInt32,
+                        &axisCmdExecuteCountParam_);
 
     setStringParam(lastMessageParam_, "");
     setIntegerParam(lastLevelParam_, ECMC_RT_LOGGER_PORT_LEVEL_INFO);
@@ -115,6 +179,29 @@ public:
     setIntegerParam(filterModeParam_, ECMC_RT_LOG_FILTER_NONE);
     setIntegerParam(filterTypeMaskParam_, INT_MAX);
     setIntegerParam(filterIndexParam_, -1);
+    diagFile_[0] = '\0';
+    ecmcMotionDiagBuildAxisReport(diagAxis_, diagAxisReport_, sizeof(diagAxisReport_));
+    setIntegerParam(diagDumpParam_, 0);
+    setIntegerParam(diagLevelParam_, diagLevel_);
+    setIntegerParam(diagBusyParam_, diagBusy_);
+    setIntegerParam(diagStatusParam_, diagStatus_);
+    setStringParam(diagFileParam_, diagFile_);
+    setIntegerParam(diagAxisParam_, diagAxis_);
+    setStringParam(diagAxisReportParam_, diagAxisReport_);
+    for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
+      axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
+      axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
+      axisCmdExecuteCountsPublished_[axisIndex] = UINT_MAX;
+      setIntegerParam(axisIndex,
+                      axisCmdMotorRecordRequestCountParam_,
+                      saturateCount(axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire)));
+      setIntegerParam(axisIndex,
+                      axisCmdRequestCountParam_,
+                      saturateCount(axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire)));
+      setIntegerParam(axisIndex,
+                      axisCmdExecuteCountParam_,
+                      saturateCount(axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire)));
+    }
     callParamCallbacks();
   }
 
@@ -144,6 +231,45 @@ public:
     if (pasynUser->reason == filterIndexParam_) {
       filterIndex_.store((int)value, std::memory_order_release);
       setIntegerParam(filterIndexParam_, value);
+      callParamCallbacks();
+      return asynSuccess;
+    }
+    if (pasynUser->reason == diagLevelParam_) {
+      diagLevel_ = value;
+      setIntegerParam(diagLevelParam_, value);
+      callParamCallbacks();
+      return asynSuccess;
+    }
+    if (pasynUser->reason == diagAxisParam_) {
+      diagAxis_ = value;
+      ecmcMotionDiagBuildAxisReport(diagAxis_,
+                                    diagAxisReport_,
+                                    sizeof(diagAxisReport_));
+      setIntegerParam(diagAxisParam_, value);
+      setStringParam(diagAxisReportParam_, diagAxisReport_);
+      callParamCallbacks();
+      return asynSuccess;
+    }
+    if (pasynUser->reason == diagDumpParam_) {
+      if (!value) {
+        setIntegerParam(diagDumpParam_, 0);
+        callParamCallbacks();
+        return asynSuccess;
+      }
+      if (diagBusy_) {
+        diagStatus_ = 2;
+        setIntegerParam(diagStatusParam_, diagStatus_);
+        callParamCallbacks();
+        return asynSuccess;
+      }
+      ecmcMotionDiagMakeDumpFileName(diagFile_, sizeof(diagFile_));
+      diagBusy_ = 1;
+      diagStatus_ = 1;
+      setIntegerParam(diagDumpParam_, 1);
+      setIntegerParam(diagBusyParam_, diagBusy_);
+      setIntegerParam(diagStatusParam_, diagStatus_);
+      setStringParam(diagFileParam_, diagFile_);
+      diagDumpPending_.store(1, std::memory_order_release);
       callParamCallbacks();
       return asynSuccess;
     }
@@ -182,7 +308,67 @@ public:
     callParamCallbacks();
   }
 
+  void service() {
+    publishAxisCommandCounters();
+
+    if (!diagDumpPending_.exchange(0, std::memory_order_acq_rel)) {
+      return;
+    }
+
+    const int status = ecmcMotionDiagWriteDumpFile(diagFile_, diagLevel_);
+    diagStatus_ = status;
+    diagBusy_ = 0;
+    setIntegerParam(diagDumpParam_, 0);
+    setIntegerParam(diagBusyParam_, diagBusy_);
+    setIntegerParam(diagStatusParam_, diagStatus_);
+    setStringParam(diagFileParam_, diagFile_);
+    ecmcMotionDiagBuildAxisReport(diagAxis_,
+                                  diagAxisReport_,
+                                  sizeof(diagAxisReport_));
+    setStringParam(diagAxisReportParam_, diagAxisReport_);
+    callParamCallbacks();
+  }
+
 private:
+  void publishAxisCommandCounters() {
+    for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
+      bool changed = false;
+      const unsigned int motorRecordRequestCounter =
+        axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire);
+      if (motorRecordRequestCounter != axisCmdMotorRecordRequestCountsPublished_[axisIndex]) {
+        axisCmdMotorRecordRequestCountsPublished_[axisIndex] = motorRecordRequestCounter;
+        setIntegerParam(axisIndex,
+                        axisCmdMotorRecordRequestCountParam_,
+                        saturateCount(motorRecordRequestCounter));
+        changed = true;
+      }
+
+      const unsigned int requestCounter =
+        axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire);
+      if (requestCounter != axisCmdRequestCountsPublished_[axisIndex]) {
+        axisCmdRequestCountsPublished_[axisIndex] = requestCounter;
+        setIntegerParam(axisIndex,
+                        axisCmdRequestCountParam_,
+                        saturateCount(requestCounter));
+        changed = true;
+      }
+
+      const unsigned int executeCounter =
+        axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire);
+      if (executeCounter != axisCmdExecuteCountsPublished_[axisIndex]) {
+        axisCmdExecuteCountsPublished_[axisIndex] = executeCounter;
+        setIntegerParam(axisIndex,
+                        axisCmdExecuteCountParam_,
+                        saturateCount(executeCounter));
+        changed = true;
+      }
+
+      if (changed) {
+        callParamCallbacks(0, axisIndex);
+      }
+    }
+  }
+
   bool filterAllows(int sourceType,
                     int sourceIndex) const {
     const int filterMode = filterMode_.load(std::memory_order_acquire);
@@ -289,8 +475,28 @@ private:
   int filterModeParam_;
   int filterTypeMaskParam_;
   int filterIndexParam_;
+  int diagDumpParam_;
+  int diagLevelParam_;
+  int diagBusyParam_;
+  int diagStatusParam_;
+  int diagFileParam_;
+  int diagAxisParam_;
+  int diagAxisReportParam_;
+  int axisCmdMotorRecordRequestCountParam_;
+  int axisCmdRequestCountParam_;
+  int axisCmdExecuteCountParam_;
   uint64_t messageCount_;
   uint64_t droppedCount_;
+  int diagLevel_;
+  int diagBusy_;
+  int diagStatus_;
+  int diagAxis_;
+  char diagFile_[ECMC_RT_LOGGER_DIAG_FILE_SIZE];
+  char diagAxisReport_[ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE];
+  unsigned int axisCmdMotorRecordRequestCountsPublished_[ECMC_MAX_AXES];
+  unsigned int axisCmdRequestCountsPublished_[ECMC_MAX_AXES];
+  unsigned int axisCmdExecuteCountsPublished_[ECMC_MAX_AXES];
+  std::atomic<int> diagDumpPending_;
   std::atomic<int> filterMode_;
   std::atomic<unsigned int> filterTypeMask_;
   std::atomic<int> filterIndex_;
@@ -347,6 +553,27 @@ void ecmcRtLoggerPortDriverPublishDropped(unsigned int dropped) {
   }
 
   portDriver_->publishDropped(dropped);
+}
+
+void ecmcRtLoggerPortDriverSetAxisCommandCounters(int axisIndex,
+                                                  unsigned int motorRecordRequestCounter,
+                                                  unsigned int requestCounter,
+                                                  unsigned int executeCounter) {
+  if (axisIndex < 0 || axisIndex >= ECMC_MAX_AXES) {
+    return;
+  }
+
+  axisCmdMotorRecordRequestCounts_[axisIndex].store(motorRecordRequestCounter, std::memory_order_release);
+  axisCmdRequestCounts_[axisIndex].store(requestCounter, std::memory_order_release);
+  axisCmdExecuteCounts_[axisIndex].store(executeCounter, std::memory_order_release);
+}
+
+void ecmcRtLoggerPortDriverService() {
+  if (!portDriver_) {
+    return;
+  }
+
+  portDriver_->service();
 }
 
 const char *ecmcRtLoggerPortDriverGetPortName() {

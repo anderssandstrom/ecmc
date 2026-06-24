@@ -18,6 +18,11 @@ void        ecmcRtLoggerPortDriverPublishMessage(int level,
                                                  int sourceIndex,
                                                  const char *message);
 void        ecmcRtLoggerPortDriverPublishDropped(unsigned int dropped);
+void        ecmcRtLoggerPortDriverSetAxisCommandCounters(int axisIndex,
+                                                         unsigned int motorRecordRequestCounter,
+                                                         unsigned int requestCounter,
+                                                         unsigned int executeCounter);
+void        ecmcRtLoggerPortDriverService();
 const char *ecmcRtLoggerPortDriverGetPortName();
 
 #endif  /* ECMC_RT_LOGGER_PORT_DRIVER_H_ */

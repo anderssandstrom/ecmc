@@ -12,6 +12,7 @@
 
 #include "ecmcAxisBase.h"
 #include "ecmcRtLogger.h"
+#include "ecmcRtLoggerPortDriver.h"
 #include <inttypes.h>
 #include <stdint.h>
 #include <new>
@@ -370,6 +371,9 @@ void ecmcAxisBase::initVars() {
   masterSlaveBlocked_           = false;
   data_.status_.statusWord_.blocked = 0;
   enableAutoResetError_         = 1;
+  motionCommandMotorRecordRequestCounter_ = 0;
+  motionCommandRequestCounter_  = 0;
+  motionCommandExecuteCounter_  = 0;
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
@@ -1027,6 +1031,40 @@ int ecmcAxisBase::setCmdData(int cmdData) {
   return 0;
 }
 
+unsigned int ecmcAxisBase::getMotionCommandMotorRecordRequestCounter() const {
+  return motionCommandMotorRecordRequestCounter_;
+}
+
+unsigned int ecmcAxisBase::getMotionCommandRequestCounter() const {
+  return motionCommandRequestCounter_;
+}
+
+unsigned int ecmcAxisBase::getMotionCommandExecuteCounter() const {
+  return motionCommandExecuteCounter_;
+}
+
+void ecmcAxisBase::publishMotionCommandCounters() {
+  ecmcRtLoggerPortDriverSetAxisCommandCounters(data_.status_.axisId,
+                                               motionCommandMotorRecordRequestCounter_,
+                                               motionCommandRequestCounter_,
+                                               motionCommandExecuteCounter_);
+}
+
+void ecmcAxisBase::bumpMotionCommandMotorRecordRequestCounter() {
+  ++motionCommandMotorRecordRequestCounter_;
+  publishMotionCommandCounters();
+}
+
+void ecmcAxisBase::bumpMotionCommandRequestCounter() {
+  ++motionCommandRequestCounter_;
+  publishMotionCommandCounters();
+}
+
+void ecmcAxisBase::bumpMotionCommandExecuteCounter() {
+  ++motionCommandExecuteCounter_;
+  publishMotionCommandCounters();
+}
+
 motionCommandTypes ecmcAxisBase::getCommand() {
   return seq_.getCommand();
 }
@@ -1103,6 +1141,10 @@ int ecmcAxisBase::setExecute(bool execute) {
 }
 
 int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
+  if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
+    bumpMotionCommandExecuteCounter();
+  }
+
   // Internal trajectory source
   if (data_.status_.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL) {
     // Allow direct homing without enable
@@ -1908,6 +1950,8 @@ int ecmcAxisBase::movePVTAbs() {
 }
 
 int ecmcAxisBase::movePVTAbs(bool ignoreBusy) {
+  bumpMotionCommandRequestCounter();
+
   if(data_.control_.controlWord_.enableDbgPrintout) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: movePVTAbs().\n",
             __FILE__,
@@ -1972,6 +2016,8 @@ int ecmcAxisBase::moveAbsolutePosition(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  bumpMotionCommandRequestCounter();
+
   if(data_.control_.controlWord_.enableDbgPrintout) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: moveAbsolutePosition().\n",
             __FILE__,
@@ -2054,6 +2100,7 @@ int ecmcAxisBase::moveRelativePosition(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  bumpMotionCommandRequestCounter();
   
   if(data_.control_.controlWord_.enableDbgPrintout) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: moveRelativePosition().\n",
@@ -2137,6 +2184,7 @@ int ecmcAxisBase::moveVelocity(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  bumpMotionCommandRequestCounter();
   
   if(getBlocked()) {
     ecmcRtLoggerLogError(
@@ -2213,6 +2261,8 @@ int ecmcAxisBase::moveHome(int    nCmdData,
                            double accelerationSet,
                            double decelerationSet
                            ) {
+  bumpMotionCommandRequestCounter();
+
   if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Axis[%d]: Homing failed since traj source is set to PLC (0x%x).\n",
@@ -2303,6 +2353,8 @@ int ecmcAxisBase::moveHome(int    nCmdData,
 
 // Homing with configs from encoder object
 int ecmcAxisBase::moveHome() {
+  bumpMotionCommandRequestCounter();
+
   if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Axis[%d]: Homing failed since traj source is set to PLC (0x%x).\n",

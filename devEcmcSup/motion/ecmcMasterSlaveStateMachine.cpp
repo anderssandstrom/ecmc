@@ -76,6 +76,30 @@ const char* ecmcMasterSlaveStateMachine::getName(){
   return name_.c_str();
 };
 
+int ecmcMasterSlaveStateMachine::getIndex() const {
+  return index_;
+}
+
+int ecmcMasterSlaveStateMachine::getState() const {
+  return static_cast<int>(state_);
+}
+
+int ecmcMasterSlaveStateMachine::getStatus() const {
+  return status_;
+}
+
+int ecmcMasterSlaveStateMachine::getEnabled() const {
+  return control_.enable;
+}
+
+int ecmcMasterSlaveStateMachine::getAutoDisableMasters() const {
+  return control_.autoDisableMasters;
+}
+
+int ecmcMasterSlaveStateMachine::getAutoDisableSlaves() const {
+  return control_.autoDisableSlaves;
+}
+
 void ecmcMasterSlaveStateMachine::execute(){
 
   //always update

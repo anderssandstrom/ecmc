@@ -161,6 +161,7 @@ void loggerTask(void *arg) {
   (void)arg;
 
   while (true) {
+    ecmcRtLoggerPortDriverService();
     drainQueue();
     epicsThreadSleep(ECMC_RT_LOGGER_SLEEP_S);
   }

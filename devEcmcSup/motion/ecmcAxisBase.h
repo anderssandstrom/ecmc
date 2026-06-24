@@ -95,6 +95,10 @@ public:
   int                        setEncLookupTableEnable(int enable);
   int                        setCommand(motionCommandTypes command);
   int                        setCmdData(int cmdData);
+  void                       bumpMotionCommandMotorRecordRequestCounter();
+  unsigned int               getMotionCommandMotorRecordRequestCounter() const;
+  unsigned int               getMotionCommandRequestCounter() const;
+  unsigned int               getMotionCommandExecuteCounter() const;
   motionCommandTypes         getCommand();
   int                        getCmdData();
   int                        slowExecute();
@@ -307,6 +311,9 @@ protected:
   void autoEnableSM();
   void autoDisableSM();
   void refreshAsynTargetValue();
+  void bumpMotionCommandRequestCounter();
+  void bumpMotionCommandExecuteCounter();
+  void publishMotionCommandCounters();
   bool commandValid(motionCommandTypes command);
   bool shouldSyncSetpointToActual();
   void clearStaleSoftLimitInterlockForValidTarget();
@@ -352,6 +359,9 @@ protected:
   double invSampleTime_;
   bool masterSlaveBlocked_;
   bool enableAutoResetError_;
+  unsigned int motionCommandMotorRecordRequestCounter_;
+  unsigned int motionCommandRequestCounter_;
+  unsigned int motionCommandExecuteCounter_;
 };
 
 #endif  /* ECMCAXISBASE_H_ */
