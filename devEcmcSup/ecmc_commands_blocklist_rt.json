@@ -25,7 +25,7 @@
     "Cfg.SeqNop(<seqIndex>,<stepIndex>)",
     "Cfg.SeqWaitTime(<seqIndex>,<stepIndex>,<waitMs>)",
     "Cfg.SeqRunSeq(<seqIndex>,<stepIndex>,<childSeqIndex>,<timeoutMs>)",
-    "Cfg.SeqArmPosTrigger(<seqIndex>,<stepIndex>,<triggerId>,<axis>,<item>,<startPos>,<period>,<count>,<value>,<pulseMs>)",
+    "Cfg.SeqArmPosTrigger(<seqIndex>,<stepIndex>,<triggerId>,<axis>,<item>,<startPos>,<interval>,<endPos>,<value>,<pulseMs>)",
     "Cfg.SeqArmTimeTrigger(<seqIndex>,<stepIndex>,<triggerId>,<item>,<delayMs>,<periodMs>,<count>,<value>,<pulseMs>)",
     "Cfg.SeqWaitTriggerDone(<seqIndex>,<stepIndex>,<triggerId>,<timeoutMs>)",
     "Cfg.SeqReset(<seqIndex>,<stepIndex>,<axis>,<timeoutMs>)",

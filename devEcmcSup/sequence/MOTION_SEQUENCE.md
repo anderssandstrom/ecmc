@@ -113,7 +113,7 @@ Cfg.SeqGotoStep(seqIndex,stepIndex,targetStep)
 Cfg.InsertMotionSeqStep(seqIndex,stepIndex)
 Cfg.DeleteMotionSeqStep(seqIndex,stepIndex)
 Cfg.SeqRunSeq(seqIndex,stepIndex,childSeqIndex,timeoutMs)
-Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,period,count,value,pulseMs)
+Cfg.SeqArmPosTrigger(seqIndex,stepIndex,triggerId,axis,item,startPos,interval,endPos,value,pulseMs)
 Cfg.SeqArmTimeTrigger(seqIndex,stepIndex,triggerId,item,delayMs,periodMs,count,value,pulseMs)
 Cfg.SeqWaitTriggerDone(seqIndex,stepIndex,triggerId,timeoutMs)
 ```
@@ -366,13 +366,13 @@ Position triggers are armed by a step and then evaluated every realtime cycle
 while later steps execute.
 
 ```text
-Cfg.SeqArmPosTrigger(seq,step,triggerId,axis,item,startPos,period,count,value,pulseMs)
+Cfg.SeqArmPosTrigger(seq,step,triggerId,axis,item,startPos,interval,endPos,value,pulseMs)
 ```
 
 Example:
 
 ```text
-Cfg.SeqArmPosTrigger(0,0,0,1,ec0.s1.output01,10.0,1.0,20,1,5)
+Cfg.SeqArmPosTrigger(0,0,0,1,ec0.s1.output01,10.0,1.0,29.0,1,5)
 Cfg.SeqMoveAbs(0,1,1,50.0,10.0,20.0,20.0,10000)
 Cfg.SeqWaitTriggerDone(0,2,0,1000)
 ```
@@ -389,7 +389,9 @@ This arms trigger `0` on axis `1`. It fires at:
 
 It writes `1` to `ec0.s1.output01` for 5 ms at each trigger point.
 
-Negative position periods can be used for reverse motion.
+The range is `startPos:interval:endPos`. The endpoint is included when it
+lands exactly on an interval. Negative intervals are used for reverse motion,
+for example `80,-1,20` fires at `80,79,...,20`.
 
 ## Time Triggers
 
@@ -418,7 +420,7 @@ Time trigger periods must be positive.
 For software-only triggers, use `soft` as the trigger item.
 
 ```text
-Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,20,1,5)
+Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,29.0,1,5)
 Cfg.SeqArmTimeTrigger(0,1,1,soft,10,5,100,1,1)
 ```
 
@@ -445,7 +447,7 @@ Sequence `0` defines one X line with detector triggers:
 
 ```text
 Cfg.CreateMotionSeq(0)
-Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,100,1,0)
+Cfg.SeqArmPosTrigger(0,0,0,1,soft,10.0,1.0,109.0,1,0)
 Cfg.SeqMoveAbs(0,1,1,110.0,20.0,50.0,50.0,20000)
 Cfg.SeqWaitTriggerDone(0,2,0,2000)
 Cfg.CompileMotionSeq(0)

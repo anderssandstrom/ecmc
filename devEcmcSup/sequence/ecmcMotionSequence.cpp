@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <new>
 #include <stdio.h>
@@ -214,6 +215,22 @@ bool parseDoubleText(const std::string &text, double *value) {
   }
   *value = parsed;
   return true;
+}
+
+bool calcTriggerCountFromRange(double start,
+                               double interval,
+                               double end,
+                               int32_t *count) {
+  if (!count || interval == 0.0) {
+    return false;
+  }
+  const double span = end - start;
+  if ((span > 0.0 && interval < 0.0) ||
+      (span < 0.0 && interval > 0.0)) {
+    return false;
+  }
+  *count = static_cast<int32_t>(std::floor(std::fabs(span / interval))) + 1;
+  return *count > 0;
 }
 
 std::string valueForKey(const std::vector<std::string> &tokens,
@@ -841,6 +858,46 @@ int ecmcMotionSequence::parseCommandLine(const char *line) {
   case ECMC_SEQ_ACTION_RUN_SEQUENCE:
     if (readIntKey(argsTokens, "seq", &intValue, "child")) parsed.axis = intValue;
     break;
+  case ECMC_SEQ_ACTION_ARM_POS_TRIGGER: {
+    int triggerId = -1;
+    std::string item = valueForKey(argsTokens, "item");
+    std::string value = valueForKey(argsTokens, "value", "val");
+    if (readIntKey(argsTokens, "id", &triggerId, "trigger")) parsed.cmdData = triggerId;
+    if (readDoubleKey(argsTokens, "start", &doubleValue, "startpos")) parsed.position = doubleValue;
+    if (readDoubleKey(argsTokens, "interval", &doubleValue, "period")) parsed.velocity = doubleValue;
+    if (readDoubleKey(argsTokens, "end", &doubleValue, "endpos")) parsed.acceleration = doubleValue;
+    if (readDoubleKey(argsTokens, "pulse", &doubleValue, "pulse_ms")) parsed.deceleration = doubleValue;
+
+    int positional = 0;
+    for (const auto &token : argsTokens) {
+      if (token.find('=') != std::string::npos) continue;
+      if (positional == 0 && triggerId < 0) parseIntText(token, &triggerId);
+      else if (positional == 1 && item.empty()) item = token;
+      else if (positional == 2 && parseDoubleText(token, &doubleValue)) parsed.position = doubleValue;
+      else if (positional == 3 && parseDoubleText(token, &doubleValue)) parsed.velocity = doubleValue;
+      else if (positional == 4 && parseDoubleText(token, &doubleValue)) parsed.acceleration = doubleValue;
+      else if (positional == 5 && value.empty()) value = token;
+      else if (positional == 6 && parseDoubleText(token, &doubleValue)) parsed.deceleration = doubleValue;
+      positional++;
+    }
+    if (triggerId < 0 || item.empty() || value.empty()) {
+      setCommandLineResult("Command line position trigger id/item/value missing.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    if (!parseDoubleText(value, &doubleValue)) {
+      setCommandLineResult("Command line position trigger value invalid.");
+      return ERROR_MAIN_DATA_STORAGE_INDEX_OUT_OF_RANGE;
+    }
+    parsed.cmdData = triggerId;
+    parsed.itemValue = doubleValue;
+    snprintf(parsed.args,
+             sizeof(parsed.args),
+             "id=%d;item=%s;value=%g",
+             parsed.cmdData,
+             item.c_str(),
+             parsed.itemValue);
+    break;
+  }
   case ECMC_SEQ_ACTION_GOTO_STEP:
     if (readIntKey(argsTokens, "step", &intValue, "target")) parsed.branchTrueStep = intValue;
     snprintf(parsed.args, sizeof(parsed.args), "target=%d", parsed.branchTrueStep);
@@ -948,6 +1005,7 @@ int ecmcMotionSequence::parseCommandLine(const char *line) {
       action != ECMC_SEQ_ACTION_EXIT_ITEM &&
       action != ECMC_SEQ_ACTION_BRANCH_ITEM &&
       action != ECMC_SEQ_ACTION_GOTO_STEP &&
+      action != ECMC_SEQ_ACTION_ARM_POS_TRIGGER &&
       !argText.empty()) {
     copyText(parsed.args, sizeof(parsed.args), argText.c_str());
   }
@@ -999,9 +1057,13 @@ void ecmcMotionSequence::formatStepCommandLine(int stepIndex,
   case ECMC_SEQ_ACTION_SET_ENC_HOMED: action = "set_enc_homed"; break;
   case ECMC_SEQ_ACTION_BRANCH_ITEM: action = "branch_item"; break;
   case ECMC_SEQ_ACTION_GOTO_STEP: action = "goto_step"; break;
+  case ECMC_SEQ_ACTION_ARM_POS_TRIGGER: action = "arm_pos_trigger"; break;
+  case ECMC_SEQ_ACTION_WAIT_TRIGGER_DONE: action = "wait_trigger_done"; break;
+  case ECMC_SEQ_ACTION_ARM_TIME_TRIGGER: action = "arm_time_trigger"; break;
   default: break;
   }
 
+  const std::string id = getArgValue(step.args, "id");
   const std::string item = getArgValue(step.args, "item");
   const std::string value = getArgValue(step.args, "value");
   const std::string op = getArgValue(step.args, "op");
@@ -1012,6 +1074,7 @@ void ecmcMotionSequence::formatStepCommandLine(int stepIndex,
   std::string falseTarget = getArgValue(step.args, "false_step");
   if (trueTarget.empty()) trueTarget = getArgValue(step.args, "true");
   if (falseTarget.empty()) falseTarget = getArgValue(step.args, "false");
+  const std::string idText = id.empty() ? std::to_string(step.cmdData) : id;
   const std::string targetText = target.empty() ? std::to_string(step.branchTrueStep) : target;
   const std::string trueText = trueTarget.empty() ? std::to_string(step.branchTrueStep) : trueTarget;
   const std::string falseText = falseTarget.empty() ? std::to_string(step.branchFalseStep) : falseTarget;
@@ -1060,6 +1123,18 @@ void ecmcMotionSequence::formatStepCommandLine(int stepIndex,
     break;
   case ECMC_SEQ_ACTION_RUN_SEQUENCE:
     snprintf(buffer, bytes, "%d: run_seq seq=%d timeout=%g", stepIndex, step.axis, step.timeoutMs);
+    break;
+  case ECMC_SEQ_ACTION_ARM_POS_TRIGGER:
+    snprintf(buffer, bytes, "%d: arm_pos_trigger axis=%d id=%s item=%s start=%g interval=%g end=%g value=%s pulse=%g",
+             stepIndex,
+             step.axis,
+             idText.c_str(),
+             item.c_str(),
+             step.position,
+             step.velocity,
+             step.acceleration,
+             value.empty() ? "0" : value.c_str(),
+             step.deceleration);
     break;
   case ECMC_SEQ_ACTION_GOTO_STEP:
     snprintf(buffer, bytes, "%d: goto_step target=%s",
@@ -1250,7 +1325,7 @@ int ecmcMotionSequence::preparePosTriggerStep(int stepIndex, ecmcSeqStep &step) 
   }
   if (step.velocity == 0.0) {
     char msg[ECMC_SEQ_TEXT_LEN] = {0};
-    snprintf(msg, sizeof(msg), "Step %d trigger period is zero.", stepIndex);
+    snprintf(msg, sizeof(msg), "Step %d trigger interval is zero.", stepIndex);
     return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
   }
   if (step.action == ECMC_SEQ_ACTION_ARM_TIME_TRIGGER &&
@@ -1264,6 +1339,18 @@ int ecmcMotionSequence::preparePosTriggerStep(int stepIndex, ecmcSeqStep &step) 
     char msg[ECMC_SEQ_TEXT_LEN] = {0};
     snprintf(msg, sizeof(msg), "Step %d trigger delay is negative.", stepIndex);
     return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+  }
+  if (step.action == ECMC_SEQ_ACTION_ARM_POS_TRIGGER) {
+    int32_t count = 0;
+    if (!calcTriggerCountFromRange(step.position,
+                                   step.velocity,
+                                   step.acceleration,
+                                   &count)) {
+      char msg[ECMC_SEQ_TEXT_LEN] = {0};
+      snprintf(msg, sizeof(msg), "Step %d trigger range is invalid.", stepIndex);
+      return setError(ERROR_MAIN_SEQUENCE_OBJECT_NULL, msg);
+    }
+    step.acceleration = static_cast<double>(count);
   }
   if (step.acceleration <= 0.0) {
     char msg[ECMC_SEQ_TEXT_LEN] = {0};
@@ -3096,8 +3183,8 @@ int setMotionSeqArmPosTrigger(int seqIndex,
                               int axis,
                               const char *item,
                               double startPos,
-                              double period,
-                              int count,
+                              double interval,
+                              double endPos,
                               double value,
                               double pulseMs) {
   char name[ECMC_SEQ_TEXT_LEN] = {0};
@@ -3114,8 +3201,8 @@ int setMotionSeqArmPosTrigger(int seqIndex,
                         ECMC_SEQ_ACTION_ARM_POS_TRIGGER,
                         axis,
                         startPos,
-                        period,
-                        static_cast<double>(count),
+                        interval,
+                        endPos,
                         pulseMs,
                         0.0,
                         name,
