@@ -12,6 +12,8 @@
 #include "ecmcRtLoggerPortDriver.h"
 
 #include <atomic>
+#include <stdio.h>
+#include <string.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdexcept>
@@ -47,13 +49,26 @@ const char *ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT = "RTLOG_DIAG_AXIS_REPORT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_MR_REQUEST_COUNT = "RTLOG_AXIS_CMD_MR_REQUEST_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_REQUEST_COUNT = "RTLOG_AXIS_CMD_REQUEST_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT = "RTLOG_AXIS_CMD_EXECUTE_COUNT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE = "RTLOG_AXIS_MR_CMD_TYPE";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_RESULT = "RTLOG_AXIS_MR_CMD_RESULT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_REASON = "RTLOG_AXIS_MR_CMD_REASON";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_ERROR = "RTLOG_AXIS_MR_CMD_ERROR";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_CYCLE = "RTLOG_AXIS_MR_CMD_CYCLE";
+const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TEXT = "RTLOG_AXIS_MR_CMD_TEXT";
 
 constexpr size_t ECMC_RT_LOGGER_DIAG_FILE_SIZE = 512;
 constexpr size_t ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE = 1024;
+constexpr size_t ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE = 160;
 
 std::atomic<unsigned int> axisCmdRequestCounts_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisCmdExecuteCounts_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisCmdMotorRecordRequestCounts_[ECMC_MAX_AXES];
+std::atomic<int> axisMrCmdTypes_[ECMC_MAX_AXES];
+std::atomic<int> axisMrCmdResults_[ECMC_MAX_AXES];
+std::atomic<int> axisMrCmdReasons_[ECMC_MAX_AXES];
+std::atomic<int> axisMrCmdErrors_[ECMC_MAX_AXES];
+std::atomic<int> axisMrCmdCycles_[ECMC_MAX_AXES];
+std::atomic<unsigned int> axisMrCmdVersions_[ECMC_MAX_AXES];
 
 enum ecmcRtLoggerPortLevel {
   ECMC_RT_LOGGER_PORT_LEVEL_INFO = 0,
@@ -94,6 +109,12 @@ public:
       axisCmdMotorRecordRequestCountParam_(0),
       axisCmdRequestCountParam_(0),
       axisCmdExecuteCountParam_(0),
+      axisMrCmdTypeParam_(0),
+      axisMrCmdResultParam_(0),
+      axisMrCmdReasonParam_(0),
+      axisMrCmdErrorParam_(0),
+      axisMrCmdCycleParam_(0),
+      axisMrCmdTextParam_(0),
       messageCount_(0),
       droppedCount_(0),
       diagLevel_(1),
@@ -167,6 +188,24 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT,
                         asynParamInt32,
                         &axisCmdExecuteCountParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE,
+                        asynParamInt32,
+                        &axisMrCmdTypeParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_RESULT,
+                        asynParamInt32,
+                        &axisMrCmdResultParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_REASON,
+                        asynParamInt32,
+                        &axisMrCmdReasonParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_ERROR,
+                        asynParamInt32,
+                        &axisMrCmdErrorParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_CYCLE,
+                        asynParamInt32,
+                        &axisMrCmdCycleParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TEXT,
+                        asynParamOctet,
+                        &axisMrCmdTextParam_);
 
     setStringParam(lastMessageParam_, "");
     setIntegerParam(lastLevelParam_, ECMC_RT_LOGGER_PORT_LEVEL_INFO);
@@ -192,6 +231,13 @@ public:
       axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdExecuteCountsPublished_[axisIndex] = UINT_MAX;
+      axisMrCmdTypesPublished_[axisIndex] = INT_MIN;
+      axisMrCmdResultsPublished_[axisIndex] = INT_MIN;
+      axisMrCmdReasonsPublished_[axisIndex] = INT_MIN;
+      axisMrCmdErrorsPublished_[axisIndex] = INT_MIN;
+      axisMrCmdCyclesPublished_[axisIndex] = INT_MIN;
+      axisMrCmdVersionsPublished_[axisIndex] = UINT_MAX;
+      axisMrCmdTextsPublished_[axisIndex][0] = '\0';
       setIntegerParam(axisIndex,
                       axisCmdMotorRecordRequestCountParam_,
                       saturateCount(axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire)));
@@ -201,6 +247,22 @@ public:
       setIntegerParam(axisIndex,
                       axisCmdExecuteCountParam_,
                       saturateCount(axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire)));
+      setIntegerParam(axisIndex,
+                      axisMrCmdTypeParam_,
+                      axisMrCmdTypes_[axisIndex].load(std::memory_order_acquire));
+      setIntegerParam(axisIndex,
+                      axisMrCmdResultParam_,
+                      axisMrCmdResults_[axisIndex].load(std::memory_order_acquire));
+      setIntegerParam(axisIndex,
+                      axisMrCmdReasonParam_,
+                      axisMrCmdReasons_[axisIndex].load(std::memory_order_acquire));
+      setIntegerParam(axisIndex,
+                      axisMrCmdErrorParam_,
+                      axisMrCmdErrors_[axisIndex].load(std::memory_order_acquire));
+      setIntegerParam(axisIndex,
+                      axisMrCmdCycleParam_,
+                      axisMrCmdCycles_[axisIndex].load(std::memory_order_acquire));
+      setStringParam(axisIndex, axisMrCmdTextParam_, "none");
     }
     callParamCallbacks();
   }
@@ -363,10 +425,164 @@ private:
         changed = true;
       }
 
+      const unsigned int mrCmdVersionStart =
+        axisMrCmdVersions_[axisIndex].load(std::memory_order_acquire);
+
+      if ((mrCmdVersionStart & 1u) ||
+          mrCmdVersionStart == axisMrCmdVersionsPublished_[axisIndex]) {
+        if (changed) {
+          callParamCallbacks(0, axisIndex);
+        }
+        continue;
+      }
+
+      const int mrCmdType =
+        axisMrCmdTypes_[axisIndex].load(std::memory_order_relaxed);
+      const int mrCmdResult =
+        axisMrCmdResults_[axisIndex].load(std::memory_order_relaxed);
+      const int mrCmdReason =
+        axisMrCmdReasons_[axisIndex].load(std::memory_order_relaxed);
+      const int mrCmdError =
+        axisMrCmdErrors_[axisIndex].load(std::memory_order_relaxed);
+      const int mrCmdCycle =
+        axisMrCmdCycles_[axisIndex].load(std::memory_order_relaxed);
+      const unsigned int mrCmdVersionEnd =
+        axisMrCmdVersions_[axisIndex].load(std::memory_order_acquire);
+
+      if (mrCmdVersionStart != mrCmdVersionEnd ||
+          (mrCmdVersionEnd & 1u)) {
+        if (changed) {
+          callParamCallbacks(0, axisIndex);
+        }
+        continue;
+      }
+      axisMrCmdVersionsPublished_[axisIndex] = mrCmdVersionEnd;
+
+      if (mrCmdType != axisMrCmdTypesPublished_[axisIndex]) {
+        axisMrCmdTypesPublished_[axisIndex] = mrCmdType;
+        setIntegerParam(axisIndex, axisMrCmdTypeParam_, mrCmdType);
+        changed = true;
+      }
+      if (mrCmdResult != axisMrCmdResultsPublished_[axisIndex]) {
+        axisMrCmdResultsPublished_[axisIndex] = mrCmdResult;
+        setIntegerParam(axisIndex, axisMrCmdResultParam_, mrCmdResult);
+        changed = true;
+      }
+      if (mrCmdReason != axisMrCmdReasonsPublished_[axisIndex]) {
+        axisMrCmdReasonsPublished_[axisIndex] = mrCmdReason;
+        setIntegerParam(axisIndex, axisMrCmdReasonParam_, mrCmdReason);
+        changed = true;
+      }
+      if (mrCmdError != axisMrCmdErrorsPublished_[axisIndex]) {
+        axisMrCmdErrorsPublished_[axisIndex] = mrCmdError;
+        setIntegerParam(axisIndex, axisMrCmdErrorParam_, mrCmdError);
+        changed = true;
+      }
+      if (mrCmdCycle != axisMrCmdCyclesPublished_[axisIndex]) {
+        axisMrCmdCyclesPublished_[axisIndex] = mrCmdCycle;
+        setIntegerParam(axisIndex, axisMrCmdCycleParam_, mrCmdCycle);
+        changed = true;
+      }
+
+      char mrCmdText[ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE];
+      buildMrCmdText(mrCmdText,
+                     sizeof(mrCmdText),
+                     mrCmdType,
+                     mrCmdResult,
+                     mrCmdReason,
+                     mrCmdError,
+                     mrCmdCycle);
+      if (strcmp(mrCmdText, axisMrCmdTextsPublished_[axisIndex]) != 0) {
+        snprintf(axisMrCmdTextsPublished_[axisIndex],
+                 sizeof(axisMrCmdTextsPublished_[axisIndex]),
+                 "%s",
+                 mrCmdText);
+        setStringParam(axisIndex, axisMrCmdTextParam_, mrCmdText);
+        changed = true;
+      }
+
       if (changed) {
         callParamCallbacks(0, axisIndex);
       }
     }
+  }
+
+  const char *mrCommandName(int command) const {
+    switch (command) {
+    case 1:
+      return "ABS";
+    case 2:
+      return "REL";
+    case 3:
+      return "VEL";
+    case 4:
+      return "HOME";
+    case 5:
+      return "STOP";
+    default:
+      return "NONE";
+    }
+  }
+
+  const char *mrResultName(int result) const {
+    switch (result) {
+    case 1:
+      return "accepted";
+    case 2:
+      return "rejected";
+    case 3:
+      return "ignored";
+    case 4:
+      return "deferred";
+    default:
+      return "none";
+    }
+  }
+
+  const char *mrReasonName(int reason) const {
+    switch (reason) {
+    case 1:
+      return "ok";
+    case 2:
+      return "zero_velocity";
+    case 3:
+      return "block_com";
+    case 4:
+      return "axis_blocked";
+    case 5:
+      return "ecmc_error";
+    case 6:
+      return "auto_enable_pending";
+    case 7:
+      return "retarget_existing_move";
+    case 8:
+      return "no_execute_edge";
+    case 9:
+      return "param_error";
+    default:
+      return "none";
+    }
+  }
+
+  void buildMrCmdText(char *buffer,
+                      size_t bufferSize,
+                      int command,
+                      int result,
+                      int reason,
+                      int errorCode,
+                      int cycleCounter) const {
+    if (!buffer || !bufferSize) {
+      return;
+    }
+
+    snprintf(buffer,
+             bufferSize,
+             "%s %s %s err=0x%x cycle=%d",
+             mrCommandName(command),
+             mrResultName(result),
+             mrReasonName(reason),
+             errorCode,
+             cycleCounter);
   }
 
   bool filterAllows(int sourceType,
@@ -485,6 +701,12 @@ private:
   int axisCmdMotorRecordRequestCountParam_;
   int axisCmdRequestCountParam_;
   int axisCmdExecuteCountParam_;
+  int axisMrCmdTypeParam_;
+  int axisMrCmdResultParam_;
+  int axisMrCmdReasonParam_;
+  int axisMrCmdErrorParam_;
+  int axisMrCmdCycleParam_;
+  int axisMrCmdTextParam_;
   uint64_t messageCount_;
   uint64_t droppedCount_;
   int diagLevel_;
@@ -496,6 +718,13 @@ private:
   unsigned int axisCmdMotorRecordRequestCountsPublished_[ECMC_MAX_AXES];
   unsigned int axisCmdRequestCountsPublished_[ECMC_MAX_AXES];
   unsigned int axisCmdExecuteCountsPublished_[ECMC_MAX_AXES];
+  int axisMrCmdTypesPublished_[ECMC_MAX_AXES];
+  int axisMrCmdResultsPublished_[ECMC_MAX_AXES];
+  int axisMrCmdReasonsPublished_[ECMC_MAX_AXES];
+  int axisMrCmdErrorsPublished_[ECMC_MAX_AXES];
+  int axisMrCmdCyclesPublished_[ECMC_MAX_AXES];
+  unsigned int axisMrCmdVersionsPublished_[ECMC_MAX_AXES];
+  char axisMrCmdTextsPublished_[ECMC_MAX_AXES][ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE];
   std::atomic<int> diagDumpPending_;
   std::atomic<int> filterMode_;
   std::atomic<unsigned int> filterTypeMask_;
@@ -566,6 +795,25 @@ void ecmcRtLoggerPortDriverSetAxisCommandCounters(int axisIndex,
   axisCmdMotorRecordRequestCounts_[axisIndex].store(motorRecordRequestCounter, std::memory_order_release);
   axisCmdRequestCounts_[axisIndex].store(requestCounter, std::memory_order_release);
   axisCmdExecuteCounts_[axisIndex].store(executeCounter, std::memory_order_release);
+}
+
+void ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
+                                                           int command,
+                                                           int result,
+                                                           int reason,
+                                                           int errorCode,
+                                                           int cycleCounter) {
+  if (axisIndex < 0 || axisIndex >= ECMC_MAX_AXES) {
+    return;
+  }
+
+  axisMrCmdVersions_[axisIndex].fetch_add(1, std::memory_order_acq_rel);
+  axisMrCmdTypes_[axisIndex].store(command, std::memory_order_relaxed);
+  axisMrCmdResults_[axisIndex].store(result, std::memory_order_relaxed);
+  axisMrCmdReasons_[axisIndex].store(reason, std::memory_order_relaxed);
+  axisMrCmdErrors_[axisIndex].store(errorCode, std::memory_order_relaxed);
+  axisMrCmdCycles_[axisIndex].store(cycleCounter, std::memory_order_relaxed);
+  axisMrCmdVersions_[axisIndex].fetch_add(1, std::memory_order_release);
 }
 
 void ecmcRtLoggerPortDriverService() {

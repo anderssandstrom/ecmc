@@ -17,6 +17,7 @@
 #include "ecmcGlobalsExtern.h"
 #include "ecmcPluginClient.h"
 #include "ecmcRtLogger.h"
+#include "ecmcRtLoggerPortDriver.h"
 
 #ifndef ASYN_TRACE_INFO
 #define ASYN_TRACE_INFO      0x0040
@@ -32,6 +33,97 @@ extern asynUser *pPrintOutAsynUser;
 static bool ecmcMotorRecordSoftLimitEqual(double a, double b) {
   const double scale = fmax(1.0, fmax(fabs(a), fabs(b)));
   return a == b || fabs(a - b) <= 1e-12 * scale;
+}
+
+enum ecmcMrCmdDiagType {
+  ECMC_MR_CMD_DIAG_NONE = 0,
+  ECMC_MR_CMD_DIAG_ABS  = 1,
+  ECMC_MR_CMD_DIAG_REL  = 2,
+  ECMC_MR_CMD_DIAG_VEL  = 3,
+  ECMC_MR_CMD_DIAG_HOME = 4,
+  ECMC_MR_CMD_DIAG_STOP = 5
+};
+
+enum ecmcMrCmdDiagResult {
+  ECMC_MR_CMD_DIAG_RESULT_NONE     = 0,
+  ECMC_MR_CMD_DIAG_RESULT_ACCEPTED = 1,
+  ECMC_MR_CMD_DIAG_RESULT_REJECTED = 2,
+  ECMC_MR_CMD_DIAG_RESULT_IGNORED  = 3,
+  ECMC_MR_CMD_DIAG_RESULT_DEFERRED = 4
+};
+
+enum ecmcMrCmdDiagReason {
+  ECMC_MR_CMD_DIAG_REASON_NONE       = 0,
+  ECMC_MR_CMD_DIAG_REASON_OK         = 1,
+  ECMC_MR_CMD_DIAG_REASON_ZERO_VELO  = 2,
+  ECMC_MR_CMD_DIAG_REASON_BLOCK_COM  = 3,
+  ECMC_MR_CMD_DIAG_REASON_AXIS_BLOCK = 4,
+  ECMC_MR_CMD_DIAG_REASON_ECMC_ERROR = 5,
+  ECMC_MR_CMD_DIAG_REASON_AUTO_ENA   = 6,
+  ECMC_MR_CMD_DIAG_REASON_RETARGET   = 7,
+  ECMC_MR_CMD_DIAG_REASON_NO_EDGE    = 8,
+  ECMC_MR_CMD_DIAG_REASON_PARAM      = 9
+};
+
+struct ecmcMrCmdDiag {
+  int command;
+  int result;
+  int reason;
+  int errorCode;
+  int cycleCounter;
+};
+
+static ecmcMrCmdDiag makeMrCmdDiag(ecmcAxisBase *axis,
+                                   int command,
+                                   int result,
+                                   int reason,
+                                   int errorCode) {
+  ecmcMrCmdDiag diag;
+  diag.command = command;
+  diag.result = result;
+  diag.reason = reason;
+  diag.errorCode = errorCode;
+  diag.cycleCounter = 0;
+  if (axis) {
+    diag.cycleCounter = axis->getCycleCounter();
+  }
+  return diag;
+}
+
+static void publishMrCmdDiag(int axisId,
+                             const ecmcMrCmdDiag& diag) {
+  if (diag.result == ECMC_MR_CMD_DIAG_RESULT_NONE) {
+    return;
+  }
+
+  ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(axisId,
+                                                        diag.command,
+                                                        diag.result,
+                                                        diag.reason,
+                                                        diag.errorCode,
+                                                        diag.cycleCounter);
+}
+
+static ecmcMrCmdDiag makeAcceptedMrCmdDiag(ecmcAxisBase *axis,
+                                           int command,
+                                           bool retargetExistingMove,
+                                           unsigned int executeCounterBefore) {
+  int result = ECMC_MR_CMD_DIAG_RESULT_ACCEPTED;
+  int reason = ECMC_MR_CMD_DIAG_REASON_OK;
+
+  if (retargetExistingMove) {
+    reason = ECMC_MR_CMD_DIAG_REASON_RETARGET;
+  } else if (axis &&
+             axis->getMotionCommandExecuteCounter() == executeCounterBefore) {
+    if (!axis->getEnabled() && axis->getEnableAutoEnable()) {
+      result = ECMC_MR_CMD_DIAG_RESULT_DEFERRED;
+      reason = ECMC_MR_CMD_DIAG_REASON_AUTO_ENA;
+    } else {
+      reason = ECMC_MR_CMD_DIAG_REASON_NO_EDGE;
+    }
+  }
+
+  return makeMrCmdDiag(axis, command, result, reason, 0);
 }
 
 #undef LOGERR
@@ -1078,17 +1170,34 @@ asynStatus ecmcMotorRecordAxis::move(double position,
   /* Do range check */
   if (!maxVelocity) {
     drvlocal.eeAxisWarning = eeAxisWarningVeloZero;
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   relative ? ECMC_MR_CMD_DIAG_REL : ECMC_MR_CMD_DIAG_ABS,
+                                   ECMC_MR_CMD_DIAG_RESULT_IGNORED,
+                                   ECMC_MR_CMD_DIAG_REASON_ZERO_VELO,
+                                   0));
     return asynSuccess;
   }
 
   int errorCode = 0;
+  ecmcMrCmdDiag cmdDiag = makeMrCmdDiag(NULL,
+                                        ECMC_MR_CMD_DIAG_NONE,
+                                        ECMC_MR_CMD_DIAG_RESULT_NONE,
+                                        ECMC_MR_CMD_DIAG_REASON_NONE,
+                                        0);
 
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
   
   // Communication to axis blocked
   if (drvlocal.ecmcAxis->getBlockCom()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   relative ? ECMC_MR_CMD_DIAG_REL : ECMC_MR_CMD_DIAG_ABS,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_BLOCK_COM,
+                                   blockError));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Communication to ECMC is blocked; motion command rejected.\n",
       __FILE__,
@@ -1100,7 +1209,13 @@ asynStatus ecmcMotorRecordAxis::move(double position,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   relative ? ECMC_MR_CMD_DIAG_REL : ECMC_MR_CMD_DIAG_ABS,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_AXIS_BLOCK,
+                                   blockError));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; motion command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1108,6 +1223,14 @@ asynStatus ecmcMotorRecordAxis::move(double position,
       __LINE__, axisNo_);
     return asynError;
   }
+
+  const motionCommandTypes expectedCommand = relative ? ECMC_CMD_MOVEREL : ECMC_CMD_MOVEABS;
+  const bool retargetExistingMove =
+    drvlocal.ecmcAxis->getExecute() &&
+    drvlocal.ecmcAxis->getCommand() == expectedCommand &&
+    drvlocal.ecmcAxis->getLocalBusy();
+  const unsigned int executeCounterBefore =
+    drvlocal.ecmcAxis->getMotionCommandExecuteCounter();
 
   if (relative) {
     errorCode = drvlocal.ecmcAxis->moveRelativePosition(position,
@@ -1130,11 +1253,22 @@ asynStatus ecmcMotorRecordAxis::move(double position,
     drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
 #endif // ifndef motorWaitPollsBeforeReadyString
     commandAccepted = true;
+    cmdDiag = makeAcceptedMrCmdDiag(drvlocal.ecmcAxis,
+                                    relative ? ECMC_MR_CMD_DIAG_REL : ECMC_MR_CMD_DIAG_ABS,
+                                    retargetExistingMove,
+                                    executeCounterBefore);
+  } else {
+    cmdDiag = makeMrCmdDiag(drvlocal.ecmcAxis,
+                            relative ? ECMC_MR_CMD_DIAG_REL : ECMC_MR_CMD_DIAG_ABS,
+                            ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                            ECMC_MR_CMD_DIAG_REASON_ECMC_ERROR,
+                            errorCode);
   }
 
   //printf("Axis[%d]:ecmcMotorRecordAxis::move(): ecmc busy %d\n", axisNo_,drvlocal.ecmcAxis->getBusy());
 
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
+  publishMrCmdDiag(drvlocal.axisId, cmdDiag);
 
   if (commandAccepted) {
     // update motor record
@@ -1182,6 +1316,12 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
                                            &cmdData);
 
   if (status != asynSuccess) {
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_HOME,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_PARAM,
+                                   status));
     return asynError;
   }
 
@@ -1240,6 +1380,12 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
                                  &velToCam);
 
     if (status != asynSuccess) {
+      publishMrCmdDiag(drvlocal.axisId,
+                       makeMrCmdDiag(drvlocal.ecmcAxis,
+                                     ECMC_MR_CMD_DIAG_HOME,
+                                     ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                     ECMC_MR_CMD_DIAG_REASON_PARAM,
+                                     status));
       return asynError;
     }
 
@@ -1249,6 +1395,12 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
                                  &velOffCam);
   
     if (status != asynSuccess) {
+      publishMrCmdDiag(drvlocal.axisId,
+                       makeMrCmdDiag(drvlocal.ecmcAxis,
+                                     ECMC_MR_CMD_DIAG_HOME,
+                                     ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                     ECMC_MR_CMD_DIAG_REASON_PARAM,
+                                     status));
       return asynError;
     }
 
@@ -1258,17 +1410,34 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
                                  &accHom);
 
     if (status != asynSuccess) {
+      publishMrCmdDiag(drvlocal.axisId,
+                       makeMrCmdDiag(drvlocal.ecmcAxis,
+                                     ECMC_MR_CMD_DIAG_HOME,
+                                     ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                     ECMC_MR_CMD_DIAG_REASON_PARAM,
+                                     status));
       return asynError;
     }
   }
   
   int errorCode = 0;
+  ecmcMrCmdDiag cmdDiag = makeMrCmdDiag(NULL,
+                                        ECMC_MR_CMD_DIAG_NONE,
+                                        ECMC_MR_CMD_DIAG_RESULT_NONE,
+                                        ECMC_MR_CMD_DIAG_REASON_NONE,
+                                        0);
 
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
 
   if (drvlocal.ecmcAxis->getBlockCom()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_HOME,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_BLOCK_COM,
+                                   blockError));
 
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Communication to ECMC is blocked; home command rejected.\n",
@@ -1282,7 +1451,13 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_HOME,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_AXIS_BLOCK,
+                                   blockError));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; home command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1290,6 +1465,9 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
       __LINE__, axisNo_);
     return asynError;
   }
+
+  const unsigned int executeCounterBefore =
+    drvlocal.ecmcAxis->getMotionCommandExecuteCounter();
 
   // "-1" will lead to not overwriting anything that is set in ecmc
   errorCode =  drvlocal.ecmcAxis->moveHome(cmdData,
@@ -1308,9 +1486,20 @@ asynStatus ecmcMotorRecordAxis::home(double minVelocity,
     drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
 #endif // ifndef motorWaitPollsBeforeReadyString
     commandAccepted = true;
+    cmdDiag = makeAcceptedMrCmdDiag(drvlocal.ecmcAxis,
+                                    ECMC_MR_CMD_DIAG_HOME,
+                                    false,
+                                    executeCounterBefore);
+  } else {
+    cmdDiag = makeMrCmdDiag(drvlocal.ecmcAxis,
+                            ECMC_MR_CMD_DIAG_HOME,
+                            ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                            ECMC_MR_CMD_DIAG_REASON_ECMC_ERROR,
+                            errorCode);
   }
 
   if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+  publishMrCmdDiag(drvlocal.axisId, cmdDiag);
 
   if (commandAccepted) {
     // update motor record
@@ -1344,10 +1533,22 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
   /* Do range check */
   if (!maxVelocity) {
     drvlocal.eeAxisWarning = eeAxisWarningVeloZero;
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_VEL,
+                                   ECMC_MR_CMD_DIAG_RESULT_IGNORED,
+                                   ECMC_MR_CMD_DIAG_REASON_ZERO_VELO,
+                                   0));
     return asynSuccess;
   }
 
   if (acceleration == 0) {
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_VEL,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_PARAM,
+                                   0));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Velocity command rejected: acceleration is 0.0.\n",
       __FILE__,
@@ -1374,12 +1575,23 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
   }
 
   int errorCode = 0;
+  ecmcMrCmdDiag cmdDiag = makeMrCmdDiag(NULL,
+                                        ECMC_MR_CMD_DIAG_NONE,
+                                        ECMC_MR_CMD_DIAG_RESULT_NONE,
+                                        ECMC_MR_CMD_DIAG_REASON_NONE,
+                                        0);
 
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
 
   if (drvlocal.ecmcAxis->getBlockCom()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setExternalCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_VEL,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_BLOCK_COM,
+                                   blockError));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Communication to ECMC is blocked; velocity command rejected.\n",
       __FILE__,
@@ -1392,7 +1604,13 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
   // Axis blocked (maybe by master slave statemachine, only one grouop can accept commands at a time)
   if (drvlocal.ecmcAxis->getBlocked()) {
     if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-    drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    int blockError = drvlocal.ecmcAxis->setMasterSlaveCommandBlockedError();
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_VEL,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_AXIS_BLOCK,
+                                   blockError));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: Axis is blocked; velocity command rejected (possibly master/slave related).\n",
       __FILE__,
@@ -1400,6 +1618,13 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
       __LINE__, axisNo_);
     return asynError;
   }
+
+  const bool retargetExistingMove =
+    drvlocal.ecmcAxis->getExecute() &&
+    drvlocal.ecmcAxis->getCommand() == ECMC_CMD_MOVEVEL &&
+    drvlocal.ecmcAxis->getLocalBusy();
+  const unsigned int executeCounterBefore =
+    drvlocal.ecmcAxis->getMotionCommandExecuteCounter();
 
   // if(drvlocal.ecmcAxis->getAllowConstVelo()) {
   errorCode = drvlocal.ecmcAxis->moveVelocity(velo,
@@ -1415,6 +1640,16 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
     drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
 #endif // ifndef motorWaitPollsBeforeReadyString
     commandAccepted = true;
+    cmdDiag = makeAcceptedMrCmdDiag(drvlocal.ecmcAxis,
+                                    ECMC_MR_CMD_DIAG_VEL,
+                                    retargetExistingMove,
+                                    executeCounterBefore);
+  } else {
+    cmdDiag = makeMrCmdDiag(drvlocal.ecmcAxis,
+                            ECMC_MR_CMD_DIAG_VEL,
+                            ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                            ECMC_MR_CMD_DIAG_REASON_ECMC_ERROR,
+                            errorCode);
   }
  
   // } else
@@ -1427,6 +1662,7 @@ asynStatus ecmcMotorRecordAxis::moveVelocity(double minVelocity,
   // }
 
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
+  publishMrCmdDiag(drvlocal.axisId, cmdDiag);
 
   if (commandAccepted) {
     // update motor record
@@ -1686,6 +1922,12 @@ asynStatus ecmcMotorRecordAxis::stopAxisInternal(const char *function_name,
   }
 
   if (errorCode) {
+    publishMrCmdDiag(drvlocal.axisId,
+                     makeMrCmdDiag(drvlocal.ecmcAxis,
+                                   ECMC_MR_CMD_DIAG_STOP,
+                                   ECMC_MR_CMD_DIAG_RESULT_REJECTED,
+                                   ECMC_MR_CMD_DIAG_REASON_ECMC_ERROR,
+                                   errorCode));
     LOGERR(
       "%s/%s:%d: ERROR: Axis[%d]: stopMotion() failed (0x%x).\n",
       __FILE__,
@@ -1697,6 +1939,12 @@ asynStatus ecmcMotorRecordAxis::stopAxisInternal(const char *function_name,
     return asynError;
   }
 
+  publishMrCmdDiag(drvlocal.axisId,
+                   makeMrCmdDiag(drvlocal.ecmcAxis,
+                                 ECMC_MR_CMD_DIAG_STOP,
+                                 ECMC_MR_CMD_DIAG_RESULT_ACCEPTED,
+                                 ECMC_MR_CMD_DIAG_REASON_OK,
+                                 0));
   return asynSuccess;
 }
 

@@ -22,6 +22,12 @@ void        ecmcRtLoggerPortDriverSetAxisCommandCounters(int axisIndex,
                                                          unsigned int motorRecordRequestCounter,
                                                          unsigned int requestCounter,
                                                          unsigned int executeCounter);
+void        ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
+                                                                  int command,
+                                                                  int result,
+                                                                  int reason,
+                                                                  int errorCode,
+                                                                  int cycleCounter);
 void        ecmcRtLoggerPortDriverService();
 const char *ecmcRtLoggerPortDriverGetPortName();
 
