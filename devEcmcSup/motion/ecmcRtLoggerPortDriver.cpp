@@ -237,6 +237,9 @@ public:
       axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdExecuteCountsPublished_[axisIndex] = UINT_MAX;
+      axisCmdMotorRecordRequestCountBase_[axisIndex].store(0, std::memory_order_relaxed);
+      axisCmdRequestCountBase_[axisIndex].store(0, std::memory_order_relaxed);
+      axisCmdExecuteCountBase_[axisIndex].store(0, std::memory_order_relaxed);
       axisMrCmdTypesPublished_[axisIndex] = INT_MIN;
       axisMrCmdResultsPublished_[axisIndex] = INT_MIN;
       axisMrCmdReasonsPublished_[axisIndex] = INT_MIN;
@@ -246,13 +249,22 @@ public:
       axisMrCmdTextsPublished_[axisIndex][0] = '\0';
       setIntegerParam(axisIndex,
                       axisCmdMotorRecordRequestCountParam_,
-                      saturateCount(axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire)));
+                      saturateCount(
+                        counterDelta(
+                          axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire),
+                          axisCmdMotorRecordRequestCountBase_[axisIndex].load(std::memory_order_acquire))));
       setIntegerParam(axisIndex,
                       axisCmdRequestCountParam_,
-                      saturateCount(axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire)));
+                      saturateCount(
+                        counterDelta(
+                          axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire),
+                          axisCmdRequestCountBase_[axisIndex].load(std::memory_order_acquire))));
       setIntegerParam(axisIndex,
                       axisCmdExecuteCountParam_,
-                      saturateCount(axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire)));
+                      saturateCount(
+                        counterDelta(
+                          axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire),
+                          axisCmdExecuteCountBase_[axisIndex].load(std::memory_order_acquire))));
       setIntegerParam(axisIndex, axisCmdClearParam_, 0);
       setIntegerParam(axisIndex,
                       axisMrCmdTypeParam_,
@@ -285,17 +297,23 @@ public:
         addr < ECMC_MAX_AXES) {
       if (pasynUser->reason == axisCmdMotorRecordRequestCountParam_) {
         *value = saturateCount(
-          axisCmdMotorRecordRequestCounts_[addr].load(std::memory_order_acquire));
+          counterDelta(
+            axisCmdMotorRecordRequestCounts_[addr].load(std::memory_order_acquire),
+            axisCmdMotorRecordRequestCountBase_[addr].load(std::memory_order_acquire)));
         return asynSuccess;
       }
       if (pasynUser->reason == axisCmdRequestCountParam_) {
         *value = saturateCount(
-          axisCmdRequestCounts_[addr].load(std::memory_order_acquire));
+          counterDelta(
+            axisCmdRequestCounts_[addr].load(std::memory_order_acquire),
+            axisCmdRequestCountBase_[addr].load(std::memory_order_acquire)));
         return asynSuccess;
       }
       if (pasynUser->reason == axisCmdExecuteCountParam_) {
         *value = saturateCount(
-          axisCmdExecuteCounts_[addr].load(std::memory_order_acquire));
+          counterDelta(
+            axisCmdExecuteCounts_[addr].load(std::memory_order_acquire),
+            axisCmdExecuteCountBase_[addr].load(std::memory_order_acquire)));
         return asynSuccess;
       }
       if (pasynUser->reason == axisMrCmdTypeParam_) {
@@ -380,15 +398,47 @@ public:
         return asynSuccess;
       }
 
-      axisCmdMotorRecordRequestCounts_[addr].store(0, std::memory_order_release);
-      axisCmdRequestCounts_[addr].store(0, std::memory_order_release);
-      axisCmdExecuteCounts_[addr].store(0, std::memory_order_release);
+      axisCmdMotorRecordRequestCountBase_[addr].store(
+        axisCmdMotorRecordRequestCounts_[addr].load(std::memory_order_acquire),
+        std::memory_order_release);
+      axisCmdRequestCountBase_[addr].store(
+        axisCmdRequestCounts_[addr].load(std::memory_order_acquire),
+        std::memory_order_release);
+      axisCmdExecuteCountBase_[addr].store(
+        axisCmdExecuteCounts_[addr].load(std::memory_order_acquire),
+        std::memory_order_release);
       axisCmdMotorRecordRequestCountsPublished_[addr] = 0;
       axisCmdRequestCountsPublished_[addr] = 0;
       axisCmdExecuteCountsPublished_[addr] = 0;
+      axisMrCmdVersions_[addr].fetch_add(1, std::memory_order_acq_rel);
+      axisMrCmdTypes_[addr].store(0, std::memory_order_relaxed);
+      axisMrCmdResults_[addr].store(0, std::memory_order_relaxed);
+      axisMrCmdReasons_[addr].store(0, std::memory_order_relaxed);
+      axisMrCmdErrors_[addr].store(0, std::memory_order_relaxed);
+      axisMrCmdCycles_[addr].store(0, std::memory_order_relaxed);
+      const unsigned int clearVersion =
+        axisMrCmdVersions_[addr].fetch_add(1, std::memory_order_release) + 1;
+      axisMrCmdTypesPublished_[addr] = 0;
+      axisMrCmdResultsPublished_[addr] = 0;
+      axisMrCmdReasonsPublished_[addr] = 0;
+      axisMrCmdErrorsPublished_[addr] = 0;
+      axisMrCmdCyclesPublished_[addr] = 0;
+      axisMrCmdVersionsPublished_[addr] = clearVersion;
+      char mrCmdText[ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE];
+      buildMrCmdText(mrCmdText, sizeof(mrCmdText), 0, 0, 0, 0, 0);
+      snprintf(axisMrCmdTextsPublished_[addr],
+               sizeof(axisMrCmdTextsPublished_[addr]),
+               "%s",
+               mrCmdText);
       setIntegerParam(addr, axisCmdMotorRecordRequestCountParam_, 0);
       setIntegerParam(addr, axisCmdRequestCountParam_, 0);
       setIntegerParam(addr, axisCmdExecuteCountParam_, 0);
+      setIntegerParam(addr, axisMrCmdTypeParam_, 0);
+      setIntegerParam(addr, axisMrCmdResultParam_, 0);
+      setIntegerParam(addr, axisMrCmdReasonParam_, 0);
+      setIntegerParam(addr, axisMrCmdErrorParam_, 0);
+      setIntegerParam(addr, axisMrCmdCycleParam_, 0);
+      setStringParam(addr, axisMrCmdTextParam_, mrCmdText);
       setIntegerParam(addr, axisCmdClearParam_, 0);
       callParamCallbacks(addr);
       return asynSuccess;
@@ -518,7 +568,9 @@ private:
     for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
       bool changed = false;
       const unsigned int motorRecordRequestCounter =
-        axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire);
+        counterDelta(
+          axisCmdMotorRecordRequestCounts_[axisIndex].load(std::memory_order_acquire),
+          axisCmdMotorRecordRequestCountBase_[axisIndex].load(std::memory_order_acquire));
       if (motorRecordRequestCounter != axisCmdMotorRecordRequestCountsPublished_[axisIndex]) {
         axisCmdMotorRecordRequestCountsPublished_[axisIndex] = motorRecordRequestCounter;
         setIntegerParam(axisIndex,
@@ -528,7 +580,9 @@ private:
       }
 
       const unsigned int requestCounter =
-        axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire);
+        counterDelta(
+          axisCmdRequestCounts_[axisIndex].load(std::memory_order_acquire),
+          axisCmdRequestCountBase_[axisIndex].load(std::memory_order_acquire));
       if (requestCounter != axisCmdRequestCountsPublished_[axisIndex]) {
         axisCmdRequestCountsPublished_[axisIndex] = requestCounter;
         setIntegerParam(axisIndex,
@@ -538,7 +592,9 @@ private:
       }
 
       const unsigned int executeCounter =
-        axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire);
+        counterDelta(
+          axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire),
+          axisCmdExecuteCountBase_[axisIndex].load(std::memory_order_acquire));
       if (executeCounter != axisCmdExecuteCountsPublished_[axisIndex]) {
         axisCmdExecuteCountsPublished_[axisIndex] = executeCounter;
         setIntegerParam(axisIndex,
@@ -802,6 +858,10 @@ private:
     return value > (uint64_t)INT_MAX ? INT_MAX : (int)value;
   }
 
+  unsigned int counterDelta(unsigned int value, unsigned int base) const {
+    return value - base;
+  }
+
   int lastMessageParam_;
   int lastLevelParam_;
   int lastLevelTextParam_;
@@ -841,6 +901,9 @@ private:
   unsigned int axisCmdMotorRecordRequestCountsPublished_[ECMC_MAX_AXES];
   unsigned int axisCmdRequestCountsPublished_[ECMC_MAX_AXES];
   unsigned int axisCmdExecuteCountsPublished_[ECMC_MAX_AXES];
+  std::atomic<unsigned int> axisCmdMotorRecordRequestCountBase_[ECMC_MAX_AXES];
+  std::atomic<unsigned int> axisCmdRequestCountBase_[ECMC_MAX_AXES];
+  std::atomic<unsigned int> axisCmdExecuteCountBase_[ECMC_MAX_AXES];
   int axisMrCmdTypesPublished_[ECMC_MAX_AXES];
   int axisMrCmdResultsPublished_[ECMC_MAX_AXES];
   int axisMrCmdReasonsPublished_[ECMC_MAX_AXES];
