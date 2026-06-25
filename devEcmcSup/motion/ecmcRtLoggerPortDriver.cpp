@@ -50,6 +50,7 @@ const char *ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT = "RTLOG_DIAG_AXIS_REPORT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_MR_REQUEST_COUNT = "RTLOG_AXIS_CMD_MR_REQUEST_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_REQUEST_COUNT = "RTLOG_AXIS_CMD_REQUEST_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT = "RTLOG_AXIS_CMD_EXECUTE_COUNT";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_CLEAR = "RTLOG_AXIS_CMD_CLEAR";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE = "RTLOG_AXIS_MR_CMD_TYPE";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_RESULT = "RTLOG_AXIS_MR_CMD_RESULT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_REASON = "RTLOG_AXIS_MR_CMD_REASON";
@@ -110,6 +111,7 @@ public:
       axisCmdMotorRecordRequestCountParam_(0),
       axisCmdRequestCountParam_(0),
       axisCmdExecuteCountParam_(0),
+      axisCmdClearParam_(0),
       axisMrCmdTypeParam_(0),
       axisMrCmdResultParam_(0),
       axisMrCmdReasonParam_(0),
@@ -189,6 +191,9 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT,
                         asynParamInt32,
                         &axisCmdExecuteCountParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_CLEAR,
+                        asynParamInt32,
+                        &axisCmdClearParam_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE,
                         asynParamInt32,
                         &axisMrCmdTypeParam_);
@@ -248,6 +253,7 @@ public:
       setIntegerParam(axisIndex,
                       axisCmdExecuteCountParam_,
                       saturateCount(axisCmdExecuteCounts_[axisIndex].load(std::memory_order_acquire)));
+      setIntegerParam(axisIndex, axisCmdClearParam_, 0);
       setIntegerParam(axisIndex,
                       axisMrCmdTypeParam_,
                       axisMrCmdTypes_[axisIndex].load(std::memory_order_acquire));
@@ -359,6 +365,33 @@ public:
   asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value) override {
     if (!pasynUser) {
       return asynError;
+    }
+
+    int addr = 0;
+    const bool validAxisAddr =
+      !getAddress(pasynUser, &addr) &&
+      addr >= 0 &&
+      addr < ECMC_MAX_AXES;
+
+    if (validAxisAddr && pasynUser->reason == axisCmdClearParam_) {
+      if (!value) {
+        setIntegerParam(addr, axisCmdClearParam_, 0);
+        callParamCallbacks(addr);
+        return asynSuccess;
+      }
+
+      axisCmdMotorRecordRequestCounts_[addr].store(0, std::memory_order_release);
+      axisCmdRequestCounts_[addr].store(0, std::memory_order_release);
+      axisCmdExecuteCounts_[addr].store(0, std::memory_order_release);
+      axisCmdMotorRecordRequestCountsPublished_[addr] = 0;
+      axisCmdRequestCountsPublished_[addr] = 0;
+      axisCmdExecuteCountsPublished_[addr] = 0;
+      setIntegerParam(addr, axisCmdMotorRecordRequestCountParam_, 0);
+      setIntegerParam(addr, axisCmdRequestCountParam_, 0);
+      setIntegerParam(addr, axisCmdExecuteCountParam_, 0);
+      setIntegerParam(addr, axisCmdClearParam_, 0);
+      callParamCallbacks(addr);
+      return asynSuccess;
     }
 
     if (pasynUser->reason == controlParam_) {
@@ -790,6 +823,7 @@ private:
   int axisCmdMotorRecordRequestCountParam_;
   int axisCmdRequestCountParam_;
   int axisCmdExecuteCountParam_;
+  int axisCmdClearParam_;
   int axisMrCmdTypeParam_;
   int axisMrCmdResultParam_;
   int axisMrCmdReasonParam_;

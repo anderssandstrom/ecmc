@@ -2756,6 +2756,8 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
         return asynError;
       }
 
+      bumpMotionCommandRequestCounter();
+
       // Only allow cmd change if not busy
       if (!getBusy()) {        
         setCommand(data_.control_.command);
@@ -2828,45 +2830,51 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
 
   if(data_.status_.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL) {
     // Tweak BWD
-    if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakBwdCmd && !getBusy()) {      
-      setCommand(ECMC_CMD_MOVEABS);
-      setCmdData(0);
-      setTargetVel(data_.control_.velocityTarget);
-      data_.control_.positionTarget = data_.status_.currentTargetPosition - std::abs(data_.control_.tweakValue);
-      setTargetPos(data_.control_.positionTarget);  // Backward
-      refreshAsynTargetValue();
-      setAcc(data_.control_.accelerationTarget);
-      setDec(data_.control_.decelerationTarget);
+    if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakBwdCmd) {
+      bumpMotionCommandRequestCounter();
+      if (!getBusy()) {
+        setCommand(ECMC_CMD_MOVEABS);
+        setCmdData(0);
+        setTargetVel(data_.control_.velocityTarget);
+        data_.control_.positionTarget = data_.status_.currentTargetPosition - std::abs(data_.control_.tweakValue);
+        setTargetPos(data_.control_.positionTarget);  // Backward
+        refreshAsynTargetValue();
+        setAcc(data_.control_.accelerationTarget);
+        setDec(data_.control_.decelerationTarget);
 
-      errorCode = setExecute(0);
-      if (errorCode) {
-        returnVal = asynError;
-      }
+        errorCode = setExecute(0);
+        if (errorCode) {
+          returnVal = asynError;
+        }
 
-      errorCode = setExecute(1);
-      if (errorCode) {
-        returnVal = asynError;
+        errorCode = setExecute(1);
+        if (errorCode) {
+          returnVal = asynError;
+        }
       }
     }
     
     // Tweak FWD
-    if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakFwdCmd && !getBusy()) {      
-      setCommand(ECMC_CMD_MOVEABS);
-      setCmdData(0);
-      setTargetVel(data_.control_.velocityTarget);
-      data_.control_.positionTarget = data_.status_.currentTargetPosition + std::abs(data_.control_.tweakValue);
-      setTargetPos(data_.control_.positionTarget); // Forward
-      refreshAsynTargetValue();
-      setAcc(data_.control_.accelerationTarget);
-      setDec(data_.control_.decelerationTarget);
-      errorCode = setExecute(0);
-      if (errorCode) {
-        returnVal = asynError;
-      }
+    if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakFwdCmd) {
+      bumpMotionCommandRequestCounter();
+      if (!getBusy()) {
+        setCommand(ECMC_CMD_MOVEABS);
+        setCmdData(0);
+        setTargetVel(data_.control_.velocityTarget);
+        data_.control_.positionTarget = data_.status_.currentTargetPosition + std::abs(data_.control_.tweakValue);
+        setTargetPos(data_.control_.positionTarget); // Forward
+        refreshAsynTargetValue();
+        setAcc(data_.control_.accelerationTarget);
+        setDec(data_.control_.decelerationTarget);
+        errorCode = setExecute(0);
+        if (errorCode) {
+          returnVal = asynError;
+        }
 
-      errorCode = setExecute(1);
-      if (errorCode) {
-        returnVal = asynError;
+        errorCode = setExecute(1);
+        if (errorCode) {
+          returnVal = asynError;
+        }
       }
     }
   }
