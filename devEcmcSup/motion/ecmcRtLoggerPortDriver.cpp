@@ -246,7 +246,7 @@ public:
     setIntegerParam(diagAxisParam_, diagAxis_);
     setStringParam(diagAxisReportParam_, diagAxisReport_);
     for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
-      countMotorRecordStopCommands_[axisIndex].store(1, std::memory_order_relaxed);
+      countMotorRecordStopCommands_[axisIndex].store(0, std::memory_order_relaxed);
       countEnableCommands_[axisIndex].store(0, std::memory_order_relaxed);
       axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
@@ -1049,7 +1049,7 @@ void ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
 
 int ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex) {
   if (!portDriver_ || axisIndex < 0 || axisIndex >= ECMC_MAX_AXES) {
-    return 1;
+    return 0;
   }
   return countMotorRecordStopCommands_[axisIndex].load(std::memory_order_acquire);
 }
