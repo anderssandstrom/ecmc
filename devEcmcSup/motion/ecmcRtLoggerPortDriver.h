@@ -28,6 +28,9 @@ void        ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
                                                                   int reason,
                                                                   int errorCode,
                                                                   int cycleCounter);
+void        ecmcRtLoggerPortDriverSetAxisMasterSlaveBlock(int axisIndex,
+                                                          int blocked,
+                                                          int cycleCounter);
 int         ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex);
 int         ecmcRtLoggerPortDriverGetCountEnableCommands(int axisIndex);
 void        ecmcRtLoggerPortDriverService();

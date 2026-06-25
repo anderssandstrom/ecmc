@@ -4018,8 +4018,14 @@ bool ecmcAxisBase::getLocalBusy() {
 
 // set Group blocked
 void ecmcAxisBase::setBlocked(bool blocked) {
+  const bool oldBlocked = masterSlaveBlocked_;
   masterSlaveBlocked_               = blocked;
   data_.status_.statusWord_.blocked = getBlocked();
+  if (oldBlocked != masterSlaveBlocked_) {
+    ecmcRtLoggerPortDriverSetAxisMasterSlaveBlock(data_.status_.axisId,
+                                                  masterSlaveBlocked_ ? 1 : 0,
+                                                  getCycleCounter());
+  }
 }
 
 // get Group blocked
