@@ -11,6 +11,7 @@
 
 #include "ecmcRtLoggerPortDriver.h"
 
+#include <algorithm>
 #include <atomic>
 #include <stdio.h>
 #include <string.h>
@@ -265,6 +266,94 @@ public:
       setStringParam(axisIndex, axisMrCmdTextParam_, "none");
     }
     callParamCallbacks();
+  }
+
+  asynStatus readInt32(asynUser *pasynUser, epicsInt32 *value) override {
+    if (!pasynUser || !value) {
+      return asynError;
+    }
+
+    int addr = 0;
+    if (!getAddress(pasynUser, &addr) &&
+        addr >= 0 &&
+        addr < ECMC_MAX_AXES) {
+      if (pasynUser->reason == axisCmdMotorRecordRequestCountParam_) {
+        *value = saturateCount(
+          axisCmdMotorRecordRequestCounts_[addr].load(std::memory_order_acquire));
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisCmdRequestCountParam_) {
+        *value = saturateCount(
+          axisCmdRequestCounts_[addr].load(std::memory_order_acquire));
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisCmdExecuteCountParam_) {
+        *value = saturateCount(
+          axisCmdExecuteCounts_[addr].load(std::memory_order_acquire));
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisMrCmdTypeParam_) {
+        *value = axisMrCmdTypes_[addr].load(std::memory_order_acquire);
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisMrCmdResultParam_) {
+        *value = axisMrCmdResults_[addr].load(std::memory_order_acquire);
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisMrCmdReasonParam_) {
+        *value = axisMrCmdReasons_[addr].load(std::memory_order_acquire);
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisMrCmdErrorParam_) {
+        *value = axisMrCmdErrors_[addr].load(std::memory_order_acquire);
+        return asynSuccess;
+      }
+      if (pasynUser->reason == axisMrCmdCycleParam_) {
+        *value = axisMrCmdCycles_[addr].load(std::memory_order_acquire);
+        return asynSuccess;
+      }
+    }
+
+    return asynPortDriver::readInt32(pasynUser, value);
+  }
+
+  asynStatus readOctet(asynUser *pasynUser,
+                       char *value,
+                       size_t maxChars,
+                       size_t *nActual,
+                       int *eomReason) override {
+    if (!pasynUser || !value || maxChars == 0) {
+      return asynError;
+    }
+
+    int addr = 0;
+    if (!getAddress(pasynUser, &addr) &&
+        addr >= 0 &&
+        addr < ECMC_MAX_AXES &&
+        pasynUser->reason == axisMrCmdTextParam_) {
+      char text[ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE];
+      buildMrCmdText(text,
+                     sizeof(text),
+                     axisMrCmdTypes_[addr].load(std::memory_order_acquire),
+                     axisMrCmdResults_[addr].load(std::memory_order_acquire),
+                     axisMrCmdReasons_[addr].load(std::memory_order_acquire),
+                     axisMrCmdErrors_[addr].load(std::memory_order_acquire),
+                     axisMrCmdCycles_[addr].load(std::memory_order_acquire));
+      const int written = snprintf(value, maxChars, "%s", text);
+      if (nActual) {
+        *nActual = written < 0 ? 0 : std::min((size_t)written, maxChars - 1);
+      }
+      if (eomReason) {
+        *eomReason = ASYN_EOM_END;
+      }
+      return asynSuccess;
+    }
+
+    return asynPortDriver::readOctet(pasynUser,
+                                     value,
+                                     maxChars,
+                                     nActual,
+                                     eomReason);
   }
 
   asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value) override {
