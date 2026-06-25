@@ -520,7 +520,7 @@ private:
       if ((mrCmdVersionStart & 1u) ||
           mrCmdVersionStart == axisMrCmdVersionsPublished_[axisIndex]) {
         if (changed) {
-          callParamCallbacks(0, axisIndex);
+          callParamCallbacks(axisIndex);
         }
         continue;
       }
@@ -541,7 +541,7 @@ private:
       if (mrCmdVersionStart != mrCmdVersionEnd ||
           (mrCmdVersionEnd & 1u)) {
         if (changed) {
-          callParamCallbacks(0, axisIndex);
+          callParamCallbacks(axisIndex);
         }
         continue;
       }
@@ -591,7 +591,7 @@ private:
       }
 
       if (changed) {
-        callParamCallbacks(0, axisIndex);
+        callParamCallbacks(axisIndex);
       }
     }
   }
