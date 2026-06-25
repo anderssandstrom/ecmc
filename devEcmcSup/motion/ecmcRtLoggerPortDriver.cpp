@@ -51,6 +51,8 @@ const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_MR_REQUEST_COUNT = "RTLOG_AXIS_CMD_MR_RE
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_REQUEST_COUNT = "RTLOG_AXIS_CMD_REQUEST_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_EXECUTE_COUNT = "RTLOG_AXIS_CMD_EXECUTE_COUNT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_CLEAR = "RTLOG_AXIS_CMD_CLEAR";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_COUNT_MR_STOP = "RTLOG_AXIS_CMD_COUNT_MR_STOP";
+const char *ECMC_RT_LOGGER_PAR_AXIS_CMD_COUNT_ENABLE = "RTLOG_AXIS_CMD_COUNT_ENABLE";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE = "RTLOG_AXIS_MR_CMD_TYPE";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_RESULT = "RTLOG_AXIS_MR_CMD_RESULT";
 const char *ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_REASON = "RTLOG_AXIS_MR_CMD_REASON";
@@ -71,6 +73,8 @@ std::atomic<int> axisMrCmdReasons_[ECMC_MAX_AXES];
 std::atomic<int> axisMrCmdErrors_[ECMC_MAX_AXES];
 std::atomic<int> axisMrCmdCycles_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisMrCmdVersions_[ECMC_MAX_AXES];
+std::atomic<int> countMotorRecordStopCommands_(1);
+std::atomic<int> countEnableCommands_(0);
 
 enum ecmcRtLoggerPortLevel {
   ECMC_RT_LOGGER_PORT_LEVEL_INFO = 0,
@@ -112,6 +116,8 @@ public:
       axisCmdRequestCountParam_(0),
       axisCmdExecuteCountParam_(0),
       axisCmdClearParam_(0),
+      axisCmdCountMotorRecordStopParam_(0),
+      axisCmdCountEnableParam_(0),
       axisMrCmdTypeParam_(0),
       axisMrCmdResultParam_(0),
       axisMrCmdReasonParam_(0),
@@ -194,6 +200,12 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_CLEAR,
                         asynParamInt32,
                         &axisCmdClearParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_COUNT_MR_STOP,
+                        asynParamInt32,
+                        &axisCmdCountMotorRecordStopParam_);
+    createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_CMD_COUNT_ENABLE,
+                        asynParamInt32,
+                        &axisCmdCountEnableParam_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MR_CMD_TYPE,
                         asynParamInt32,
                         &axisMrCmdTypeParam_);
@@ -233,6 +245,10 @@ public:
     setStringParam(diagFileParam_, diagFile_);
     setIntegerParam(diagAxisParam_, diagAxis_);
     setStringParam(diagAxisReportParam_, diagAxisReport_);
+    setIntegerParam(axisCmdCountMotorRecordStopParam_,
+                    countMotorRecordStopCommands_.load(std::memory_order_acquire));
+    setIntegerParam(axisCmdCountEnableParam_,
+                    countEnableCommands_.load(std::memory_order_acquire));
     for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
       axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
@@ -289,6 +305,15 @@ public:
   asynStatus readInt32(asynUser *pasynUser, epicsInt32 *value) override {
     if (!pasynUser || !value) {
       return asynError;
+    }
+
+    if (pasynUser->reason == axisCmdCountMotorRecordStopParam_) {
+      *value = countMotorRecordStopCommands_.load(std::memory_order_acquire);
+      return asynSuccess;
+    }
+    if (pasynUser->reason == axisCmdCountEnableParam_) {
+      *value = countEnableCommands_.load(std::memory_order_acquire);
+      return asynSuccess;
     }
 
     int addr = 0;
@@ -441,6 +466,21 @@ public:
       setStringParam(addr, axisMrCmdTextParam_, mrCmdText);
       setIntegerParam(addr, axisCmdClearParam_, 0);
       callParamCallbacks(addr);
+      return asynSuccess;
+    }
+
+    if (pasynUser->reason == axisCmdCountMotorRecordStopParam_) {
+      const int enabled = value ? 1 : 0;
+      countMotorRecordStopCommands_.store(enabled, std::memory_order_release);
+      setIntegerParam(axisCmdCountMotorRecordStopParam_, enabled);
+      callParamCallbacks();
+      return asynSuccess;
+    }
+    if (pasynUser->reason == axisCmdCountEnableParam_) {
+      const int enabled = value ? 1 : 0;
+      countEnableCommands_.store(enabled, std::memory_order_release);
+      setIntegerParam(axisCmdCountEnableParam_, enabled);
+      callParamCallbacks();
       return asynSuccess;
     }
 
@@ -884,6 +924,8 @@ private:
   int axisCmdRequestCountParam_;
   int axisCmdExecuteCountParam_;
   int axisCmdClearParam_;
+  int axisCmdCountMotorRecordStopParam_;
+  int axisCmdCountEnableParam_;
   int axisMrCmdTypeParam_;
   int axisMrCmdResultParam_;
   int axisMrCmdReasonParam_;
@@ -1000,6 +1042,14 @@ void ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
   axisMrCmdErrors_[axisIndex].store(errorCode, std::memory_order_relaxed);
   axisMrCmdCycles_[axisIndex].store(cycleCounter, std::memory_order_relaxed);
   axisMrCmdVersions_[axisIndex].fetch_add(1, std::memory_order_release);
+}
+
+int ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands() {
+  return countMotorRecordStopCommands_.load(std::memory_order_acquire);
+}
+
+int ecmcRtLoggerPortDriverGetCountEnableCommands() {
+  return countEnableCommands_.load(std::memory_order_acquire);
 }
 
 void ecmcRtLoggerPortDriverService() {

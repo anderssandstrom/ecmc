@@ -1714,6 +1714,10 @@ asynStatus ecmcMotorRecordAxis::resetAxis(void) {
 }
 
 asynStatus ecmcMotorRecordAxis::setEnable(int on) {
+  if (ecmcRtLoggerPortDriverGetCountEnableCommands()) {
+    drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
+  }
+
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,
             "%s/%s:%d: INFO: Axis[%d]: Motor record request: execute SET_ENABLE requested (enable=%d).\n",
             __FILE__, __FUNCTION__, __LINE__,
@@ -1745,6 +1749,9 @@ asynStatus ecmcMotorRecordAxis::setEnable(int on) {
     return asynError;
   }
 
+  if (ecmcRtLoggerPortDriverGetCountEnableCommands()) {
+    drvlocal.ecmcAxis->bumpMotionCommandRequestCounter();
+  }
   int errorCode = drvlocal.ecmcAxis->setEnable(on);
   
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
@@ -1891,7 +1898,9 @@ asynStatus ecmcMotorRecordAxis::enableAmplifier(int on) {
  */
 asynStatus ecmcMotorRecordAxis::stopAxisInternal(const char *function_name,
                                                  double      acceleration) {
-  drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
+  if (ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands()) {
+    drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
+  }
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,
             "%s/%s:%d: INFO: Axis[%d]: Motor record request: execute STOP requested (caller=%s, acceleration=%lf).\n",
             __FILE__, __FUNCTION__, __LINE__,
