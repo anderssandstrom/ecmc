@@ -1749,9 +1749,6 @@ asynStatus ecmcMotorRecordAxis::setEnable(int on) {
     return asynError;
   }
 
-  if (ecmcRtLoggerPortDriverGetCountEnableCommands(drvlocal.axisId)) {
-    drvlocal.ecmcAxis->bumpMotionCommandRequestCounter();
-  }
   int errorCode = drvlocal.ecmcAxis->setEnable(on);
   
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);

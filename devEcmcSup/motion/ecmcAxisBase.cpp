@@ -1742,6 +1742,10 @@ void ecmcAxisBase::refreshStatusWd() {
 int ecmcAxisBase::setEnable(bool enable) {
   if (data_.status_.statusWord_.enable == enable) return 0;
 
+  if (ecmcRtLoggerPortDriverGetCountEnableCommands(data_.status_.axisId)) {
+    bumpMotionCommandRequestCounter();
+  }
+
   if (!enable) {  // Remove execute if enable is going down
     setExecute(false);
   }
@@ -2603,10 +2607,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
       controlWordRaw);
   }
 
-  const bool countEnableControlWordCommand =
-    ecmcRtLoggerPortDriverGetCountEnableCommands(data_.status_.axisId) &&
-    controlWordNew.enableCmd != controlWordCurrent.enableCmd;
-
   if (controlWordNew.blockCom != getBlockCom()) {
     setBlockCom(controlWordNew.blockCom);
   }
@@ -2635,9 +2635,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
       (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd);
 
     if (!controlWordNew.enableCmd) {
-      if (countEnableControlWordCommand) {
-        bumpMotionCommandRequestCounter();
-      }
       errorCode = setEnable(0);
       if (!errorCode) {
         allowedCommand = true;
@@ -2691,9 +2688,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
       (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd);
 
     if (!controlWordNew.enableCmd) {
-      if (countEnableControlWordCommand) {
-        bumpMotionCommandRequestCounter();
-      }
       errorCode = setEnable(0);
       if (!errorCode) {
         allowedCommand = true;
@@ -2733,9 +2727,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
 
   int errorCode = 0;
 
-  if (countEnableControlWordCommand) {
-    bumpMotionCommandRequestCounter();
-  }
   errorCode = setEnable(data_.control_.controlWord_.enableCmd);
   
   if (errorCode) {
