@@ -1714,7 +1714,7 @@ asynStatus ecmcMotorRecordAxis::resetAxis(void) {
 }
 
 asynStatus ecmcMotorRecordAxis::setEnable(int on) {
-  if (ecmcRtLoggerPortDriverGetCountEnableCommands()) {
+  if (ecmcRtLoggerPortDriverGetCountEnableCommands(drvlocal.axisId)) {
     drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   }
 
@@ -1749,7 +1749,7 @@ asynStatus ecmcMotorRecordAxis::setEnable(int on) {
     return asynError;
   }
 
-  if (ecmcRtLoggerPortDriverGetCountEnableCommands()) {
+  if (ecmcRtLoggerPortDriverGetCountEnableCommands(drvlocal.axisId)) {
     drvlocal.ecmcAxis->bumpMotionCommandRequestCounter();
   }
   int errorCode = drvlocal.ecmcAxis->setEnable(on);
@@ -1898,7 +1898,7 @@ asynStatus ecmcMotorRecordAxis::enableAmplifier(int on) {
  */
 asynStatus ecmcMotorRecordAxis::stopAxisInternal(const char *function_name,
                                                  double      acceleration) {
-  if (ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands()) {
+  if (ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(drvlocal.axisId)) {
     drvlocal.ecmcAxis->bumpMotionCommandMotorRecordRequestCounter();
   }
   asynPrint(pPrintOutAsynUser, ASYN_TRACE_INFO,

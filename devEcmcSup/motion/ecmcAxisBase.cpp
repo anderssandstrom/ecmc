@@ -2604,7 +2604,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
   }
 
   const bool countEnableControlWordCommand =
-    ecmcRtLoggerPortDriverGetCountEnableCommands() &&
+    ecmcRtLoggerPortDriverGetCountEnableCommands(data_.status_.axisId) &&
     controlWordNew.enableCmd != controlWordCurrent.enableCmd;
 
   if (controlWordNew.blockCom != getBlockCom()) {

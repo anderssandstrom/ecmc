@@ -28,8 +28,8 @@ void        ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
                                                                   int reason,
                                                                   int errorCode,
                                                                   int cycleCounter);
-int         ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands();
-int         ecmcRtLoggerPortDriverGetCountEnableCommands();
+int         ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex);
+int         ecmcRtLoggerPortDriverGetCountEnableCommands(int axisIndex);
 void        ecmcRtLoggerPortDriverService();
 const char *ecmcRtLoggerPortDriverGetPortName();
 
