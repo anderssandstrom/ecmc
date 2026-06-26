@@ -552,11 +552,14 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGroupReachedTarget_ = true;
   }
 
-  if(masterDisableInProgress_) {
+  const bool masterAutoDisableWindow = masterGroupReachedTarget_ &&
+                                       !masterStatusNow.anyBusy;
+
+  if(masterAutoDisableWindow) {
     masterAtTargetTimeS_ += sampleTimeS_;
     if((masterAtTargetTimeoutS_ >= 0) &&
        (masterAtTargetTimeS_ > masterAtTargetTimeoutS_)) {
-      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes remained enabled after disable started for %lf s; disabling all axes.\n",
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes did not leave MASTER state within %lf s after reaching target; disabling all axes.\n",
                            __FILE__,
                            __FUNCTION__,
                            __LINE__,
@@ -584,9 +587,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
 
   // Once all master axes have reached target after the last master-group move,
-  // keep auto-disable allowed even if atTarget drops during the disable sequence.
-  masterGrp_->setEnableAutoDisable(masterGroupReachedTarget_ &&
-                                   !masterStatusNow.anyBusy);
+  // keep auto-disable allowed and bound how long the slave axes may stay blocked.
+  masterGrp_->setEnableAutoDisable(masterAutoDisableWindow);
 
   // ensure attarget/reduced current of slave axes
   const bool masterWithinCtrlDb = masterStatusNow.allWithinCtrlDb;
