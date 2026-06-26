@@ -91,6 +91,29 @@ const char *masterSlaveStateText(int state) {
   }
 }
 
+const char *masterSlaveStatusText(int status) {
+  switch (status) {
+  case ECMC_MST_SLV_STATUS_IDLE:
+    return "IDLE";
+  case ECMC_MST_SLV_STATUS_SLAVE_ACTIVE:
+    return "SLAVE_ACTIVE";
+  case ECMC_MST_SLV_STATUS_PREPARING_MASTER:
+    return "PREPARING_MASTER";
+  case ECMC_MST_SLV_STATUS_WAIT_SLAVE_EXTERNAL:
+    return "WAIT_SLAVE_EXTERNAL";
+  case ECMC_MST_SLV_STATUS_MASTER_MOVING:
+    return "MASTER_MOVING";
+  case ECMC_MST_SLV_STATUS_WAIT_MASTER_AT_TARGET:
+    return "WAIT_MASTER_AT_TARGET";
+  case ECMC_MST_SLV_STATUS_WAIT_MASTER_DISABLE:
+    return "WAIT_MASTER_DISABLE";
+  case ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY:
+    return "FORCED_TIMEOUT_RECOVERY";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 void jsonString(FILE *fp, const char *text) {
   fputc('"', fp);
   if (text) {
@@ -660,6 +683,7 @@ void writeMasterSlaveSM(FILE *fp, int index, ecmcMasterSlaveStateMachine *sm, bo
   writeJsonString(fp, 6, "name", sm->getName());
   writeJsonString(fp, 6, "state_text", masterSlaveStateText(sm->getState()));
   writeJsonInt(fp, 6, "state", sm->getState());
+  writeJsonString(fp, 6, "status_text", masterSlaveStatusText(sm->getStatus()));
   writeJsonInt(fp, 6, "status", sm->getStatus());
   writeJsonBool(fp, 6, "enabled", sm->getEnabled());
   writeJsonBool(fp, 6, "auto_disable_masters", sm->getAutoDisableMasters());
@@ -804,13 +828,15 @@ void writeMasterSlaveSMFindings(FILE *fp, int *written, int totalFindings) {
     }
     if (masterSlaveSMs[i]->getStatus()) {
       ++(*written);
+      const int status = masterSlaveSMs[i]->getStatus();
       writeFinding(fp,
-                   "error",
+                   status == ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY ?
+                   "error" : "info",
                    "master_slave_state_machine",
                    i,
-                   "state_machine_status_error",
-                   "Master/slave state machine status is nonzero.",
-                   "Inspect the state machine status and associated master/slave groups.",
+                   "state_machine_status",
+                   "Master/slave state machine reports an active internal phase.",
+                   "Inspect status_text, state_text, and whether the requested axis belongs to a blocked group.",
                    *written < totalFindings);
     }
   }

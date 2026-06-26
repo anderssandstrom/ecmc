@@ -59,6 +59,17 @@ enum masterSlaveStates {
   ECMC_MST_SLV_STATE_RESET   = 3,
 };
 
+enum masterSlaveStatus {
+  ECMC_MST_SLV_STATUS_IDLE                    = 0,
+  ECMC_MST_SLV_STATUS_SLAVE_ACTIVE            = 0x0001,
+  ECMC_MST_SLV_STATUS_PREPARING_MASTER        = 0x0002,
+  ECMC_MST_SLV_STATUS_WAIT_SLAVE_EXTERNAL     = 0x0004,
+  ECMC_MST_SLV_STATUS_MASTER_MOVING           = 0x0008,
+  ECMC_MST_SLV_STATUS_WAIT_MASTER_AT_TARGET   = 0x0010,
+  ECMC_MST_SLV_STATUS_WAIT_MASTER_DISABLE     = 0x0020,
+  ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY = 0x8000,
+};
+
 class ecmcMasterSlaveStateMachine : public ecmcError {
   public:
     ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asynPortDriver,
@@ -87,6 +98,9 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int stateSlave();
     int stateMaster();
     int stateReset();
+    void resetMasterRuntimeState();
+    void enterIdleFromMaster();
+    void abortMasterToIdle(int errorCode, const char *reason);
     int initAsyn();
     void refreshAsyn();
     void setMrIgnoreEnableAlarm();
@@ -121,6 +135,8 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     uint64_t masterGroupBusyCycles_;
     double masterAtTargetTimeoutS_;
     double masterAtTargetTimeS_;
+    double masterPrepareTimeoutS_;
+    double masterPrepareTimeS_;
 };
 
 #endif  /* ecmcMasterSlaveStateMachine_H_ */

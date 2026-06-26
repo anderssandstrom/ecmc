@@ -35,7 +35,7 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   slaveGrp_                 = slaveGrp;
   validationOK_             = false;
   asynInitOk_               = false;  
-  status_                   = 0;
+  status_                   = ECMC_MST_SLV_STATUS_IDLE;
   state_                    = ECMC_MST_SLV_STATE_IDLE;    
   idleCounter_              = 0;
   masterGroupWasBusy_       = false;
@@ -45,6 +45,8 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   masterGroupBusyCycles_    = 0;
   masterAtTargetTimeoutS_ = MST_SLV_MASTER_AT_TARGET_TIMEOUT_DEFAULT_S;
   masterAtTargetTimeS_    = 0;
+  masterPrepareTimeoutS_ = masterAtTargetTimeoutS_;
+  masterPrepareTimeS_    = 0;
   memset(&control_,0,sizeof(control_));
   memset(&controlOld_,0,sizeof(controlOld_));
 
@@ -100,6 +102,48 @@ int ecmcMasterSlaveStateMachine::getAutoDisableSlaves() const {
   return control_.autoDisableSlaves;
 }
 
+void ecmcMasterSlaveStateMachine::resetMasterRuntimeState() {
+  masterGroupWasBusy_ = false;
+  masterGroupReachedTarget_ = false;
+  masterDisableInProgress_ = false;
+  slaveTrajSourceExternalWaitCycles_ = 0;
+  masterGroupBusyCycles_ = 0;
+  masterAtTargetTimeS_ = 0;
+  masterPrepareTimeS_ = 0;
+}
+
+void ecmcMasterSlaveStateMachine::enterIdleFromMaster() {
+  slaveGrp_->setEnable(0);
+  slaveGrp_->setMRCnen(0);
+  slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+  slaveGrp_->setErrorReset();
+  masterGrp_->setEnableAutoDisable(1);
+  state_ = ECMC_MST_SLV_STATE_IDLE;
+  status_ = ECMC_MST_SLV_STATUS_IDLE;
+  resetMasterRuntimeState();
+}
+
+void ecmcMasterSlaveStateMachine::abortMasterToIdle(int errorCode,
+                                                    const char *reason) {
+  status_ = ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY;
+  ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: %s; disabling all axes.\n",
+                       __FILE__,
+                       __FUNCTION__,
+                       __LINE__,
+                       index_,
+                       name_.c_str(),
+                       reason);
+  masterGrp_->setError(errorCode);
+  slaveGrp_->setEnable(0);
+  masterGrp_->setEnable(0);
+  slaveGrp_->setMRCnen(0);
+  masterGrp_->setMRCnen(0);
+  slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
+  masterGrp_->setEnableAutoDisable(1);
+  state_ = ECMC_MST_SLV_STATE_IDLE;
+  resetMasterRuntimeState();
+}
+
 void ecmcMasterSlaveStateMachine::execute(){
 
   //always update
@@ -114,12 +158,8 @@ void ecmcMasterSlaveStateMachine::execute(){
       slaveGrp_->setBlocked(false);
       slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
       state_ = ECMC_MST_SLV_STATE_IDLE;
-      masterGroupWasBusy_ = false;
-      masterGroupReachedTarget_ = false;
-      masterDisableInProgress_ = false;
-      slaveTrajSourceExternalWaitCycles_ = 0;
-      masterGroupBusyCycles_ = 0;
-      masterAtTargetTimeS_ = 0;
+      status_ = ECMC_MST_SLV_STATUS_IDLE;
+      resetMasterRuntimeState();
     }
     controlOld_ = control_;
     return;
@@ -155,6 +195,7 @@ void ecmcMasterSlaveStateMachine::execute(){
 };
 
 int ecmcMasterSlaveStateMachine::stateIdle(){
+  status_ = ECMC_MST_SLV_STATUS_IDLE;
   
   // Slaved axis busy will stay high for 2 cycles after traj source change.
   // Needed in case stop ramp for the slaves is needed.
@@ -187,6 +228,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
     slaveGrp_->setBlocked(false);
     masterGrp_->setBlocked(true);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
+    status_ = ECMC_MST_SLV_STATUS_SLAVE_ACTIVE;
+    resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed IDLE -> SLAVE.\n",
                            __FILE__,
@@ -207,9 +250,11 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
         slaveTrajSourceExternalWaitCycles_ =
           MST_SLV_TRAJ_SRC_CHANGE_WAIT_CYCLES;
         state_ = ECMC_MST_SLV_STATE_MASTERS;
+        status_ = ECMC_MST_SLV_STATUS_WAIT_SLAVE_EXTERNAL;
         masterGroupReachedTarget_ = false;
         masterDisableInProgress_ = false;
         masterAtTargetTimeS_ = 0;
+        masterPrepareTimeS_ = 0;
         // (un)block commands
         masterGrp_->setBlocked(false);
         slaveGrp_->setBlocked(true);
@@ -224,6 +269,14 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
       }
 
     } else {
+      status_ = ECMC_MST_SLV_STATUS_PREPARING_MASTER;
+      masterPrepareTimeS_ += sampleTimeS_;
+      if((masterPrepareTimeoutS_ >= 0) &&
+         (masterPrepareTimeS_ > masterPrepareTimeoutS_)) {
+        abortMasterToIdle(ERROR_MST_SLV_SM_PREPARE_MASTER_TIMEOUT,
+                          "master/slave preparation for MASTER state timed out");
+        return 0;
+      }
       int errorSlave = slaveGrp_->setEnable(1);
       int errorMaster = masterGrp_->setEnable(1);
       if(errorSlave || errorMaster) {
@@ -252,6 +305,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
                                name_.c_str());
         }
         state_ = ECMC_MST_SLV_STATE_IDLE;
+        status_ = ECMC_MST_SLV_STATUS_IDLE;
+        resetMasterRuntimeState();
         
       }
       if(anySlaveBusy) {
@@ -260,6 +315,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
     }
   } else if(anySlaveErrorId > 0){
     masterGrp_->setSlavedAxisInError();
+  } else {
+    masterPrepareTimeS_ = 0;
   }
 
   return 0;
@@ -269,6 +326,7 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
 
   slaveGrp_->setBlocked(false);
   masterGrp_->setBlocked(true);
+  status_ = ECMC_MST_SLV_STATUS_SLAVE_ACTIVE;
 
   const ecmcAxisGroupStatusSummary slaveStatus = slaveGrp_->getStatusSummary(false);
   const ecmcAxisGroupStatusSummary masterStatus = masterGrp_->getStatusSummary(false);
@@ -295,6 +353,8 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
     masterGrp_->setMRStop(1);
 
     state_ = ECMC_MST_SLV_STATE_IDLE;
+    status_ = ECMC_MST_SLV_STATUS_IDLE;
+    resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed SLAVE -> IDLE.\n",
                            __FILE__,
@@ -318,6 +378,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
 
   masterGrp_->setBlocked(false);
   slaveGrp_->setBlocked(true);
+  status_ = ECMC_MST_SLV_STATUS_MASTER_MOVING;
 
   const ecmcAxisGroupStatusSummary slaveStatus = slaveGrp_->getStatusSummary(false);
   const ecmcAxisGroupStatusSummary masterStatus = masterGrp_->getStatusSummary(false);
@@ -395,6 +456,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       }
       masterGrp_->setEnableAutoDisable(1);
       //stateReset(); // A bit nasty but ....
+      resetMasterRuntimeState();
       return 0;
     }
   }
@@ -411,6 +473,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
 
   if(masterDisableInProgress_ && masterStatusNow.anyBusy) {
+    status_ = ECMC_MST_SLV_STATUS_PREPARING_MASTER;
     slaveGrp_->setEnable(1);
     masterGrp_->setEnable(1);
     slaveGrp_->setMRCnen(1);
@@ -435,12 +498,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_IDLE;
-    masterGroupWasBusy_ = false;
-    masterGroupReachedTarget_ = false;
-    masterDisableInProgress_ = false;
-    slaveTrajSourceExternalWaitCycles_ = 0;
-    masterGroupBusyCycles_ = 0;
-    masterAtTargetTimeS_ = 0;
+    status_ = ECMC_MST_SLV_STATUS_IDLE;
+    resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: one or more slave enable commands removed.\n",
                            __FILE__,
@@ -467,11 +526,13 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   if(!anySlaveIlocked && !allSlaveTrajExternal &&
      !masterDisableInProgress_ &&
      (slaveTrajSourceExternalWaitCycles_ > 0)) {
+    status_ = ECMC_MST_SLV_STATUS_WAIT_SLAVE_EXTERNAL;
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
     slaveTrajSourceExternalWaitCycles_--;
     return 0;
   }
   if((anySlaveIlocked || !allSlaveTrajExternal) && !masterDisableInProgress_){
+    status_ = ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY;
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     slaveGrp_->setMRSync(1);
     slaveGrp_->setMRStop(1);
@@ -479,16 +540,18 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     if(anySlaveIlocked) {
       masterGrp_->setSlavedAxisIlocked();
     } else {
+      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: slave axes did not switch to external trajectory source in time; leaving MASTER state.\n",
+                           __FILE__,
+                           __FUNCTION__,
+                           __LINE__,
+                           index_,
+                           name_.c_str());
+      masterGrp_->setError(ERROR_MST_SLV_SM_SLAVE_TRAJ_SRC_TIMEOUT);
       masterGrp_->setSlavedAxisTrajSourceChanged();
     }
     masterGrp_->setEnableAutoDisable(1);
     state_ = ECMC_MST_SLV_STATE_SLAVES;
-    masterGroupWasBusy_ = false;
-    masterGroupReachedTarget_ = false;
-    masterDisableInProgress_ = false;
-    slaveTrajSourceExternalWaitCycles_ = 0;
-    masterGroupBusyCycles_ = 0;
-    masterAtTargetTimeS_ = 0;
+    resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: slaved axis interlock=%d, all slave trajectory external=%d.\n",
                            __FILE__,
@@ -510,18 +573,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   
   // Done?
   if(!masterStatusNow.anyEnabled) {
-    slaveGrp_->setEnable(0);
-    slaveGrp_->setMRCnen(0);
-    slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
-    slaveGrp_->setErrorReset();
-    masterGrp_->setEnableAutoDisable(1);
-    state_ = ECMC_MST_SLV_STATE_IDLE;
-    masterGroupWasBusy_ = false;
-    masterGroupReachedTarget_ = false;
-    masterDisableInProgress_ = false;
-    slaveTrajSourceExternalWaitCycles_ = 0;
-    masterGroupBusyCycles_ = 0;
-    masterAtTargetTimeS_ = 0;
+    enterIdleFromMaster();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed MASTER -> IDLE.\n",
                            __FILE__,
@@ -556,34 +608,19 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
                                        !masterStatusNow.anyBusy;
 
   if(masterAutoDisableWindow) {
+    status_ = ECMC_MST_SLV_STATUS_WAIT_MASTER_DISABLE;
     masterAtTargetTimeS_ += sampleTimeS_;
     if((masterAtTargetTimeoutS_ >= 0) &&
        (masterAtTargetTimeS_ > masterAtTargetTimeoutS_)) {
-      ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: master axes did not leave MASTER state within %lf s after reaching target; disabling all axes.\n",
-                           __FILE__,
-                           __FUNCTION__,
-                           __LINE__,
-                           index_,
-                           name_.c_str(),
-                           masterAtTargetTimeS_);
-      masterGrp_->setError(ERROR_MST_SLV_SM_MASTER_AT_TARGET_TIMEOUT);
-      slaveGrp_->setEnable(0);
-      masterGrp_->setEnable(0);
-      slaveGrp_->setMRCnen(0);
-      masterGrp_->setMRCnen(0);
-      slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
-      masterGrp_->setEnableAutoDisable(1);
-      state_ = ECMC_MST_SLV_STATE_IDLE;
-      masterGroupWasBusy_ = false;
-      masterGroupReachedTarget_ = false;
-      masterDisableInProgress_ = false;
-      slaveTrajSourceExternalWaitCycles_ = 0;
-      masterGroupBusyCycles_ = 0;
-      masterAtTargetTimeS_ = 0;
+      abortMasterToIdle(ERROR_MST_SLV_SM_MASTER_AT_TARGET_TIMEOUT,
+                        "master axes did not leave MASTER state after reaching target");
       return 0;
     }
   } else {
     masterAtTargetTimeS_ = 0;
+    if(!masterStatusNow.anyBusy) {
+      status_ = ECMC_MST_SLV_STATUS_WAIT_MASTER_AT_TARGET;
+    }
   }
 
   // Once all master axes have reached target after the last master-group move,
@@ -608,12 +645,8 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   masterGrp_->setBlocked(false);
   slaveGrp_->setBlocked(false);
   state_ = ECMC_MST_SLV_STATE_IDLE;
-  masterGroupWasBusy_ = false;
-  masterGroupReachedTarget_ = false;
-  masterDisableInProgress_ = false;
-  slaveTrajSourceExternalWaitCycles_ = 0;
-  masterGroupBusyCycles_ = 0;
-  masterAtTargetTimeS_ = 0;
+  status_ = ECMC_MST_SLV_STATUS_IDLE;
+  resetMasterRuntimeState();
   if(control_.enableDbgPrintouts) {
     ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: state changed RESET -> IDLE.\n",
                          __FILE__,
@@ -627,7 +660,9 @@ int ecmcMasterSlaveStateMachine::stateReset() {
 
 int ecmcMasterSlaveStateMachine::setMasterAtTargetTimeout(double timeoutS) {
   masterAtTargetTimeoutS_ = timeoutS;
+  masterPrepareTimeoutS_ = timeoutS;
   masterAtTargetTimeS_ = 0;
+  masterPrepareTimeS_ = 0;
   return 0;
 }
 

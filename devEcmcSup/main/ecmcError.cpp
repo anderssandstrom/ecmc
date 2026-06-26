@@ -1331,6 +1331,14 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
     return "ERROR_MST_SLV_SM_PARAM_NULL";
 
     break;
+  case 0x17006:
+    return "ERROR_MST_SLV_SM_PREPARE_MASTER_TIMEOUT";
+
+    break;
+  case 0x17007:
+    return "ERROR_MST_SLV_SM_SLAVE_TRAJ_SRC_TIMEOUT";
+
+    break;
 
   case 0x30000:    // TRANSFORM
     return "ERROR_TRANSFORM_EXPR_NOT_COMPILED";
