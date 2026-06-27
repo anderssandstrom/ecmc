@@ -8,6 +8,7 @@
 \*************************************************************************/
 
 #include "ecmcMotionDiag.h"
+#include "ecmcGeneral.h"
 #include "ecmcGlobalsExtern.h"
 #include <cstdio>
 #include <cstring>
@@ -109,6 +110,37 @@ const char *masterSlaveStatusText(int status) {
     return "WAIT_MASTER_DISABLE";
   case ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY:
     return "FORCED_TIMEOUT_RECOVERY";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+const char *masterSlaveTransitionReasonText(int reason) {
+  switch (reason) {
+  case ECMC_MST_SLV_TRANSITION_NONE:
+    return "NONE";
+  case ECMC_MST_SLV_TRANSITION_EXTERNAL_STATE_WRITE:
+    return "EXTERNAL_STATE_WRITE";
+  case ECMC_MST_SLV_TRANSITION_CONTROL_DISABLED:
+    return "CONTROL_DISABLED";
+  case ECMC_MST_SLV_TRANSITION_SLAVE_COMMAND:
+    return "SLAVE_COMMAND";
+  case ECMC_MST_SLV_TRANSITION_MASTER_COMMAND:
+    return "MASTER_COMMAND";
+  case ECMC_MST_SLV_TRANSITION_SLAVE_COMPLETE:
+    return "SLAVE_COMPLETE";
+  case ECMC_MST_SLV_TRANSITION_MASTER_COMPLETE:
+    return "MASTER_COMPLETE";
+  case ECMC_MST_SLV_TRANSITION_LOST_ENABLE_OR_ERROR:
+    return "LOST_ENABLE_OR_ERROR";
+  case ECMC_MST_SLV_TRANSITION_SLAVE_TRAJ_SOURCE_FAILED:
+    return "SLAVE_TRAJ_SOURCE_FAILED";
+  case ECMC_MST_SLV_TRANSITION_RESET_COMPLETE:
+    return "RESET_COMPLETE";
+  case ECMC_MST_SLV_TRANSITION_PREPARE_TIMEOUT:
+    return "PREPARE_TIMEOUT";
+  case ECMC_MST_SLV_TRANSITION_MASTER_DISABLE_TIMEOUT:
+    return "MASTER_DISABLE_TIMEOUT";
   default:
     return "UNKNOWN";
   }
@@ -673,6 +705,9 @@ int countMasterSlaveSMFindings() {
     if (masterSlaveSMs[i]->getStatus()) {
       ++count;
     }
+    if (masterSlaveSMs[i]->getLastFaultCode()) {
+      ++count;
+    }
   }
   return count;
 }
@@ -685,6 +720,27 @@ void writeMasterSlaveSM(FILE *fp, int index, ecmcMasterSlaveStateMachine *sm, bo
   writeJsonInt(fp, 6, "state", sm->getState());
   writeJsonString(fp, 6, "status_text", masterSlaveStatusText(sm->getStatus()));
   writeJsonInt(fp, 6, "status", sm->getStatus());
+  writeJsonInt(fp, 6, "status_word", sm->getStatusWord());
+  writeJsonString(fp, 6, "previous_state_text",
+                  masterSlaveStateText(sm->getPreviousState()));
+  writeJsonInt(fp, 6, "previous_state", sm->getPreviousState());
+  writeJsonString(fp, 6, "last_transition_reason_text",
+                  masterSlaveTransitionReasonText(sm->getLastTransitionReason()));
+  writeJsonInt(fp, 6, "last_transition_reason", sm->getLastTransitionReason());
+  writeJsonInt(fp, 6, "execute_cycle_count",
+               static_cast<long long>(sm->getExecuteCycleCount()));
+  writeJsonInt(fp, 6, "transition_count",
+               static_cast<long long>(sm->getTransitionCount()));
+  writeJsonInt(fp, 6, "last_transition_execute_cycle",
+               static_cast<long long>(sm->getLastTransitionCycle()));
+  writeJsonInt(fp, 6, "last_fault_code", sm->getLastFaultCode());
+  writeJsonString(fp, 6, "last_fault_text",
+                  sm->getLastFaultCode() ? getErrorString(sm->getLastFaultCode()) : "NONE");
+  writeJsonString(fp, 6, "last_fault_status_text",
+                  masterSlaveStatusText(sm->getLastFaultStatus()));
+  writeJsonInt(fp, 6, "last_fault_status", sm->getLastFaultStatus());
+  writeJsonInt(fp, 6, "last_fault_execute_cycle",
+               static_cast<long long>(sm->getLastFaultCycle()));
   writeJsonBool(fp, 6, "enabled", sm->getEnabled());
   writeJsonBool(fp, 6, "auto_disable_masters", sm->getAutoDisableMasters());
   writeJsonBool(fp, 6, "auto_disable_slaves", sm->getAutoDisableSlaves());
@@ -839,6 +895,17 @@ void writeMasterSlaveSMFindings(FILE *fp, int *written, int totalFindings) {
                    "Inspect status_text, state_text, and whether the requested axis belongs to a blocked group.",
                    *written < totalFindings);
     }
+    if (masterSlaveSMs[i]->getLastFaultCode()) {
+      ++(*written);
+      writeFinding(fp,
+                   "warning",
+                   "master_slave_state_machine",
+                   i,
+                   "state_machine_historical_fault",
+                   "Master/slave state machine has retained fault history.",
+                   "Inspect last_fault_text, last_fault_status_text, and last_fault_execute_cycle.",
+                   *written < totalFindings);
+    }
   }
 }
 
@@ -868,7 +935,7 @@ int writeDumpFile(const DiagRequest &request) {
   }
 
   fputs("{\n", fp);
-  writeJsonInt(fp, 2, "ecmc_motion_diag_version", 1);
+  writeJsonInt(fp, 2, "ecmc_motion_diag_version", 2);
   writeTimestamp(fp);
   writeJsonInt(fp, 2, "level", request.level);
   writeJsonInt(fp, 2, "axis_count", countAxes());

@@ -70,6 +70,30 @@ enum masterSlaveStatus {
   ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY = 0x8000,
 };
 
+enum masterSlaveTransitionReason {
+  ECMC_MST_SLV_TRANSITION_NONE = 0,
+  ECMC_MST_SLV_TRANSITION_EXTERNAL_STATE_WRITE,
+  ECMC_MST_SLV_TRANSITION_CONTROL_DISABLED,
+  ECMC_MST_SLV_TRANSITION_SLAVE_COMMAND,
+  ECMC_MST_SLV_TRANSITION_MASTER_COMMAND,
+  ECMC_MST_SLV_TRANSITION_SLAVE_COMPLETE,
+  ECMC_MST_SLV_TRANSITION_MASTER_COMPLETE,
+  ECMC_MST_SLV_TRANSITION_LOST_ENABLE_OR_ERROR,
+  ECMC_MST_SLV_TRANSITION_SLAVE_TRAJ_SOURCE_FAILED,
+  ECMC_MST_SLV_TRANSITION_RESET_COMPLETE,
+  ECMC_MST_SLV_TRANSITION_PREPARE_TIMEOUT,
+  ECMC_MST_SLV_TRANSITION_MASTER_DISABLE_TIMEOUT,
+};
+
+enum masterSlaveStatusWordLayout : uint32_t {
+  ECMC_MST_SLV_STATUS_WORD_PHASE_MASK            = 0x0000FFFFu,
+  ECMC_MST_SLV_STATUS_WORD_PREVIOUS_STATE_MASK   = 0x00030000u,
+  ECMC_MST_SLV_STATUS_WORD_PREVIOUS_STATE_SHIFT  = 16,
+  ECMC_MST_SLV_STATUS_WORD_TRANSITION_REASON_MASK = 0x003C0000u,
+  ECMC_MST_SLV_STATUS_WORD_TRANSITION_REASON_SHIFT = 18,
+  ECMC_MST_SLV_STATUS_WORD_HISTORICAL_FAULT      = 0x00400000u,
+};
+
 class ecmcMasterSlaveStateMachine : public ecmcError {
   public:
     ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asynPortDriver,
@@ -85,11 +109,21 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int getIndex() const;
     int getState() const;
     int getStatus() const;
+    uint32_t getStatusWord() const;
     int getEnabled() const;
     int getAutoDisableMasters() const;
     int getAutoDisableSlaves() const;
+    int getPreviousState() const;
+    int getLastTransitionReason() const;
+    uint64_t getExecuteCycleCount() const;
+    uint64_t getTransitionCount() const;
+    uint64_t getLastTransitionCycle() const;
+    int getLastFaultCode() const;
+    int getLastFaultStatus() const;
+    uint64_t getLastFaultCycle() const;
     void execute();
     int validate();
+    int validateAxisOwnership(ecmcMasterSlaveStateMachine *other);
     int setMasterAtTargetTimeout(double timeoutS);
     double getMasterAtTargetTimeout() const;
 
@@ -99,6 +133,10 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int stateMaster();
     int stateReset();
     void resetMasterRuntimeState();
+    void transitionTo(masterSlaveStates newState,
+                      masterSlaveTransitionReason reason);
+    void latchFault(int errorCode, int status);
+    uint32_t buildStatusWord() const;
     void enterIdleFromMaster();
     void abortMasterToIdle(int errorCode, const char *reason);
     int initAsyn();
@@ -121,6 +159,7 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     ecmcAxisGroup *masterGrp_;
     ecmcAxisGroup *slaveGrp_;    
     int status_;
+    uint32_t statusWord_;
     ecmcAsynPortDriver *asynPortDriver_;
     ecmcAsynDataItem *asynControl_;
     ecmcAsynDataItem *asynState_;
@@ -137,6 +176,15 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     double masterAtTargetTimeS_;
     double masterPrepareTimeoutS_;
     double masterPrepareTimeS_;
+    uint64_t executeCycleCounter_;
+    uint64_t transitionCount_;
+    uint64_t lastTransitionCycle_;
+    uint64_t lastFaultCycle_;
+    masterSlaveStates previousState_;
+    masterSlaveStates trackedState_;
+    masterSlaveTransitionReason lastTransitionReason_;
+    int lastFaultCode_;
+    int lastFaultStatus_;
 };
 
 #endif  /* ecmcMasterSlaveStateMachine_H_ */

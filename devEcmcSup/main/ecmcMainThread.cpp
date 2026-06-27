@@ -1080,6 +1080,26 @@ int validateConfig() {
     }
   }
 
+  for (int i = 0; i < ECMC_MAX_MST_SLVS_SMS; i++) {
+    if (masterSlaveSMs[i] == NULL) {
+      continue;
+    }
+    for (int j = i + 1; j < ECMC_MAX_MST_SLVS_SMS; j++) {
+      if (masterSlaveSMs[j] == NULL) {
+        continue;
+      }
+      errorCode = masterSlaveSMs[i]->validateAxisOwnership(masterSlaveSMs[j]);
+      if (errorCode) {
+        LOGERR(
+          "ERROR: Axis ownership validation failed between master slave state machines %d and %d with error code %x.",
+          i,
+          j,
+          errorCode);
+        return errorCode;
+      }
+    }
+  }
+
   if (plcs) {
     errorCode = plcs->validate();
 

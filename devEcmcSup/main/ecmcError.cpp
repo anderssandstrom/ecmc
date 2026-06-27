@@ -1340,6 +1340,16 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x17008:
+    return "ERROR_MST_SLV_SM_GROUP_AXIS_OVERLAP";
+
+    break;
+
+  case 0x17009:
+    return "ERROR_MST_SLV_SM_AXIS_OWNERSHIP_CONFLICT";
+
+    break;
+
   case 0x30000:    // TRANSFORM
     return "ERROR_TRANSFORM_EXPR_NOT_COMPILED";
 

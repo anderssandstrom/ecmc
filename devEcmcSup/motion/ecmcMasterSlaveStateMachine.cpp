@@ -36,6 +36,7 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   validationOK_             = false;
   asynInitOk_               = false;  
   status_                   = ECMC_MST_SLV_STATUS_IDLE;
+  statusWord_               = ECMC_MST_SLV_STATUS_IDLE;
   state_                    = ECMC_MST_SLV_STATE_IDLE;    
   idleCounter_              = 0;
   masterGroupWasBusy_       = false;
@@ -47,6 +48,15 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   masterAtTargetTimeS_    = 0;
   masterPrepareTimeoutS_ = masterAtTargetTimeoutS_;
   masterPrepareTimeS_    = 0;
+  executeCycleCounter_   = 0;
+  transitionCount_       = 0;
+  lastTransitionCycle_   = 0;
+  lastFaultCycle_        = 0;
+  previousState_         = ECMC_MST_SLV_STATE_IDLE;
+  trackedState_          = ECMC_MST_SLV_STATE_IDLE;
+  lastTransitionReason_  = ECMC_MST_SLV_TRANSITION_NONE;
+  lastFaultCode_         = 0;
+  lastFaultStatus_       = ECMC_MST_SLV_STATUS_IDLE;
   memset(&control_,0,sizeof(control_));
   memset(&controlOld_,0,sizeof(controlOld_));
 
@@ -90,6 +100,10 @@ int ecmcMasterSlaveStateMachine::getStatus() const {
   return status_;
 }
 
+uint32_t ecmcMasterSlaveStateMachine::getStatusWord() const {
+  return buildStatusWord();
+}
+
 int ecmcMasterSlaveStateMachine::getEnabled() const {
   return control_.enable;
 }
@@ -100,6 +114,75 @@ int ecmcMasterSlaveStateMachine::getAutoDisableMasters() const {
 
 int ecmcMasterSlaveStateMachine::getAutoDisableSlaves() const {
   return control_.autoDisableSlaves;
+}
+
+int ecmcMasterSlaveStateMachine::getPreviousState() const {
+  return static_cast<int>(previousState_);
+}
+
+int ecmcMasterSlaveStateMachine::getLastTransitionReason() const {
+  return static_cast<int>(lastTransitionReason_);
+}
+
+uint64_t ecmcMasterSlaveStateMachine::getExecuteCycleCount() const {
+  return executeCycleCounter_;
+}
+
+uint64_t ecmcMasterSlaveStateMachine::getTransitionCount() const {
+  return transitionCount_;
+}
+
+uint64_t ecmcMasterSlaveStateMachine::getLastTransitionCycle() const {
+  return lastTransitionCycle_;
+}
+
+int ecmcMasterSlaveStateMachine::getLastFaultCode() const {
+  return lastFaultCode_;
+}
+
+int ecmcMasterSlaveStateMachine::getLastFaultStatus() const {
+  return lastFaultStatus_;
+}
+
+uint64_t ecmcMasterSlaveStateMachine::getLastFaultCycle() const {
+  return lastFaultCycle_;
+}
+
+void ecmcMasterSlaveStateMachine::transitionTo(
+  masterSlaveStates newState,
+  masterSlaveTransitionReason reason) {
+  if(state_ == newState) {
+    return;
+  }
+  previousState_ = state_;
+  state_ = newState;
+  trackedState_ = newState;
+  lastTransitionReason_ = reason;
+  lastTransitionCycle_ = executeCycleCounter_;
+  if(transitionCount_ < UINT64_MAX) {
+    transitionCount_++;
+  }
+}
+
+void ecmcMasterSlaveStateMachine::latchFault(int errorCode, int status) {
+  lastFaultCode_ = errorCode;
+  lastFaultStatus_ = status;
+  lastFaultCycle_ = executeCycleCounter_;
+}
+
+uint32_t ecmcMasterSlaveStateMachine::buildStatusWord() const {
+  uint32_t value = static_cast<uint32_t>(status_) &
+                   ECMC_MST_SLV_STATUS_WORD_PHASE_MASK;
+  value |= (static_cast<uint32_t>(previousState_) <<
+            ECMC_MST_SLV_STATUS_WORD_PREVIOUS_STATE_SHIFT) &
+           ECMC_MST_SLV_STATUS_WORD_PREVIOUS_STATE_MASK;
+  value |= (static_cast<uint32_t>(lastTransitionReason_) <<
+            ECMC_MST_SLV_STATUS_WORD_TRANSITION_REASON_SHIFT) &
+           ECMC_MST_SLV_STATUS_WORD_TRANSITION_REASON_MASK;
+  if(lastFaultCode_) {
+    value |= ECMC_MST_SLV_STATUS_WORD_HISTORICAL_FAULT;
+  }
+  return value;
 }
 
 void ecmcMasterSlaveStateMachine::resetMasterRuntimeState() {
@@ -118,7 +201,8 @@ void ecmcMasterSlaveStateMachine::enterIdleFromMaster() {
   slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
   slaveGrp_->setErrorReset();
   masterGrp_->setEnableAutoDisable(1);
-  state_ = ECMC_MST_SLV_STATE_IDLE;
+  transitionTo(ECMC_MST_SLV_STATE_IDLE,
+               ECMC_MST_SLV_TRANSITION_MASTER_COMPLETE);
   status_ = ECMC_MST_SLV_STATUS_IDLE;
   resetMasterRuntimeState();
 }
@@ -126,6 +210,7 @@ void ecmcMasterSlaveStateMachine::enterIdleFromMaster() {
 void ecmcMasterSlaveStateMachine::abortMasterToIdle(int errorCode,
                                                     const char *reason) {
   status_ = ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY;
+  latchFault(errorCode, status_);
   ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: %s; disabling all axes.\n",
                        __FILE__,
                        __FUNCTION__,
@@ -140,11 +225,29 @@ void ecmcMasterSlaveStateMachine::abortMasterToIdle(int errorCode,
   masterGrp_->setMRCnen(0);
   slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
   masterGrp_->setEnableAutoDisable(1);
-  state_ = ECMC_MST_SLV_STATE_IDLE;
+  transitionTo(
+    ECMC_MST_SLV_STATE_IDLE,
+    errorCode == ERROR_MST_SLV_SM_PREPARE_MASTER_TIMEOUT ?
+      ECMC_MST_SLV_TRANSITION_PREPARE_TIMEOUT :
+      ECMC_MST_SLV_TRANSITION_MASTER_DISABLE_TIMEOUT);
   resetMasterRuntimeState();
 }
 
 void ecmcMasterSlaveStateMachine::execute(){
+
+  if(executeCycleCounter_ < UINT64_MAX) {
+    executeCycleCounter_++;
+  }
+
+  if(state_ != trackedState_) {
+    previousState_ = trackedState_;
+    trackedState_ = state_;
+    lastTransitionReason_ = ECMC_MST_SLV_TRANSITION_EXTERNAL_STATE_WRITE;
+    lastTransitionCycle_ = executeCycleCounter_;
+    if(transitionCount_ < UINT64_MAX) {
+      transitionCount_++;
+    }
+  }
 
   //always update
   refreshAsyn();
@@ -157,7 +260,8 @@ void ecmcMasterSlaveStateMachine::execute(){
       masterGrp_->setBlocked(false);
       slaveGrp_->setBlocked(false);
       slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
-      state_ = ECMC_MST_SLV_STATE_IDLE;
+      transitionTo(ECMC_MST_SLV_STATE_IDLE,
+                   ECMC_MST_SLV_TRANSITION_CONTROL_DISABLED);
       status_ = ECMC_MST_SLV_STATUS_IDLE;
       resetMasterRuntimeState();
     }
@@ -227,7 +331,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
     // (un)block commands
     slaveGrp_->setBlocked(false);
     masterGrp_->setBlocked(true);
-    state_ = ECMC_MST_SLV_STATE_SLAVES;
+    transitionTo(ECMC_MST_SLV_STATE_SLAVES,
+                 ECMC_MST_SLV_TRANSITION_SLAVE_COMMAND);
     status_ = ECMC_MST_SLV_STATUS_SLAVE_ACTIVE;
     resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
@@ -249,7 +354,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
         slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
         slaveTrajSourceExternalWaitCycles_ =
           MST_SLV_TRAJ_SRC_CHANGE_WAIT_CYCLES;
-        state_ = ECMC_MST_SLV_STATE_MASTERS;
+        transitionTo(ECMC_MST_SLV_STATE_MASTERS,
+                     ECMC_MST_SLV_TRANSITION_MASTER_COMMAND);
         status_ = ECMC_MST_SLV_STATUS_WAIT_SLAVE_EXTERNAL;
         masterGroupReachedTarget_ = false;
         masterDisableInProgress_ = false;
@@ -280,6 +386,8 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
       int errorSlave = slaveGrp_->setEnable(1);
       int errorMaster = masterGrp_->setEnable(1);
       if(errorSlave || errorMaster) {
+        latchFault(errorSlave ? errorSlave : errorMaster,
+                   ECMC_MST_SLV_STATUS_PREPARING_MASTER);
         slaveGrp_->setEnable(0);
         masterGrp_->setEnable(0);
         slaveGrp_->setMRCnen(0);
@@ -304,7 +412,6 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
                                index_,
                                name_.c_str());
         }
-        state_ = ECMC_MST_SLV_STATE_IDLE;
         status_ = ECMC_MST_SLV_STATUS_IDLE;
         resetMasterRuntimeState();
         
@@ -352,7 +459,8 @@ int ecmcMasterSlaveStateMachine::stateSlave(){
     masterGrp_->setMRSync(1);
     masterGrp_->setMRStop(1);
 
-    state_ = ECMC_MST_SLV_STATE_IDLE;
+    transitionTo(ECMC_MST_SLV_STATE_IDLE,
+                 ECMC_MST_SLV_TRANSITION_SLAVE_COMPLETE);
     status_ = ECMC_MST_SLV_STATUS_IDLE;
     resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
@@ -429,7 +537,11 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     bool lostEnabled = masterAnyEnabled && !masterStatus.allEnabled;
     lostEnabled = lostEnabled || (slaveStatus.anyEnabled && !slaveStatus.allEnabled);
     if(lostEnabled || masterAnyError) {
-      state_ = ECMC_MST_SLV_STATE_IDLE;
+      latchFault(masterAnyError ? masterStatus.firstErrorId :
+                 ERROR_AXIS_SLAVED_AXIS_INTERLOCK,
+                 ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY);
+      transitionTo(ECMC_MST_SLV_STATE_IDLE,
+                   ECMC_MST_SLV_TRANSITION_LOST_ENABLE_OR_ERROR);
       ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master/slave state machine[%d] %s: at least one axis lost enable during motion; disabling all axes.\n",
              __FILE__,
              __FUNCTION__,
@@ -497,7 +609,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     masterGrp_->setMRCnen(0);
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     masterGrp_->setEnableAutoDisable(1);
-    state_ = ECMC_MST_SLV_STATE_IDLE;
+    transitionTo(ECMC_MST_SLV_STATE_IDLE,
+                 ECMC_MST_SLV_TRANSITION_MASTER_COMPLETE);
     status_ = ECMC_MST_SLV_STATUS_IDLE;
     resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
@@ -533,6 +646,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   }
   if((anySlaveIlocked || !allSlaveTrajExternal) && !masterDisableInProgress_){
     status_ = ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY;
+    latchFault(anySlaveIlocked ? ERROR_AXIS_SLAVED_AXIS_INTERLOCK :
+               ERROR_MST_SLV_SM_SLAVE_TRAJ_SRC_TIMEOUT,
+               status_);
     slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_INTERNAL);
     slaveGrp_->setMRSync(1);
     slaveGrp_->setMRStop(1);
@@ -550,7 +666,8 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
       masterGrp_->setSlavedAxisTrajSourceChanged();
     }
     masterGrp_->setEnableAutoDisable(1);
-    state_ = ECMC_MST_SLV_STATE_SLAVES;
+    transitionTo(ECMC_MST_SLV_STATE_SLAVES,
+                 ECMC_MST_SLV_TRANSITION_SLAVE_TRAJ_SOURCE_FAILED);
     resetMasterRuntimeState();
     if(control_.enableDbgPrintouts) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Master/slave state machine[%d] %s: slaved axis interlock=%d, all slave trajectory external=%d.\n",
@@ -644,7 +761,8 @@ int ecmcMasterSlaveStateMachine::stateReset() {
   masterGrp_->setEnableAutoDisable(1);
   masterGrp_->setBlocked(false);
   slaveGrp_->setBlocked(false);
-  state_ = ECMC_MST_SLV_STATE_IDLE;
+  transitionTo(ECMC_MST_SLV_STATE_IDLE,
+               ECMC_MST_SLV_TRANSITION_RESET_COMPLETE);
   status_ = ECMC_MST_SLV_STATUS_IDLE;
   resetMasterRuntimeState();
   if(control_.enableDbgPrintouts) {
@@ -681,6 +799,20 @@ int ecmcMasterSlaveStateMachine::validate(){
     return ERROR_MST_SLV_SM_GRP_EMPTY;
   }
 
+  for(int axisIndex = 0; axisIndex < ECMC_MAX_AXES; axisIndex++) {
+    if(masterGrp_->inGroup(axisIndex) && slaveGrp_->inGroup(axisIndex)) {
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Master/slave state machine[%d] %s: axis %d belongs to both master and slave groups.\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        index_,
+        name_.c_str(),
+        axisIndex);
+      return ERROR_MST_SLV_SM_GROUP_AXIS_OVERLAP;
+    }
+  }
+
   if( !asynInitOk_){
     return ERROR_MST_SLV_SM_GRP_INIT_ASYN_FAILED;
   };
@@ -688,6 +820,36 @@ int ecmcMasterSlaveStateMachine::validate(){
   validationOK_ = true;
   return 0;
 };
+
+int ecmcMasterSlaveStateMachine::validateAxisOwnership(
+  ecmcMasterSlaveStateMachine *other) {
+  if(!other || other == this) {
+    return 0;
+  }
+
+  for(int axisIndex = 0; axisIndex < ECMC_MAX_AXES; axisIndex++) {
+    const bool usedHere = masterGrp_->inGroup(axisIndex) ||
+                          slaveGrp_->inGroup(axisIndex);
+    const bool usedThere = other->masterGrp_->inGroup(axisIndex) ||
+                           other->slaveGrp_->inGroup(axisIndex);
+    if(usedHere && usedThere) {
+      validationOK_ = false;
+      other->validationOK_ = false;
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: Master/slave state machines[%d] %s and [%d] %s both control axis %d.\n",
+        __FILE__,
+        __FUNCTION__,
+        __LINE__,
+        index_,
+        name_.c_str(),
+        other->index_,
+        other->name_.c_str(),
+        axisIndex);
+      return ERROR_MST_SLV_SM_AXIS_OWNERSHIP_CONFLICT;
+    }
+  }
+  return 0;
+}
 
 
 
@@ -751,8 +913,8 @@ int ecmcMasterSlaveStateMachine::initAsyn() {
   errorCode = createAsynParam(ECMC_MST_SLV_OBJ_STR "%d." ECMC_MST_SLVS_STR_STATUS,
                               asynParamInt32,
                               ECMC_EC_U32,
-                              (uint8_t *)&(status_),
-                              sizeof(status_),
+                              (uint8_t *)&(statusWord_),
+                              sizeof(statusWord_),
                               &paramTemp);
 
   if (errorCode) {
@@ -837,6 +999,7 @@ int ecmcMasterSlaveStateMachine::createAsynParam(const char        *nameFormat,
 }
 
 void ecmcMasterSlaveStateMachine::refreshAsyn() {
+  statusWord_ = buildStatusWord();
   asynStatus_->refreshParamRT(0);
   asynControl_->refreshParamRT(0);
   asynState_->refreshParamRT(0);
