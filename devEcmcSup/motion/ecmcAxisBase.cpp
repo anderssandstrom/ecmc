@@ -2490,12 +2490,12 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
          sizeof(controlWordNew) < sizeof(controlWordRaw) ?
          sizeof(controlWordNew) : sizeof(controlWordRaw));
 
-  const bool executeRequest =
-    controlWordNew.executeCmd && !controlWordCurrent.executeCmd;
-  const bool tweakBwdRequest =
-    controlWordNew.tweakBwdCmd && !controlWordCurrent.tweakBwdCmd;
-  const bool tweakFwdRequest =
-    controlWordNew.tweakFwdCmd && !controlWordCurrent.tweakFwdCmd;
+  // These are momentary commands that are auto-reset after this callback.
+  // Each callback with a command bit set is a new request; the stored control
+  // word is also used as state/readback and is not reliable edge history.
+  const bool executeRequest = controlWordNew.executeCmd;
+  const bool tweakBwdRequest = controlWordNew.tweakBwdCmd;
+  const bool tweakFwdRequest = controlWordNew.tweakFwdCmd;
 
   if (executeRequest) {
     bumpMotionCommandRequestCounter();
