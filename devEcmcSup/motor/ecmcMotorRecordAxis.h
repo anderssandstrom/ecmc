@@ -187,9 +187,7 @@ private:
   asynStatus setEnable(int on);
   asynStatus readEcmcAxisStatusData();
   bool       pollPowerIsOn(void);
-#ifndef motorMessageTextString
-  void       updateMsgTxtFromDriver(const char *value);
-#endif // ifndef motorMessageTextString
+  void       updateEcmcErrorMsg(const char *value);
   void       updateIlockTxtFromDriver(int lastInterlock);
   void       updateIlockShortTxtFromDriver(int lastInterlock);
 

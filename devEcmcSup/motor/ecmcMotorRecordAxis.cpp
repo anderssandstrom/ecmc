@@ -456,7 +456,8 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
   /* Set the module name to "" if we have FILE/LINE enabled by asyn */
   if (pasynTrace->getTraceInfoMask(pPrintOutAsynUser) &
       ASYN_TRACEINFO_SOURCE) modNamEMC = "";
-  
+
+  updateEcmcErrorMsg("");
   initialPoll();
   
 }
@@ -2059,7 +2060,7 @@ void ecmcMotorRecordAxis::callParamCallbacksUpdateError() {
               drvlocal.nCommandActiveOld,
               msgTxtFromDriver ? msgTxtFromDriver : "NULL");
 
-    updateMsgTxtFromDriver(msgTxtFromDriver);
+    updateEcmcErrorMsg(msgTxtFromDriver);
 
     drvlocal.old_eeAxisError   = drvlocal.eeAxisError;
     drvlocal.old_eeAxisWarning = drvlocal.eeAxisWarning;
@@ -2783,16 +2784,20 @@ asynStatus ecmcMotorRecordAxis::setDoubleParam(int function, double value) {
   return status;
 }
 
-#ifndef motorMessageTextString
-void ecmcMotorRecordAxis::updateMsgTxtFromDriver(const char *value) {
+void ecmcMotorRecordAxis::updateEcmcErrorMsg(const char *value) {
+#ifdef motorMessageTextString
+  // Keep MOTOR_MESSAGE_TEXT as an ecmc error/warning field. Otherwise the
+  // motor base class replaces an empty value with normal motion-state text.
+  pC_->setIntegerParam(axisNo_, pC_->motorMessageIsFromDriver_, 1);
+  setStringParam(pC_->motorMessageText_, value ? value : "");
+#else
   if (value && value[0]) {
     setStringParam(pC_->ecmcMotorRecordMCUErrMsg_, value);
   } else {
     setStringParam(pC_->ecmcMotorRecordMCUErrMsg_, "");
   }
+#endif
 }
-
-#endif // ifndef motorMessageTextString
 
 void ecmcMotorRecordAxis::updateIlockTxtFromDriver(int lastInterlock) {
   setStringParam(pC_->ecmcMotorRecordIlockMsg_,
