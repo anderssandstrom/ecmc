@@ -1768,7 +1768,7 @@ int ecmcMotionSequence::copyReadToCommandLine() {
   editIndex_ = readIndex_;
   edit_ = read_;
   refreshEditParams();
-  setCommandLineResult("Read step copied to command line.");
+  setCommandLineResult("Read step loaded for editing.");
   if (seqAsynPort_ && cmdLineParam_ >= 0) {
     seqAsynPort_->refreshParam(cmdLineParam_);
   }
