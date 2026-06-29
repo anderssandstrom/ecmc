@@ -2490,6 +2490,23 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
          sizeof(controlWordNew) < sizeof(controlWordRaw) ?
          sizeof(controlWordNew) : sizeof(controlWordRaw));
 
+  const bool executeRequest =
+    controlWordNew.executeCmd && !controlWordCurrent.executeCmd;
+  const bool tweakBwdRequest =
+    controlWordNew.tweakBwdCmd && !controlWordCurrent.tweakBwdCmd;
+  const bool tweakFwdRequest =
+    controlWordNew.tweakFwdCmd && !controlWordCurrent.tweakFwdCmd;
+
+  if (executeRequest) {
+    bumpMotionCommandRequestCounter();
+  }
+  if (tweakBwdRequest) {
+    bumpMotionCommandRequestCounter();
+  }
+  if (tweakFwdRequest) {
+    bumpMotionCommandRequestCounter();
+  }
+
   char controlWordActions[512] = "";
   char actionBuffer[128];
   if (controlWordNew.enableCmd != controlWordCurrent.enableCmd) {
@@ -2498,7 +2515,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
                             controlWordNew.enableCmd ? "enable requested" :
                             "disable requested");
   }
-  if (controlWordNew.executeCmd && !controlWordCurrent.executeCmd) {
+  if (executeRequest) {
     snprintf(actionBuffer,
              sizeof(actionBuffer),
              "execute %s requested (target=%lf, velocity=%lf)",
@@ -2520,7 +2537,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
                             sizeof(controlWordActions),
                             "reset requested");
   }
-  if (controlWordNew.tweakBwdCmd) {
+  if (tweakBwdRequest) {
     snprintf(actionBuffer,
              sizeof(actionBuffer),
              "tweak backward requested (step=%lf)",
@@ -2529,7 +2546,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
                             sizeof(controlWordActions),
                             actionBuffer);
   }
-  if (controlWordNew.tweakFwdCmd) {
+  if (tweakFwdRequest) {
     snprintf(actionBuffer,
              sizeof(actionBuffer),
              "tweak forward requested (step=%lf)",
@@ -2760,8 +2777,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
         return asynError;
       }
 
-      bumpMotionCommandRequestCounter();
-
       // Only allow cmd change if not busy
       if (!getBusy()) {        
         setCommand(data_.control_.command);
@@ -2835,7 +2850,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
   if(data_.status_.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL) {
     // Tweak BWD
     if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakBwdCmd) {
-      bumpMotionCommandRequestCounter();
       if (!getBusy()) {
         setCommand(ECMC_CMD_MOVEABS);
         setCmdData(0);
@@ -2860,7 +2874,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
     
     // Tweak FWD
     if (!data_.control_.controlWord_.stopCmd && data_.control_.controlWord_.tweakFwdCmd) {
-      bumpMotionCommandRequestCounter();
       if (!getBusy()) {
         setCommand(ECMC_CMD_MOVEABS);
         setCmdData(0);
