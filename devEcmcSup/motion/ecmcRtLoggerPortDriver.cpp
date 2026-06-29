@@ -86,6 +86,7 @@ std::atomic<int> countEnableCommands_[ECMC_MAX_AXES];
 std::atomic<int> axisMsBlockStates_[ECMC_MAX_AXES];
 std::atomic<int> axisMsBlockCycles_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisMsBlockCounts_[ECMC_MAX_AXES];
+std::atomic<unsigned int> axisMsBlockCountBases_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisMsBlockVersions_[ECMC_MAX_AXES];
 
 enum ecmcRtLoggerPortLevel {
@@ -280,6 +281,7 @@ public:
       axisMsBlockStates_[axisIndex].store(0, std::memory_order_relaxed);
       axisMsBlockCycles_[axisIndex].store(0, std::memory_order_relaxed);
       axisMsBlockCounts_[axisIndex].store(0, std::memory_order_relaxed);
+      axisMsBlockCountBases_[axisIndex].store(0, std::memory_order_relaxed);
       axisMsBlockVersions_[axisIndex].store(0, std::memory_order_relaxed);
       axisCmdMotorRecordRequestCountsPublished_[axisIndex] = UINT_MAX;
       axisCmdRequestCountsPublished_[axisIndex] = UINT_MAX;
@@ -413,7 +415,9 @@ public:
       }
       if (pasynUser->reason == axisMsBlockCountParam_) {
         *value = saturateCount(
-          axisMsBlockCounts_[addr].load(std::memory_order_acquire));
+          counterDelta(
+            axisMsBlockCounts_[addr].load(std::memory_order_acquire),
+            axisMsBlockCountBases_[addr].load(std::memory_order_acquire)));
         return asynSuccess;
       }
       if (pasynUser->reason == axisMsBlockCycleParam_) {
@@ -466,7 +470,9 @@ public:
                        sizeof(text),
                        axisMsBlockStates_[addr].load(std::memory_order_acquire),
                        axisMsBlockCycles_[addr].load(std::memory_order_acquire),
-                       axisMsBlockCounts_[addr].load(std::memory_order_acquire));
+                       counterDelta(
+                         axisMsBlockCounts_[addr].load(std::memory_order_acquire),
+                         axisMsBlockCountBases_[addr].load(std::memory_order_acquire)));
       const int written = snprintf(value, maxChars, "%s", text);
       if (nActual) {
         *nActual = written < 0 ? 0 : std::min((size_t)written, maxChars - 1);
@@ -511,6 +517,42 @@ public:
       axisCmdExecuteCountBase_[addr].store(
         axisCmdExecuteCounts_[addr].load(std::memory_order_acquire),
         std::memory_order_release);
+
+      unsigned int msBlockVersionStart = 0;
+      unsigned int msBlockVersionEnd = 0;
+      unsigned int msBlockCount = 0;
+      int msBlockState = 0;
+      do {
+        msBlockVersionStart =
+          axisMsBlockVersions_[addr].load(std::memory_order_acquire);
+        if (msBlockVersionStart & 1u) {
+          continue;
+        }
+        msBlockState =
+          axisMsBlockStates_[addr].load(std::memory_order_relaxed);
+        msBlockCount =
+          axisMsBlockCounts_[addr].load(std::memory_order_relaxed);
+        msBlockVersionEnd =
+          axisMsBlockVersions_[addr].load(std::memory_order_acquire);
+      } while (msBlockVersionStart != msBlockVersionEnd ||
+               (msBlockVersionEnd & 1u));
+
+      axisMsBlockCountBases_[addr].store(msBlockCount,
+                                         std::memory_order_release);
+      axisMsBlockStatesPublished_[addr] = msBlockState;
+      axisMsBlockCyclesPublished_[addr] = 0;
+      axisMsBlockCountsPublished_[addr] = 0;
+      axisMsBlockVersionsPublished_[addr] = msBlockVersionEnd;
+      char msBlockText[ECMC_RT_LOGGER_AXIS_MS_BLOCK_TEXT_SIZE];
+      buildMsBlockText(msBlockText,
+                       sizeof(msBlockText),
+                       msBlockState,
+                       0,
+                       0);
+      snprintf(axisMsBlockTextsPublished_[addr],
+               sizeof(axisMsBlockTextsPublished_[addr]),
+               "%s",
+               msBlockText);
       axisCmdMotorRecordRequestCountsPublished_[addr] = 0;
       axisCmdRequestCountsPublished_[addr] = 0;
       axisCmdExecuteCountsPublished_[addr] = 0;
@@ -543,6 +585,10 @@ public:
       setIntegerParam(addr, axisMrCmdErrorParam_, 0);
       setIntegerParam(addr, axisMrCmdCycleParam_, 0);
       setStringParam(addr, axisMrCmdTextParam_, mrCmdText);
+      setIntegerParam(addr, axisMsBlockedParam_, msBlockState);
+      setIntegerParam(addr, axisMsBlockCountParam_, 0);
+      setIntegerParam(addr, axisMsBlockCycleParam_, 0);
+      setStringParam(addr, axisMsBlockTextParam_, msBlockText);
       setIntegerParam(addr, axisCmdClearParam_, 0);
       callParamCallbacks(addr);
       return asynSuccess;
@@ -735,7 +781,9 @@ private:
         const int msBlockCycle =
           axisMsBlockCycles_[axisIndex].load(std::memory_order_relaxed);
         const unsigned int msBlockCount =
-          axisMsBlockCounts_[axisIndex].load(std::memory_order_relaxed);
+          counterDelta(
+            axisMsBlockCounts_[axisIndex].load(std::memory_order_relaxed),
+            axisMsBlockCountBases_[axisIndex].load(std::memory_order_relaxed));
         const unsigned int msBlockVersionEnd =
           axisMsBlockVersions_[axisIndex].load(std::memory_order_acquire);
 
