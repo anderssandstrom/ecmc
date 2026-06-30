@@ -187,6 +187,7 @@ private:
   asynStatus setEnable(int on);
   asynStatus readEcmcAxisStatusData();
   bool       pollPowerIsOn(void);
+  bool       interlockStopRisingEdge(bool interlockActive);
   void       updateEcmcErrorMsg(const char *value);
   void       updateIlockTxtFromDriver(int lastInterlock);
   void       updateIlockShortTxtFromDriver(int lastInterlock);
@@ -221,8 +222,9 @@ private:
   bool pvtEnabled_;
   size_t profileMaxPoints_;  
   bool updateFirstPollDone_;
+  bool interlockStopActive_;
   friend class ecmcMotorRecordController;
-  int ecmcCycleCounterAtNewCmd_;
+  uint32_t ecmcCycleCounterAtNewCmd_;
 };
 
 #endif // ifndef ECMC_MOTOR_RECORD_AXIS_H

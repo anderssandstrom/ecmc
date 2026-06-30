@@ -315,6 +315,7 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
   ecmcCycleCounterAtNewCmd_ = 0;
 
   updateFirstPollDone_ = false;
+  interlockStopActive_ = false;
   drvlocal.restoreMotorSoftlimits = false;
   if (!drvlocal.ecmcAxis) {
     LOGERR(
@@ -1792,7 +1793,7 @@ bool ecmcMotorRecordAxis::pollPowerIsOn(void) {
   interlock = drvlocal.ecmcAxis->getMon()->getSumInterlock();
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
 
-  if(interlock) {
+  if(interlockStopRisingEdge(interlock)) {
     triggstop_++;
     if(triggstop_ == 0) {
       triggstop_++;
@@ -1808,6 +1809,12 @@ bool ecmcMotorRecordAxis::pollPowerIsOn(void) {
             __FILE__, __FUNCTION__, __LINE__,
             axisNo_, enabled > 0);
   return enabled > 0;
+}
+
+bool ecmcMotorRecordAxis::interlockStopRisingEdge(bool interlockActive) {
+  const bool risingEdge = interlockActive && !interlockStopActive_;
+  interlockStopActive_ = interlockActive;
+  return risingEdge;
 }
 
 /**
@@ -2141,23 +2148,25 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
   asynStatus status = readEcmcAxisStatusData();
 
   if(drvlocal.axisInStartup) {
+    interlockStopActive_ = false;
     drvlocal.nErrorIdMcu = 0;
     drvlocal.status_.errorCode = 0;
     updateError();
     return asynSuccess;
   }
 
-  if(drvlocal.ecmcSummaryInterlock) {
-
+  if(interlockStopRisingEdge(drvlocal.ecmcSummaryInterlock)) {
     triggstop_++;
     if(triggstop_ == 0) {
       triggstop_++;
     }
     asynMotorAxis::setIntegerParam(pC_->motorStop_, triggstop_);  // Stop also triggered in ecmc, try to sync motor record and ecmc    
-    
-    if (!drvlocal.ecmcBusy && drvlocal.ecmcSafetyInterlock) {
-      asynMotorAxis::setIntegerParam(pC_->motorClosedLoop_, 0);
-    }
+    callParamCallbacks();
+  }
+
+  if (drvlocal.ecmcSummaryInterlock &&
+      !drvlocal.ecmcBusy && drvlocal.ecmcSafetyInterlock) {
+    asynMotorAxis::setIntegerParam(pC_->motorClosedLoop_, 0);
     callParamCallbacks();
   }
 
@@ -2185,13 +2194,20 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
   // Ensure data is polled after command was executed ensure 2 polls after 
   if (dataIsSampledAfterNewCmd()/* && pollsAfterNewCommandCounter_>=2*/) {
     if(!drvlocal.moveReady && !drvlocal.ecmcBusy) {
+      // DMOV reports a terminal operation; AtTarget and alarms report success.
+      const bool terminalFailure =
+        drvlocal.status_.errorCode != 0 ||
+        drvlocal.ecmcSummaryInterlock ||
+        drvlocal.ecmcSoftLimitInterlock;
+      const bool commandStopped =
+        !drvlocal.status_.statusWord_.execute ||
+        !drvlocal.status_.statusWord_.enable ||
+        !drvlocal.status_.statusWord_.enabled;
+
       if(drvlocal.ecmcAtTargetMonEnable) {
-        drvlocal.moveReady = !drvlocal.ecmcBusy && drvlocal.status_.statusWord_.attarget; //&& !drvlocal.status_.statusWord_.enabled;
+        drvlocal.moveReady = drvlocal.status_.statusWord_.attarget ||
+                             terminalFailure || commandStopped;
       } else {
-        drvlocal.moveReady = !drvlocal.ecmcBusy;// && !drvlocal.status_.statusWord_.enabled;
-      }
-      // If killed then set dmove = true
-      if(!drvlocal.status_.statusWord_.enable && !drvlocal.ecmcBusy) {
         drvlocal.moveReady = true;
       }
     }
@@ -3686,6 +3702,6 @@ void ecmcMotorRecordAxis::newCmd() {
 }
 
 bool ecmcMotorRecordAxis::dataIsSampledAfterNewCmd() {
-  // the diff >1000 is just to handle overfows so not stuck in DMOV=0.
-  return drvlocal.status_.cycleCounter > ecmcCycleCounterAtNewCmd_ || abs(ecmcCycleCounterAtNewCmd_ - drvlocal.status_.cycleCounter) > 1000;
+  const uint32_t currentCycle = drvlocal.status_.cycleCounter;
+  return static_cast<int32_t>(currentCycle - ecmcCycleCounterAtNewCmd_) > 0;
 }
