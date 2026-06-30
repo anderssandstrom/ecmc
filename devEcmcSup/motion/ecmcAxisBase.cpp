@@ -856,6 +856,11 @@ int ecmcAxisBase::setEnableLocal(bool enable) {
 }
 
 void ecmcAxisBase::errorReset() {
+  const bool syncInternalSetpointAfterPosLag =
+    getErrorID() == ERROR_MON_MAX_POSITION_LAG_EXCEEDED &&
+    data_.status_.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL &&
+    !data_.status_.statusWord_.localBusy;
+
   if (disableAxisAtErrorReset_ && getError()) {
     setEnable(0);
   }
@@ -898,6 +903,18 @@ void ecmcAxisBase::errorReset() {
 
   if (seq) {
     seq->errorReset();
+  }
+
+  if (syncInternalSetpointAfterPosLag && traj) {
+    const double actualPosition = data_.status_.currentPositionActual;
+    traj->setStartPos(actualPosition);
+    traj->setCurrentPosSet(actualPosition);
+    traj->setTargetPos(actualPosition);
+    data_.status_.currentPositionSetpoint = actualPosition;
+    data_.status_.currentTargetPosition = actualPosition;
+    data_.status_.currentVelocitySetpoint = 0;
+    data_.control_.positionTarget = actualPosition;
+    refreshAsynTargetValue();
   }
 
   ecmcError::errorReset();

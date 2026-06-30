@@ -13,6 +13,9 @@ Release Notes
 * Count absolute, relative, homing, velocity, and tweak requests arriving through the ecmc axis control word even when the request is later rejected or ignored.
 * Reduce diagnostic overhead by publishing RT logger axis data only for configured axes and keeping diagnostic file output and asyn publication in the logger worker thread.
 * Keep the motor-record message field focused on ecmc errors and warnings instead of overwriting it with normal moving/stopped state text.
+* Complete motor-record `DMOV` when motion terminates through a stop, error, disable, or interlock while remaining away from target. Successful arrival remains distinguishable through `AtTarget` and alarm/problem status.
+* Trigger the motor-record interlock STOP notification only on the interlock rising edge, and make motor command sample-age handling safe across the 32-bit axis cycle-counter wrap.
+* When resetting a stopped internal-source axis after a position-lag error, synchronize its internal trajectory start, setpoint, and target to the actual position to avoid immediately retriggering the same error.
 * Harden the master/slave state machine with bounded prepare and master-disable waits, trajectory-source verification and recovery, lost-enable/error recovery, startup ownership validation, explicit transition reasons, retained fault history, and richer packed status metadata.
 * Start the master auto-disable timeout only after the master group has reached target and is no longer busy, while keeping auto-disable enabled through the remainder of the disable transition.
 
