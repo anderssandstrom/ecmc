@@ -2691,6 +2691,16 @@ static int handleCfgCommand(const char *myarg_1) {
     return setAxisEnableAutoDisable(iValue, iValue2);
   }
 
+  /*int Cfg.SetAxisAutoDisableAtTargetLatch(int axis_no, int enable);*/
+  nvals = sscanf(myarg_1,
+                 "SetAxisAutoDisableAtTargetLatch(%d,%d)",
+                 &iValue,
+                 &iValue2);
+
+  if (nvals == 2) {
+    return setAxisAutoDisableAtTargetLatch(iValue, iValue2);
+  }
+
   /*int Cfg.SetAxisEmergDeceleration(int traj_no, double value);*/
   nvals =
     sscanf(myarg_1, "SetAxisEmergDeceleration(%d,%lf)", &iValue, &dValue);
@@ -5870,6 +5880,16 @@ parse_getaxisdrv:
 
   if (nvals == 1) {
     SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEnableAutoDisable(
+                                        motor_axis_no, &iValue));
+  }
+
+  /*int GetAxisAutoDisableAtTargetLatch(int axis_no);*/
+  nvals = sscanf(myarg_1,
+                 "GetAxisAutoDisableAtTargetLatch(%d)",
+                 &motor_axis_no);
+
+  if (nvals == 1) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisAutoDisableAtTargetLatch(
                                         motor_axis_no, &iValue));
   }
 

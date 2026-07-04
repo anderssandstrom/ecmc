@@ -366,6 +366,8 @@ void ecmcAxisBase::initVars() {
   autoDisbleTimeCounter_        = 0.0;
   enableAutoEnable_             = 0;
   enableAutoDisable_            = 0;
+  autoDisableAtTargetLatchEnable_ = false;
+  autoDisableAtTargetLatched_   = false;
   positionTargetAsyn_           = 0;
   invSampleTime_                = 1000.0;
   masterSlaveBlocked_           = false;
@@ -3872,17 +3874,30 @@ void ecmcAxisBase::autoDisableSM() {
 
   if(data_.status_.statusWord_.busy) {
     autoDisbleTimeCounter_ = 0;
+    autoDisableAtTargetLatched_ = false;
     return;
   }
 
   if(!data_.status_.statusWord_.enabled) {
     autoDisbleTimeCounter_ = 0;
+    autoDisableAtTargetLatched_ = false;
     return;
   }
 
-  if(!data_.status_.statusWord_.attarget && getMon()->getEnableAtTargetMon()) {
-    autoDisbleTimeCounter_ = 0;
-    return;
+  if(getMon()->getEnableAtTargetMon()) {
+    if(data_.status_.statusWord_.attarget) {
+      autoDisableAtTargetLatched_ = true;
+    }
+
+    if(autoDisableAtTargetLatchEnable_) {
+      if(!autoDisableAtTargetLatched_) {
+        autoDisbleTimeCounter_ = 0;
+        return;
+      }
+    } else if(!data_.status_.statusWord_.attarget) {
+      autoDisbleTimeCounter_ = 0;
+      return;
+    }
   }
 
   if(autoDisbleTimeCounter_ > autoDisableAfterS_ && data_.control_.controlWord_.enableCmd) {
@@ -3936,6 +3951,7 @@ double ecmcAxisBase::getAutoDisableAfterTime() {
 int ecmcAxisBase::setEnableAutoDisable(bool enable) {
   if(enableAutoDisable_ != enable) {
     autoDisbleTimeCounter_ = 0;
+    autoDisableAtTargetLatched_ = false;
   }
   
   enableAutoDisable_ = enable;
@@ -3944,6 +3960,20 @@ int ecmcAxisBase::setEnableAutoDisable(bool enable) {
 
 int ecmcAxisBase::getEnableAutoDisable() {
   return static_cast<int>(enableAutoDisable_);
+}
+
+int ecmcAxisBase::setAutoDisableAtTargetLatch(bool enable) {
+  if(autoDisableAtTargetLatchEnable_ != enable) {
+    autoDisbleTimeCounter_ = 0;
+    autoDisableAtTargetLatched_ = false;
+  }
+
+  autoDisableAtTargetLatchEnable_ = enable;
+  return 0;
+}
+
+int ecmcAxisBase::getAutoDisableAtTargetLatch() {
+  return static_cast<int>(autoDisableAtTargetLatchEnable_);
 }
 
 ecmcAxisDataStatus* ecmcAxisBase::getAxisStatusDataPtr() {
