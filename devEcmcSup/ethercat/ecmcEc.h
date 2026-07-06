@@ -164,7 +164,7 @@ public:
                           ecmcEcEntry *fromEntry,
                           bool force);
   int reportCyclicEntryWrites();
-  int getCyclicEntryWriteFlags(const void *data) const;
+  int getCyclicEntryWriteFlags(const void *data, int *copyBits) const;
   int addSimEntry(int       position,     // Slave position.
                   std::string    id,
                   ecmcEcDataType dt,

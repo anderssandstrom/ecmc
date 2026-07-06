@@ -1344,7 +1344,7 @@ void ecmcAsynPortDriver::reportParamAliases(FILE             *fp,
     }
 
     if (firstAlias) {
-      fprintf(fp, "    Param aliases:             %s", alias->first.c_str());
+      fprintf(fp, "      aliases: [%s", alias->first.c_str());
       firstAlias = false;
     } else {
       fprintf(fp, ", %s", alias->first.c_str());
@@ -1352,7 +1352,9 @@ void ecmcAsynPortDriver::reportParamAliases(FILE             *fp,
   }
 
   if (firstAlias) {
-    fprintf(fp, "    Param aliases:             <none>");
+    fprintf(fp, "      aliases: []");
+  } else {
+    fprintf(fp, "]");
   }
   fprintf(fp, "\n");
 }
@@ -1414,147 +1416,97 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
     return;
   }
 
+  int cyclicWriteBits = 0;
   const int cyclicWriteFlags =
-    ecGetEntryCyclicWriteFlags(param->getDataPtr());
+    ecGetEntryCyclicWriteFlags(param->getDataPtr(), &cyclicWriteBits);
 
-  if( details < 0 ) {
-   fprintf(fp, "p[%d] = %s",listIndex, param->getName());
-   bool firstAlias = true;
-   for (std::map<std::string, std::string>::const_iterator alias =
-          paramAliases_.begin();
-        alias != paramAliases_.end();
-        ++alias) {
-     if (alias->second.compare(param->getParamName()) != 0) {
-       continue;
-     }
-     fprintf(fp, "%s%s", firstAlias ? " aliases=" : ",", alias->first.c_str());
-     firstAlias = false;
-   }
-   if (cyclicWriteFlags) {
-     fprintf(fp, " cyclic=%s%s",
-             (cyclicWriteFlags & 1) ? "r" : "",
-             (cyclicWriteFlags & 2) ? "w" : "");
-   }
-   fprintf(fp, "\n");
-   return;
-  }
-
-  fprintf(fp, "  Parameter %d:\n",                   listIndex);
-  fprintf(fp, "    Param name:                %s\n", paramInfo->name);
+  fprintf(fp, "    - list_index: %d\n", listIndex);
+  fprintf(fp, "      name: %s\n", paramInfo->name);
   reportParamAliases(fp, param);
-  if (cyclicWriteFlags) {
-    fprintf(fp, "    Cyclic write access:       %s%s\n",
-            (cyclicWriteFlags & 1) ? "r" : "",
-            (cyclicWriteFlags & 2) ? "w" : "");
+
+  if (details < 0) {
+    if (cyclicWriteFlags) {
+      fprintf(fp, "      cyclic_write: {access: %s%s, bits: %d}\n",
+              (cyclicWriteFlags & 1) ? "r" : "",
+              (cyclicWriteFlags & 2) ? "w" : "",
+              cyclicWriteBits);
+    }
+    return;
   }
-  fprintf(fp, "    Param index:               %d\n", paramInfo->index);
-  fprintf(fp, "    Param type:                %s (%d)\n",
+
+  fprintf(fp, "      parameter_index: %d\n", paramInfo->index);
+  fprintf(fp, "      asyn:\n");
+  fprintf(fp, "        type: {name: %s, id: %d}\n",
           asynTypeToString((long)paramInfo->asynType), paramInfo->asynType);
 
-  // supported types
-  fprintf(fp, "    Supported asyn types:\n");
+  fprintf(fp, "        supported_types:\n");
 
   for (int i = 0; i < param->getSupportedAsynTypeCount(); i++) {
-    fprintf(fp, "      - %s (%d)\n", asynTypeToString(
+    fprintf(fp, "          - {name: %s, id: %d}\n", asynTypeToString(
               (long)param->getSupportedAsynType(i)),
             param->getSupportedAsynType(i));
   }
-  fprintf(fp,
-          "    Param linked to record:    %s\n",
+  fprintf(fp, "        linked_to_record: %s\n",
           paramInfo->initialized ? "true" : "false");
 
-  if (!paramInfo->initialized) {  // No record linked to record (no more valid data)
-    fprintf(fp, "    ECMC name:                 %s\n", param->getName());
-    fprintf(fp,
-            "    ECMC data pointer valid:   %s\n",
-            param->getEcmcDataPointerValid() ? "true" : "false");
-    fprintf(fp,
-            "    ECMC size [bytes]:         %zu\n",
-            param->getEcmcDataSize());
-    fprintf(fp,
-            "    ECMC data is array:        %s\n",
-            paramInfo->dataIsArray ? "true" : "false");
-    fprintf(fp,
-            "    ECMC write allowed:        %s\n",
-            param->getAllowWriteToEcmc() ? "true" : "false");
-    fprintf(fp, "    ECMC Data type:            %s\n",
-            getEcDataTypeStr(param->getEcmcDataType()));
-
-    if (param->getEcmcDataMaxSize() == sizeof(uint64_t)) {
-      fprintf(fp,
-              "    ECMC value:                0x%" PRIx64 "\n",
-              *((uint64_t *)param->getDataPtr()));
-    }
-    fprintf(fp, "\n");
-    return;
+  if (paramInfo->initialized) {
+    fprintf(fp, "        drv_info: %s\n", paramInfo->drvInfo);
+    fprintf(fp, "        sample_time_ms: %.0lf\n", paramInfo->sampleTimeMS);
+    fprintf(fp, "        sample_cycles: %d\n", paramInfo->sampleTimeCycles);
+    fprintf(fp, "        io_intr: %s\n", paramInfo->isIOIntr ? "true" : "false");
+    fprintf(fp, "        address: %d\n", paramInfo->asynAddr);
+    fprintf(fp, "        alarm: %d\n", paramInfo->alarmStatus);
+    fprintf(fp, "        severity: %d\n", paramInfo->alarmSeverity);
   }
-  fprintf(fp, "    Param drvInfo:             %s\n", paramInfo->drvInfo);
-  fprintf(fp, "    Param sample time [ms]:    %.0lf\n",
-          paramInfo->sampleTimeMS);
-  fprintf(fp,
-          "    Param sample cycles []:    %d\n",
-          paramInfo->sampleTimeCycles);
-  fprintf(fp,
-          "    Param isIOIntr:            %s\n",
-          paramInfo->isIOIntr ? "true" : "false");
-  fprintf(fp, "    Param asyn addr:           %d\n", paramInfo->asynAddr);
-  fprintf(fp, "    Param alarm:               %d\n",
-          paramInfo->alarmStatus);
-  fprintf(fp,
-          "    Param severity:            %d\n",
-          paramInfo->alarmSeverity);
-  fprintf(fp, "    ECMC name:                 %s\n", param->getName());
-  fprintf(fp,
-          "    ECMC data pointer valid:   %s\n",
+
+  fprintf(fp, "      ecmc:\n");
+  fprintf(fp, "        name: %s\n", param->getName());
+  fprintf(fp, "        data_pointer_valid: %s\n",
           param->getEcmcDataPointerValid() ? "true" : "false");
-  fprintf(fp,
-          "    ECMC size [bits]:          %zu\n",
-          param->getEcmcBitCount());
-  fprintf(fp,
-          "    ECMC size [bytes]:         %zu\n",
-          param->getEcmcDataSize());
-  fprintf(fp,
-          "    ECMC max size [bytes]:     %zu\n",
-          param->getEcmcDataMaxSize());
-  fprintf(fp,
-          "    ECMC data is array:        %s\n",
+  fprintf(fp, "        size_bits: %zu\n", param->getEcmcBitCount());
+  fprintf(fp, "        size_bytes: %zu\n", param->getEcmcDataSize());
+  fprintf(fp, "        max_size_bytes: %zu\n", param->getEcmcDataMaxSize());
+  fprintf(fp, "        data_is_array: %s\n",
           paramInfo->dataIsArray ? "true" : "false");
-  fprintf(fp,
-          "    ECMC write allowed:        %s\n",
+  fprintf(fp, "        write_allowed: %s\n",
           param->getAllowWriteToEcmc() ? "true" : "false");
-  fprintf(fp, "    ECMC Data type:            %s\n",
+  fprintf(fp, "        data_type: %s\n",
           getEcDataTypeStr(param->getEcmcDataType()));
+  if (cyclicWriteFlags) {
+    fprintf(fp, "        cyclic_write: {access: %s%s, bits: %d}\n",
+            (cyclicWriteFlags & 1) ? "r" : "",
+            (cyclicWriteFlags & 2) ? "w" : "",
+            cyclicWriteBits);
+  }
 
   if (param->getEcmcDataMaxSize() == sizeof(uint64_t)) {
-    fprintf(fp,
-            "    ECMC value:                0x%" PRIx64 "\n",
+    fprintf(fp, "        value: 0x%" PRIx64 "\n",
             *((uint64_t *)param->getDataPtr()));
   }
 
-  // Value range only applicable for ints
   if (param->getEcmcMinValueInt() != param->getEcmcMaxValueInt()) {
-    fprintf(fp,
-            "    ECMC Value Range:          %" PRId64 "..%" PRIu64 ", %zu bit(s)\n",
+    fprintf(fp, "        value_range: {min: %" PRId64
+                ", max: %" PRIu64 ", bits: %zu}\n",
             param->getEcmcMinValueInt(),
             param->getEcmcMaxValueInt(),
             param->getEcmcBitCount());
   }
-  fprintf(fp,
-          "    ECMC Cmd: Uint642Float64:    %s\n",
-          paramInfo->cmdUint64ToFloat64 ? "true" : "false");
-  fprintf(fp,
-          "    ECMC Cmd: Uint322Float64:    %s\n",
-          paramInfo->cmdUint32ToFloat64 ? "true" : "false");
-  fprintf(fp,
-          "    ECMC Cmd: Int2Float64:     %s\n",
-          paramInfo->cmdInt64ToFloat64 ? "true" : "false");
-  fprintf(fp,
-          "    ECMC Cmd: Float642Int:     %s\n",
-          paramInfo->cmdFloat64ToInt32 ? "true" : "false");
-  fprintf(fp, "    Record name:               %s\n", paramInfo->recordName);
-  fprintf(fp, "    Record type:               %s\n", paramInfo->recordType);
-  fprintf(fp, "    Record dtyp:               %s\n", paramInfo->dtyp);
-  fprintf(fp, "\n");
+
+  if (paramInfo->initialized) {
+    fprintf(fp, "      conversion:\n");
+    fprintf(fp, "        uint64_to_float64: %s\n",
+            paramInfo->cmdUint64ToFloat64 ? "true" : "false");
+    fprintf(fp, "        uint32_to_float64: %s\n",
+            paramInfo->cmdUint32ToFloat64 ? "true" : "false");
+    fprintf(fp, "        int_to_float64: %s\n",
+            paramInfo->cmdInt64ToFloat64 ? "true" : "false");
+    fprintf(fp, "        float64_to_int: %s\n",
+            paramInfo->cmdFloat64ToInt32 ? "true" : "false");
+    fprintf(fp, "      record:\n");
+    fprintf(fp, "        name: %s\n", paramInfo->recordName);
+    fprintf(fp, "        type: %s\n", paramInfo->recordType);
+    fprintf(fp, "        dtyp: %s\n", paramInfo->dtyp);
+  }
 }
 
 /** Report of configured parameters.
@@ -1578,41 +1530,29 @@ void ecmcAsynPortDriver::report(FILE *fp, int details) {
     return;
   }
 
+  fprintf(fp, "ecmc_report:\n");
+
   if (details >= 0) {
-    fprintf(fp,
-            "####################################################################:\n");
-    fprintf(fp, "General information:\n");
-    fprintf(fp, "  Port:                           %s\n", portName);
-    fprintf(fp,
-            "  Auto-connect:                   %s\n",
+    fprintf(fp, "  general:\n");
+    fprintf(fp, "    port: %s\n", portName);
+    fprintf(fp, "    auto_connect: %s\n",
             autoConnect_ ? "true" : "false");
-    fprintf(fp, "  Priority:                       %d\n", priority_);
-    fprintf(fp, "  Param. table size:              %d\n", paramTableSize_);
-    fprintf(fp, "  Param. count:                   %d\n",
-            ecmcParamInUseCount_);
-    fprintf(fp, "  Default sample time [ms]:       %d\n",
-            defaultSampleTimeMS_);
-    fprintf(fp,
-            "  Fastest update rate [cycles]:   %d\n",
+    fprintf(fp, "    priority: %d\n", priority_);
+    fprintf(fp, "    parameter_table_size: %d\n", paramTableSize_);
+    fprintf(fp, "    parameter_count: %d\n", ecmcParamInUseCount_);
+    fprintf(fp, "    default_sample_time_ms: %d\n", defaultSampleTimeMS_);
+    fprintf(fp, "    fastest_update_rate_cycles: %d\n",
             fastestParamUpdateCycles_);
-    fprintf(fp, "  Realtime loop rate [Hz]:        %lf\n", mcuFrequency);
-    fprintf(fp, "  Realtime loop sample time [ms]: %lf\n", mcuPeriod / 1E6);
-    fprintf(fp, "\n");
+    fprintf(fp, "    realtime_loop_rate_hz: %lf\n", mcuFrequency);
+    fprintf(fp, "    realtime_loop_sample_time_ms: %lf\n", mcuPeriod / 1E6);
   }
 
   if (details >= 1 ) {
-    // print all parameters in use
-    fprintf(fp,
-            "####################################################################:\n");
-    fprintf(fp, "Parameters in use:\n");
+    fprintf(fp, "  parameters_in_use:\n");
 
     for (int i = 0; i < ecmcParamInUseCount_; i++) {
       if (!pEcmcParamInUseArray_[i]) {
-        fprintf(fp,
-                "%s:%s: ERROR: Parameter array null at index %d\n",
-                driverName,
-                functionName,
-                i);
+        fprintf(fp, "    error: parameter array null at index %d\n", i);
         return;
       }
       reportParamInfo(fp, pEcmcParamInUseArray_[i], i, details);
@@ -1620,34 +1560,20 @@ void ecmcAsynPortDriver::report(FILE *fp, int details) {
   }
 
   if (details >= 2 || details < 0) {
-    // print all available parameters
-    fprintf(fp,
-            "####################################################################:\n");
-    fprintf(fp, "Available parameters:\n");
+    fprintf(fp, "  available_parameters:\n");
 
     for (int i = 0; i < ecmcParamAvailCount_; i++) {
       if (!pEcmcParamAvailArray_[i]) {
-        fprintf(fp,
-                "%s:%s: ERROR: Parameter array null at index %d\n",
-                driverName,
-                functionName,
-                i);
+        fprintf(fp, "    error: parameter array null at index %d\n", i);
         return;
       }
       reportParamInfo(fp, pEcmcParamAvailArray_[i], i, details);
     }
   }
 
-  if (details >= 0) {
-    fprintf(fp,
-            "####################################################################:\n");
-  }
-
   if (details >= 3) {
-    fprintf(fp, "Report from base class (asynPortDriver):\n");
+    fprintf(fp, "  asyn_base_report_native:\n");
     asynPortDriver::report(fp, details);
-    fprintf(fp,
-            "####################################################################:\n");
   }
 }
 
@@ -1665,10 +1591,9 @@ void ecmcAsynPortDriver::grepParam(FILE *fp, const char *pattern, int details) {
     return;
   }
 
-  // print all parameters that fit pattern
-  fprintf(fp,
-          "####################################################################:\n");
-  fprintf(fp, "ecmc parameters that fit pattern %s:\n", pattern);
+  fprintf(fp, "ecmc_grep_param:\n");
+  fprintf(fp, "  pattern: %s\n", pattern);
+  fprintf(fp, "  parameters:\n");
 
   for (int i = 0; i < ecmcParamAvailCount_; i++) {
     if (pEcmcParamAvailArray_[i]) {
@@ -1697,10 +1622,9 @@ void ecmcAsynPortDriver::grepRecord(FILE *fp, const char *pattern) {
     return;
   }
 
-  // print all parameters that fit pattern
-  fprintf(fp,
-          "####################################################################:\n");
-  fprintf(fp, "ecmc records that fit pattern %s:\n", pattern);
+  fprintf(fp, "ecmc_grep_record:\n");
+  fprintf(fp, "  pattern: %s\n", pattern);
+  fprintf(fp, "  parameters:\n");
 
   for (int i = 0; i < ecmcParamAvailCount_; i++) {
     if (pEcmcParamAvailArray_[i]) {

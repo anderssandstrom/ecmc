@@ -292,7 +292,7 @@ int ecReportEntryCyclicWrites();
 /** Return cyclic-write use flags for an EtherCAT entry value buffer.
  * Bit 0 means source/read and bit 1 means destination/write.
  */
-int ecGetEntryCyclicWriteFlags(const void *data);
+int ecGetEntryCyclicWriteFlags(const void *data, int *copyBits);
 
 /** \brief Adds an async SDO object.\n
 *

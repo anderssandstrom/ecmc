@@ -386,8 +386,14 @@ int ecReportEntryCyclicWrites() {
   return ec->reportCyclicEntryWrites();
 }
 
-int ecGetEntryCyclicWriteFlags(const void *data) {
-  return ec ? ec->getCyclicEntryWriteFlags(data) : 0;
+int ecGetEntryCyclicWriteFlags(const void *data, int *copyBits) {
+  if (!ec) {
+    if (copyBits) {
+      *copyBits = 0;
+    }
+    return 0;
+  }
+  return ec->getCyclicEntryWriteFlags(data, copyBits);
 }
 
 int ecAddSimEntry(

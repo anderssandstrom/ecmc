@@ -696,15 +696,25 @@ int ecmcEc::reportCyclicEntryWrites() {
   return 0;
 }
 
-int ecmcEc::getCyclicEntryWriteFlags(const void *data) const {
+int ecmcEc::getCyclicEntryWriteFlags(const void *data, int *copyBits) const {
   int flags = 0;
+  int bits = 0;
   for (size_t i = 0; i < cyclicEntryWrites_.size(); i++) {
+    bool matched = false;
     if (cyclicEntryWrites_[i].fromEntry->matchesValueBuffer(data)) {
       flags |= 1;  // Read by a cyclic write.
+      matched = true;
     }
     if (cyclicEntryWrites_[i].toEntry->matchesValueBuffer(data)) {
       flags |= 2;  // Written by a cyclic write.
+      matched = true;
     }
+    if (matched && (!bits || (cyclicEntryWrites_[i].copyBits < bits))) {
+      bits = cyclicEntryWrites_[i].copyBits;
+    }
+  }
+  if (copyBits) {
+    *copyBits = bits;
   }
   return flags;
 }
