@@ -273,7 +273,7 @@ ${M}.s${BO_SID=2}.binaryOutput02:=not(${M}.s${BO_SID=2}.binaryOutput02);
 ```
  "Cfg.SetAxisAutoEnableTimeout(<axis_id>,<time_s>)"
  "Cfg.SetAxisAutoDisableAfterTime(<axis_id>,<time_s>)"
- "Cfg.SetAxisAutoDisableAtTargetLatch(<axis_id>,<enable>)"
+ "Cfg.SetAxisAutoDisableLatchAtTarget(<axis_id>,<enable>)"
 ```
 The optional AtTarget latch starts the auto-disable timer after the first
 AtTarget assertion and prevents later AtTarget loss from resetting it. It is

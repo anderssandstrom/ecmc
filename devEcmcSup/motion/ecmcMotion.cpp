@@ -321,7 +321,7 @@ int setAxisEnableAutoDisable(int axisIndex, int enable) {
   return axes[axisIndex]->setEnableAutoDisable(enable);
 }
 
-int setAxisAutoDisableAtTargetLatch(int axisIndex, int enable) {
+int setAxisAutoDisableLatchAtTarget(int axisIndex, int enable) {
   LOGINFO4("%s/%s:%d axisIndex=%d enable=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -332,7 +332,7 @@ int setAxisAutoDisableAtTargetLatch(int axisIndex, int enable) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
   CHECK_AXIS_SEQ_RETURN_IF_ERROR(axisIndex)
 
-  return axes[axisIndex]->setAutoDisableAtTargetLatch(enable);
+  return axes[axisIndex]->setAutoDisableLatchAtTarget(enable);
 }
 
 int setAxisCmdData(int axisIndex, int value) {
@@ -692,9 +692,9 @@ int getAxisEnableAutoDisable(int axisIndex, int *value) {
   return 0;
 }
 
-int getAxisAutoDisableAtTargetLatch(int axisIndex, int *value) {
+int getAxisAutoDisableLatchAtTarget(int axisIndex, int *value) {
   CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
-  *value = axes[axisIndex]->getAutoDisableAtTargetLatch();
+  *value = axes[axisIndex]->getAutoDisableLatchAtTarget();
   return 0;
 }
 

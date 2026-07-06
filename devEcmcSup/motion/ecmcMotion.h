@@ -1367,7 +1367,7 @@ int setAxisEnableAutoEnable(int axisIndex, int enable);
  */
 int setAxisAutoDisableAfterTime(int axisIndex, double timeS);
 int setAxisEnableAutoDisable(int axisIndex, int enable);
-int setAxisAutoDisableAtTargetLatch(int axisIndex, int enable);
+int setAxisAutoDisableLatchAtTarget(int axisIndex, int enable);
 
 /** \brief Set enable of motion functions.\n
  *
@@ -1407,7 +1407,7 @@ int getAxisEnableAutoEnable(int axisIndex,
                             int *value);
 int getAxisEnableAutoDisable(int axisIndex,
                              int *value);
-int getAxisAutoDisableAtTargetLatch(int axisIndex,
+int getAxisAutoDisableLatchAtTarget(int axisIndex,
                                     int *value);
 int getAxisTweakDist(int axisIndex,
                      double *value);

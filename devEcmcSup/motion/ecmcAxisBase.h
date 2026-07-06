@@ -203,8 +203,8 @@ public:
   int        setEnableAutoDisable(bool enable);
   int        getEnableAutoEnable();
   int        getEnableAutoDisable();
-  int        setAutoDisableAtTargetLatch(bool enable);
-  int        getAutoDisableAtTargetLatch();
+  int        setAutoDisableLatchAtTarget(bool enable);
+  int        getAutoDisableLatchAtTarget();
   asynStatus axisAsynWriteCmd(void         *data,
                               size_t        bytes,
                               asynParamType asynParType);
@@ -357,7 +357,7 @@ protected:
   double autoDisbleTimeCounter_;
   bool enableAutoEnable_;
   bool enableAutoDisable_;
-  bool autoDisableAtTargetLatchEnable_;
+  bool autoDisableLatchAtTargetEnable_;
   bool autoDisableAtTargetLatched_;
   double positionTargetAsyn_;
   double invSampleTime_;
