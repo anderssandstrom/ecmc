@@ -330,6 +330,56 @@ int ecAddEntryAliasByPath(
   return ec->addEntryAlias(slaveIndex, id, alias);
 }
 
+static int findEntryByPath(char *entryPath, ecmcEcEntry **entry) {
+  int masterId = -1;
+  int slavePosition = -1;
+  int bitIndex = -1;
+  char entryId[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+
+  int errorCode =
+    parseEcPath(entryPath, &masterId, &slavePosition, entryId, &bitIndex);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (bitIndex >= 0) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
+  if (masterId != ec->getMasterIndex()) {
+    return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+  }
+
+  ecmcEcSlave *slave = slavePosition >= 0 ?
+    ec->findSlave(slavePosition) : ec->getSlave(slavePosition);
+  if (!slave) {
+    return ERROR_MAIN_EC_SLAVE_NULL;
+  }
+
+  *entry = slave->findEntry(entryId);
+  return *entry ? 0 : ERROR_MAIN_EC_ENTRY_NULL;
+}
+
+int ecWriteEntryCyclicWrite(char *toEntryPath, char *fromEntryPath) {
+  if (!ec->getInitDone()) {
+    return ERROR_MAIN_EC_NOT_INITIALIZED;
+  }
+
+  ecmcEcEntry *toEntry = NULL;
+  ecmcEcEntry *fromEntry = NULL;
+  int errorCode = findEntryByPath(toEntryPath, &toEntry);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  errorCode = findEntryByPath(fromEntryPath, &fromEntry);
+  if (errorCode) {
+    return errorCode;
+  }
+
+  return ec->addCyclicEntryWrite(toEntry, fromEntry);
+}
+
 int ecAddSimEntry(
   int position,  char *entryIDString, char *datatype, uint64_t value) {
   std::string id = entryIDString;

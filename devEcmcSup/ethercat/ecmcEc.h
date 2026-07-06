@@ -67,6 +67,8 @@
 #define ERROR_EC_SLAVE_VERIFICATION_FAIL 0x26026
 #define ERROR_EC_NO_VALID_CONFIG 0x26027
 #define ERROR_EC_DATATYPE_NOT_VALID 0x26028
+#define ERROR_EC_CYCLIC_ENTRY_DATATYPE_MISMATCH 0x26029
+#define ERROR_EC_CYCLIC_ENTRY_DESTINATION_NOT_OUTPUT 0x2602A
 
 class ecmcEc : public ecmcError {
 public:
@@ -158,6 +160,8 @@ public:
   int addEntryAlias(uint16_t    position,
                     std::string entryId,
                     std::string alias);
+  int addCyclicEntryWrite(ecmcEcEntry *toEntry,
+                          ecmcEcEntry *fromEntry);
   int addSimEntry(int       position,     // Slave position.
                   std::string    id,
                   ecmcEcDataType dt,
@@ -229,9 +233,15 @@ public:
   int      getEcAllowOffline();
 
 private:
+  struct cyclicEntryWrite {
+    ecmcEcEntry *toEntry;
+    ecmcEcEntry *fromEntry;
+  };
+
   void     initVars();
   int      updateInputProcessImage();
   int      updateOutProcessImage();
+  void     updateCyclicEntryWrites();
   timespec timespecAdd(timespec time1,
                        timespec time2);
   bool     validEntryType(ecmcEcDataType dt);
@@ -270,6 +280,7 @@ private:
   int domainFailCyclesLimit_;
 
   std::vector<ecmcEcDomain *>domains_;
+  std::vector<cyclicEntryWrite> cyclicEntryWrites_;
   int domainCounter_;
   ecmcAsynPortDriver *asynPortDriver_;
   ecmcAsynDataItem *ecAsynParams_[ECMC_ASYN_EC_PAR_COUNT];

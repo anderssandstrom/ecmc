@@ -615,6 +615,7 @@ void ecmcEc::send(timespec timeOffset) {
     statusOutputEntry_->writeValue((uint64_t)(getErrorID() == 0));
   }
 
+  updateCyclicEntryWrites();
   updateOutProcessImage();
 
   const int domainCount = domainCounter_;
@@ -645,6 +646,33 @@ void ecmcEc::send(timespec timeOffset) {
     if (slavesOK_ && domainsOK_ && masterOK_) {
       startupCounter_++;
     }
+  }
+}
+
+int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
+                                ecmcEcEntry *fromEntry) {
+  if (!toEntry || !fromEntry) {
+    return ERROR_EC_MAIN_ENTRY_NULL;
+  }
+
+  if (toEntry->getDataType() != fromEntry->getDataType()) {
+    return ERROR_EC_CYCLIC_ENTRY_DATATYPE_MISMATCH;
+  }
+
+  if ((toEntry->getDirection() != EC_DIR_OUTPUT) && !toEntry->getSimEntry()) {
+    return ERROR_EC_CYCLIC_ENTRY_DESTINATION_NOT_OUTPUT;
+  }
+
+  cyclicEntryWrites_.push_back({toEntry, fromEntry});
+  return 0;
+}
+
+void ecmcEc::updateCyclicEntryWrites() {
+  const size_t writeCount = cyclicEntryWrites_.size();
+  for (size_t i = 0; i < writeCount; i++) {
+    uint64_t value = 0;
+    cyclicEntryWrites_[i].fromEntry->readValue(&value);
+    cyclicEntryWrites_[i].toEntry->writeValue(value);
   }
 }
 

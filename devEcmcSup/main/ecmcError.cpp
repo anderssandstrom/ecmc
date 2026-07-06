@@ -1930,6 +1930,16 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x26029:
+    return "ERROR_EC_CYCLIC_ENTRY_DATATYPE_MISMATCH";
+
+    break;
+
+  case 0x2602A:
+    return "ERROR_EC_CYCLIC_ENTRY_DESTINATION_NOT_OUTPUT";
+
+    break;
+
   case 0x20000:
     return "ERROR_MAIN_DEMO_EC_ACITVATE_FAILED";
 

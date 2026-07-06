@@ -2128,6 +2128,19 @@ static int handleCfgCommand(const char *myarg_1) {
     return ecAddEntryAliasByPath(cIdBuffer, cIdBuffer2);
   }
 
+  /* Cfg.EcWriteEntryCyclicWrite(toEntryPath,fromEntryPath) */
+  cIdBuffer[0]  = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "EcWriteEntryCyclicWrite(%[^,],%[^)])",
+                 cIdBuffer,
+                 cIdBuffer2);
+
+  if (nvals == 2) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcWriteEntryCyclicWrite");
+    return ecWriteEntryCyclicWrite(cIdBuffer, cIdBuffer2);
+  }
+
 /*Cfg.EcAddSimEntry(
     int position,
     char    *name)

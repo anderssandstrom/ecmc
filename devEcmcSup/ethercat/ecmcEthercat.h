@@ -266,6 +266,16 @@ int ecAddEntryAliasByPath(
   char *entryPath,
   char *aliasIDString);
 
+/** \brief Copy one EtherCAT entry to another in every real-time cycle.
+ *
+ * The entries must have identical data types. The destination must be an
+ * output entry or a simulation entry.
+ *
+ * \note Example:
+ * "Cfg.EcWriteEntryCyclicWrite(ec0.s1.entry01,ec0.s6.test07)"
+ */
+int ecWriteEntryCyclicWrite(char *toEntryPath, char *fromEntryPath);
+
 /** \brief Adds an async SDO object.\n
 *
 * Adds a SDO object for SDO read and write during realtime.
