@@ -745,8 +745,10 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   masterGrp_->setEnableAutoDisable(masterAutoDisableWindow);
 
   // ensure attarget/reduced current of slave axes
-  const bool masterWithinCtrlDb = masterStatusNow.allWithinCtrlDb;
-  slaveGrp_->setAxisIsWithinCtrlDBExtTraj(masterWithinCtrlDb);
+  const bool mastersAllowSlaveReducedTorque =
+    masterStatusNow.allWithinSlvCtrlDb;
+  slaveGrp_->setAxisIsWithinCtrlDBExtTraj(
+    mastersAllowSlaveReducedTorque);
   return 0;
 }
 

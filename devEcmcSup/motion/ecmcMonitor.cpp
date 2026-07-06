@@ -91,6 +91,10 @@ void ecmcMonitor::initVars() {
   ctrlDeadbandTol_           = -1;
   ctrlDeadbandCounter_       = 0;
   ctrlDeadbandTime_          = -1;
+  slvCtrlDeadbandTol_        = -1;
+  slvCtrlDeadbandCounter_    = 0;
+  slvCtrlDeadbandTime_       = -1;
+  axisIsWithinSlvCtrlDB_     = false;
   analogRawLimit_            = 0;
   analogRawValue_            = 0;
   enableAnalogInterlock_     = 0;
@@ -963,9 +967,14 @@ int ecmcMonitor::checkLimits() {
 int ecmcMonitor::checkAtTarget() {
   bool atTarget      = false;
   bool ctrlWithinTol = false;
+  bool slvCtrlWithinTol = false;
   auto &status = data_->status_;
   auto &statusWord = status.statusWord_;
   const bool internalTrajSource = statusWord.trajsource == 0;
+  const double slvCtrlDeadbandTol = slvCtrlDeadbandTol_ >= 0 ?
+                                    slvCtrlDeadbandTol_ : atTargetTol_;
+  const int slvCtrlDeadbandTime = slvCtrlDeadbandTime_ >= 0 ?
+                                  slvCtrlDeadbandTime_ : atTargetTime_;
 
   if (enableAtTargetMon_) {
     const double targetSetDiffAbs = std::abs(status.currentTargetPositionModulo -
@@ -998,14 +1007,28 @@ int ecmcMonitor::checkAtTarget() {
       } else {
         ctrlDeadbandCounter_ = 0;
       }
+
+      if (cntrlErrAbs < slvCtrlDeadbandTol) {
+        if (slvCtrlDeadbandCounter_ <= slvCtrlDeadbandTime) {
+          slvCtrlDeadbandCounter_++;
+        }
+
+        if (slvCtrlDeadbandCounter_ > slvCtrlDeadbandTime) {
+          slvCtrlWithinTol = true;
+        }
+      } else {
+        slvCtrlDeadbandCounter_ = 0;
+      }
     } else {
       atTargetCounter_ = 0;
       ctrlDeadbandCounter_ = 0;
+      slvCtrlDeadbandCounter_ = 0;
     }
   } else {
     atTarget = false;
     atTargetCounter_ = 0;
     ctrlDeadbandCounter_ = 0;
+    slvCtrlDeadbandCounter_ = 0;
   }
 
   statusWord.attarget = atTarget;
@@ -1016,6 +1039,8 @@ int ecmcMonitor::checkAtTarget() {
     // external source used. No way for axis to know when atTarget/reduce torque. Make possible to write from PLC
     status.ctrlWithinDeadband = axisIsWithinCtrlDBExtTraj_;
   }
+
+  axisIsWithinSlvCtrlDB_ = slvCtrlWithinTol;
   
   return 0;
 }
@@ -1605,6 +1630,26 @@ int ecmcMonitor::getCtrlDeadbandTime() {
   return ctrlDeadbandTime_;
 }
 
+int ecmcMonitor::setSlvCtrlDeadband(double tol) {
+  slvCtrlDeadbandTol_ = tol < 0 ? -1 : tol;
+  slvCtrlDeadbandCounter_ = 0;
+  return 0;
+}
+
+int ecmcMonitor::setSlvCtrlDeadbandTime(int cycles) {
+  slvCtrlDeadbandTime_ = cycles;
+  slvCtrlDeadbandCounter_ = 0;
+  return 0;
+}
+
+double ecmcMonitor::getSlvCtrlDeadband() {
+  return slvCtrlDeadbandTol_ >= 0 ? slvCtrlDeadbandTol_ : atTargetTol_;
+}
+
+int ecmcMonitor::getSlvCtrlDeadbandTime() {
+  return slvCtrlDeadbandTime_ >= 0 ? slvCtrlDeadbandTime_ : atTargetTime_;
+}
+
 void ecmcMonitor::setSafetyInterlock(int interlock) {
   data_->interlocks_.safetyInterlock = interlock > 0;
 }
@@ -1684,4 +1729,8 @@ void ecmcMonitor::setAxisIsWithinCtrlDBExtTraj(bool within) {
 
 bool ecmcMonitor::getAxisIsWithinCtrlDB() {
   return data_->status_.ctrlWithinDeadband;
+}
+
+bool ecmcMonitor::getAxisIsWithinSlvCtrlDB() {
+  return axisIsWithinSlvCtrlDB_;
 }

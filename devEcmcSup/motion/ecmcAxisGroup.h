@@ -31,6 +31,7 @@ struct ecmcAxisGroupStatusSummary {
   bool anyIlocked;
   bool allAtTarget;
   bool allWithinCtrlDb;
+  bool allWithinSlvCtrlDb;
   bool allTrajExternal;
   bool anyTrajExternal;
   int firstErrorId;

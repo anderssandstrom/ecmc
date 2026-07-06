@@ -953,6 +953,10 @@ int getAxisCntrlDeadband(int     axisIndex,
 
 int getAxisCntrlDeadbandTime(int axisIndex,
                              int *value);
+int getAxisMonSlvCtrlDbTol(int axisIndex,
+                           double *value);
+int getAxisMonSlvCtrlDbTime(int axisIndex,
+                            int *value);
 
 int getAxisCntrlIpartHL(int     axisIndex,
                         double *value);
@@ -2572,6 +2576,10 @@ int setAxisCntrlDeadband(int    axisIndex,
  */
 int setAxisCntrlDeadbandTime(int axisIndex,
                              int value);
+int setAxisMonSlvCtrlDbTol(int axisIndex,
+                           double value);
+int setAxisMonSlvCtrlDbTime(int axisIndex,
+                            int value);
 
 /** \brief Use a different set of pid parameters if within a certain distance of target
  *

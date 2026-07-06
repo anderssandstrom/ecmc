@@ -3188,6 +3188,26 @@ parse_cfg_setaxismon:
       return setAxisMonAtTargetTime(iValue, iValue2);
     }
 
+    /*int Cfg.SetAxisMonSlvCtrlDbTol(int axis_no, double value);*/
+    nvals = sscanf(myarg_1,
+                   "SetAxisMonSlvCtrlDbTol(%d,%lf)",
+                   &iValue,
+                   &dValue);
+
+    if (nvals == 2) {
+      return setAxisMonSlvCtrlDbTol(iValue, dValue);
+    }
+
+    /*int Cfg.SetAxisMonSlvCtrlDbTime(int axis_no, int value);*/
+    nvals = sscanf(myarg_1,
+                   "SetAxisMonSlvCtrlDbTime(%d,%d)",
+                   &iValue,
+                   &iValue2);
+
+    if (nvals == 2) {
+      return setAxisMonSlvCtrlDbTime(iValue, iValue2);
+    }
+
     /*int Cfg.SetAxisMonEnableAtTargetMon(int axis_no, int value);*/
     nvals = sscanf(myarg_1,
                    "SetAxisMonEnableAtTargetMon(%d,%d)",
@@ -5287,6 +5307,22 @@ parse_getaxismon:
     if (nvals == 1) {
       SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisMonAtTargetTime(motor_axis_no,
                                                                  &iValue));
+    }
+
+    /*GetAxisMonSlvCtrlDbTol(int nAxis)*/
+    nvals = sscanf(myarg_1, "GetAxisMonSlvCtrlDbTol(%d)", &motor_axis_no);
+
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisMonSlvCtrlDbTol(
+                                               motor_axis_no, &fValue));
+    }
+
+    /*GetAxisMonSlvCtrlDbTime(int nAxis)*/
+    nvals = sscanf(myarg_1, "GetAxisMonSlvCtrlDbTime(%d)", &motor_axis_no);
+
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisMonSlvCtrlDbTime(
+                                            motor_axis_no, &iValue));
     }
 
     /*GetAxisMonEnableAtTargetMon(int nAxis)*/

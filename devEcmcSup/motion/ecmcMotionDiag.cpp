@@ -629,6 +629,7 @@ void writeAxisGroup(FILE *fp, int groupIndex, ecmcAxisGroup *group, bool comma) 
   writeJsonBool(fp, 8, "any_interlocked", summary.anyIlocked);
   writeJsonBool(fp, 8, "all_at_target", summary.allAtTarget);
   writeJsonBool(fp, 8, "all_within_control_deadband", summary.allWithinCtrlDb);
+  writeJsonBool(fp, 8, "all_within_slave_control_deadband", summary.allWithinSlvCtrlDb);
   writeJsonBool(fp, 8, "all_traj_external", summary.allTrajExternal);
   writeJsonBool(fp, 8, "any_traj_external", summary.anyTrajExternal);
   writeJsonInt(fp, 8, "first_error_id", summary.firstErrorId, false);

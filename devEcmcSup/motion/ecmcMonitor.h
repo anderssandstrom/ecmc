@@ -46,6 +46,10 @@ public:
   int                setCtrlDeadbandTime(int time);
   double             getCtrlDeadband();
   int                getCtrlDeadbandTime();
+  int                setSlvCtrlDeadband(double tol);
+  int                setSlvCtrlDeadbandTime(int time);
+  double             getSlvCtrlDeadband();
+  int                getSlvCtrlDeadbandTime();
   bool               getCtrlInDeadband();
   int                setPosLagTol(double tol);
   double             getPosLagTol();
@@ -150,6 +154,7 @@ public:
   // Set reduce trq drive bit for slaved axes
   void               setAxisIsWithinCtrlDBExtTraj(bool within);
   bool               getAxisIsWithinCtrlDB();
+  bool               getAxisIsWithinSlvCtrlDB();
 
 private:
   bool               hasInvalidSoftLimitRange() const;
@@ -227,6 +232,10 @@ private:
   double ctrlDeadbandTol_; // controller deadband
   int ctrlDeadbandCounter_;
   int ctrlDeadbandTime_;
+  double slvCtrlDeadbandTol_;
+  int slvCtrlDeadbandCounter_;
+  int slvCtrlDeadbandTime_;
+  bool axisIsWithinSlvCtrlDB_;
   double analogRawLimit_;
   double analogRawValue_;
   int enableAnalogInterlock_;

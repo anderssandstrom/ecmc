@@ -281,6 +281,13 @@ ${M}.s${BO_SID=2}.binaryOutput02:=not(${M}.s${BO_SID=2}.binaryOutput02);
 The optional AtTarget latch starts the auto-disable timer after the first
 AtTarget assertion and prevents later AtTarget loss from resetting it. It is
 disabled by default to preserve the previous behavior.
+* Add a dedicated slave-control deadband for physical and virtual master axes.
+  The live group result controls reduced torque in slaved axes independently of
+  master AtTarget and auto-disable handling:
+  ```
+  "Cfg.SetAxisMonSlvCtrlDbTol(<axis_id>,<tolerance>)"
+  "Cfg.SetAxisMonSlvCtrlDbTime(<axis_id>,<cycles>)"
+  ```
 * Add tweak commands in axis control word (target position value will be used as tweak value):
    - bit 11: tweak bwd cmd
    - bit 12: tweak fwd cmd

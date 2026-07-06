@@ -229,6 +229,7 @@ ecmcAxisGroupStatusSummary ecmcAxisGroup::getStatusSummary(bool includeMonFields
   summary.anyIlocked      = false;
   summary.allAtTarget     = hasAxes;
   summary.allWithinCtrlDb = hasAxes;
+  summary.allWithinSlvCtrlDb = hasAxes;
   summary.allTrajExternal = hasAxes;
   summary.anyTrajExternal = false;
   summary.firstErrorId    = 0;
@@ -256,7 +257,8 @@ ecmcAxisGroupStatusSummary ecmcAxisGroup::getStatusSummary(bool includeMonFields
       summary.firstErrorId = errorId;
     }
 
-    if (includeMonFields && (summary.allAtTarget || summary.allWithinCtrlDb)) {
+    if (includeMonFields && (summary.allAtTarget || summary.allWithinCtrlDb ||
+                             summary.allWithinSlvCtrlDb)) {
       auto * const mon = axis->getMon();
 
       if (summary.allAtTarget) {
@@ -265,6 +267,9 @@ ecmcAxisGroupStatusSummary ecmcAxisGroup::getStatusSummary(bool includeMonFields
       }
       if (summary.allWithinCtrlDb) {
         summary.allWithinCtrlDb = mon->getAxisIsWithinCtrlDB();
+      }
+      if (summary.allWithinSlvCtrlDb) {
+        summary.allWithinSlvCtrlDb = mon->getAxisIsWithinSlvCtrlDB();
       }
     }
   }
