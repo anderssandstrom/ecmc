@@ -2128,31 +2128,31 @@ static int handleCfgCommand(const char *myarg_1) {
     return ecAddEntryAliasByPath(cIdBuffer, cIdBuffer2);
   }
 
-  /* Cfg.EcWriteEntryCyclicWrite(toEntryPath,fromEntryPath,force) */
+  /* Cfg.EcAddEntryCyclicWrite(toEntryPath,fromEntryPath,force) */
   cIdBuffer[0]  = '\0';
   cIdBuffer2[0] = '\0';
   nvals = sscanf(myarg_1,
-                 "EcWriteEntryCyclicWrite(%[^,],%[^,],%d)",
+                 "EcAddEntryCyclicWrite(%[^,],%[^,],%d)",
                  cIdBuffer,
                  cIdBuffer2,
                  &iValue);
 
   if (nvals == 3) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcWriteEntryCyclicWrite");
-    return ecWriteEntryCyclicWrite(cIdBuffer, cIdBuffer2, iValue);
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryCyclicWrite");
+    return ecAddEntryCyclicWrite(cIdBuffer, cIdBuffer2, iValue);
   }
 
   /* Legacy form defaults to strict type checking. */
   cIdBuffer[0]  = '\0';
   cIdBuffer2[0] = '\0';
   nvals = sscanf(myarg_1,
-                 "EcWriteEntryCyclicWrite(%[^,],%[^)])",
+                 "EcAddEntryCyclicWrite(%[^,],%[^)])",
                  cIdBuffer,
                  cIdBuffer2);
 
   if (nvals == 2) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcWriteEntryCyclicWrite");
-    return ecWriteEntryCyclicWrite(cIdBuffer, cIdBuffer2, 0);
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryCyclicWrite");
+    return ecAddEntryCyclicWrite(cIdBuffer, cIdBuffer2, 0);
   }
 
   if (!strcmp(myarg_1, "EcReportEntryCyclicWrites()")) {

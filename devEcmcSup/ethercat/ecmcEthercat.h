@@ -273,12 +273,12 @@ int ecAddEntryAliasByPath(
  * checking is bypassed and the smaller entry bit size determines the copy.
  *
  * \note Example:
- * "Cfg.EcWriteEntryCyclicWrite(ec0.s1.entry01,ec0.s6.test07)"
- * "Cfg.EcWriteEntryCyclicWrite(ec0.s1.entry01,ec0.s6.test07,1)"
+ * "Cfg.EcAddEntryCyclicWrite(ec0.s1.entry01,ec0.s6.test07)"
+ * "Cfg.EcAddEntryCyclicWrite(ec0.s1.entry01,ec0.s6.test07,1)"
  */
-int ecWriteEntryCyclicWrite(char *toEntryPath,
-                            char *fromEntryPath,
-                            int force);
+int ecAddEntryCyclicWrite(char *toEntryPath,
+                          char *fromEntryPath,
+                          int force);
 
 /** \brief Report all configured cyclic EtherCAT entry writes.
  *

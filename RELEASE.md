@@ -1,7 +1,7 @@
 Release Notes
 ===
 # 11.0.9_RC1
-* Add `Cfg.EcWriteEntryCyclicWrite(<to>,<from>)` to copy matching EtherCAT entry values every realtime cycle. Add the optional `force` parameter to bypass datatype matching and copy the smaller entry bit width: `Cfg.EcWriteEntryCyclicWrite(<to>,<from>,<force>)`.
+* Add `Cfg.EcAddEntryCyclicWrite(<to>,<from>)` to copy matching EtherCAT entry values every realtime cycle. Add the optional `force` parameter to bypass datatype matching and copy the smaller entry bit width: `Cfg.EcAddEntryCyclicWrite(<to>,<from>,<force>)`.
 * Add `Cfg.EcReportEntryCyclicWrites()` to list configured cyclic writes, including source, destination, copied bit count, and force setting. Annotate `ecmcGrepParam` output with `r`, `w`, or `rw` when an EtherCAT parameter is used as a cyclic-write source, destination, or both.
 * Restructure ecmc-owned `ecmcReport`, `ecmcGrepParam`, and `ecmcGrepRecord` output into a YAML-style hierarchy for easier debugging.
 * Add an experimental runtime-editable motion sequencer. Sequences can be created, defined from startup commands or EPICS, compiled in a low-priority worker thread, armed, and executed from the main realtime cycle without changing existing motion behavior unless explicitly started.
