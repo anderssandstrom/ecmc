@@ -110,6 +110,9 @@ public:
                                     uint64_t mask) const {
     destination->buffer_ = buffer_ & mask;
   }
+  inline bool           matchesValueBuffer(const void *data) const {
+    return data == &buffer_;
+  }
   int                   readDouble(double *value);
   int                   readBit(int       bitNumber,
                                 uint64_t *value);

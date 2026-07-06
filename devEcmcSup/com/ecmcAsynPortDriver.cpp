@@ -1414,6 +1414,9 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
     return;
   }
 
+  const int cyclicWriteFlags =
+    ecGetEntryCyclicWriteFlags(param->getDataPtr());
+
   if( details < 0 ) {
    fprintf(fp, "p[%d] = %s",listIndex, param->getName());
    bool firstAlias = true;
@@ -1427,6 +1430,11 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
      fprintf(fp, "%s%s", firstAlias ? " aliases=" : ",", alias->first.c_str());
      firstAlias = false;
    }
+   if (cyclicWriteFlags) {
+     fprintf(fp, " cyclic=%s%s",
+             (cyclicWriteFlags & 1) ? "r" : "",
+             (cyclicWriteFlags & 2) ? "w" : "");
+   }
    fprintf(fp, "\n");
    return;
   }
@@ -1434,6 +1442,11 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
   fprintf(fp, "  Parameter %d:\n",                   listIndex);
   fprintf(fp, "    Param name:                %s\n", paramInfo->name);
   reportParamAliases(fp, param);
+  if (cyclicWriteFlags) {
+    fprintf(fp, "    Cyclic write access:       %s%s\n",
+            (cyclicWriteFlags & 1) ? "r" : "",
+            (cyclicWriteFlags & 2) ? "w" : "");
+  }
   fprintf(fp, "    Param index:               %d\n", paramInfo->index);
   fprintf(fp, "    Param type:                %s (%d)\n",
           asynTypeToString((long)paramInfo->asynType), paramInfo->asynType);

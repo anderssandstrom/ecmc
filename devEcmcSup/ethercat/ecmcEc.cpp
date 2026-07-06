@@ -696,6 +696,19 @@ int ecmcEc::reportCyclicEntryWrites() {
   return 0;
 }
 
+int ecmcEc::getCyclicEntryWriteFlags(const void *data) const {
+  int flags = 0;
+  for (size_t i = 0; i < cyclicEntryWrites_.size(); i++) {
+    if (cyclicEntryWrites_[i].fromEntry->matchesValueBuffer(data)) {
+      flags |= 1;  // Read by a cyclic write.
+    }
+    if (cyclicEntryWrites_[i].toEntry->matchesValueBuffer(data)) {
+      flags |= 2;  // Written by a cyclic write.
+    }
+  }
+  return flags;
+}
+
 void ecmcEc::updateCyclicEntryWrites() {
   const size_t writeCount = cyclicEntryWrites_.size();
   for (size_t i = 0; i < writeCount; i++) {
