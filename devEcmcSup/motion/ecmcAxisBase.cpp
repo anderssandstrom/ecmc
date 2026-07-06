@@ -3951,7 +3951,9 @@ double ecmcAxisBase::getAutoDisableAfterTime() {
 int ecmcAxisBase::setEnableAutoDisable(bool enable) {
   if(enableAutoDisable_ != enable) {
     autoDisbleTimeCounter_ = 0;
-    autoDisableAtTargetLatched_ = false;
+    autoDisableAtTargetLatched_ = enable &&
+                                  autoDisableAtTargetLatchEnable_ &&
+                                  data_.status_.statusWord_.attarget;
   }
   
   enableAutoDisable_ = enable;
