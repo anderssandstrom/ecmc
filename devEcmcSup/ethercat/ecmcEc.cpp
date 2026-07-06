@@ -672,26 +672,27 @@ int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
 }
 
 int ecmcEc::reportCyclicEntryWrites() {
-  ecmcRtLoggerLogInfo("ec%d.cyclicWriteCount=%zu\n",
-                      masterIndex_,
-                      cyclicEntryWrites_.size());
+  printf("ec%d.cyclicWriteCount=%zu\n",
+         masterIndex_,
+         cyclicEntryWrites_.size());
 
   for (size_t i = 0; i < cyclicEntryWrites_.size(); i++) {
     const cyclicEntryWrite& write = cyclicEntryWrites_[i];
-    ecmcRtLoggerLogInfo("ec%d.cyclicWrite%zu.to=ec%d.s%d.%s\n",
-                        masterIndex_, i, masterIndex_,
-                        write.toEntry->getSlaveId(),
-                        write.toEntry->getIdentificationName().c_str());
-    ecmcRtLoggerLogInfo("ec%d.cyclicWrite%zu.from=ec%d.s%d.%s\n",
-                        masterIndex_, i, masterIndex_,
-                        write.fromEntry->getSlaveId(),
-                        write.fromEntry->getIdentificationName().c_str());
-    ecmcRtLoggerLogInfo("ec%d.cyclicWrite%zu.copyBits=%d\n",
-                        masterIndex_, i, write.copyBits);
-    ecmcRtLoggerLogInfo("ec%d.cyclicWrite%zu.force=%d\n",
-                        masterIndex_, i, write.force ? 1 : 0);
+    printf("ec%d.cyclicWrite%zu.to=ec%d.s%d.%s\n",
+           masterIndex_, i, masterIndex_,
+           write.toEntry->getSlaveId(),
+           write.toEntry->getIdentificationName().c_str());
+    printf("ec%d.cyclicWrite%zu.from=ec%d.s%d.%s\n",
+           masterIndex_, i, masterIndex_,
+           write.fromEntry->getSlaveId(),
+           write.fromEntry->getIdentificationName().c_str());
+    printf("ec%d.cyclicWrite%zu.copyBits=%d\n",
+           masterIndex_, i, write.copyBits);
+    printf("ec%d.cyclicWrite%zu.force=%d\n",
+           masterIndex_, i, write.force ? 1 : 0);
   }
 
+  fflush(stdout);
   return 0;
 }
 
