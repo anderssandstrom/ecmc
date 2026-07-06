@@ -1389,6 +1389,106 @@ bool ecmcAsynPortDriver::paramNameOrAliasMatches(ecmcAsynDataItem *param,
   return false;
 }
 
+static void reportParamValueYaml(FILE *fp, ecmcAsynDataItem *param) {
+  if (!fp || !param || !param->getDataPtr() ||
+      !param->getEcmcDataPointerValid()) {
+    return;
+  }
+
+  const void *data = param->getDataPtr();
+  switch (param->getEcmcDataType()) {
+  case ECMC_EC_B1:
+  case ECMC_EC_B2:
+  case ECMC_EC_B3:
+  case ECMC_EC_B4: {
+    uint64_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    const size_t bits = param->getEcmcBitCount();
+    const uint64_t mask = bits >= 64 ? UINT64_MAX :
+      (UINT64_C(1) << bits) - 1;
+    value &= mask;
+    fprintf(fp, "        value: \"%" PRIu64 " [0x%" PRIx64 "]\"\n",
+            value, value);
+    break;
+  }
+  case ECMC_EC_U8:
+  case ECMC_EC_S8_TO_U8: {
+    uint8_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRIu8 " [0x%" PRIx8 "]\"\n", value, value);
+    break;
+  }
+  case ECMC_EC_S8: {
+    int8_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRId8 " [0x%" PRIx8 "]\"\n",
+            value, (uint8_t)value);
+    break;
+  }
+  case ECMC_EC_U16:
+  case ECMC_EC_S16_TO_U16: {
+    uint16_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRIu16 " [0x%" PRIx16 "]\"\n", value, value);
+    break;
+  }
+  case ECMC_EC_S16: {
+    int16_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRId16 " [0x%" PRIx16 "]\"\n",
+            value, (uint16_t)value);
+    break;
+  }
+  case ECMC_EC_U32:
+  case ECMC_EC_S32_TO_U32: {
+    uint32_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRIu32 " [0x%" PRIx32 "]\"\n", value, value);
+    break;
+  }
+  case ECMC_EC_S32: {
+    int32_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRId32 " [0x%" PRIx32 "]\"\n",
+            value, (uint32_t)value);
+    break;
+  }
+  case ECMC_EC_U64:
+  case ECMC_EC_S64_TO_U64: {
+    uint64_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRIu64 " [0x%" PRIx64 "]\"\n", value, value);
+    break;
+  }
+  case ECMC_EC_S64: {
+    int64_t value = 0;
+    memcpy(&value, data, sizeof(value));
+    fprintf(fp, "        value: \"%" PRId64 " [0x%" PRIx64 "]\"\n",
+            value, (uint64_t)value);
+    break;
+  }
+  case ECMC_EC_F32: {
+    float value = 0;
+    uint32_t raw = 0;
+    memcpy(&value, data, sizeof(value));
+    memcpy(&raw, data, sizeof(raw));
+    fprintf(fp, "        value: \"%.9g [0x%" PRIx32 "]\"\n",
+            (double)value, raw);
+    break;
+  }
+  case ECMC_EC_F64: {
+    double value = 0;
+    uint64_t raw = 0;
+    memcpy(&value, data, sizeof(value));
+    memcpy(&raw, data, sizeof(raw));
+    fprintf(fp, "        value: \"%.17g [0x%" PRIx64 "]\"\n", value, raw);
+    break;
+  }
+  default:
+    break;
+  }
+}
+
 void ecmcAsynPortDriver::refreshAllInUseParamsRT() {
   const int paramCount = ecmcParamInUseCount_;
   for (int i = 0; i < paramCount; i++) {
@@ -1431,6 +1531,7 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
               (cyclicWriteFlags & 2) ? "w" : "",
               cyclicWriteBits);
     }
+    fprintf(fp, "\n");
     return;
   }
 
@@ -1479,10 +1580,7 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
             cyclicWriteBits);
   }
 
-  if (param->getEcmcDataMaxSize() == sizeof(uint64_t)) {
-    fprintf(fp, "        value: 0x%" PRIx64 "\n",
-            *((uint64_t *)param->getDataPtr()));
-  }
+  reportParamValueYaml(fp, param);
 
   if (param->getEcmcMinValueInt() != param->getEcmcMaxValueInt()) {
     fprintf(fp, "        value_range: {min: %" PRId64
@@ -1507,6 +1605,7 @@ void ecmcAsynPortDriver::reportParamInfo(FILE             *fp,
     fprintf(fp, "        type: %s\n", paramInfo->recordType);
     fprintf(fp, "        dtyp: %s\n", paramInfo->dtyp);
   }
+  fprintf(fp, "\n");
 }
 
 /** Report of configured parameters.
