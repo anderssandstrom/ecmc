@@ -670,9 +670,8 @@ int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
 void ecmcEc::updateCyclicEntryWrites() {
   const size_t writeCount = cyclicEntryWrites_.size();
   for (size_t i = 0; i < writeCount; i++) {
-    uint64_t value = 0;
-    cyclicEntryWrites_[i].fromEntry->readValue(&value);
-    cyclicEntryWrites_[i].toEntry->writeValue(value);
+    cyclicEntryWrites_[i].fromEntry->copyValueTo(
+      cyclicEntryWrites_[i].toEntry);
   }
 }
 
