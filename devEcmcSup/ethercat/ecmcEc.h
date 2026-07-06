@@ -163,6 +163,7 @@ public:
   int addCyclicEntryWrite(ecmcEcEntry *toEntry,
                           ecmcEcEntry *fromEntry,
                           bool force);
+  int reportCyclicEntryWrites();
   int addSimEntry(int       position,     // Slave position.
                   std::string    id,
                   ecmcEcDataType dt,
@@ -238,6 +239,8 @@ private:
     ecmcEcEntry *toEntry;
     ecmcEcEntry *fromEntry;
     uint64_t mask;
+    int copyBits;
+    bool force;
   };
 
   void     initVars();

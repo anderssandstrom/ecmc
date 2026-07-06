@@ -280,6 +280,15 @@ int ecWriteEntryCyclicWrite(char *toEntryPath,
                             char *fromEntryPath,
                             int force);
 
+/** \brief Report all configured cyclic EtherCAT entry writes.
+ *
+ * Prints the source, destination, copied bit count, and force setting for each
+ * mapping.
+ *
+ * \note Example: "Cfg.EcReportEntryCyclicWrites()"
+ */
+int ecReportEntryCyclicWrites();
+
 /** \brief Adds an async SDO object.\n
 *
 * Adds a SDO object for SDO read and write during realtime.

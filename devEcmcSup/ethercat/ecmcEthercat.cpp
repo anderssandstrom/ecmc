@@ -382,6 +382,10 @@ int ecWriteEntryCyclicWrite(char *toEntryPath,
   return ec->addCyclicEntryWrite(toEntry, fromEntry, force != 0);
 }
 
+int ecReportEntryCyclicWrites() {
+  return ec->reportCyclicEntryWrites();
+}
+
 int ecAddSimEntry(
   int position,  char *entryIDString, char *datatype, uint64_t value) {
   std::string id = entryIDString;

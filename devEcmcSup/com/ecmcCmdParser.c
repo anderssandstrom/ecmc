@@ -2155,6 +2155,11 @@ static int handleCfgCommand(const char *myarg_1) {
     return ecWriteEntryCyclicWrite(cIdBuffer, cIdBuffer2, 0);
   }
 
+  if (!strcmp(myarg_1, "EcReportEntryCyclicWrites()")) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcReportEntryCyclicWrites");
+    return ecReportEntryCyclicWrites();
+  }
+
 /*Cfg.EcAddSimEntry(
     int position,
     char    *name)
