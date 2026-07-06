@@ -366,7 +366,7 @@ void ecmcAxisBase::initVars() {
   autoDisbleTimeCounter_        = 0.0;
   enableAutoEnable_             = 0;
   enableAutoDisable_            = 0;
-  autoDisableLatchAtTargetEnable_ = false;
+  autoDisableAtTgtLtchEnable_   = false;
   autoDisableAtTargetLatched_   = false;
   positionTargetAsyn_           = 0;
   invSampleTime_                = 1000.0;
@@ -3889,7 +3889,7 @@ void ecmcAxisBase::autoDisableSM() {
       autoDisableAtTargetLatched_ = true;
     }
 
-    if(autoDisableLatchAtTargetEnable_) {
+    if(autoDisableAtTgtLtchEnable_) {
       if(!autoDisableAtTargetLatched_) {
         autoDisbleTimeCounter_ = 0;
         return;
@@ -3952,7 +3952,7 @@ int ecmcAxisBase::setEnableAutoDisable(bool enable) {
   if(enableAutoDisable_ != enable) {
     autoDisbleTimeCounter_ = 0;
     autoDisableAtTargetLatched_ = enable &&
-                                  autoDisableLatchAtTargetEnable_ &&
+                                  autoDisableAtTgtLtchEnable_ &&
                                   data_.status_.statusWord_.attarget;
   }
   
@@ -3964,18 +3964,18 @@ int ecmcAxisBase::getEnableAutoDisable() {
   return static_cast<int>(enableAutoDisable_);
 }
 
-int ecmcAxisBase::setAutoDisableLatchAtTarget(bool enable) {
-  if(autoDisableLatchAtTargetEnable_ != enable) {
+int ecmcAxisBase::setAutoDisableAtTgtLtch(bool enable) {
+  if(autoDisableAtTgtLtchEnable_ != enable) {
     autoDisbleTimeCounter_ = 0;
     autoDisableAtTargetLatched_ = false;
   }
 
-  autoDisableLatchAtTargetEnable_ = enable;
+  autoDisableAtTgtLtchEnable_ = enable;
   return 0;
 }
 
-int ecmcAxisBase::getAutoDisableLatchAtTarget() {
-  return static_cast<int>(autoDisableLatchAtTargetEnable_);
+int ecmcAxisBase::getAutoDisableAtTgtLtch() {
+  return static_cast<int>(autoDisableAtTgtLtchEnable_);
 }
 
 ecmcAxisDataStatus* ecmcAxisBase::getAxisStatusDataPtr() {
