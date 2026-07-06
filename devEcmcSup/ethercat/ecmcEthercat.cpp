@@ -360,7 +360,9 @@ static int findEntryByPath(char *entryPath, ecmcEcEntry **entry) {
   return *entry ? 0 : ERROR_MAIN_EC_ENTRY_NULL;
 }
 
-int ecWriteEntryCyclicWrite(char *toEntryPath, char *fromEntryPath) {
+int ecWriteEntryCyclicWrite(char *toEntryPath,
+                            char *fromEntryPath,
+                            int force) {
   if (!ec->getInitDone()) {
     return ERROR_MAIN_EC_NOT_INITIALIZED;
   }
@@ -377,7 +379,7 @@ int ecWriteEntryCyclicWrite(char *toEntryPath, char *fromEntryPath) {
     return errorCode;
   }
 
-  return ec->addCyclicEntryWrite(toEntry, fromEntry);
+  return ec->addCyclicEntryWrite(toEntry, fromEntry, force != 0);
 }
 
 int ecAddSimEntry(

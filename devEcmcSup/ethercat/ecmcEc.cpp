@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcEc.h"
+#include <algorithm>
 #include <cmath>
 #include <time.h>
 #include <string>
@@ -650,12 +651,13 @@ void ecmcEc::send(timespec timeOffset) {
 }
 
 int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
-                                ecmcEcEntry *fromEntry) {
+                                ecmcEcEntry *fromEntry,
+                                bool force) {
   if (!toEntry || !fromEntry) {
     return ERROR_EC_MAIN_ENTRY_NULL;
   }
 
-  if (toEntry->getDataType() != fromEntry->getDataType()) {
+  if (!force && (toEntry->getDataType() != fromEntry->getDataType())) {
     return ERROR_EC_CYCLIC_ENTRY_DATATYPE_MISMATCH;
   }
 
@@ -663,7 +665,9 @@ int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
     return ERROR_EC_CYCLIC_ENTRY_DESTINATION_NOT_OUTPUT;
   }
 
-  cyclicEntryWrites_.push_back({toEntry, fromEntry});
+  int copyBits = std::min(toEntry->getBits(), fromEntry->getBits());
+  uint64_t mask = copyBits >= 64 ? UINT64_MAX : (UINT64_C(1) << copyBits) - 1;
+  cyclicEntryWrites_.push_back({toEntry, fromEntry, mask});
   return 0;
 }
 
@@ -671,7 +675,8 @@ void ecmcEc::updateCyclicEntryWrites() {
   const size_t writeCount = cyclicEntryWrites_.size();
   for (size_t i = 0; i < writeCount; i++) {
     cyclicEntryWrites_[i].fromEntry->copyValueTo(
-      cyclicEntryWrites_[i].toEntry);
+      cyclicEntryWrites_[i].toEntry,
+      cyclicEntryWrites_[i].mask);
   }
 }
 

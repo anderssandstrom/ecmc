@@ -106,8 +106,9 @@ public:
   int                   writeBits(int startBitNumber, int bits,
                                   uint64_t valueToWrite);
   int                   readValue(uint64_t *value);
-  inline void           copyValueTo(ecmcEcEntry *destination) const {
-    destination->buffer_ = buffer_;
+  inline void           copyValueTo(ecmcEcEntry *destination,
+                                    uint64_t mask) const {
+    destination->buffer_ = buffer_ & mask;
   }
   int                   readDouble(double *value);
   int                   readBit(int       bitNumber,

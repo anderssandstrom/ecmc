@@ -94,6 +94,7 @@
     "Cfg.EcSetDomainAllowOffline(<int>)",
     "Cfg.EcSetEntryUpdateInRealtime(<slavePosition>,<entryIdString>,<updateInRealtime>)",
     "Cfg.EcWriteEntryCyclicWrite(<toEntryPath>,<fromEntryPath>)",
+    "Cfg.EcWriteEntryCyclicWrite(<toEntryPath>,<fromEntryPath>,<force>)",
     "Cfg.EcSetMaster(<masterIndex>)",
     "Cfg.EcSetSlaveEnableSDOCheck(<slaveBusPosition>,<enable>)",
     "Cfg.EcSetSlaveNeedSDOSettings(<slaveBusPosition>,<channel>,<done>)",
