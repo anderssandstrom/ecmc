@@ -398,6 +398,9 @@ asynStatus asynWriteReset(void         *data,
 }
 
 unsigned int ecmcTakeGlobalMotionCommands() {
+  if (globalMotionCommands.load(std::memory_order_acquire) == 0) {
+    return 0;
+  }
   return globalMotionCommands.exchange(0, std::memory_order_acq_rel);
 }
 

@@ -10,6 +10,26 @@ Release Notes
 * Support optional nonblocking sequence motion actions so multiple axes can be started independently and synchronized later with explicit wait steps. Velocity moves are nonblocking by default and can optionally wait for a velocity tolerance.
 * Add sparse sequence step IDs, runtime step insertion/deletion, child-sequence calls, reusable sequence composition, and PLC functions for arming, changing the active step, and reading sequence status.
 * Add position- and time-based sequence triggers with eight predefined trigger IDs per sequence, scalar data-item outputs, pulse timing, completion waits, reverse-position ranges, and EPICS-visible soft-trigger counters.
+* Add motion-sequencer parser commands:
+  ```
+  CreateMotionSeq                 SetMotionSeqStep
+  SetMotionSeqStepText            InsertMotionSeqStep
+  DeleteMotionSeqStep             CompileMotionSeq
+  ArmMotionSeq                    StartMotionSeq
+  StopMotionSeq                   ResetMotionSeq
+  ReportMotionSeq
+
+  SeqNop                          SeqWaitTime
+  SeqRunSeq                       SeqArmPosTrigger
+  SeqArmTimeTrigger               SeqWaitTriggerDone
+  SeqReset                        SeqPower
+  SeqHome                         SeqMoveAbs
+  SeqMoveRel                      SeqMoveVel
+  SeqHalt                         SeqWaitInPos
+  SeqSetEncHomed                  SeqSetItem
+  SeqWaitItem                     SeqExitItem
+  SeqBranchItem                   SeqGotoStep
+  ```
 * Run sequence action processing before C++ logic and plugins, including the safety plugin, in each realtime cycle. Sequence compilation and EPICS/asyn editing remain outside the realtime thread.
 * Add worker-thread JSON motion diagnostic dumps covering configured axes, axis groups, master/slave state machines, interlocks, command state, blockers, and retained transition/fault history. Add `tools/ecmcMotionDiagAnalyze.py` for offline analysis.
 * Add per-axis motion command tracing for motor-record arrivals, ecmc motion requests, real execute attempts, last motor-record result/reason/error/cycle text, and master/slave block transitions. Include clear controls and optional counting of motor-record STOP and enable commands.
@@ -21,6 +41,28 @@ Release Notes
 * When resetting a stopped internal-source axis after a position-lag error, synchronize its internal trajectory start, setpoint, and target to the actual position to avoid immediately retriggering the same error.
 * Harden the master/slave state machine with bounded prepare and master-disable waits, trajectory-source verification and recovery, lost-enable/error recovery, startup ownership validation, explicit transition reasons, retained fault history, and richer packed status metadata.
 * Start the master auto-disable timeout only after the master group has reached target and is no longer busy, while keeping auto-disable enabled through the remainder of the disable transition.
+* Add optional latched AtTarget handling for axis auto-disable. Once AtTarget
+  has been observed, later AtTarget loss does not reset the disable timer. The
+  latch resets on new motion or when the axis is disabled and defaults to off:
+  ```
+  Cfg.SetAxisAutoDisableAtTgtLtch(<axis_id>,<enable>)
+  GetAxisAutoDisableAtTgtLtch(<axis_id>)
+  ```
+* Add a dedicated slave-control deadband for physical and virtual master axes.
+  It controls the live reduced-torque signal forwarded to slaves independently
+  of master AtTarget and auto-disable. Unconfigured tolerance and time default
+  to the master axis AtTarget settings:
+  ```
+  Cfg.SetAxisMonSlvCtrlDbTol(<axis_id>,<tolerance>)
+  Cfg.SetAxisMonSlvCtrlDbTime(<axis_id>,<cycles>)
+  GetAxisMonSlvCtrlDbTol(<axis_id>)
+  GetAxisMonSlvCtrlDbTime(<axis_id>)
+  ```
+* Extend the existing `ecmc.error.reset` global command parameter while keeping
+  reset-all backward compatible: bit 0 resets all errors, bit 1 stops all
+  configured axes, and bit 2 stops and disables all configured axes. Stop and
+  disable requests are consumed by the realtime thread. ecmccfg exposes these
+  commands as `MCU-StopAll` and `MCU-DisableAll`.
 
 # 11.0.8
 * Add IOC shell commands `ecmcReadParam(<paramName>)` and `ecmcWriteParam(<paramName>,<value>)` for scalar ecmc data items listed by `ecmcGrepParam`, including parameter alias lookup.
@@ -276,22 +318,7 @@ ${M}.s${BO_SID=2}.binaryOutput02:=not(${M}.s${BO_SID=2}.binaryOutput02);
 ```
  "Cfg.SetAxisAutoEnableTimeout(<axis_id>,<time_s>)"
  "Cfg.SetAxisAutoDisableAfterTime(<axis_id>,<time_s>)"
- "Cfg.SetAxisAutoDisableAtTgtLtch(<axis_id>,<enable>)"
 ```
-The optional AtTarget latch starts the auto-disable timer after the first
-AtTarget assertion and prevents later AtTarget loss from resetting it. It is
-disabled by default to preserve the previous behavior.
-* Add a dedicated slave-control deadband for physical and virtual master axes.
-  The live group result controls reduced torque in slaved axes independently of
-  master AtTarget and auto-disable handling:
-  ```
-  "Cfg.SetAxisMonSlvCtrlDbTol(<axis_id>,<tolerance>)"
-  "Cfg.SetAxisMonSlvCtrlDbTime(<axis_id>,<cycles>)"
-  ```
-* Extend the existing `ecmc.error.reset` global command parameter while keeping
-  reset-all backward compatible: bit 0 resets all errors, bit 1 stops all
-  configured axes, and bit 2 stops and disables all configured axes. Motion
-  commands are consumed by the realtime thread.
 * Add tweak commands in axis control word (target position value will be used as tweak value):
    - bit 11: tweak bwd cmd
    - bit 12: tweak fwd cmd
