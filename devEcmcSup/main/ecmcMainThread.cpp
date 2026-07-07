@@ -466,6 +466,20 @@ void cyclic_task(void *usr) {
       activeMotionSeqs[i]->executeRT(mcuPeriod / 1.0e9);
     }
 
+    const unsigned int globalMotionCommands =
+      ecmcTakeGlobalMotionCommands();
+    const bool stopAllAxes =
+      globalMotionCommands & (ECMC_GLOBAL_CMD_STOP_ALL_AXES |
+                              ECMC_GLOBAL_CMD_DISABLE_ALL_AXES);
+    const bool disableAllAxes =
+      globalMotionCommands & ECMC_GLOBAL_CMD_DISABLE_ALL_AXES;
+
+    if (stopAllAxes) {
+      for (i = 0; i < activeAxisCount; i++) {
+        activeAxes[i]->stopMotion(disableAllAxes);
+      }
+    }
+
     // Motion
     for (i = 0; i < activeAxisCount; i++) {
       auto * const axis = activeAxes[i];
@@ -499,6 +513,13 @@ void cyclic_task(void *usr) {
     // PLCs
     if (plcs) {
       plcs->execute(ecStat);
+    }
+
+    // Enforce the global command after normal command producers as well.
+    if (stopAllAxes) {
+      for (i = 0; i < activeAxisCount; i++) {
+        activeAxes[i]->stopMotion(disableAllAxes);
+      }
     }
 
     if (counter) {

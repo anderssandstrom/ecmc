@@ -34,6 +34,9 @@ int  ecmcInit(void *asynPortObject);
  */
 int  ecmcAddDefaultAsynParams();
 
+/** \brief Consume queued global motion commands from the realtime thread. */
+unsigned int ecmcTakeGlobalMotionCommands();
+
 /** \brief Cleanup (for exit)
  *
  * \note There's no ascii command in ecmcCmdParser.c for this method.\n

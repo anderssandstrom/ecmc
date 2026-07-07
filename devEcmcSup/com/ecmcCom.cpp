@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <epicsExit.h>
 #include <epicsThread.h>
+#include <atomic>
 
 
 // Below for asyn version and 64 bit ints
@@ -47,6 +48,7 @@
 
 static volatile sig_atomic_t ecmcShutdownRequested = 0;
 static int                   ecmcShutdownThreadStarted = 0;
+static std::atomic<unsigned int> globalMotionCommands {0};
 
 static void ecmcSigIntHandler(int signum) {
   ecmcShutdownRequested = signum;
@@ -364,9 +366,9 @@ void ecmcCleanup(int signum) {
 
 /**
  *
- * Callback function for asynWrites (commands): ecmc.error.reset
+ * Callback function for the global command word: ecmc.error.reset
  * userObj = NULL
- *  Will controllerErrorReset()
+ * Bit 0 resets errors, bit 1 stops all axes and bit 2 stops/disables all axes.
  *
  */
 asynStatus asynWriteReset(void         *data,
@@ -377,12 +379,26 @@ asynStatus asynWriteReset(void         *data,
   if ((asynParType != asynParamInt32) || (bytes != sizeof(asynParamInt32))) {
     return asynError;
   }
-  int reset = *(int32_t *)data;
+  const unsigned int commands =
+    static_cast<unsigned int>(*(int32_t *)data);
 
-  if (reset) {
+  if (commands & ~ECMC_GLOBAL_CMD_VALID_MASK) {
+    return asynError;
+  }
+
+  globalMotionCommands.fetch_or(
+    commands & (ECMC_GLOBAL_CMD_STOP_ALL_AXES |
+                ECMC_GLOBAL_CMD_DISABLE_ALL_AXES),
+    std::memory_order_release);
+
+  if (commands & ECMC_GLOBAL_CMD_RESET_ALL_ERRORS) {
     return (asynStatus)controllerErrorReset();
   }
   return asynSuccess;
+}
+
+unsigned int ecmcTakeGlobalMotionCommands() {
+  return globalMotionCommands.exchange(0, std::memory_order_acq_rel);
 }
 
 int ecmcAddDefaultAsynParams() {

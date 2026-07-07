@@ -288,6 +288,10 @@ disabled by default to preserve the previous behavior.
   "Cfg.SetAxisMonSlvCtrlDbTol(<axis_id>,<tolerance>)"
   "Cfg.SetAxisMonSlvCtrlDbTime(<axis_id>,<cycles>)"
   ```
+* Extend the existing `ecmc.error.reset` global command parameter while keeping
+  reset-all backward compatible: bit 0 resets all errors, bit 1 stops all
+  configured axes, and bit 2 stops and disables all configured axes. Motion
+  commands are consumed by the realtime thread.
 * Add tweak commands in axis control word (target position value will be used as tweak value):
    - bit 11: tweak bwd cmd
    - bit 12: tweak fwd cmd
