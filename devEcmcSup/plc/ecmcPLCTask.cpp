@@ -898,6 +898,7 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_grp_get_ctrl_within_db",mc_grp_get_ctrl_within_db);
   ecmcPLCTaskAddFunction("mc_grp_get_any_ilocked",mc_grp_get_any_ilocked);
   ecmcPLCTaskAddFunction("mc_get_hw_ready",mc_get_hw_ready);
+  ecmcPLCTaskAddFunction("mc_ctrl_i_reset",mc_ctrl_i_reset);
 
   // motion sequencer
   ecmcPLCTaskAddFunction("seq_arm",seq_arm);

@@ -38,6 +38,7 @@ public:
   ~ecmcPIDController();
   void   initVars();
   void   reset();
+  void   resetI();
   void   setIRange(double iMax,
                    double iMin);
   double control(double posError,
@@ -51,6 +52,10 @@ public:
   void   setKi(double ki);
   void   setKd(double kd);
   void   setKff(double kff);
+  void   setResetIAtTrajBusy(bool enable);
+  void   setFreezeIAtTrajBusy(bool enable);
+  bool   getResetIAtTrajBusy();
+  bool   getFreezeIAtTrajBusy();
 
   //  pid parameters for when within abs(actpos-targetpos)<innerTol_
   void   setInnerCtrlParams(double kp,
@@ -97,6 +102,8 @@ private:
   double sampleTime_;
   ecmcAxisData *data_;
   bool settingMade_;
+  bool resetIAtTrajBusy_;
+  bool freezeIAtTrajBusy_;
 
   // Asyn
   ecmcAsynPortDriver *asynPortDriver_;

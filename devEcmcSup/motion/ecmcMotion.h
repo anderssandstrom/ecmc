@@ -948,6 +948,12 @@ int getAxisCntrlKd(int     axisIndex,
 int getAxisCntrlKff(int     axisIndex,
                     double *value);
 
+int getAxisCntrlResetIAtRmp(int axisIndex,
+                            int *value);
+
+int getAxisCntrlFreezeIAtRmp(int axisIndex,
+                             int *value);
+
 int getAxisCntrlDeadband(int     axisIndex,
                          double *value);
 
@@ -2550,6 +2556,26 @@ int setAxisCntrlKd(int    axisIndex,
  */
 int setAxisCntrlKff(int    axisIndex,
                     double value);
+
+/** \brief Reset the PID integral part while an internal trajectory is busy.\n
+ *
+ * \param[in] axisIndex Axis index.\n
+ * \param[in] enable Nonzero enables the function.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ */
+int setAxisCntrlResetIAtRmp(int axisIndex,
+                            int enable);
+
+/** \brief Freeze the PID integral part while an internal trajectory is busy.\n
+ *
+ * \param[in] axisIndex Axis index.\n
+ * \param[in] enable Nonzero enables the function.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ */
+int setAxisCntrlFreezeIAtRmp(int axisIndex,
+                             int enable);
 
 /** \brief Set PID-controller deadband.\n
  *

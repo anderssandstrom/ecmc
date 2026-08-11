@@ -2257,6 +2257,36 @@ int setAxisCntrlKff(int axisIndex, double value) {
   return axes[axisIndex]->setCntrlKff(value);
 }
 
+int setAxisCntrlResetIAtRmp(int axisIndex, int enable) {
+  LOGINFO4("%s/%s:%d axisIndex=%d enable=%d\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex,
+           enable);
+
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
+
+  axes[axisIndex]->getCntrl()->setResetIAtTrajBusy(enable != 0);
+  return 0;
+}
+
+int setAxisCntrlFreezeIAtRmp(int axisIndex, int enable) {
+  LOGINFO4("%s/%s:%d axisIndex=%d enable=%d\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex,
+           enable);
+
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
+
+  axes[axisIndex]->getCntrl()->setFreezeIAtTrajBusy(enable != 0);
+  return 0;
+}
+
 int setAxisCntrlDeadband(int    axisIndex,
                          double value) {
   LOGINFO4("%s/%s:%d axisIndex=%d value=%f\n",
@@ -2513,6 +2543,32 @@ int getAxisCntrlKff(int axisIndex, double *value) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   *value = axes[axisIndex]->getCntrl()->getKff();
+  return 0;
+}
+
+int getAxisCntrlResetIAtRmp(int axisIndex, int *value) {
+  LOGINFO4("%s/%s:%d axisIndex=%d\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex);
+
+  CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
+
+  *value = axes[axisIndex]->getCntrl()->getResetIAtTrajBusy();
+  return 0;
+}
+
+int getAxisCntrlFreezeIAtRmp(int axisIndex, int *value) {
+  LOGINFO4("%s/%s:%d axisIndex=%d\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex);
+
+  CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
+
+  *value = axes[axisIndex]->getCntrl()->getFreezeIAtTrajBusy();
   return 0;
 }
 

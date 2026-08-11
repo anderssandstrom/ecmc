@@ -2997,6 +2997,26 @@ parse_cfg_setaxiscntrl:
       return setAxisCntrlKff(iValue, dValue);
     }
 
+    /*int Cfg.SetAxisCntrlResetIAtRmp(int axis_no, int enable);*/
+    nvals = sscanf(myarg_1,
+                   "SetAxisCntrlResetIAtRmp(%d,%d)",
+                   &iValue,
+                   &iValue2);
+
+    if (nvals == 2) {
+      return setAxisCntrlResetIAtRmp(iValue, iValue2);
+    }
+
+    /*int Cfg.SetAxisCntrlFreezeIAtRmp(int axis_no, int enable);*/
+    nvals = sscanf(myarg_1,
+                   "SetAxisCntrlFreezeIAtRmp(%d,%d)",
+                   &iValue,
+                   &iValue2);
+
+    if (nvals == 2) {
+      return setAxisCntrlFreezeIAtRmp(iValue, iValue2);
+    }
+
     /*int Cfg.SetAxisCntrlDeadband(int axis_no, double value);*/
     nvals = sscanf(myarg_1, "SetAxisCntrlDeadband(%d,%lf)", &iValue, &dValue);
 
@@ -5101,6 +5121,22 @@ parse_getaxiscntrl:
     if (nvals == 1) {
       SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisCntrlKff(motor_axis_no,
                                                              &fValue));
+    }
+
+    /*GetAxisCntrlResetIAtRmp(int nAxis)*/
+    nvals = sscanf(myarg_1, "GetAxisCntrlResetIAtRmp(%d)", &motor_axis_no);
+
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(
+        getAxisCntrlResetIAtRmp(motor_axis_no, &iValue));
+    }
+
+    /*GetAxisCntrlFreezeIAtRmp(int nAxis)*/
+    nvals = sscanf(myarg_1, "GetAxisCntrlFreezeIAtRmp(%d)", &motor_axis_no);
+
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(
+        getAxisCntrlFreezeIAtRmp(motor_axis_no, &iValue));
     }
 
     /*GetAxisCntrlDeadband(int nAxis)*/

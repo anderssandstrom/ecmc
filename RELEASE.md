@@ -9,6 +9,8 @@ Release Notes
 * Add sequence actions for reset, power, homing, absolute/relative/velocity motion, halt, in-position and timed waits, scalar data-item writes and conditions, encoder homed-state updates, sequence exit, conditional branching, and unconditional goto.
 * Support optional nonblocking sequence motion actions so multiple axes can be started independently and synchronized later with explicit wait steps. Velocity moves are nonblocking by default and can optionally wait for a velocity tolerance.
 * Add sparse sequence step IDs, runtime step insertion/deletion, child-sequence calls, reusable sequence composition, and PLC functions for arming, changing the active step, and reading sequence status.
+* Add PLC function `mc_ctrl_i_reset(<axis_id>,<reset>)` to reset an axis PID controller's integral part when `reset` is nonzero.
+* Add `Cfg.SetAxisCntrlResetIAtRmp(<axis_id>,<enable>)` and `Cfg.SetAxisCntrlFreezeIAtRmp(<axis_id>,<enable>)`, with matching getters and `controller.resetIAtRmp` / `controller.freezeIAtRmp` YAML settings, to reset or freeze the PID integral part while an internal trajectory is busy.
 * Add position- and time-based sequence triggers with eight predefined trigger IDs per sequence, scalar data-item outputs, pulse timing, completion waits, reverse-position ranges, and EPICS-visible soft-trigger counters.
 * Add motion-sequencer parser commands:
   ```

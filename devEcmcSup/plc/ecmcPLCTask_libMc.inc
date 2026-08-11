@@ -140,6 +140,7 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_grp_get_ctrl_within_db(,"
                                "mc_grp_get_any_ilocked(",
                                "mc_get_hw_ready(",
+                               "mc_ctrl_i_reset(",
                                "seq_arm(",
                                "seq_set_step(",
                                "seq_get_state(",
@@ -165,7 +166,7 @@ static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
 static int statLastSeqExecuteArm_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int statLastSeqExecuteSetStep_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 77;
+static int mc_cmd_count = 78;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -463,6 +464,24 @@ inline double mc_reset(double axIndex)
   CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
 
   axes[index]->setReset(1);
+  mc_errorCode = 0;
+  return 0;
+}
+
+inline double mc_ctrl_i_reset(double axIndex, double reset)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+
+  if ((bool)reset) {
+    ecmcPIDController *cntrl = axes[index]->getCntrl();
+    if (!cntrl) {
+      mc_errorCode = ERROR_AXIS_CNTRL_OBJECT_NULL;
+      return (double)mc_errorCode;
+    }
+    cntrl->resetI();
+  }
+
   mc_errorCode = 0;
   return 0;
 }

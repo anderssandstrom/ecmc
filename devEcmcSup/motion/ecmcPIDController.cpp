@@ -92,6 +92,8 @@ void ecmcPIDController::initVars() {
   ki_inner_           = 0;
   kd_inner_           = 0;
   innerTol_           = 0;
+  resetIAtTrajBusy_   = false;
+  freezeIAtTrajBusy_  = false;
 }
 
 ecmcPIDController::~ecmcPIDController() {}
@@ -103,6 +105,10 @@ void ecmcPIDController::reset() {
   ff_                        = 0;
   controllerErrorOld_        = 0;
   data_->status_.cntrlOutput = 0;
+}
+
+void ecmcPIDController::resetI() {
+  outputI_ = 0;
 }
 
 void ecmcPIDController::setIRange(double iMax, double iMin) {
@@ -155,6 +161,22 @@ void ecmcPIDController::setKff(double kff) {
   asynKff_->refreshParam(1);
 }
 
+void ecmcPIDController::setResetIAtTrajBusy(bool enable) {
+  resetIAtTrajBusy_ = enable;
+}
+
+void ecmcPIDController::setFreezeIAtTrajBusy(bool enable) {
+  freezeIAtTrajBusy_ = enable;
+}
+
+bool ecmcPIDController::getResetIAtTrajBusy() {
+  return resetIAtTrajBusy_;
+}
+
+bool ecmcPIDController::getFreezeIAtTrajBusy() {
+  return freezeIAtTrajBusy_;
+}
+
 void ecmcPIDController::setOutMax(double outMax) {
   if (outMax != 0)settingMade_ = true;
   outputMax_ = outMax;
@@ -201,7 +223,14 @@ double ecmcPIDController::control(double posError, double ff) {
 
   ff_      = ff * kff_;
   outputP_ = posError * kp_use_;
-  outputI_ = outputI_ + posError * ki_use_;
+  const bool internalTrajBusy =
+    !data_->status_.statusWord_.trajsource &&
+    data_->status_.statusWord_.localBusy;
+  if (internalTrajBusy && resetIAtTrajBusy_) {
+    outputI_ = 0;
+  } else if (!(internalTrajBusy && freezeIAtTrajBusy_)) {
+    outputI_ = outputI_ + posError * ki_use_;
+  }
 
   // Enabled only when limits differ and max>min
   if ((outputIMax_ != outputIMin_) && (outputIMax_ > outputIMin_)) {
