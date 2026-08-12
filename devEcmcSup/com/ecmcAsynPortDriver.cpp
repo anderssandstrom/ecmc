@@ -18,6 +18,8 @@
 #include <limits.h>
 #include <math.h>
 #include <unistd.h>
+#include <atomic>
+#include <new>
 #include <iocsh.h>
 
 #include <epicsTypes.h>
@@ -2017,6 +2019,81 @@ static void initCallFunc_4(const iocshArgBuf *args) {
   ecmcConfig(args[0].sval);
 }
 
+/* Start ECMC from a worker thread after IOC initialization has returned.
+ * This is intended for EPICS-first startup only.  The normal synchronous
+ * ecmcConfigOrDie("Cfg.SetAppMode(1)") path is deliberately unchanged. */
+namespace {
+struct ecmcAsyncAppModeStartContext {
+  double delaySeconds;
+};
+
+static std::atomic<bool> ecmcAsyncAppModeStartPending(false);
+
+static void ecmcAsyncAppModeStartTask(void *userData) {
+  ecmcAsyncAppModeStartContext *context =
+    static_cast<ecmcAsyncAppModeStartContext *>(userData);
+  const double delaySeconds = context->delaySeconds;
+  delete context;
+
+  if (delaySeconds > 0.0) {
+    epicsThreadSleep(delaySeconds);
+  }
+
+  printf("ecmcStartAppModeAsync: starting ECMC after %.3f second(s).\n",
+         delaySeconds);
+  ecmcConfigOrDie("Cfg.SetAppMode(1)");
+  ecmcAsyncAppModeStartPending.store(false, std::memory_order_release);
+}
+}  // namespace
+
+int ecmcStartAppModeAsync(double delaySeconds) {
+  if (!ecmcAsynPortObj) {
+    printf("ecmcStartAppModeAsync: No ecmcAsynPortDriver object found.\n");
+    return asynError;
+  }
+
+  if (delaySeconds < 0.0) {
+    printf("ecmcStartAppModeAsync: Delay must be >= 0 seconds.\n");
+    return asynError;
+  }
+
+  bool expected = false;
+  if (!ecmcAsyncAppModeStartPending.compare_exchange_strong(
+        expected, true, std::memory_order_acq_rel)) {
+    printf("ecmcStartAppModeAsync: Start already pending.\n");
+    return asynError;
+  }
+
+  ecmcAsyncAppModeStartContext *context =
+    new (std::nothrow) ecmcAsyncAppModeStartContext{delaySeconds};
+  if (!context) {
+    ecmcAsyncAppModeStartPending.store(false, std::memory_order_release);
+    return asynError;
+  }
+
+  if (!epicsThreadCreate("ecmcAsyncStart",
+                         epicsThreadPriorityLow,
+                         epicsThreadGetStackSize(epicsThreadStackMedium),
+                         ecmcAsyncAppModeStartTask,
+                         context)) {
+    delete context;
+    ecmcAsyncAppModeStartPending.store(false, std::memory_order_release);
+    printf("ecmcStartAppModeAsync: Failed to create worker thread.\n");
+    return asynError;
+  }
+
+  return asynSuccess;
+}
+
+static const iocshArg asyncStartArg0 =
+{ "Delay before start [s]", iocshArgDouble };
+static const iocshArg *const asyncStartArgs[] = { &asyncStartArg0 };
+static const iocshFuncDef asyncStartFuncDef =
+{ "ecmcStartAppModeAsync", 1, asyncStartArgs };
+static void asyncStartCallFunc(const iocshArgBuf *args) {
+  ecmcStartAppModeAsync(args[0].dval);
+}
+
 /* EPICS iocsh shell command: ecmcReport (same as asynReport but only ECMC)*/
 int ecmcReport(int level) {
   if (!ecmcAsynPortObj) {
@@ -3327,6 +3404,7 @@ void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&initFuncDef_16, initCallFunc_16);
   iocshRegister(&initFuncDef_17, initCallFunc_17);
   iocshRegister(&initFuncDef_18, initCallFunc_18);
+  iocshRegister(&asyncStartFuncDef, asyncStartCallFunc);
 }
 
 epicsExportRegistrar(ecmcAsynPortDriverRegister);

@@ -16,6 +16,7 @@
 #include "ecmcErrorsList.h"
 #include "ecmcDefinitions.h"
 #include "ecmcMainThread.h"
+#include "ecmcRtLoggerPortDriver.h"
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <unistd.h>
@@ -99,6 +100,14 @@ int ecmcInit(void *asynPortObject) {
   if (!ec) {
     LOGERR("ERROR: Fail allocate ec master (0x%x)", ERROR_MAIN_EC_NULL);
     return ERROR_MAIN_EC_NULL;
+  }
+
+  // The RT logger records are initialized by iocInit and therefore need the
+  // dedicated asyn port before the application enters runtime mode.  The
+  // logger worker thread is still started by Cfg.SetAppMode(1).
+  if (ecmcRtLoggerPortDriverStart()) {
+    LOGWARNING("WARNING: Failed to create RT logger asyn port driver. "
+               "Continuing with IOC log output only.\n");
   }
 
   // Main asyn params
