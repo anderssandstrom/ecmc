@@ -2521,6 +2521,11 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20075:
+    return "ERROR_MAIN_IN_STARTUP_PHASE";
+
+    break;
+
   case 0x20100:   // Data Recorder
     return "ERROR_DATA_RECORDER_BUFFER_NULL";
 

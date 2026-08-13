@@ -12,6 +12,7 @@
 
 #ifndef ECMC_GLOBALS_H_
 #define ECMC_GLOBALS_H_
+#include "ecmcErrorsList.h"
 #include "ecmcEc.h"
 #include "ecmcAxisBase.h"
 #include "ecmcAxisGroup.h"
@@ -50,10 +51,10 @@ ecmcMasterSlaveStateMachine *masterSlaveSMs[ECMC_MAX_MST_SLVS_SMS];
 epicsMutexId ecmcRTMutex;
 int axisDiagIndex;
 int axisDiagFreq;
-int controllerError              = -1;
+int controllerError              = ERROR_MAIN_IN_STARTUP_PHASE;
 int controllerErrorOld           = -2;
 int controllerReset              = 0;
-const char *controllerErrorMsg   = "NO_ERROR";
+const char *controllerErrorMsg   = "ERROR_MAIN_IN_STARTUP_PHASE";
 uint64_t    ecmcUpdatedCounter   = 0;
 int asynSkipCyclesFastest        = -1;
 int asynSkipUpdateCounterFastest = 0;

@@ -42,22 +42,26 @@ extern ecmcLookupTable<double, double>  *luts[ECMC_MAX_LUTS];
 extern ecmcShm shmObj;
 extern int allowCallbackEpicsState;
 extern int epicsHookState;
+extern ecmcEc *ec;
+extern app_mode_type appModeStat;
 
 const char *miscLibCmdList[] = { "m2m_write(",
                                  "m2m_read(",
                                  "m2m_stat(",
                                  "m2m_err_rst(",
                                  "m2m_get_err(",
-                                 "m2m_ioc_run("
+                                 "m2m_ioc_run(",
                                  "m2m_ioc_ec_ok(",
                                  "lut_get_value(",
                                  "epics_get_started(",
                                  "epics_get_state(",
+                                 "ec_get_started(",
+                                 "system_get_started(",
 };
 
 static int m2m_errorCode = 0;
 static int lut_errorCode = 0;
-static int misc_cmd_count = 10;
+static int misc_cmd_count = 12;
 
 inline double m2m_write(double shmIndex, double data) {
   int index = (int)shmIndex;
@@ -160,6 +164,19 @@ inline double epics_get_started() {
 
 inline double epics_get_state() {
   return (double)epicsHookState;
+}
+
+// EtherCAT master configured, ECMC runtime startup complete, and bus OK.
+inline double ec_get_started() {
+  return (double)(ec &&
+                  ec->getInitDone() &&
+                  appModeStat == ECMC_MODE_RUNTIME &&
+                  ec->statusOK());
+}
+
+// Complete system readiness: both EPICS and EtherCAT are started.
+inline double system_get_started() {
+  return (double)(epics_get_started() && ec_get_started());
 }
 
 #endif  /* ecmcPLC_libMisc_inc_ */

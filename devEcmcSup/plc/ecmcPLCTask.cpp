@@ -979,6 +979,8 @@ int ecmcPLCTask::loadMiscLib() {
   ecmcPLCTaskAddFunction("lut_get_value", lut_get_value);
   ecmcPLCTaskAddFunction("epics_get_started", epics_get_started);
   ecmcPLCTaskAddFunction("epics_get_state", epics_get_state);
+  ecmcPLCTaskAddFunction("ec_get_started", ec_get_started);
+  ecmcPLCTaskAddFunction("system_get_started", system_get_started);
   
   if (misc_cmd_count != cmdCounter) {
     ecmcRtLoggerLogError("%s/%s:%d: PLC Lib DS command count mismatch (0x%x).\n",
