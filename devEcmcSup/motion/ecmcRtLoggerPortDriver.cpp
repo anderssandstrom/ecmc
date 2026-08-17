@@ -25,9 +25,6 @@
 #include "ecmcMotionDiag.h"
 #include "ecmcRtLogger.h"
 
-class ecmcAxisBase;
-extern ecmcAxisBase *axes[ECMC_MAX_AXES];
-
 namespace {
 
 const char *ECMC_RT_LOGGER_PORT_NAME = "ecmcRTLog";
@@ -147,7 +144,6 @@ public:
       diagBusy_(0),
       diagStatus_(0),
       diagAxis_(0),
-      configuredAxisCount_(0),
       diagDumpPending_(0),
       filterMode_(ECMC_RT_LOG_FILTER_NONE),
       filterTypeMask_(INT_MAX),
@@ -347,7 +343,6 @@ public:
       setIntegerParam(axisIndex, axisMsBlockCycleParam_, 0);
       setStringParam(axisIndex, axisMsBlockTextParam_, "master_slave none");
     }
-    refreshConfiguredAxes();
     callParamCallbacks();
   }
 
@@ -730,10 +725,11 @@ public:
 
 private:
   void publishAxisCommandCounters() {
-    for (int axisListIndex = 0;
-         axisListIndex < configuredAxisCount_;
-         ++axisListIndex) {
-      const int axisIndex = configuredAxisIndices_[axisListIndex];
+    // Do not cache the configured axes here.  The logger port can be created
+    // before all axes have been added, and its lifetime spans later
+    // configuration changes.  Scanning the fixed-size slots keeps interrupt
+    // callbacks working regardless of startup ordering.
+    for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
       bool changed = false;
       const unsigned int motorRecordRequestCounter =
         counterDelta(
@@ -903,15 +899,6 @@ private:
 
       if (changed) {
         callParamCallbacks(axisIndex);
-      }
-    }
-  }
-
-  void refreshConfiguredAxes() {
-    configuredAxisCount_ = 0;
-    for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
-      if (axes[axisIndex]) {
-        configuredAxisIndices_[configuredAxisCount_++] = axisIndex;
       }
     }
   }
@@ -1150,8 +1137,6 @@ private:
   int diagBusy_;
   int diagStatus_;
   int diagAxis_;
-  int configuredAxisCount_;
-  int configuredAxisIndices_[ECMC_MAX_AXES];
   char diagFile_[ECMC_RT_LOGGER_DIAG_FILE_SIZE];
   char diagAxisReport_[ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE];
   unsigned int axisCmdMotorRecordRequestCountsPublished_[ECMC_MAX_AXES];
