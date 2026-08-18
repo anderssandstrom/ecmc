@@ -81,7 +81,7 @@ ecmcEcSyncManager::~ecmcEcSyncManager() {
   }
 }
 
-int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
+int ecmcEcSyncManager::addPdo(uint16_t pdoIndex, bool useExistingMapping) {
   if (pdoCounter_ >= EC_MAX_PDOS - 1) {
     ecmcRtLoggerLogError("%s/%s:%d: ERROR: PDO array full (0x%x).\n",
            __FILE__,
@@ -100,7 +100,8 @@ int ecmcEcSyncManager::addPdo(uint16_t pdoIndex) {
                                  slaveConfig_,
                                  syncMangerIndex_,
                                  pdoIndex,
-                                 direction_);
+                                 direction_,
+                                 useExistingMapping);
   if (!pdo) {
     return setErrorID(__FILE__,
                       __FUNCTION__,
@@ -175,19 +176,25 @@ ecmcEcEntry * ecmcEcSyncManager::addEntry(
   ecmcEcDataType dt,
   std::string    id,
   int            useInRealTime,
+  bool           useExistingMapping,
   int           *errorCode
   ) {
   int err        = 0;
   ecmcEcPdo *pdo = findPdo(pdoIndex);
 
   if (pdo == NULL) {
-    err = addPdo(pdoIndex);
+    err = addPdo(pdoIndex, useExistingMapping);
 
     if (err) {
       *errorCode = err;
       return NULL;
     }
     pdo = pdoArray_[pdoCounter_ - 1];  // Last added sync manager
+  }
+
+  if (pdo->getUseExistingMapping() != useExistingMapping) {
+    *errorCode = ERROR_EC_PDO_ADD_FAIL;
+    return NULL;
   }
 
   ecmcEcEntry *entry = pdo->addEntry(entryIndex,

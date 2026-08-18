@@ -243,6 +243,22 @@ int ecAddEntry(
   char    *entryIDString,
   int      updateInRealTime);
 
+/** Add an entry from an already mapped fixed/read-only PDO.
+ * The PDO is assigned to the SyncManager, but its mapping is not rewritten.
+ */
+int ecAddEntryFixed(
+  uint16_t slaveBusPosition,
+  uint32_t vendorId,
+  uint32_t productCode,
+  int      direction,
+  uint8_t  syncMangerIndex,
+  uint16_t pdoIndex,
+  uint16_t entryIndex,
+  uint8_t  entrySubIndex,
+  char    *datatype,
+  char    *entryIDString,
+  int      updateInRealTime);
+
 /** \brief Adds an alias for an already configured EtherCAT entry.\n
  *
  *  The alias can be used anywhere the original entry name can be used,

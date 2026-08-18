@@ -75,7 +75,8 @@ public:
               ec_direction_t      nDirection,
               ecmcEcDataType      dt,
               std::string         id,
-              int                 useInRealtime);
+              int                 useInRealtime,
+              bool                useExistingMapping = false);
 
   // only used for simulation purpose
   ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,

@@ -2096,6 +2096,34 @@ static int handleCfgCommand(const char *myarg_1) {
                       1);
   }
 
+  /* Fixed/read-only PDO mapping. */
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "EcAddEntryFixedDT(%d,0x%x,0x%x,%d,%d,0x%x,0x%x,0x%x,%[^,],%[^,],%d)",
+                 &iValue, &iValue2, &iValue3, &iValue4, &iValue5,
+                 &iValue6, &iValue7, &iValue8, cIdBuffer, cIdBuffer2,
+                 &iValue9);
+  if (nvals == 11) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryFixedDT");
+    return ecAddEntryFixed(iValue, iValue2, iValue3, iValue4, iValue5,
+                           iValue6, iValue7, iValue8, cIdBuffer, cIdBuffer2,
+                           iValue9);
+  }
+
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "EcAddEntryFixedDT(%d,0x%x,0x%x,%d,%d,0x%x,0x%x,0x%x,%[^,],%[^)])",
+                 &iValue, &iValue2, &iValue3, &iValue4, &iValue5,
+                 &iValue6, &iValue7, &iValue8, cIdBuffer, cIdBuffer2);
+  if (nvals == 10) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryFixedDT");
+    return ecAddEntryFixed(iValue, iValue2, iValue3, iValue4, iValue5,
+                           iValue6, iValue7, iValue8, cIdBuffer, cIdBuffer2,
+                           1);
+  }
+
   /*Cfg.EcAddEntryAlias(
     uint16_t position,
     char    *entryIDString,

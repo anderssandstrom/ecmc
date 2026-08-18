@@ -21,7 +21,8 @@ ecmcEcPdo::ecmcEcPdo(ecmcAsynPortDriver *asynPortDriver,
                      ec_slave_config_t  *slave,
                      uint8_t             syncMangerIndex,
                      uint16_t            pdoIndex,
-                     ec_direction_t      direction) {
+                     ec_direction_t      direction,
+                     bool                useExistingMapping) {
   initVars();
   asynPortDriver_ = asynPortDriver;
   masterId_       = masterId;
@@ -30,6 +31,7 @@ ecmcEcPdo::ecmcEcPdo(ecmcAsynPortDriver *asynPortDriver,
   direction_      = direction;
   domain_         = domain;
   slave_          = slave;
+  useExistingMapping_ = useExistingMapping;
   int errorCode = ecrt_slave_config_pdo_assign_add(slave_,
                                                    syncMangerIndex,
                                                    pdoIndex_);
@@ -44,7 +46,9 @@ ecmcEcPdo::ecmcEcPdo(ecmcAsynPortDriver *asynPortDriver,
       ERROR_EC_PDO_ADD_FAIL);
     setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_EC_PDO_ADD_FAIL);
   }
-  ecrt_slave_config_pdo_mapping_clear(slave_, pdoIndex_);
+  if (!useExistingMapping_) {
+    ecrt_slave_config_pdo_mapping_clear(slave_, pdoIndex_);
+  }
   LOGINFO5("%s/%s:%d: INFO: Pdo 0x%x created: syncManger %d, direction %d.\n",
            __FILE__,
            __FUNCTION__,
@@ -60,6 +64,7 @@ void ecmcEcPdo::initVars() {
   }
   errorReset();
   asynPortDriver_ = NULL;
+  useExistingMapping_ = false;
   masterId_       = -1;
   slaveId_        = -1;
   entryCounter_   = 0;
@@ -106,7 +111,8 @@ ecmcEcEntry * ecmcEcPdo::addEntry(uint16_t       entryIndex,
                                        direction_,
                                        dt,
                                        id,
-                                       useInRealTime);
+                                       useInRealTime,
+                                       useExistingMapping_);
   if (!entry) {
     *errorCode = ERROR_MAIN_EXCEPTION;
     return NULL;
@@ -138,6 +144,10 @@ int ecmcEcPdo::getEntryCount() {
 
 uint16_t ecmcEcPdo::getPdoIndex() {
   return pdoIndex_;
+}
+
+bool ecmcEcPdo::getUseExistingMapping() {
+  return useExistingMapping_;
 }
 
 ecmcEcEntry * ecmcEcPdo::findEntry(std::string id) {

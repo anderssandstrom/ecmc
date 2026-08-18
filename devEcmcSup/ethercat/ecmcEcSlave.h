@@ -103,7 +103,8 @@ public:
     uint8_t        entrySubIndex,
     ecmcEcDataType dt,
     std::string    id,
-    int            useInRealTime);
+    int            useInRealTime,
+    bool           useExistingMapping = false);
   int addSimEntry(std::string    id,
                   ecmcEcDataType dt,
                   uint64_t       value);

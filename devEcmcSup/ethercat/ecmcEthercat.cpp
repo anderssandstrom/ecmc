@@ -265,6 +265,39 @@ int ecAddEntry(
                       updateInRealtime);
 }
 
+int ecAddEntryFixed(
+  uint16_t position,
+  uint32_t vendorId,
+  uint32_t productCode,
+  int      direction,
+  uint8_t  syncMangerIndex,
+  uint16_t pdoIndex,
+  uint16_t entryIndex,
+  uint8_t  entrySubIndex,
+  char    *datatype,
+  char    *entryIDString,
+  int      updateInRealtime
+  ) {
+  std::string id = entryIDString;
+
+  if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
+
+  ecmcEcDataType dt = getEcDataTypeFromStr(datatype);
+
+  return ec->addEntry(position,
+                      vendorId,
+                      productCode,
+                      (ec_direction_t)direction,
+                      syncMangerIndex,
+                      pdoIndex,
+                      entryIndex,
+                      entrySubIndex,
+                      dt,
+                      id,
+                      updateInRealtime,
+                      true);
+}
+
 int ecAddEntryAlias(
   uint16_t slaveBusPosition,
   char    *entryIDString,

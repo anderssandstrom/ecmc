@@ -156,7 +156,8 @@ public:
     uint8_t        entrySubIndex,
     ecmcEcDataType dt,
     std::string    id,
-    int            useInRealTime);
+    int            useInRealTime,
+    bool           useExistingMapping = false);
   int addEntryAlias(uint16_t    position,
                     std::string entryId,
                     std::string alias);

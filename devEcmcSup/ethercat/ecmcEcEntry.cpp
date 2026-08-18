@@ -58,7 +58,8 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          ec_direction_t      direction,
                          ecmcEcDataType      dt,
                          std::string         id,
-                         int                 useInRealtime) {
+                         int                 useInRealtime,
+                         bool                useExistingMapping) {
   initVars();
   asynPortDriver_   = asynPortDriver;
   masterId_         = masterId;
@@ -76,22 +77,20 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   dataType_         = dt;
   updateInRealTime_ = useInRealtime;
   bindProcessImageHandlers();
-  int errorCode = ecrt_slave_config_pdo_mapping_add(slave,
-                                                    pdoIndex_,
-                                                    entryIndex_,
-                                                    entrySubIndex_,
-                                                    bitLength_);
-
-  if (errorCode) {
-    ecmcRtLoggerLogError(
-      "%s/%s:%d: ERROR: ecrt_slave_config_pdo_mapping_add() failed with error code %d (0x%x).\n",
-      __FILE__,
-      __FUNCTION__,
-      __LINE__,
-      errorCode,
-      ERROR_EC_ENTRY_ASSIGN_ADD_FAIL);
-    setErrorID(__FILE__, __FUNCTION__, __LINE__,
-               ERROR_EC_ENTRY_ASSIGN_ADD_FAIL);
+  if (!useExistingMapping) {
+    int errorCode = ecrt_slave_config_pdo_mapping_add(slave,
+                                                      pdoIndex_,
+                                                      entryIndex_,
+                                                      entrySubIndex_,
+                                                      bitLength_);
+    if (errorCode) {
+      ecmcRtLoggerLogError(
+        "%s/%s:%d: ERROR: ecrt_slave_config_pdo_mapping_add() failed with error code %d (0x%x).\n",
+        __FILE__, __FUNCTION__, __LINE__, errorCode,
+        ERROR_EC_ENTRY_ASSIGN_ADD_FAIL);
+      setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                 ERROR_EC_ENTRY_ASSIGN_ADD_FAIL);
+    }
   }
 
   ECMC_RT_LOGINFO5(
@@ -619,10 +618,14 @@ int ecmcEcEntry::compileRegInfo() {
   if (byteOffset_ < 0) {
     int errorCode = -byteOffset_;
     ecmcRtLoggerLogError(
-      "%s/%s:%d: ERROR: ecrt_slave_config_reg_pdo_entry() failed with error code %d (0x%x).\n",
+      "%s/%s:%d: ERROR: Entry %s, PDO 0x%04x, object 0x%04x:%02x: ecrt_slave_config_reg_pdo_entry() failed with error code %d (0x%x).\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
+      idString_.c_str(),
+      pdoIndex_,
+      entryIndex_,
+      entrySubIndex_,
       errorCode,
       ERROR_EC_ENTRY_REGISTER_FAIL);
     return setErrorID(__FILE__,

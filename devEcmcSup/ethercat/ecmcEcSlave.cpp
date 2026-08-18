@@ -599,7 +599,8 @@ int ecmcEcSlave::addEntry(
   uint8_t        entrySubIndex,
   ecmcEcDataType dt,
   std::string    id,
-  int            useInRealTime) {
+  int            useInRealTime,
+  bool           useExistingMapping) {
   if (entryCounter_ >= EC_MAX_ENTRIES) {
     return ERROR_EC_SLAVE_ENTRY_INDEX_OUT_OF_RANGE;
   }
@@ -631,6 +632,7 @@ int ecmcEcSlave::addEntry(
                                              dt,
                                              id,
                                              useInRealTime,
+                                             useExistingMapping,
                                              &err);
 
   if (!entry) {

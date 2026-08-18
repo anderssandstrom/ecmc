@@ -40,7 +40,7 @@ public:
                     ec_direction_t      direction,
                     uint8_t             syncMangerIndex);
   ~ecmcEcSyncManager();
-  int            addPdo(uint16_t pdoIndex);
+  int            addPdo(uint16_t pdoIndex, bool useExistingMapping = false);
   ecmcEcPdo*     getPdo(int index);
   int            getPdoCount();
   int            getInfo(ec_sync_info_t *info);
@@ -53,6 +53,7 @@ public:
     ecmcEcDataType dt,
     std::string    id,
     int            useInRealTime,
+    bool           useExistingMapping,
     int           *errorCode);
   ecmcEcEntry* findEntry(std::string id);
 
