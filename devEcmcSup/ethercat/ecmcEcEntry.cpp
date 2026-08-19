@@ -59,7 +59,11 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
                          ecmcEcDataType      dt,
                          std::string         id,
                          int                 useInRealtime,
-                         bool                useExistingMapping) {
+                         bool                useExistingMapping,
+                         bool                registerByPosition,
+                         uint8_t             syncManagerIndex,
+                         unsigned int        pdoPosition,
+                         unsigned int        entryPosition) {
   initVars();
   asynPortDriver_   = asynPortDriver;
   masterId_         = masterId;
@@ -68,6 +72,11 @@ ecmcEcEntry::ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
   entrySubIndex_    = entrySubIndex;
   bitLength_        = getEcDataTypeBits(dt);
   direction_        = direction;
+  useExistingMapping_ = useExistingMapping;
+  registerByPosition_ = registerByPosition;
+  syncManagerIndex_ = syncManagerIndex;
+  pdoPosition_      = pdoPosition;
+  entryPosition_    = entryPosition;
   sim_              = false;
   idString_         = id;
   idStringChar_     = strdup(idString_.c_str());
@@ -148,6 +157,11 @@ void ecmcEcEntry::initVars() {
   entryIndex_       = 0;
   entrySubIndex_    = 0;
   direction_        = EC_DIR_INVALID;
+  useExistingMapping_ = false;
+  registerByPosition_ = false;
+  syncManagerIndex_ = 0;
+  pdoPosition_ = 0;
+  entryPosition_ = 0;
   sim_              = false;
   idString_         = "";
   idStringChar_     = NULL;
@@ -609,11 +623,20 @@ int ecmcEcEntry::getUpdateInRealtime() {
 }
 
 int ecmcEcEntry::compileRegInfo() {
-  byteOffset_ = ecrt_slave_config_reg_pdo_entry(slave_,
-                                                entryIndex_,
-                                                entrySubIndex_,
-                                                domain_->getDomain(),
-                                                &bitOffset_);
+  if (registerByPosition_) {
+    byteOffset_ = ecrt_slave_config_reg_pdo_entry_pos(slave_,
+                                                      syncManagerIndex_,
+                                                      pdoPosition_,
+                                                      entryPosition_,
+                                                      domain_->getDomain(),
+                                                      &bitOffset_);
+  } else {
+    byteOffset_ = ecrt_slave_config_reg_pdo_entry(slave_,
+                                                  entryIndex_,
+                                                  entrySubIndex_,
+                                                  domain_->getDomain(),
+                                                  &bitOffset_);
+  }
 
   if (byteOffset_ < 0) {
     int errorCode = -byteOffset_;

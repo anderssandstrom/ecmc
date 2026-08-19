@@ -157,7 +157,9 @@ public:
     ecmcEcDataType dt,
     std::string    id,
     int            useInRealTime,
-    bool           useExistingMapping = false);
+    bool           useExistingMapping = false,
+    bool           registerByPosition = false,
+    unsigned int   entryPosition = 0);
   int addEntryAlias(uint16_t    position,
                     std::string entryId,
                     std::string alias);

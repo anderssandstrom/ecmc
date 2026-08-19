@@ -2100,6 +2100,34 @@ static int handleCfgCommand(const char *myarg_1) {
   cIdBuffer[0] = '\0';
   cIdBuffer2[0] = '\0';
   nvals = sscanf(myarg_1,
+                 "EcAddEntryFixedPosDT(%d,0x%x,0x%x,%d,%d,0x%x,0x%x,0x%x,%[^,],%[^,],%d,%d)",
+                 &iValue, &iValue2, &iValue3, &iValue4, &iValue5,
+                 &iValue6, &iValue7, &iValue8, cIdBuffer, cIdBuffer2,
+                 &iValue9, &iValue10);
+  if (nvals == 12) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryFixedPosDT");
+    return ecAddEntryFixedPos(iValue, iValue2, iValue3, iValue4, iValue5,
+                              iValue6, iValue7, iValue8, cIdBuffer,
+                              cIdBuffer2, iValue9, iValue10);
+  }
+
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
+                 "EcAddEntryFixedPosDT(%d,0x%x,0x%x,%d,%d,0x%x,0x%x,0x%x,%[^,],%[^,],%d)",
+                 &iValue, &iValue2, &iValue3, &iValue4, &iValue5,
+                 &iValue6, &iValue7, &iValue8, cIdBuffer, cIdBuffer2,
+                 &iValue9);
+  if (nvals == 11) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddEntryFixedPosDT");
+    return ecAddEntryFixedPos(iValue, iValue2, iValue3, iValue4, iValue5,
+                              iValue6, iValue7, iValue8, cIdBuffer,
+                              cIdBuffer2, iValue9, 1);
+  }
+
+  cIdBuffer[0] = '\0';
+  cIdBuffer2[0] = '\0';
+  nvals = sscanf(myarg_1,
                  "EcAddEntryFixedDT(%d,0x%x,0x%x,%d,%d,0x%x,0x%x,0x%x,%[^,],%[^,],%d)",
                  &iValue, &iValue2, &iValue3, &iValue4, &iValue5,
                  &iValue6, &iValue7, &iValue8, cIdBuffer, cIdBuffer2,

@@ -54,6 +54,8 @@ public:
     std::string    id,
     int            useInRealTime,
     bool           useExistingMapping,
+    bool           registerByPosition,
+    unsigned int   entryPosition,
     int           *errorCode);
   ecmcEcEntry* findEntry(std::string id);
 

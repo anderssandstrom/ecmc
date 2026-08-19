@@ -977,7 +977,9 @@ int ecmcEc::addEntry(
   ecmcEcDataType dt,
   std::string    id,
   int            useInRealTime,
-  bool           useExistingMapping) {
+  bool           useExistingMapping,
+  bool           registerByPosition,
+  unsigned int   entryPosition) {
   // Ensure master can support datatype
   if (!validEntryType(dt)) {
     ecmcRtLoggerLogError(
@@ -1009,7 +1011,9 @@ int ecmcEc::addEntry(
                                   dt,
                                   id,
                                   useInRealTime,
-                                  useExistingMapping);
+                                  useExistingMapping,
+                                  registerByPosition,
+                                  entryPosition);
 
   if (errorCode) {
     return errorCode;

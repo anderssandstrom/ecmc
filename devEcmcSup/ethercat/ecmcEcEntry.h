@@ -76,7 +76,11 @@ public:
               ecmcEcDataType      dt,
               std::string         id,
               int                 useInRealtime,
-              bool                useExistingMapping = false);
+              bool                useExistingMapping = false,
+              bool                registerByPosition = false,
+              uint8_t             syncManagerIndex = 0,
+              unsigned int        pdoPosition = 0,
+              unsigned int        entryPosition = 0);
 
   // only used for simulation purpose
   ecmcEcEntry(ecmcAsynPortDriver *asynPortDriver,
@@ -218,6 +222,11 @@ protected:
   ec_slave_config_t *slave_;
   ecmcEcDomain *domain_;
   ec_direction_t direction_;
+  bool useExistingMapping_;
+  bool registerByPosition_;
+  uint8_t syncManagerIndex_;
+  unsigned int pdoPosition_;
+  unsigned int entryPosition_;
   uint64_t buffer_;
   int8_t *int8Ptr_;
   uint8_t *uint8Ptr_;

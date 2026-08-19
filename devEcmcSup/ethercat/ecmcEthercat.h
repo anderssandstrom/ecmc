@@ -259,6 +259,23 @@ int ecAddEntryFixed(
   char    *entryIDString,
   int      updateInRealTime);
 
+/** Add an entry from a fixed/read-only PDO and register it by PDO position.
+ * Use this for predefined optional PDOs that are not assigned at power-up.
+ */
+int ecAddEntryFixedPos(
+  uint16_t slaveBusPosition,
+  uint32_t vendorId,
+  uint32_t productCode,
+  int      direction,
+  uint8_t  syncMangerIndex,
+  uint16_t pdoIndex,
+  uint16_t entryIndex,
+  uint8_t  entrySubIndex,
+  char    *datatype,
+  char    *entryIDString,
+  unsigned int entryPosition,
+  int      updateInRealTime);
+
 /** \brief Adds an alias for an already configured EtherCAT entry.\n
  *
  *  The alias can be used anywhere the original entry name can be used,

@@ -101,7 +101,8 @@ int ecmcEcSyncManager::addPdo(uint16_t pdoIndex, bool useExistingMapping) {
                                  syncMangerIndex_,
                                  pdoIndex,
                                  direction_,
-                                 useExistingMapping);
+                                 useExistingMapping,
+                                 pdoCounter_);
   if (!pdo) {
     return setErrorID(__FILE__,
                       __FUNCTION__,
@@ -177,6 +178,8 @@ ecmcEcEntry * ecmcEcSyncManager::addEntry(
   std::string    id,
   int            useInRealTime,
   bool           useExistingMapping,
+  bool           registerByPosition,
+  unsigned int   entryPosition,
   int           *errorCode
   ) {
   int err        = 0;
@@ -202,6 +205,8 @@ ecmcEcEntry * ecmcEcSyncManager::addEntry(
                                      dt,
                                      id,
                                      useInRealTime,
+                                     registerByPosition,
+                                     entryPosition,
                                      &err);
 
   if (err || !entry) {

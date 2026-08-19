@@ -36,13 +36,16 @@ public:
             uint8_t             syncMangerIndex,
             uint16_t            pdoIndex,
             ec_direction_t      direction,
-            bool                useExistingMapping);
+            bool                useExistingMapping,
+            unsigned int        pdoPosition);
   ~ecmcEcPdo();
   ecmcEcEntry* addEntry(uint16_t       entryIndex,
                         uint8_t        entrySubIndex,
                         ecmcEcDataType dt,
                         std::string    id,
                         int            useInRealTime,
+                        bool           registerByPosition,
+                        unsigned int   entryPosition,
                         int           *errorCode);
   ecmcEcEntry* getEntry(int index);
   ecmcEcEntry* findEntry(std::string id);
@@ -62,5 +65,7 @@ private:
   int slaveId_;
   ecmcAsynPortDriver *asynPortDriver_;
   bool useExistingMapping_;
+  uint8_t syncManagerIndex_;
+  unsigned int pdoPosition_;
 };
 #endif  // ifndef ECMCECPDO_H_

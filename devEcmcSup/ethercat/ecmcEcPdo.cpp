@@ -22,7 +22,8 @@ ecmcEcPdo::ecmcEcPdo(ecmcAsynPortDriver *asynPortDriver,
                      uint8_t             syncMangerIndex,
                      uint16_t            pdoIndex,
                      ec_direction_t      direction,
-                     bool                useExistingMapping) {
+                     bool                useExistingMapping,
+                     unsigned int        pdoPosition) {
   initVars();
   asynPortDriver_ = asynPortDriver;
   masterId_       = masterId;
@@ -32,6 +33,8 @@ ecmcEcPdo::ecmcEcPdo(ecmcAsynPortDriver *asynPortDriver,
   domain_         = domain;
   slave_          = slave;
   useExistingMapping_ = useExistingMapping;
+  syncManagerIndex_ = syncMangerIndex;
+  pdoPosition_ = pdoPosition;
   int errorCode = ecrt_slave_config_pdo_assign_add(slave_,
                                                    syncMangerIndex,
                                                    pdoIndex_);
@@ -65,6 +68,8 @@ void ecmcEcPdo::initVars() {
   errorReset();
   asynPortDriver_ = NULL;
   useExistingMapping_ = false;
+  syncManagerIndex_ = 0;
+  pdoPosition_ = 0;
   masterId_       = -1;
   slaveId_        = -1;
   entryCounter_   = 0;
@@ -88,6 +93,8 @@ ecmcEcEntry * ecmcEcPdo::addEntry(uint16_t       entryIndex,
                                   ecmcEcDataType dt,
                                   std::string    id,
                                   int            useInRealTime,
+                                  bool           registerByPosition,
+                                  unsigned int   entryPosition,
                                   int           *errorCode) {
   if (entryCounter_ >= (EC_MAX_ENTRIES)) {
     ecmcRtLoggerLogError("%s/%s:%d: ERROR: Entries array full (0x%x).\n",
@@ -112,7 +119,11 @@ ecmcEcEntry * ecmcEcPdo::addEntry(uint16_t       entryIndex,
                                        dt,
                                        id,
                                        useInRealTime,
-                                       useExistingMapping_);
+                                       useExistingMapping_,
+                                       registerByPosition,
+                                       syncManagerIndex_,
+                                       pdoPosition_,
+                                       entryPosition);
   if (!entry) {
     *errorCode = ERROR_MAIN_EXCEPTION;
     return NULL;

@@ -104,7 +104,9 @@ public:
     ecmcEcDataType dt,
     std::string    id,
     int            useInRealTime,
-    bool           useExistingMapping = false);
+    bool           useExistingMapping = false,
+    bool           registerByPosition = false,
+    unsigned int   entryPosition = 0);
   int addSimEntry(std::string    id,
                   ecmcEcDataType dt,
                   uint64_t       value);
