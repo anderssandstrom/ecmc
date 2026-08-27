@@ -1,6 +1,7 @@
 Release Notes
 ===
 # 11.0.9_RC1
+* Make `Cfg.WriteEcEntryEcPath(<ec_path>,<value>)` convert values according to the entry datatype. F32/F64 entries now accept floating-point values, signed entries accept negative values, and integer parsing retains full 64-bit precision.
 * Add `Cfg.EcAddEntryCyclicWrite(<to>,<from>)` to copy matching EtherCAT entry values every realtime cycle. Add the optional `force` parameter to bypass datatype matching and copy the smaller entry bit width: `Cfg.EcAddEntryCyclicWrite(<to>,<from>,<force>)`.
 * Add `Cfg.EcReportEntryCyclicWrites()` to list configured cyclic writes, including source, destination, copied bit count, and force setting. Annotate `ecmcGrepParam` output with `r`, `w`, or `rw` when an EtherCAT parameter is used as a cyclic-write source, destination, or both.
 * Restructure ecmc-owned `ecmcReport`, `ecmcGrepParam`, and `ecmcGrepRecord` output into a YAML-style hierarchy for easier debugging.
