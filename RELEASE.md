@@ -1,7 +1,8 @@
 Release Notes
 ===
-# 11.0.9_RC1
+# 11.0.9
 * Make `Cfg.WriteEcEntryEcPath(<ec_path>,<value>)` convert values according to the entry datatype. F32/F64 entries now accept floating-point values, signed entries accept negative values, and integer parsing retains full 64-bit precision.
+* Add support for configuring fixed PDO mappings while retaining the established `EcAddEntry` mapping workflow.
 * Add `Cfg.EcAddEntryCyclicWrite(<to>,<from>)` to copy matching EtherCAT entry values every realtime cycle. Add the optional `force` parameter to bypass datatype matching and copy the smaller entry bit width: `Cfg.EcAddEntryCyclicWrite(<to>,<from>,<force>)`.
 * Add `Cfg.EcReportEntryCyclicWrites()` to list configured cyclic writes, including source, destination, copied bit count, and force setting. Annotate `ecmcGrepParam` output with `r`, `w`, or `rw` when an EtherCAT parameter is used as a cyclic-write source, destination, or both.
 * Restructure ecmc-owned `ecmcReport`, `ecmcGrepParam`, and `ecmcGrepRecord` output into a YAML-style hierarchy for easier debugging.
@@ -36,6 +37,7 @@ Release Notes
 * Run sequence action processing before C++ logic and plugins, including the safety plugin, in each realtime cycle. Sequence compilation and EPICS/asyn editing remain outside the realtime thread.
 * Add worker-thread JSON motion diagnostic dumps covering configured axes, axis groups, master/slave state machines, interlocks, command state, blockers, and retained transition/fault history. Add `tools/ecmcMotionDiagAnalyze.py` for offline analysis.
 * Add per-axis motion command tracing for motor-record arrivals, ecmc motion requests, real execute attempts, last motor-record result/reason/error/cycle text, and master/slave block transitions. Include clear controls and optional counting of motor-record STOP and enable commands.
+* Restore the per-axis troubleshooting command counters and expose motor-record request, motion-request, and executed-command counts through the realtime logger.
 * Count absolute, relative, homing, velocity, and tweak requests arriving through the ecmc axis control word even when the request is later rejected or ignored.
 * Reduce diagnostic overhead by publishing RT logger axis data only for configured axes and keeping diagnostic file output and asyn publication in the logger worker thread.
 * Keep the motor-record message field focused on ecmc errors and warnings instead of overwriting it with normal moving/stopped state text.
@@ -66,6 +68,7 @@ Release Notes
   configured axes, and bit 2 stops and disables all configured axes. Stop and
   disable requests are consumed by the realtime thread. ecmccfg exposes these
   commands as `MCU-StopAll` and `MCU-DisableAll`.
+* Add optional startup ordering that allows EPICS to start before realtime execution, supporting restore workflows that must complete before ecmc motion and PLC processing begin.
 
 # 11.0.8
 * Add IOC shell commands `ecmcReadParam(<paramName>)` and `ecmcWriteParam(<paramName>,<value>)` for scalar ecmc data items listed by `ecmcGrepParam`, including parameter alias lookup.
