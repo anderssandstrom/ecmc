@@ -1753,12 +1753,12 @@ static int handleCfgCommand(const char *myarg_1) {
 
   /// "Cfg.WriteEcEntryEcPath(ecPath,value)"
   nvals = sscanf(myarg_1,
-                 "WriteEcEntryEcPath(%[^,],%" SCNu64 ")",
+                 "WriteEcEntryEcPath(%[^,],%[^)])",
                  cIdBuffer,
-                 &u64Value);
+                 cIdBuffer2);
 
   if (nvals == 2) {
-    return writeEcEntryEcPath(cIdBuffer, u64Value);
+    return writeEcEntryEcPathTyped(cIdBuffer, cIdBuffer2);
   }
 
   /// "Cfg.EcSetMaster(masterIndex)"

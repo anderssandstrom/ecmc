@@ -24,6 +24,11 @@
 
 #include "ecmcGlobalsExtern.h"
 
+#include <cerrno>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+
 #define ecmcRtLoggerLogWarning(...) \
   ECMC_RT_LOG_WARNING_SOURCE(ECMC_RT_LOG_SOURCE_ETHERCAT, -1, __VA_ARGS__)
 
@@ -1173,6 +1178,100 @@ int writeEcEntryEcPath(char *ecPath,
   } 
   
   return entry->writeValueForce(value);  
+}
+
+int writeEcEntryEcPathTyped(char *ecPath,
+                            char *value) {
+  int  masterId   = -1;
+  int  slaveIndex = -1;
+  char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  int  bitIndex = -1;
+
+  int errorCode =
+    parseEcPath(ecPath, &masterId, &slaveIndex, alias, &bitIndex);
+
+  if (errorCode) {
+    return errorCode;
+  }
+
+  if (!ec->getInitDone() && (slaveIndex != -1)) {
+    return ERROR_MAIN_EC_NOT_INITIALIZED;
+  }
+
+  ecmcEcSlave *slave = slaveIndex >= 0 ?
+    ec->findSlave(slaveIndex) : ec->getSlave(slaveIndex);
+
+  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
+
+  ecmcEcEntry *entry = slave->findEntry(std::string(alias));
+
+  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
+
+  while (std::isspace(static_cast<unsigned char>(*value))) {
+    value++;
+  }
+
+  errno = 0;
+  char *end = NULL;
+
+  if (bitIndex >= 0) {
+    if (*value == '-') {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
+
+    uint64_t parsedValue = std::strtoull(value, &end, 0);
+    while (end && std::isspace(static_cast<unsigned char>(*end))) {
+      end++;
+    }
+
+    if ((errno == ERANGE) || (end == value) || !end || (*end != '\0')) {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
+
+    return entry->writeBitForce(bitIndex, parsedValue);
+  }
+
+  if ((entry->getDataType() == ECMC_EC_F32) ||
+      (entry->getDataType() == ECMC_EC_F64)) {
+    double parsedValue = std::strtod(value, &end);
+
+    while (end && std::isspace(static_cast<unsigned char>(*end))) {
+      end++;
+    }
+
+    if ((errno == ERANGE) || (end == value) || !end || (*end != '\0') ||
+        !std::isfinite(parsedValue)) {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
+
+    return entry->writeDouble(parsedValue);
+  }
+
+  bool isSigned = (entry->getDataType() == ECMC_EC_S8) ||
+                  (entry->getDataType() == ECMC_EC_S16) ||
+                  (entry->getDataType() == ECMC_EC_S32) ||
+                  (entry->getDataType() == ECMC_EC_S64);
+
+  uint64_t parsedValue = 0;
+  if (isSigned) {
+    long long signedValue = std::strtoll(value, &end, 0);
+    parsedValue = static_cast<uint64_t>(signedValue);
+  } else {
+    if (*value == '-') {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
+    parsedValue = std::strtoull(value, &end, 0);
+  }
+
+  while (end && std::isspace(static_cast<unsigned char>(*end))) {
+    end++;
+  }
+
+  if ((errno == ERANGE) || (end == value) || !end || (*end != '\0')) {
+    return ERROR_MAIN_PARSER_INVALID_FORMAT;
+  }
+
+  return entry->writeValueForce(parsedValue);
 }
 
 int writeEcEntryIDString(int slavePosition, char *entryIDString,

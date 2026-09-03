@@ -985,19 +985,31 @@ int writeEcEntryIDString(int      slaveBusPosition,
   *                    or the name of a global simulation entry.\n
   *  \param[in] value Value to be written.\n
   *
-  * Note: This command should not be used when realtime performance is needed
+  * Note: This function writes the supplied integer as raw entry bits. The
+  * datatype-aware command interface uses writeEcEntryEcPathTyped().
+  * This function should not be used when realtime performance is needed
   * (also see "WriteECEntry()" command).\n
   *
   * \return 0 if success or otherwise an error code.\n
   *
-  * \note Example: Write a 1 to a digital output configured as "OUTPUT_0" on slave 1\n
-  *  "Cfg.WriteEcEntryEcPath(ec0.s1.OUTPUT_1,1)" //Command string to ecmcCmdParser.c\n
-  *
-  * \note Example: Write a 1 to a global simulation entry called "SIM_OUT".\n
-  *  "Cfg.WriteEcEntryEcPath(SIM_OUT,1)" //Command string to ecmcCmdParser.c\n
   */
 int writeEcEntryEcPath(char *ecPath,
                        uint64_t value);
+
+/** \brief Writes a textual value to an EtherCAT entry addressed by an
+ * EtherCAT path, converting it according to the configured entry datatype.
+ *
+ * Floating-point entries accept decimal or scientific notation. Signed and
+ * unsigned integer entries are parsed without passing through a double, so
+ * 64-bit integer values retain their precision.
+ *
+ * This function backs the Cfg.WriteEcEntryEcPath(ecPath,value) command.
+ * For example, Cfg.WriteEcEntryEcPath(ec0.s1.OUTPUT_1,1) writes an integer,
+ * while Cfg.WriteEcEntryEcPath(ec0.s1.ANALOG_OUTPUT,2000.0) writes an F32/F64
+ * value when ANALOG_OUTPUT is configured with a floating-point datatype.
+ */
+int writeEcEntryEcPathTyped(char *ecPath,
+                            char *value);
 
 /** \brief Read a value from an EtherCAT entry.\n
   *
