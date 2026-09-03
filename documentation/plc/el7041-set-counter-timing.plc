@@ -1,0 +1,94 @@
+# EL7041 set-counter timing test.
+#
+# Run this PLC at the EtherCAT cycle rate while the motor is stationary and the
+# axis is disabled. The PLC performs one complete request/acknowledge handshake
+# and publishes the aligned traces in data storages 10 through 17.
+#
+# PLC macros:
+#   DRV_SID      EL7041 ecmc slave index (default 14)
+#   TARGET       new 16-bit counter value (default 12345)
+#   PRE_CYCLES   idle cycles recorded before the request (default 10)
+#   POST_CYCLES  cycles recorded after the acknowledge is released (default 20)
+
+if(${SELF}.firstscan) {
+  static.sequence := 0;
+  static.state := 0;
+  static.preCycles := 0;
+  static.postCycles := 0;
+  static.pushed := 0;
+
+  # Start with Set counter deasserted. Preserve all other control bits.
+  ${M}.s${DRV_SID=14}.encoderControl01 :=
+    ec_clr_bit(${M}.s${DRV_SID=14}.encoderControl01,2);
+  ${M}.s${DRV_SID=14}.encoderValue01 := ${TARGET=12345};
+
+  ds_clear_data(10);
+  ds_clear_data(11);
+  ds_clear_data(12);
+  ds_clear_data(13);
+  ds_clear_data(14);
+  ds_clear_data(15);
+  ds_clear_data(16);
+  ds_clear_data(17);
+};
+
+# State 0: record a stable, request-low baseline.
+if(static.state == 0) {
+  static.preCycles := static.preCycles + 1;
+  if(static.preCycles >= ${PRE_CYCLES=10}) {
+    ${M}.s${DRV_SID=14}.encoderValue01 := ${TARGET=12345};
+    ${M}.s${DRV_SID=14}.encoderControl01 :=
+      ec_set_bit(${M}.s${DRV_SID=14}.encoderControl01,2);
+    static.state := 1;
+  };
+};
+
+# State 1: hold the request high until Set counter done is received.
+if(static.state == 1 and
+   ec_chk_bit(${M}.s${DRV_SID=14}.encoderStatus01,2)) {
+  ${M}.s${DRV_SID=14}.encoderControl01 :=
+    ec_clr_bit(${M}.s${DRV_SID=14}.encoderControl01,2);
+  static.state := 2;
+};
+
+# State 2: wait until the terminal releases Set counter done.
+if(static.state == 2 and
+   not(ec_chk_bit(${M}.s${DRV_SID=14}.encoderStatus01,2))) {
+  static.state := 3;
+  static.postCycles := 0;
+};
+
+# Record all signals in the same PLC execution.
+if(static.state < 4) {
+  ds_append_data(10,static.sequence);
+  ds_append_data(11,static.state);
+  ds_append_data(12,ec_chk_bit(${M}.s${DRV_SID=14}.encoderControl01,2));
+  ds_append_data(13,ec_chk_bit(${M}.s${DRV_SID=14}.encoderStatus01,2));
+  ds_append_data(14,${M}.s${DRV_SID=14}.encoderValue01);
+  ds_append_data(15,${M}.s${DRV_SID=14}.positionActual01);
+  ds_append_data(16,ec_chk_bit(${M}.s${DRV_SID=14}.encoderStatus01,15));
+  ds_append_data(17,${M}.s${DRV_SID=14}.positionActual01-${TARGET=12345});
+  static.sequence := static.sequence + 1;
+};
+
+# State 3: retain some samples after both handshake signals are low, then make
+# all eight arrays visible through EPICS exactly once.
+if(static.state == 3) {
+  static.postCycles := static.postCycles + 1;
+  if(static.postCycles >= ${POST_CYCLES=20}) {
+    static.state := 4;
+  };
+};
+
+if(static.state == 4 and not(static.pushed)) {
+  ds_push_asyn(10);
+  ds_push_asyn(11);
+  ds_push_asyn(12);
+  ds_push_asyn(13);
+  ds_push_asyn(14);
+  ds_push_asyn(15);
+  ds_push_asyn(16);
+  ds_push_asyn(17);
+  static.pushed := 1;
+  println('EL7041 set-counter timing trace complete.');
+};

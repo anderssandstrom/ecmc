@@ -533,6 +533,23 @@ int ecSlaveConfigDC(
   uint32_t sync1Cycle,       /**< SYNC1 cycle time [ns]. */
   int32_t  sync1Shift /**< SYNC1 shift time [ns]. */);
 
+/** Configure a terminal-specific correction to generic slave timing.
+ * direction follows ec_direction_t: 1=output, 2=input. The event offset is a
+ * signed correction relative to the SYNC event reported by 0x1C32/0x1C33. */
+int ecSetSlaveTimingOverride(int slaveBusPosition,
+                             int direction,
+                             int32_t cycleOffset,
+                             int32_t eventOffsetNs,
+                             uint32_t uncertaintyNs);
+
+/** Link a 32- or 64-bit input PDO entry containing an EtherCAT DC timestamp to
+ * a slave timing endpoint. direction: 1=output, 2=input. */
+int ecLinkSlaveTimingTimestamp(int slaveBusPosition,
+                               int direction,
+                               const char *entryId,
+                               int bits,
+                               int32_t correctionNs);
+
 /** \brief Select EtherCAT reference clock.\n
  *
  *  \param[in] masterIndex Index of master, see command ecSetMaster().\n
@@ -1246,6 +1263,11 @@ int ecPrintAllHardware();
  *  "EcPrintSlaveConfig(1)" //Command string to ecmcCmdParser.c\n
  */
 int ecPrintSlaveConfig(int slaveIndex);
+
+/** Print the resolved software timing from an input slave endpoint to an
+ * output slave endpoint. */
+int ecPrintControlTiming(int inputSlaveBusPosition,
+                         int outputSlaveBusPosition);
 
 /** \brief Links an EtherCAT entry to the ethecat master object for hardware
  *   status output\n

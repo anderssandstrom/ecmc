@@ -24,6 +24,7 @@
 #include "ecmcEcSDO.h"
 #include "ecmcEcSlave.h"
 #include "ecmcEcMemMap.h"
+#include "ecmcEcTiming.h"
 #include <vector>
 
 // EC ERRORS
@@ -218,6 +219,7 @@ public:
   uint64_t getTimeOffsetNs(); // Get time offset if monotonic
   uint64_t getLastReceiveTimeNs();
   uint64_t getLastSendTimeNs();
+  const ecmcEcCycleTiming& getCycleTiming() const;
 
   uint32_t getSlaveVendorId(uint16_t alias,       /**< Slave alias. */
                             uint16_t slavePos /**< Slave position. */);
@@ -299,6 +301,7 @@ private:
   struct timespec timeAbs_;
   uint64_t lastReceiveTimeNs_;
   uint64_t lastSendTimeNs_;
+  ecmcEcCycleTiming cycleTiming_;
   int delayEcOKCycles_;
   int startupCounter_;
   ecmcEcDomain *currentDomain_;

@@ -117,6 +117,39 @@ int ecSlaveConfigDC(
                          sync1Shift);
 }
 
+int ecSetSlaveTimingOverride(int slaveBusPosition,
+                             int direction,
+                             int32_t cycleOffset,
+                             int32_t eventOffsetNs,
+                             uint32_t uncertaintyNs) {
+  ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
+  if (slave == NULL) {
+    return ERROR_EC_MAIN_SLAVE_NULL;
+  }
+  if (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT) {
+    return ERROR_EC_MAIN_INVALID_SLAVE_INDEX;
+  }
+  return slave->setTimingOverride(static_cast<ec_direction_t>(direction),
+                                  cycleOffset,
+                                  eventOffsetNs,
+                                  uncertaintyNs);
+}
+
+int ecLinkSlaveTimingTimestamp(int slaveBusPosition,
+                               int direction,
+                               const char *entryId,
+                               int bits,
+                               int32_t correctionNs) {
+  ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
+  if (!slave || !entryId ||
+      (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT) ||
+      (bits != 32 && bits != 64)) {
+    return ERROR_EC_MAIN_INVALID_SLAVE_INDEX;
+  }
+  return slave->linkTimingTimestamp(static_cast<ec_direction_t>(direction),
+                                    entryId, bits, correctionNs);
+}
+
 int ecSetSlaveNeedSDOSettings(int slaveBusPosition, int ch, int need) {
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
 
@@ -1324,6 +1357,55 @@ int ecPrintAllHardware() {
 int ecPrintSlaveConfig(int slaveIndex) {
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   return ec->printSlaveConfig(slaveIndex);
+}
+
+int ecPrintControlTiming(int inputSlaveBusPosition,
+                         int outputSlaveBusPosition) {
+  ecmcEcSlave *inputSlave = ec->findSlave(inputSlaveBusPosition);
+  ecmcEcSlave *outputSlave = ec->findSlave(outputSlaveBusPosition);
+  if (!inputSlave || !outputSlave) {
+    return ERROR_EC_MAIN_SLAVE_NULL;
+  }
+
+  const ecmcEcDcConfig& inputDc = inputSlave->getDcConfig();
+  const ecmcEcDcConfig& outputDc = outputSlave->getDcConfig();
+  const bool cycleOnly = inputSlave->getInputTiming().source ==
+                           ecmcEcTimingSource::CYCLE_ONLY &&
+                         outputSlave->getOutputTiming().source ==
+                           ecmcEcTimingSource::CYCLE_ONLY;
+  if (!cycleOnly &&
+      (!inputDc.configured || !outputDc.configured ||
+       inputDc.sync0CycleNs == 0 ||
+       inputDc.sync0CycleNs != outputDc.sync0CycleNs)) {
+    printf("# Control timing input slave %d -> output slave %d: unresolved "
+           "(DC cycles unavailable or unequal)\n",
+           inputSlaveBusPosition, outputSlaveBusPosition);
+    return 0;
+  }
+
+  ecmcEcDelayEstimate estimate;
+  if (cycleOnly) {
+    estimate = ecmcEcCalculateCycleDelayNs(ec->getCycleTiming(),
+                                           inputSlave->getInputTiming(),
+                                           outputSlave->getOutputTiming());
+  } else {
+    estimate = ecmcEcCalculateEndpointDelayNs(
+      inputSlave->getInputTiming(), inputDc.sync1OffsetNs,
+      outputSlave->getOutputTiming(), outputDc.sync1OffsetNs,
+      inputDc.sync0CycleNs);
+  }
+  if (!estimate.valid) {
+    printf("# Control timing input slave %d -> output slave %d: unresolved "
+           "(run EcPrintSlaveConfig for unknown endpoint fields)\n",
+           inputSlaveBusPosition, outputSlaveBusPosition);
+    return 0;
+  }
+  printf("# Control timing input slave %d -> output slave %d: "
+         "delayNs=%lld uncertaintyNs=%llu\n",
+         inputSlaveBusPosition, outputSlaveBusPosition,
+         static_cast<long long>(estimate.delayNs),
+         static_cast<unsigned long long>(estimate.uncertaintyNs));
+  return 0;
 }
 
 int linkEcEntryToEcStatusOutput(int slaveIndex, char *entryIDString) {

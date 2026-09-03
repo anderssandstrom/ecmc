@@ -11,9 +11,13 @@
 \*************************************************************************/
 
 #include "ecmcEcSlave.h"
+#include <stddef.h>
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 #include "ecmcGeneral.h"
+
+#define ECMC_EC_SM_OUTPUT_TIMING_INDEX 0x1C32
+#define ECMC_EC_SM_INPUT_TIMING_INDEX  0x1C33
 
 extern app_mode_type appModeStat;
 
@@ -102,6 +106,20 @@ void ecmcEcSlave::initVars() {
   statusWordOld_     = 0;
   asyncSDOCounter_   = 0;
   enableSDOCheck_    = 0;
+  inputSmTiming_     = ecmcEcSmTiming(ECMC_EC_SM_INPUT_TIMING_INDEX);
+  outputSmTiming_    = ecmcEcSmTiming(ECMC_EC_SM_OUTPUT_TIMING_INDEX);
+  inputTimestampEntry_ = NULL;
+  outputTimestampEntry_ = NULL;
+  smTimingRequestCount_ = 0;
+  nominalTimingCycleNs_ = 0;
+  hasProcessDataInput_ = false;
+  hasProcessDataOutput_ = false;
+  memset(&inputTimingAsynData_, 0, sizeof(inputTimingAsynData_));
+  memset(&outputTimingAsynData_, 0, sizeof(outputTimingAsynData_));
+  timingAsynDirty_ = true;
+  for (size_t i = 0; i < sizeof(smTimingRequests_) / sizeof(smTimingRequests_[0]); ++i) {
+    smTimingRequests_[i] = {NULL, NULL, NULL, 0, false, false};
+  }
   for (int i = 0; i < EC_MAX_SYNC_MANAGERS; i++) {
     syncManagerArray_[i] = NULL;
   }
@@ -157,6 +175,10 @@ ecmcEcSlave::~ecmcEcSlave() {
   for (int i = 0; i < asyncSDOCounter_; i++) {
     delete asyncSDOvector_[i];
   }
+  for (size_t i = 0; i < timingAsynParams_.size(); ++i) {
+    delete timingAsynParams_[i];
+  }
+  timingAsynParams_.clear();
 }
 
 int ecmcEcSlave::getEntryCount() {
@@ -574,6 +596,7 @@ int ecmcEcSlave::updateInputProcessImage() {
   for (int i = 0; i < asyncSdoCount; i++) {
     asyncSDOvector_[i]->execute();
   }
+  executeSmTimingDiscovery();
 
   return 0;
 }
@@ -742,7 +765,456 @@ int ecmcEcSlave::configDC(
                        sync0Shift,
                        sync1Cycle,
                        sync1Shift);
+  dcConfig_.configured = true;
+  dcConfig_.assignActivate = assignActivate;
+  dcConfig_.sync0CycleNs = sync0Cycle;
+  dcConfig_.sync0ShiftNs = sync0Shift;
+  dcConfig_.sync1OffsetNs = sync1Cycle;
+  dcConfig_.sync1ShiftNs = sync1Shift;
+  timingAsynDirty_ = true;
   return 0;
+}
+
+const ecmcEcDcConfig& ecmcEcSlave::getDcConfig() const {
+  return dcConfig_;
+}
+
+void ecmcEcSlave::setNominalTimingCycleNs(uint32_t cycleTimeNs) {
+  nominalTimingCycleNs_ = cycleTimeNs;
+  timingAsynDirty_ = true;
+}
+
+void ecmcEcSlave::prepareSmTimingValue(uint16_t objectIndex,
+                                       uint8_t subIndex,
+                                       uint8_t byteSize,
+                                       ecmcEcSmTiming *timing,
+                                       ecmcEcSmTimingValue *value) {
+  if (!value || !timing || !slaveConfig_ ||
+      smTimingRequestCount_ >= sizeof(smTimingRequests_) /
+                               sizeof(smTimingRequests_[0])) {
+    return;
+  }
+  smTimingRequest& item = smTimingRequests_[smTimingRequestCount_++];
+  item.request = ecrt_slave_config_create_sdo_request(slaveConfig_,
+                                                       objectIndex,
+                                                       subIndex,
+                                                       byteSize);
+  item.value = value;
+  item.timing = timing;
+  item.byteSize = byteSize;
+  if (!item.request) {
+    item.finished = true;
+    timingAsynDirty_ = true;
+    value->requestError = ERROR_EC_SLAVE_SDO_ASYNC_CREATE_FAIL;
+  } else {
+    ecrt_sdo_request_timeout(item.request, DEFAULT_SDO_ASYNC_TIMOUT_MS);
+  }
+}
+
+void ecmcEcSlave::prepareSmTiming(uint16_t objectIndex,
+                                  ecmcEcSmTiming *timing) {
+  if (!timing) {
+    return;
+  }
+  *timing = ecmcEcSmTiming(objectIndex);
+  timing->discoveryAttempted = true;
+  prepareSmTimingValue(objectIndex, 0x01, 2, timing, &timing->syncType);
+  prepareSmTimingValue(objectIndex, 0x02, 4, timing, &timing->cycleTimeNs);
+  prepareSmTimingValue(objectIndex, 0x03, 4, timing, &timing->shiftTimeNs);
+  prepareSmTimingValue(objectIndex, 0x04, 2, timing,
+                       &timing->syncTypesSupported);
+  prepareSmTimingValue(objectIndex, 0x05, 4, timing,
+                       &timing->minimumCycleTimeNs);
+  prepareSmTimingValue(objectIndex, 0x06, 4, timing,
+                       &timing->calculationCopyTimeNs);
+  prepareSmTimingValue(objectIndex, 0x07, 4, timing,
+                       &timing->minimumDelayTimeNs);
+  prepareSmTimingValue(objectIndex, 0x08, 2, timing, &timing->command);
+  prepareSmTimingValue(objectIndex, 0x09, 4, timing,
+                       &timing->maximumDelayTimeNs);
+  prepareSmTimingValue(objectIndex, 0x20, 1, timing,
+                       &timing->synchronizationError);
+}
+
+void ecmcEcSlave::discoverSmTiming() {
+  if (simSlave_ || smTimingRequestCount_ != 0) {
+    return;
+  }
+  for (uint32_t i = 0; i < entryCounter_; ++i) {
+    if (!entryList_[i] || entryList_[i]->getSimEntry()) {
+      continue;
+    }
+    hasProcessDataInput_ |= entryList_[i]->getDirection() == EC_DIR_INPUT;
+    hasProcessDataOutput_ |= entryList_[i]->getDirection() == EC_DIR_OUTPUT;
+  }
+  // Non-DC endpoints are still usable against the receive/application cycle
+  // anchors, but have no DC SyncManager schedule to discover.
+  if (!dcConfig_.configured) {
+    resolveEndpointTiming(outputSmTiming_, outputTimingOverride_,
+                          outputTimestampConfig_, EC_DIR_OUTPUT,
+                          &outputTiming_);
+    resolveEndpointTiming(inputSmTiming_, inputTimingOverride_,
+                          inputTimestampConfig_, EC_DIR_INPUT, &inputTiming_);
+    return;
+  }
+  // Only request timing objects for process-data directions actually used by
+  // this slave. For example, an EL5042 has no output SyncManager timing.
+  if (hasProcessDataOutput_) {
+    prepareSmTiming(ECMC_EC_SM_OUTPUT_TIMING_INDEX, &outputSmTiming_);
+  }
+  if (hasProcessDataInput_) {
+    prepareSmTiming(ECMC_EC_SM_INPUT_TIMING_INDEX, &inputSmTiming_);
+  }
+
+  // Publish the configured DC state and the correct direction-specific cycle
+  // references immediately. SDO discovery will refine these values after OP.
+  resolveEndpointTiming(outputSmTiming_, outputTimingOverride_,
+                        outputTimestampConfig_, EC_DIR_OUTPUT, &outputTiming_);
+  resolveEndpointTiming(inputSmTiming_, inputTimingOverride_,
+                        inputTimestampConfig_, EC_DIR_INPUT, &inputTiming_);
+  timingAsynDirty_ = true;
+}
+
+void ecmcEcSlave::executeSmTimingDiscovery() {
+  if (smTimingRequestCount_ == 0) {
+    return;
+  }
+
+  bool allFinished = true;
+  for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
+    allFinished &= smTimingRequests_[i].finished;
+  }
+  if (allFinished) {
+    return;
+  }
+
+  // Requests are prepared before master activation but must not be triggered
+  // until the configured slave has reached OP. Query the state directly here:
+  // slaveState_ is maintained by optional diagnostics and remains zero when
+  // diagnostics are disabled.
+  ec_slave_config_state_t timingState;
+  memset(&timingState, 0, sizeof(timingState));
+  ecrt_slave_config_state(slaveConfig_, &timingState);
+  if (!timingState.operational) {
+    return;
+  }
+
+  // Serialize mailbox traffic. Some slaves reject or starve a burst of SDO
+  // requests, and timing discovery is a one-shot startup operation.
+  for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
+    smTimingRequest& item = smTimingRequests_[i];
+    if (item.finished || !item.request) {
+      continue;
+    }
+    if (!item.started) {
+      ecrt_sdo_request_read(item.request);
+      item.started = true;
+      return;
+    }
+    const ec_request_state_t state = ecrt_sdo_request_state(item.request);
+    if (state == EC_REQUEST_BUSY || state == EC_REQUEST_UNUSED) {
+      return;
+    }
+    item.finished = true;
+    if (state == EC_REQUEST_SUCCESS) {
+      const uint8_t *data = ecrt_sdo_request_data(item.request);
+      item.value->value = 0;
+      for (uint8_t byte = 0; byte < item.byteSize; ++byte) {
+        item.value->value |= static_cast<uint32_t>(data[byte]) << (8u * byte);
+      }
+      item.value->byteSize = item.byteSize;
+      item.value->available = true;
+    } else {
+      item.value->requestError = ERROR_EC_SDO_ASYNC_ERROR;
+    }
+    timingAsynDirty_ = true;
+    // Start or inspect at most one request per cycle.
+    break;
+  }
+
+  outputSmTiming_.discoveryComplete = outputSmTiming_.discoveryAttempted;
+  inputSmTiming_.discoveryComplete = inputSmTiming_.discoveryAttempted;
+  for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
+    if (!smTimingRequests_[i].finished) {
+      smTimingRequests_[i].timing->discoveryComplete = false;
+    }
+  }
+  resolveEndpointTiming(outputSmTiming_, outputTimingOverride_,
+                        outputTimestampConfig_, EC_DIR_OUTPUT, &outputTiming_);
+  resolveEndpointTiming(inputSmTiming_, inputTimingOverride_,
+                        inputTimestampConfig_, EC_DIR_INPUT, &inputTiming_);
+}
+
+const ecmcEcSmTiming& ecmcEcSlave::getInputSmTiming() const {
+  return inputSmTiming_;
+}
+
+const ecmcEcSmTiming& ecmcEcSlave::getOutputSmTiming() const {
+  return outputSmTiming_;
+}
+
+int ecmcEcSlave::setTimingOverride(ec_direction_t direction,
+                                   int32_t cycleOffset,
+                                   int32_t eventOffsetNs,
+                                   uint32_t uncertaintyNs) {
+  ecmcEcTimingOverride *timingOverride = NULL;
+  ecmcEcEndpointTiming *endpoint = NULL;
+  const ecmcEcSmTiming *smTiming = NULL;
+  if (direction == EC_DIR_INPUT) {
+    timingOverride = &inputTimingOverride_;
+    endpoint = &inputTiming_;
+    smTiming = &inputSmTiming_;
+  } else if (direction == EC_DIR_OUTPUT) {
+    timingOverride = &outputTimingOverride_;
+    endpoint = &outputTiming_;
+    smTiming = &outputSmTiming_;
+  } else {
+    return ERROR_EC_SLAVE_ENTRY_INFO_STRUCT_NULL;
+  }
+  timingOverride->configured = true;
+  timingOverride->cycleOffset = cycleOffset;
+  timingOverride->eventOffsetNs = eventOffsetNs;
+  timingOverride->uncertaintyNs = uncertaintyNs;
+  const ecmcEcTimestampConfig& timestampConfig =
+    direction == EC_DIR_INPUT ? inputTimestampConfig_ : outputTimestampConfig_;
+  resolveEndpointTiming(*smTiming, *timingOverride, timestampConfig, direction,
+                        endpoint);
+  timingAsynDirty_ = true;
+  return 0;
+}
+
+int ecmcEcSlave::linkTimingTimestamp(ec_direction_t direction,
+                                     const std::string& entryId,
+                                     uint8_t bits,
+                                     int32_t correctionNs) {
+  if ((direction != EC_DIR_INPUT && direction != EC_DIR_OUTPUT) ||
+      (bits != 32 && bits != 64)) {
+    return ERROR_EC_SLAVE_ENTRY_INFO_STRUCT_NULL;
+  }
+  ecmcEcEntry *entry = findEntry(entryId);
+  if (!entry || entry->getDirection() != EC_DIR_INPUT) {
+    return ERROR_EC_SLAVE_ENTRY_INFO_STRUCT_NULL;
+  }
+  ecmcEcTimestampConfig *config = direction == EC_DIR_INPUT ?
+    &inputTimestampConfig_ : &outputTimestampConfig_;
+  ecmcEcEntry **timestampEntry = direction == EC_DIR_INPUT ?
+    &inputTimestampEntry_ : &outputTimestampEntry_;
+  config->configured = true;
+  config->bits = bits;
+  config->correctionNs = correctionNs;
+  *timestampEntry = entry;
+  resolveEndpointTiming(direction == EC_DIR_INPUT ? inputSmTiming_ :
+                        outputSmTiming_,
+                        direction == EC_DIR_INPUT ? inputTimingOverride_ :
+                        outputTimingOverride_, *config,
+                        direction,
+                        direction == EC_DIR_INPUT ? &inputTiming_ :
+                        &outputTiming_);
+  timingAsynDirty_ = true;
+  return 0;
+}
+
+bool ecmcEcSlave::readTimingTimestamp(ec_direction_t direction,
+                                      uint64_t nearbyDcTimeNs,
+                                      uint64_t *eventTimeNs) const {
+  if (!eventTimeNs) {
+    return false;
+  }
+  const ecmcEcTimestampConfig& config = direction == EC_DIR_INPUT ?
+    inputTimestampConfig_ : outputTimestampConfig_;
+  ecmcEcEntry *entry = direction == EC_DIR_INPUT ? inputTimestampEntry_ :
+                                                    outputTimestampEntry_;
+  if ((direction != EC_DIR_INPUT && direction != EC_DIR_OUTPUT) ||
+      !config.configured || !entry) {
+    return false;
+  }
+  uint64_t raw = 0;
+  if (entry->readValue(&raw)) {
+    return false;
+  }
+  uint64_t timestamp = config.bits == 32 ?
+    ecmcEcExtendDcTimestamp32(static_cast<uint32_t>(raw), nearbyDcTimeNs) : raw;
+  if (config.correctionNs < 0) {
+    const uint64_t correction =
+      static_cast<uint64_t>(-static_cast<int64_t>(config.correctionNs));
+    if (correction > timestamp) {
+      return false;
+    }
+    timestamp -= correction;
+  } else {
+    if (timestamp > std::numeric_limits<uint64_t>::max() -
+                    static_cast<uint32_t>(config.correctionNs)) {
+      return false;
+    }
+    timestamp += static_cast<uint32_t>(config.correctionNs);
+  }
+  *eventTimeNs = timestamp;
+  return true;
+}
+
+void ecmcEcSlave::resolveEndpointTiming(
+  const ecmcEcSmTiming& smTiming,
+  const ecmcEcTimingOverride& timingOverride,
+  const ecmcEcTimestampConfig& timestampConfig,
+  ec_direction_t direction,
+  ecmcEcEndpointTiming *endpoint) {
+  if (!endpoint) {
+    return;
+  }
+  *endpoint = ecmcEcEndpointTiming();
+  endpoint->reference = direction == EC_DIR_OUTPUT ?
+    ecmcEcTimingReference::APPLICATION : ecmcEcTimingReference::RECEIVE;
+  endpoint->uncertaintyNs = smTiming.cycleTimeNs.available ?
+    smTiming.cycleTimeNs.value : (dcConfig_.sync0CycleNs ?
+    dcConfig_.sync0CycleNs : nominalTimingCycleNs_);
+  endpoint->valid = direction == EC_DIR_OUTPUT ? hasProcessDataOutput_ :
+                                                 hasProcessDataInput_;
+  if (!dcConfig_.configured) {
+    endpoint->source = ecmcEcTimingSource::CYCLE_ONLY;
+    endpoint->cycleOffsetKnown = true;
+    endpoint->eventOffsetKnown = true;
+  }
+
+  if (smTiming.calculationCopyTimeNs.available) {
+    endpoint->calculationCopyTimeAvailable = true;
+    endpoint->calculationCopyTimeNs = smTiming.calculationCopyTimeNs.value;
+  }
+
+  // ETG SyncManager synchronization types: 2=DC SYNC0, 3=DC SYNC1.
+  // Free-run and SM-event endpoints remain cycle-only because they have no
+  // phase that can be related generically to the common DC clock.
+  if (dcConfig_.configured && smTiming.syncType.available) {
+    if (smTiming.syncType.value == 2) {
+      endpoint->source = ecmcEcTimingSource::SYNC0_DERIVED;
+      endpoint->reference = ecmcEcTimingReference::SYNC;
+      endpoint->valid = true;
+    } else if (smTiming.syncType.value == 3) {
+      endpoint->source = ecmcEcTimingSource::SYNC1_DERIVED;
+      endpoint->reference = ecmcEcTimingReference::SYNC;
+      endpoint->valid = true;
+    }
+  } else if (smTiming.syncType.available) {
+    endpoint->source = ecmcEcTimingSource::CYCLE_ONLY;
+    endpoint->valid = true;
+  }
+
+  if (smTiming.shiftTimeNs.available) {
+    endpoint->eventOffsetNs =
+      static_cast<int32_t>(smTiming.shiftTimeNs.value);
+    endpoint->eventOffsetKnown = true;
+  }
+
+  if (timingOverride.configured) {
+    endpoint->valid = true;
+    endpoint->cycleOffset = timingOverride.cycleOffset;
+    endpoint->eventOffsetNs += timingOverride.eventOffsetNs;
+    endpoint->uncertaintyNs = timingOverride.uncertaintyNs;
+    endpoint->cycleOffsetKnown = true;
+    endpoint->eventOffsetKnown = true;
+    endpoint->overrideApplied = true;
+  }
+  if (timestampConfig.configured) {
+    endpoint->source = ecmcEcTimingSource::HARDWARE_TIMESTAMP;
+    endpoint->valid = true;
+    endpoint->timestampLinked = true;
+    endpoint->timestampBits = timestampConfig.bits;
+    endpoint->timestampCorrectionNs = timestampConfig.correctionNs;
+  }
+}
+
+const ecmcEcEndpointTiming& ecmcEcSlave::getInputTiming() const {
+  return inputTiming_;
+}
+
+const ecmcEcEndpointTiming& ecmcEcSlave::getOutputTiming() const {
+  return outputTiming_;
+}
+
+void ecmcEcSlave::printSmTiming(const char *name,
+                                const ecmcEcSmTiming& timing) const {
+  printf("# DC %s timing object 0x%04x%s\n",
+         name,
+         timing.objectIndex,
+         !timing.discoveryAttempted ? " (not requested)" :
+         (timing.discoveryComplete ? "" : " (pending)"));
+  if (!timing.discoveryAttempted) {
+    return;
+  }
+
+  const uint8_t subIndices[] = {
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x20
+  };
+  const char *labels[] = {
+    "syncType", "cycleTimeNs", "shiftTimeNs", "syncTypesSupported",
+    "minimumCycleTimeNs", "calculationCopyTimeNs", "minimumDelayTimeNs",
+    "command", "maximumDelayTimeNs", "synchronizationError"
+  };
+  const ecmcEcSmTimingValue *values[] = {
+    &timing.syncType, &timing.cycleTimeNs, &timing.shiftTimeNs,
+    &timing.syncTypesSupported, &timing.minimumCycleTimeNs,
+    &timing.calculationCopyTimeNs, &timing.minimumDelayTimeNs,
+    &timing.command, &timing.maximumDelayTimeNs,
+    &timing.synchronizationError
+  };
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+    if (values[i]->available) {
+      printf("#   0x%04x:%02x %-23s = %u (0x%x, %u bytes)\n",
+             timing.objectIndex, subIndices[i], labels[i], values[i]->value,
+             values[i]->value, values[i]->byteSize);
+    } else {
+      printf("#   0x%04x:%02x %-23s = unavailable"
+             " (request=%d, abort=0x%x)\n",
+             timing.objectIndex, subIndices[i], labels[i],
+             values[i]->requestError, values[i]->abortCode);
+    }
+  }
+}
+
+void ecmcEcSlave::printDcTiming() const {
+  printf("# DC configured=%d assignActivate=0x%x sync0CycleNs=%u "
+         "sync0ShiftNs=%d sync1OffsetNs=%u sync1ShiftNs=%d\n",
+         dcConfig_.configured, dcConfig_.assignActivate,
+         dcConfig_.sync0CycleNs, dcConfig_.sync0ShiftNs,
+         dcConfig_.sync1OffsetNs, dcConfig_.sync1ShiftNs);
+  printSmTiming("output", outputSmTiming_);
+  printSmTiming("input", inputSmTiming_);
+  printEndpointTiming("output", outputTiming_);
+  printEndpointTiming("input", inputTiming_);
+}
+
+void ecmcEcSlave::printEndpointTiming(
+  const char *name,
+  const ecmcEcEndpointTiming& timing) const {
+  const char *source = "cycle-only";
+  if (timing.source == ecmcEcTimingSource::SYNC0_DERIVED) {
+    source = "SYNC0";
+  } else if (timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
+    source = "SYNC1";
+  } else if (timing.source == ecmcEcTimingSource::HARDWARE_TIMESTAMP) {
+    source = "timestamp";
+  }
+  const char *reference = "receive";
+  if (timing.reference == ecmcEcTimingReference::APPLICATION) {
+    reference = "application";
+  } else if (timing.reference == ecmcEcTimingReference::SYNC) {
+    reference = "SYNC";
+  }
+  printf("# Resolved %s timing: valid=%d source=%s reference=%s "
+         "cycleOffset=%d%s "
+         "eventOffsetNs=%d%s uncertaintyNs=%u override=%d",
+         name, timing.valid, source, reference, timing.cycleOffset,
+         timing.cycleOffsetKnown ? "" : " (unknown)", timing.eventOffsetNs,
+         timing.eventOffsetKnown ? "" : " (unknown)", timing.uncertaintyNs,
+         timing.overrideApplied);
+  if (timing.timestampLinked) {
+    printf(" timestampBits=%u timestampCorrectionNs=%d",
+           timing.timestampBits, timing.timestampCorrectionNs);
+  }
+  if (timing.calculationCopyTimeAvailable) {
+    printf(" calculationCopyTimeNs=%u (reported, not automatically additive)",
+           timing.calculationCopyTimeNs);
+  }
+  printf("\n");
 }
 
 ecmcEcEntry * ecmcEcSlave::findEntry(std::string id) {
@@ -978,9 +1450,129 @@ int ecmcEcSlave::initAsyn() {
   paramTemp->addSupportedAsynType(asynParamInt32);
   paramTemp->addSupportedAsynType(asynParamUInt32Digital);
   slaveAsynParams_[ECMC_ASYN_EC_SLAVE_PAR_STATUS_ID] = paramTemp;
+
+  struct timingRegistration {
+    const char *field;
+    size_t offset;
+    asynParamType asynType;
+    size_t size;
+    ecmcEcDataType dataType;
+  } registrations[] = {
+    {"status", offsetof(timingAsynData, status), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"source", offsetof(timingAsynData, source), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"reference", offsetof(timingAsynData, reference), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"syncType", offsetof(timingAsynData, syncType), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"cycleOffset", offsetof(timingAsynData, cycleOffset), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"timestampBits", offsetof(timingAsynData, timestampBits), asynParamInt32,
+     sizeof(int32_t), ECMC_EC_S32},
+    {"cycleTimeNs", offsetof(timingAsynData, cycleTimeNs), asynParamInt64,
+     sizeof(int64_t), ECMC_EC_S64},
+    {"shiftTimeNs", offsetof(timingAsynData, shiftTimeNs), asynParamInt64,
+     sizeof(int64_t), ECMC_EC_S64},
+    {"calculationCopyTimeNs", offsetof(timingAsynData, calculationCopyTimeNs),
+     asynParamInt64, sizeof(int64_t), ECMC_EC_S64},
+    {"eventOffsetNs", offsetof(timingAsynData, eventOffsetNs), asynParamInt64,
+     sizeof(int64_t), ECMC_EC_S64},
+    {"uncertaintyNs", offsetof(timingAsynData, uncertaintyNs), asynParamInt64,
+     sizeof(int64_t), ECMC_EC_S64},
+    {"timestampCorrectionNs", offsetof(timingAsynData, timestampCorrectionNs),
+     asynParamInt64, sizeof(int64_t), ECMC_EC_S64}
+  };
+  const char *directions[] = {"input", "output"};
+  timingAsynData *data[] = {&inputTimingAsynData_, &outputTimingAsynData_};
+  for (size_t direction = 0; direction < 2; ++direction) {
+    for (size_t item = 0; item < sizeof(registrations) /
+                                      sizeof(registrations[0]); ++item) {
+      int error = addTimingAsynParam(
+        directions[direction], registrations[item].field,
+        registrations[item].asynType,
+        reinterpret_cast<uint8_t *>(data[direction]) +
+          registrations[item].offset,
+        registrations[item].size, registrations[item].dataType);
+      if (error) {
+        return error;
+      }
+    }
+  }
   asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
                                       ECMC_ASYN_DEFAULT_ADDR);
   return 0;
+}
+
+int ecmcEcSlave::addTimingAsynParam(const char *direction,
+                                    const char *field,
+                                    asynParamType asynType,
+                                    uint8_t *data,
+                                    size_t dataSize,
+                                    ecmcEcDataType dataType) {
+  char name[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  const int count = snprintf(name, sizeof(name), "ec%d.s%d.timing.%s.%s",
+                             masterId_, slavePosition_, direction, field);
+  if (count < 0 || static_cast<size_t>(count) >= sizeof(name)) {
+    return ERROR_EC_SLAVE_REG_ASYN_PAR_BUFFER_OVERFLOW;
+  }
+  ecmcAsynDataItem *param = asynPortDriver_->addNewAvailParam(
+    name, asynType, data, dataSize, dataType, 0);
+  if (!param) {
+    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  }
+  param->setAllowWriteToEcmc(false);
+  param->refreshParam(1);
+  timingAsynParams_.push_back(param);
+  return 0;
+}
+
+void ecmcEcSlave::updateTimingAsynData() {
+  const ecmcEcEndpointTiming *endpoint[] = {&inputTiming_, &outputTiming_};
+  const ecmcEcSmTiming *sm[] = {&inputSmTiming_, &outputSmTiming_};
+  timingAsynData *data[] = {&inputTimingAsynData_, &outputTimingAsynData_};
+  for (size_t i = 0; i < 2; ++i) {
+    uint32_t status = 0;
+    status |= endpoint[i]->valid ? 1u << 0 : 0;
+    status |= dcConfig_.configured ? 1u << 1 : 0;
+    status |= sm[i]->discoveryComplete ? 1u << 2 : 0;
+    status |= endpoint[i]->overrideApplied ? 1u << 3 : 0;
+    status |= endpoint[i]->timestampLinked ? 1u << 4 : 0;
+    status |= endpoint[i]->calculationCopyTimeAvailable ? 1u << 5 : 0;
+    status |= endpoint[i]->cycleOffsetKnown ? 1u << 6 : 0;
+    status |= endpoint[i]->eventOffsetKnown ? 1u << 7 : 0;
+    data[i]->status = static_cast<int32_t>(status);
+    data[i]->source = static_cast<int32_t>(endpoint[i]->source);
+    data[i]->reference = static_cast<int32_t>(endpoint[i]->reference);
+    data[i]->syncType = sm[i]->syncType.available ?
+      static_cast<int32_t>(sm[i]->syncType.value) : -1;
+    data[i]->cycleOffset = endpoint[i]->cycleOffset;
+    data[i]->timestampBits = endpoint[i]->timestampBits;
+    data[i]->cycleTimeNs = sm[i]->cycleTimeNs.available ?
+      sm[i]->cycleTimeNs.value : (dcConfig_.sync0CycleNs ?
+      dcConfig_.sync0CycleNs : nominalTimingCycleNs_);
+    data[i]->shiftTimeNs = sm[i]->shiftTimeNs.available ?
+      static_cast<int32_t>(sm[i]->shiftTimeNs.value) : 0;
+    data[i]->calculationCopyTimeNs =
+      endpoint[i]->calculationCopyTimeAvailable ?
+      endpoint[i]->calculationCopyTimeNs : 0;
+    data[i]->eventOffsetNs = endpoint[i]->eventOffsetNs;
+    data[i]->uncertaintyNs = endpoint[i]->uncertaintyNs;
+    data[i]->timestampCorrectionNs = endpoint[i]->timestampCorrectionNs;
+  }
+}
+
+void ecmcEcSlave::refreshTimingAsyn() {
+  if (!timingAsynDirty_) {
+    return;
+  }
+  updateTimingAsynData();
+  for (size_t i = 0; i < timingAsynParams_.size(); ++i) {
+    timingAsynParams_[i]->refreshParam(1);
+  }
+  asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
+                                      ECMC_ASYN_DEFAULT_ADDR);
+  timingAsynDirty_ = false;
 }
 
 int ecmcEcSlave::validate() {

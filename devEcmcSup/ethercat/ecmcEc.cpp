@@ -23,6 +23,7 @@
 
 extern app_mode_type appModeStat;
 extern double mcuFrequency;
+extern double mcuPeriod;
 
 static int validateLocalEcEntryAliasId(const std::string& id) {
   if ((id.rfind(ECMC_EC_STR, 0) == 0) && (id.find(".s") != std::string::npos)) {
@@ -306,6 +307,22 @@ int ecmcEc::activate() {
                              __FILE__,
                              __FUNCTION__,
                              __LINE__);
+
+  // DC configuration is immutable in runtime. Cache the master-level summary
+  // once instead of inspecting every slave in the cyclic send path.
+  cycleTiming_.dcConfigured = false;
+  cycleTiming_.nominalPeriodNs = mcuPeriod > 0.0 ?
+                                  static_cast<uint64_t>(mcuPeriod) : 0u;
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (slaveArray_[i]) {
+      slaveArray_[i]->setNominalTimingCycleNs(
+        static_cast<uint32_t>(cycleTiming_.nominalPeriodNs));
+      if (slaveArray_[i]->getDcConfig().configured) {
+        cycleTiming_.dcConfigured = true;
+      }
+      slaveArray_[i]->discoverSmTiming();
+    }
+  }
 
   if (ecrt_master_activate(master_)) {
     ecmcRtLoggerLogError("%s/%s:%d: ERROR: ecrt_master_activate() failed (0x%x).\n",
@@ -597,6 +614,8 @@ bool ecmcEc::checkState(void) {
 
 void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
   lastReceiveTimeNs_ = TIMESPEC2NS(timespecAdd(receiveTime, timeOffset));
+  cycleTiming_.sequence++;
+  cycleTiming_.receiveTimeNs = lastReceiveTimeNs_;
 
   ecrt_master_receive(master_);
 
@@ -632,6 +651,8 @@ void ecmcEc::send(timespec timeOffset) {
   }
 
   lastSendTimeNs_ = TIMESPEC2NS(timeAbs_);
+  cycleTiming_.applicationTimeNs = lastSendTimeNs_;
+  cycleTiming_.domainsValid = domainsOK_ != 0;
   ecrt_master_application_time(master_, TIMESPEC2NS(timeAbs_));
   ecrt_master_sync_reference_clock(master_);
   ecrt_master_sync_slave_clocks(master_);
@@ -1329,6 +1350,11 @@ void ecmcEc::slowExecute() {
   for (int i = 0; i < domainCount; i++ ) {
     domains_[i]->slowExecute();
   }
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (slaveArray_[i]) {
+      slaveArray_[i]->refreshTimingAsyn();
+    }
+  }
 }
 
 int ecmcEc::reset() {
@@ -1997,6 +2023,12 @@ int ecmcEc::printSlaveConfig(int slaveIndex) {
   printf("#   serial number = %d \n",  slaveInfo.serial_number);
   printf("#############################################\n");
 
+  ecmcEcSlave *configuredSlave = findSlave(slaveInfo.position);
+  if (configuredSlave) {
+    configuredSlave->printDcTiming();
+    printf("#############################################\n");
+  }
+
   // Sync manager loop
   syncManCount = slaveInfo.sync_count;
 
@@ -2353,6 +2385,10 @@ uint64_t ecmcEc::getLastReceiveTimeNs() {
 
 uint64_t ecmcEc::getLastSendTimeNs() {
   return lastSendTimeNs_;
+}
+
+const ecmcEcCycleTiming& ecmcEc::getCycleTiming() const {
+  return cycleTiming_;
 }
 
 uint32_t ecmcEc::getSlaveVendorId(uint16_t alias,  /**< Slave alias. */

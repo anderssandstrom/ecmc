@@ -2376,6 +2376,36 @@ static int handleCfgCommand(const char *myarg_1) {
                            iValue6);
   }
 
+  /* Cfg.EcSetSlaveTimingOverride(slave_position, direction,
+     cycle_offset, event_offset_ns, uncertainty_ns)
+     direction: 1=output, 2=input */
+  nvals = sscanf(myarg_1,
+                 "EcSetSlaveTimingOverride(%d,%d,%d,%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3,
+                 &iValue4,
+                 &iValue5);
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcSetSlaveTimingOverride");
+    return ecSetSlaveTimingOverride(iValue, iValue2, iValue3, iValue4,
+                                    iValue5);
+  }
+
+  /* Link a 32/64-bit DC timestamp PDO to an input or output endpoint. */
+  nvals = sscanf(myarg_1,
+                 "EcLinkSlaveTimingTimestamp(%d,%d,%[^,],%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 cIdBuffer,
+                 &iValue3,
+                 &iValue4);
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcLinkSlaveTimingTimestamp");
+    return ecLinkSlaveTimingTimestamp(iValue, iValue2, cIdBuffer, iValue3,
+                                      iValue4);
+  }
+
   /*Cfg.EcSelectReferenceDC(
       int master_index,
       int slave_bus_position)
@@ -6457,6 +6487,12 @@ parse_getaxisdrv:
 
   if (nvals == 1) {
     SEND_OK_OR_ERROR_AND_RETURN(ecPrintSlaveConfig(iValue));
+  }
+
+  nvals = sscanf(myarg_1, "EcPrintControlTiming(%d,%d)=", &iValue, &iValue2);
+
+  if (nvals == 2) {
+    SEND_OK_OR_ERROR_AND_RETURN(ecPrintControlTiming(iValue, iValue2));
   }
 
   /* if we come here, we do not understand the command */

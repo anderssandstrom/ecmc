@@ -30,6 +30,7 @@
 #include "ecmcEcAsyncSDO.h"
 #include "ecmcEcDomain.h"
 #include "ecmcEcData.h"
+#include "ecmcEcTiming.h"
 
 // ECSLAVE ERRORS
 #define ERROR_EC_SLAVE_CONFIG_FAILED 0x24000
@@ -133,6 +134,26 @@ public:
 
     // SYNC1 shift time [ns].
     int32_t sync1Shift);
+  const ecmcEcDcConfig& getDcConfig() const;
+  void setNominalTimingCycleNs(uint32_t cycleTimeNs);
+  void discoverSmTiming();
+  const ecmcEcSmTiming& getInputSmTiming() const;
+  const ecmcEcSmTiming& getOutputSmTiming() const;
+  int setTimingOverride(ec_direction_t direction,
+                        int32_t cycleOffset,
+                        int32_t eventOffsetNs,
+                        uint32_t uncertaintyNs);
+  int linkTimingTimestamp(ec_direction_t direction,
+                          const std::string& entryId,
+                          uint8_t bits,
+                          int32_t correctionNs);
+  bool readTimingTimestamp(ec_direction_t direction,
+                           uint64_t nearbyDcTimeNs,
+                           uint64_t *eventTimeNs) const;
+  const ecmcEcEndpointTiming& getInputTiming() const;
+  const ecmcEcEndpointTiming& getOutputTiming() const;
+  void refreshTimingAsyn();
+  void printDcTiming() const;
   ecmcEcEntry* findEntry(std::string id);
   int          findEntryIndex(std::string id);
   int          addEntryAlias(std::string entryId,
@@ -199,6 +220,36 @@ private:
   int                appendEntryToList(ecmcEcEntry *entry,
                                        bool         useInRealTime);
   ecmcEcSyncManager* findSyncMan(uint8_t syncMangerIndex);
+  struct smTimingRequest {
+    ec_sdo_request_t *request;
+    ecmcEcSmTimingValue *value;
+    ecmcEcSmTiming *timing;
+    uint8_t byteSize;
+    bool started;
+    bool finished;
+  };
+  void prepareSmTiming(uint16_t objectIndex, ecmcEcSmTiming *timing);
+  void prepareSmTimingValue(uint16_t objectIndex,
+                            uint8_t subIndex,
+                            uint8_t byteSize,
+                            ecmcEcSmTiming *timing,
+                            ecmcEcSmTimingValue *value);
+  void executeSmTimingDiscovery();
+  void resolveEndpointTiming(const ecmcEcSmTiming& smTiming,
+                             const ecmcEcTimingOverride& timingOverride,
+                             const ecmcEcTimestampConfig& timestampConfig,
+                             ec_direction_t direction,
+                             ecmcEcEndpointTiming *endpoint);
+  void printSmTiming(const char *name, const ecmcEcSmTiming& timing) const;
+  void printEndpointTiming(const char *name,
+                           const ecmcEcEndpointTiming& timing) const;
+  int addTimingAsynParam(const char *direction,
+                         const char *field,
+                         asynParamType asynType,
+                         uint8_t *data,
+                         size_t dataSize,
+                         ecmcEcDataType dataType);
+  void updateTimingAsynData();
   ec_master_t *master_;     // EtherCAT master
   uint16_t alias_;          // Slave alias.
   int32_t slavePosition_;   // Slave position.
@@ -245,5 +296,37 @@ private:
   // Ensure important SDO settings like max current are set.
   std::vector<sdoVerifyChX> sdoChVerify_;
   bool enableSDOCheck_;
+  ecmcEcDcConfig dcConfig_;
+  ecmcEcSmTiming inputSmTiming_;
+  ecmcEcSmTiming outputSmTiming_;
+  ecmcEcTimingOverride inputTimingOverride_;
+  ecmcEcTimingOverride outputTimingOverride_;
+  ecmcEcTimestampConfig inputTimestampConfig_;
+  ecmcEcTimestampConfig outputTimestampConfig_;
+  ecmcEcEntry *inputTimestampEntry_;
+  ecmcEcEntry *outputTimestampEntry_;
+  ecmcEcEndpointTiming inputTiming_;
+  ecmcEcEndpointTiming outputTiming_;
+  smTimingRequest smTimingRequests_[20];
+  uint8_t smTimingRequestCount_;
+  uint32_t nominalTimingCycleNs_;
+  bool hasProcessDataInput_;
+  bool hasProcessDataOutput_;
+  struct timingAsynData {
+    int32_t status;
+    int32_t source;
+    int32_t reference;
+    int32_t syncType;
+    int32_t cycleOffset;
+    int32_t timestampBits;
+    int64_t cycleTimeNs;
+    int64_t shiftTimeNs;
+    int64_t calculationCopyTimeNs;
+    int64_t eventOffsetNs;
+    int64_t uncertaintyNs;
+    int64_t timestampCorrectionNs;
+  } inputTimingAsynData_, outputTimingAsynData_;
+  std::vector<ecmcAsynDataItem *> timingAsynParams_;
+  bool timingAsynDirty_;
 };
 #endif  /* ECMCECSLAVE_H_ */
