@@ -17,6 +17,7 @@
 #include "ecmcErrorsList.h"
 #include "ecmcGlobalsExtern.h"
 #include "ecmcOctetIF.h"
+#include "ecmcRtLogger.h"
 
 #include <algorithm>
 #include <cctype>
@@ -54,6 +55,7 @@ namespace {
 
 constexpr const char* kDriverName = "ecmcCppLogicLib";
 constexpr const char* kCppLogicGetApiSymbol = "ecmc_cpp_logic_get_api";
+constexpr const char* kAsynPortPrefix = "CPP.";
 constexpr const char* kDefaultAsynPortBase = "CPP.LOGIC";
 
 constexpr const char* kBuiltinControlWordName = "logic.ctrl.word";
@@ -347,6 +349,16 @@ std::vector<std::string> splitConfigTokens(const std::string& configText) {
   return tokens;
 }
 
+std::string normalizeAsynPortName(const std::string& portName) {
+  if (portName.empty()) {
+    return portName;
+  }
+  if (portName.compare(0u, std::strlen(kAsynPortPrefix), kAsynPortPrefix) == 0) {
+    return portName;
+  }
+  return std::string(kAsynPortPrefix) + portName;
+}
+
 bool parseConfigString(const char* configStr, CppLogicConfig* config, std::string* errorOut) {
   if (!config) {
     return false;
@@ -371,7 +383,7 @@ bool parseConfigString(const char* configStr, CppLogicConfig* config, std::strin
       const std::string value = trimCopy(token.substr(equals + 1u));
 
       if (key == "asyn_port") {
-        config->asynPortName = stripOptionalQuotes(value);
+        config->asynPortName = normalizeAsynPortName(stripOptionalQuotes(value));
       } else if (key == "sample_rate_ms") {
         if (value.empty()) {
           config->sampleRateMs = 0.0;
@@ -658,12 +670,16 @@ void publishCurrentDebugText(const char* message) {
     return;
   }
 
-  impl->debugText.assign(message ? message : "");
-  trimDebugText(&impl->debugText);
+  const char* debugMessage = message ? message : "";
+  impl->debugText.assign(debugMessage,
+                         strnlen(debugMessage, kBuiltinDebugTextMaxChars));
   if (!impl->debugText.empty()) {
-    LOGINFO("[ecmc cpp_logic %s] %s\n",
-            impl->logicName.empty() ? "logic" : impl->logicName.c_str(),
-            impl->debugText.c_str());
+    ecmcRtLoggerLogInfoSource(ECMC_RT_LOG_SOURCE_PLC,
+                              impl->index,
+                              "[ecmc cpp_logic %s] %s\n",
+                              impl->logicName.empty() ? "logic" :
+                                                        impl->logicName.c_str(),
+                              impl->debugText.c_str());
   }
 }
 
@@ -2083,6 +2099,8 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   applyRuntimeUpdateRateMs(impl_, impl_->config.updateRateMs, nullptr);
   impl_->loaded = true;
   impl_->enteredRt = false;
+  // Avoid allocation when publishDebugText() is called from the RT thread.
+  impl_->debugText.reserve(kBuiltinDebugTextMaxChars);
   impl_->debugText.clear();
   impl_->debugTextLastValue.clear();
   impl_->debugTextInitialized = false;

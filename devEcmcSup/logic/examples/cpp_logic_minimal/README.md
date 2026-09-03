@@ -20,8 +20,10 @@ preferably in IOC startup, through:
 
 ```iocsh
 iocshLoad("$(ecmccfg_DIR)loadCppLogic.cmd",
-          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=CPP.LOGIC0")
+          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=MY_PORT")
 ```
+
+This creates the asyn port `CPP.MY_PORT`.
 
 `ecmc` queries:
 

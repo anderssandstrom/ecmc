@@ -189,7 +189,7 @@ restore, instead of doing file I/O from the cyclic `run()` path.
 
 ```iocsh
 ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so)"
-ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2;update_rate_ms=20)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=MY_PORT;sample_rate_ms=2;update_rate_ms=20)"
 ```
 
 For normal IOC usage, the recommended entry point is the companion IOC shell
@@ -197,8 +197,12 @@ wrapper in `ecmccfg`:
 
 ```iocsh
 iocshLoad("$(ecmccfg_DIR)loadCppLogic.cmd",
-          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=CPP.LOGIC0")
+          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=MY_PORT")
 ```
+
+`ASYN_PORT=MY_PORT` creates the asyn port `CPP.MY_PORT`. An already-prefixed
+value such as `ASYN_PORT=CPP.MY_PORT` is accepted unchanged. If `ASYN_PORT` is
+omitted or empty, the port remains `CPP.LOGIC<LOGIC_ID>`.
 
 That wrapper loads the built-in `cpp_logic` control/status PVs by default.
 Custom `epics.*` substitutions can be enabled separately with

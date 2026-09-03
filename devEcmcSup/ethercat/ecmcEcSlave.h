@@ -31,6 +31,7 @@
 #include "ecmcEcDomain.h"
 #include "ecmcEcData.h"
 #include "ecmcEcTiming.h"
+#include "ecmcRtLoggerPortDriver.h"
 
 // ECSLAVE ERRORS
 #define ERROR_EC_SLAVE_CONFIG_FAILED 0x24000
@@ -243,12 +244,6 @@ private:
   void printSmTiming(const char *name, const ecmcEcSmTiming& timing) const;
   void printEndpointTiming(const char *name,
                            const ecmcEcEndpointTiming& timing) const;
-  int addTimingAsynParam(const char *direction,
-                         const char *field,
-                         asynParamType asynType,
-                         uint8_t *data,
-                         size_t dataSize,
-                         ecmcEcDataType dataType);
   void updateTimingAsynData();
   ec_master_t *master_;     // EtherCAT master
   uint16_t alias_;          // Slave alias.
@@ -312,21 +307,8 @@ private:
   uint32_t nominalTimingCycleNs_;
   bool hasProcessDataInput_;
   bool hasProcessDataOutput_;
-  struct timingAsynData {
-    int32_t status;
-    int32_t source;
-    int32_t reference;
-    int32_t syncType;
-    int32_t cycleOffset;
-    int32_t timestampBits;
-    int64_t cycleTimeNs;
-    int64_t shiftTimeNs;
-    int64_t calculationCopyTimeNs;
-    int64_t eventOffsetNs;
-    int64_t uncertaintyNs;
-    int64_t timestampCorrectionNs;
-  } inputTimingAsynData_, outputTimingAsynData_;
-  std::vector<ecmcAsynDataItem *> timingAsynParams_;
+  ecmcEcTimingDiag inputTimingAsynData_;
+  ecmcEcTimingDiag outputTimingAsynData_;
   bool timingAsynDirty_;
 };
 #endif  /* ECMCECSLAVE_H_ */

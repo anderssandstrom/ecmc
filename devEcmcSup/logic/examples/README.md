@@ -65,15 +65,19 @@ C++ logic modules can now be loaded directly from `ecmc` with:
 
 ```iocsh
 ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so)"
-ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=CPP.LOGIC0;sample_rate_ms=2;update_rate_ms=20)"
+ecmcConfigOrDie "Cfg.LoadCppLogic(0,/path/to/cpp_logic.so,asyn_port=MY_PORT;sample_rate_ms=2;update_rate_ms=20)"
 ```
 
 For IOC startup scripts, the recommended wrapper is:
 
 ```iocsh
 iocshLoad("$(ecmccfg_DIR)loadCppLogic.cmd",
-          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=CPP.LOGIC0")
+          "LOGIC_ID=0,FILE=/path/to/cpp_logic.so,ASYN_PORT=MY_PORT")
 ```
+
+The short name above is exposed as `CPP.MY_PORT`; values already beginning
+with `CPP.` are not prefixed again. Omitting the macro uses
+`CPP.LOGIC<LOGIC_ID>`; an empty macro value has the same fallback.
 
 The built-in C++ logic control/status PVs load by default through that
 wrapper. Custom `epics.*` substitutions are optional and can be enabled with

@@ -12,6 +12,23 @@
 #ifndef ECMC_RT_LOGGER_PORT_DRIVER_H_
 #define ECMC_RT_LOGGER_PORT_DRIVER_H_
 
+#include <stdint.h>
+
+struct ecmcEcTimingDiag {
+  int32_t status;
+  int32_t source;
+  int32_t reference;
+  int32_t syncType;
+  int32_t cycleOffset;
+  int32_t timestampBits;
+  int64_t cycleTimeNs;
+  int64_t shiftTimeNs;
+  int64_t calculationCopyTimeNs;
+  int64_t eventOffsetNs;
+  int64_t uncertaintyNs;
+  int64_t timestampCorrectionNs;
+};
+
 int         ecmcRtLoggerPortDriverStart();
 void        ecmcRtLoggerPortDriverPublishMessage(int level,
                                                  int sourceType,
@@ -31,6 +48,9 @@ void        ecmcRtLoggerPortDriverSetAxisMotorRecordCommandResult(int axisIndex,
 void        ecmcRtLoggerPortDriverSetAxisMasterSlaveBlock(int axisIndex,
                                                           int blocked,
                                                           int cycleCounter);
+void        ecmcRtLoggerPortDriverSetEcTiming(int slavePosition,
+                                              int direction,
+                                              const ecmcEcTimingDiag *timing);
 int         ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex);
 int         ecmcRtLoggerPortDriverGetCountEnableCommands(int axisIndex);
 void        ecmcRtLoggerPortDriverService();

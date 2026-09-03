@@ -68,6 +68,30 @@ constexpr size_t ECMC_RT_LOGGER_DIAG_FILE_SIZE = 512;
 constexpr size_t ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE = 1024;
 constexpr size_t ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE = 160;
 constexpr size_t ECMC_RT_LOGGER_AXIS_MS_BLOCK_TEXT_SIZE = 160;
+constexpr int ECMC_EC_TIMING_DIRECTIONS = 2;
+constexpr int ECMC_EC_TIMING_FIELDS = 12;
+
+const char *ECMC_EC_TIMING_PARAM_NAMES[2][12] = {
+  {"timing.input.status", "timing.input.source", "timing.input.reference",
+   "timing.input.syncType", "timing.input.cycleOffset",
+   "timing.input.timestampBits", "timing.input.cycleTimeNs",
+   "timing.input.shiftTimeNs", "timing.input.calculationCopyTimeNs",
+   "timing.input.eventOffsetNs", "timing.input.uncertaintyNs",
+   "timing.input.timestampCorrectionNs"},
+  {"timing.output.status", "timing.output.source", "timing.output.reference",
+   "timing.output.syncType", "timing.output.cycleOffset",
+   "timing.output.timestampBits", "timing.output.cycleTimeNs",
+   "timing.output.shiftTimeNs", "timing.output.calculationCopyTimeNs",
+   "timing.output.eventOffsetNs", "timing.output.uncertaintyNs",
+   "timing.output.timestampCorrectionNs"}
+};
+
+struct atomicEcTimingDiag {
+  std::atomic<int64_t> value[ECMC_EC_TIMING_FIELDS];
+  std::atomic<unsigned int> version;
+};
+
+atomicEcTimingDiag ecTiming_[EC_MAX_SLAVES][ECMC_EC_TIMING_DIRECTIONS];
 
 std::atomic<unsigned int> axisCmdRequestCounts_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisCmdExecuteCounts_[ECMC_MAX_AXES];
@@ -97,9 +121,10 @@ class ecmcRtLoggerPortDriver : public asynPortDriver {
 public:
   explicit ecmcRtLoggerPortDriver(const char *portName)
     : asynPortDriver(portName,
-                     ECMC_MAX_AXES,
-                     asynInt32Mask | asynOctetMask | asynDrvUserMask,
-                     asynInt32Mask | asynOctetMask,
+                     std::max(ECMC_MAX_AXES, EC_MAX_SLAVES),
+                     asynInt32Mask | asynInt64Mask | asynOctetMask |
+                       asynDrvUserMask,
+                     asynInt32Mask | asynInt64Mask | asynOctetMask,
                      0,
                      1,
                      0,
@@ -250,6 +275,14 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_AXIS_MS_BLOCK_TEXT,
                         asynParamOctet,
                         &axisMsBlockTextParam_);
+    for (int direction = 0; direction < ECMC_EC_TIMING_DIRECTIONS;
+         ++direction) {
+      for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
+        createRequiredParam(ECMC_EC_TIMING_PARAM_NAMES[direction][field],
+                            field < 6 ? asynParamInt32 : asynParamInt64,
+                            &ecTimingParam_[direction][field]);
+      }
+    }
 
     setStringParam(lastMessageParam_, "");
     setIntegerParam(lastLevelParam_, ECMC_RT_LOGGER_PORT_LEVEL_INFO);
@@ -342,6 +375,12 @@ public:
       setIntegerParam(axisIndex, axisMsBlockCountParam_, 0);
       setIntegerParam(axisIndex, axisMsBlockCycleParam_, 0);
       setStringParam(axisIndex, axisMsBlockTextParam_, "master_slave none");
+    }
+    for (int slave = 0; slave < EC_MAX_SLAVES; ++slave) {
+      for (int direction = 0; direction < ECMC_EC_TIMING_DIRECTIONS;
+           ++direction) {
+        ecTimingVersionPublished_[slave][direction] = UINT_MAX;
+      }
     }
     callParamCallbacks();
   }
@@ -703,6 +742,7 @@ public:
   }
 
   void service() {
+    publishEcTiming();
     publishAxisCommandCounters();
 
     if (!diagDumpPending_.exchange(0, std::memory_order_acq_rel)) {
@@ -724,6 +764,41 @@ public:
   }
 
 private:
+  void publishEcTiming() {
+    for (int slave = 0; slave < EC_MAX_SLAVES; ++slave) {
+      for (int direction = 0; direction < ECMC_EC_TIMING_DIRECTIONS;
+           ++direction) {
+        const unsigned int versionStart =
+          ecTiming_[slave][direction].version.load(std::memory_order_acquire);
+        if (!versionStart || (versionStart & 1u) ||
+            versionStart == ecTimingVersionPublished_[slave][direction]) {
+          continue;
+        }
+        int64_t values[ECMC_EC_TIMING_FIELDS];
+        for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
+          values[field] = ecTiming_[slave][direction].value[field].load(
+            std::memory_order_relaxed);
+        }
+        const unsigned int versionEnd =
+          ecTiming_[slave][direction].version.load(std::memory_order_acquire);
+        if (versionStart != versionEnd || (versionEnd & 1u)) {
+          continue;
+        }
+        for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
+          if (field < 6) {
+            setIntegerParam(slave, ecTimingParam_[direction][field],
+                            static_cast<int>(values[field]));
+          } else {
+            setInteger64Param(slave, ecTimingParam_[direction][field],
+                              values[field]);
+          }
+        }
+        ecTimingVersionPublished_[slave][direction] = versionEnd;
+        callParamCallbacks(slave);
+      }
+    }
+  }
+
   void publishAxisCommandCounters() {
     // Do not cache the configured axes here.  The logger port can be created
     // before all axes have been added, and its lifetime spans later
@@ -1131,6 +1206,9 @@ private:
   int axisMsBlockCountParam_;
   int axisMsBlockCycleParam_;
   int axisMsBlockTextParam_;
+  int ecTimingParam_[ECMC_EC_TIMING_DIRECTIONS][ECMC_EC_TIMING_FIELDS];
+  unsigned int ecTimingVersionPublished_[EC_MAX_SLAVES]
+                                                [ECMC_EC_TIMING_DIRECTIONS];
   uint64_t messageCount_;
   uint64_t droppedCount_;
   int diagLevel_;
@@ -1260,6 +1338,27 @@ void ecmcRtLoggerPortDriverSetAxisMasterSlaveBlock(int axisIndex,
   axisMsBlockCycles_[axisIndex].store(cycleCounter, std::memory_order_relaxed);
   axisMsBlockCounts_[axisIndex].fetch_add(1, std::memory_order_relaxed);
   axisMsBlockVersions_[axisIndex].fetch_add(1, std::memory_order_release);
+}
+
+void ecmcRtLoggerPortDriverSetEcTiming(int slavePosition,
+                                      int direction,
+                                      const ecmcEcTimingDiag *timing) {
+  if (!timing || slavePosition < 0 || slavePosition >= EC_MAX_SLAVES ||
+      direction < 0 || direction >= ECMC_EC_TIMING_DIRECTIONS) {
+    return;
+  }
+  atomicEcTimingDiag& target = ecTiming_[slavePosition][direction];
+  target.version.fetch_add(1, std::memory_order_acq_rel);
+  const int64_t values[ECMC_EC_TIMING_FIELDS] = {
+    timing->status, timing->source, timing->reference, timing->syncType,
+    timing->cycleOffset, timing->timestampBits, timing->cycleTimeNs,
+    timing->shiftTimeNs, timing->calculationCopyTimeNs, timing->eventOffsetNs,
+    timing->uncertaintyNs, timing->timestampCorrectionNs
+  };
+  for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
+    target.value[field].store(values[field], std::memory_order_relaxed);
+  }
+  target.version.fetch_add(1, std::memory_order_release);
 }
 
 int ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex) {

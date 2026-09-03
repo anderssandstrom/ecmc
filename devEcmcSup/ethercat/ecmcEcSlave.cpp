@@ -175,10 +175,6 @@ ecmcEcSlave::~ecmcEcSlave() {
   for (int i = 0; i < asyncSDOCounter_; i++) {
     delete asyncSDOvector_[i];
   }
-  for (size_t i = 0; i < timingAsynParams_.size(); ++i) {
-    delete timingAsynParams_[i];
-  }
-  timingAsynParams_.clear();
 }
 
 int ecmcEcSlave::getEntryCount() {
@@ -1451,86 +1447,15 @@ int ecmcEcSlave::initAsyn() {
   paramTemp->addSupportedAsynType(asynParamUInt32Digital);
   slaveAsynParams_[ECMC_ASYN_EC_SLAVE_PAR_STATUS_ID] = paramTemp;
 
-  struct timingRegistration {
-    const char *field;
-    size_t offset;
-    asynParamType asynType;
-    size_t size;
-    ecmcEcDataType dataType;
-  } registrations[] = {
-    {"status", offsetof(timingAsynData, status), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"source", offsetof(timingAsynData, source), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"reference", offsetof(timingAsynData, reference), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"syncType", offsetof(timingAsynData, syncType), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"cycleOffset", offsetof(timingAsynData, cycleOffset), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"timestampBits", offsetof(timingAsynData, timestampBits), asynParamInt32,
-     sizeof(int32_t), ECMC_EC_S32},
-    {"cycleTimeNs", offsetof(timingAsynData, cycleTimeNs), asynParamInt64,
-     sizeof(int64_t), ECMC_EC_S64},
-    {"shiftTimeNs", offsetof(timingAsynData, shiftTimeNs), asynParamInt64,
-     sizeof(int64_t), ECMC_EC_S64},
-    {"calculationCopyTimeNs", offsetof(timingAsynData, calculationCopyTimeNs),
-     asynParamInt64, sizeof(int64_t), ECMC_EC_S64},
-    {"eventOffsetNs", offsetof(timingAsynData, eventOffsetNs), asynParamInt64,
-     sizeof(int64_t), ECMC_EC_S64},
-    {"uncertaintyNs", offsetof(timingAsynData, uncertaintyNs), asynParamInt64,
-     sizeof(int64_t), ECMC_EC_S64},
-    {"timestampCorrectionNs", offsetof(timingAsynData, timestampCorrectionNs),
-     asynParamInt64, sizeof(int64_t), ECMC_EC_S64}
-  };
-  const char *directions[] = {"input", "output"};
-  timingAsynData *data[] = {&inputTimingAsynData_, &outputTimingAsynData_};
-  for (size_t direction = 0; direction < 2; ++direction) {
-    for (size_t item = 0; item < sizeof(registrations) /
-                                      sizeof(registrations[0]); ++item) {
-      int error = addTimingAsynParam(
-        directions[direction], registrations[item].field,
-        registrations[item].asynType,
-        reinterpret_cast<uint8_t *>(data[direction]) +
-          registrations[item].offset,
-        registrations[item].size, registrations[item].dataType);
-      if (error) {
-        return error;
-      }
-    }
-  }
   asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
                                       ECMC_ASYN_DEFAULT_ADDR);
-  return 0;
-}
-
-int ecmcEcSlave::addTimingAsynParam(const char *direction,
-                                    const char *field,
-                                    asynParamType asynType,
-                                    uint8_t *data,
-                                    size_t dataSize,
-                                    ecmcEcDataType dataType) {
-  char name[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
-  const int count = snprintf(name, sizeof(name), "ec%d.s%d.timing.%s.%s",
-                             masterId_, slavePosition_, direction, field);
-  if (count < 0 || static_cast<size_t>(count) >= sizeof(name)) {
-    return ERROR_EC_SLAVE_REG_ASYN_PAR_BUFFER_OVERFLOW;
-  }
-  ecmcAsynDataItem *param = asynPortDriver_->addNewAvailParam(
-    name, asynType, data, dataSize, dataType, 0);
-  if (!param) {
-    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
-  }
-  param->setAllowWriteToEcmc(false);
-  param->refreshParam(1);
-  timingAsynParams_.push_back(param);
   return 0;
 }
 
 void ecmcEcSlave::updateTimingAsynData() {
   const ecmcEcEndpointTiming *endpoint[] = {&inputTiming_, &outputTiming_};
   const ecmcEcSmTiming *sm[] = {&inputSmTiming_, &outputSmTiming_};
-  timingAsynData *data[] = {&inputTimingAsynData_, &outputTimingAsynData_};
+  ecmcEcTimingDiag *data[] = {&inputTimingAsynData_, &outputTimingAsynData_};
   for (size_t i = 0; i < 2; ++i) {
     uint32_t status = 0;
     status |= endpoint[i]->valid ? 1u << 0 : 0;
@@ -1567,11 +1492,10 @@ void ecmcEcSlave::refreshTimingAsyn() {
     return;
   }
   updateTimingAsynData();
-  for (size_t i = 0; i < timingAsynParams_.size(); ++i) {
-    timingAsynParams_[i]->refreshParam(1);
-  }
-  asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
-                                      ECMC_ASYN_DEFAULT_ADDR);
+  ecmcRtLoggerPortDriverSetEcTiming(slavePosition_, 0,
+                                    &inputTimingAsynData_);
+  ecmcRtLoggerPortDriverSetEcTiming(slavePosition_, 1,
+                                    &outputTimingAsynData_);
   timingAsynDirty_ = false;
 }
 
