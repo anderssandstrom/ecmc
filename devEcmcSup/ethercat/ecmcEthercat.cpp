@@ -140,6 +140,32 @@ int ecSetSlaveTimingOverride(int slaveBusPosition,
                                   uncertaintyNs);
 }
 
+int ecSetSlaveTimingSource(int slaveBusPosition,
+                           int direction,
+                           int source) {
+  ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
+  if (!slave ||
+      (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT) ||
+      source < static_cast<int>(ecmcEcTimingSource::CYCLE_ONLY) ||
+      source > static_cast<int>(ecmcEcTimingSource::SYNC1_DERIVED)) {
+    return ERROR_EC_MAIN_INVALID_SLAVE_INDEX;
+  }
+  return slave->setTimingSource(static_cast<ec_direction_t>(direction),
+                                static_cast<ecmcEcTimingSource>(source));
+}
+
+int ecSetSlaveTimingUpdateDivisor(int slaveBusPosition,
+                                  int direction,
+                                  uint32_t updateDivisor) {
+  ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
+  if (!slave || !updateDivisor ||
+      (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT)) {
+    return ERROR_EC_MAIN_INVALID_SLAVE_INDEX;
+  }
+  return slave->setTimingUpdateDivisor(
+    static_cast<ec_direction_t>(direction), updateDivisor);
+}
+
 int ecLinkSlaveTimingTimestamp(int slaveBusPosition,
                                int direction,
                                const char *entryId,
@@ -1468,42 +1494,23 @@ int ecPrintControlTiming(int inputSlaveBusPosition,
 
   const ecmcEcDcConfig& inputDc = inputSlave->getDcConfig();
   const ecmcEcDcConfig& outputDc = outputSlave->getDcConfig();
-  const bool cycleOnly = inputSlave->getInputTiming().source ==
-                           ecmcEcTimingSource::CYCLE_ONLY &&
-                         outputSlave->getOutputTiming().source ==
-                           ecmcEcTimingSource::CYCLE_ONLY;
-  if (!cycleOnly &&
-      (!inputDc.configured || !outputDc.configured ||
-       inputDc.sync0CycleNs == 0 ||
-       inputDc.sync0CycleNs != outputDc.sync0CycleNs)) {
+  const ecmcEcTimingPath path = ecmcEcCalculateTimingPathNs(
+    ec->getCycleTiming(), inputSlave->getInputTiming(), inputDc,
+    inputSlave->getDcSchedule(), outputSlave->getOutputTiming(), outputDc,
+    outputSlave->getDcSchedule());
+  if (!path.valid) {
     printf("# Control timing input slave %d -> output slave %d: unresolved "
-           "(DC cycles unavailable or unequal)\n",
-           inputSlaveBusPosition, outputSlaveBusPosition);
-    return 0;
-  }
-
-  ecmcEcDelayEstimate estimate;
-  if (cycleOnly) {
-    estimate = ecmcEcCalculateCycleDelayNs(ec->getCycleTiming(),
-                                           inputSlave->getInputTiming(),
-                                           outputSlave->getOutputTiming());
-  } else {
-    estimate = ecmcEcCalculateEndpointDelayNs(
-      inputSlave->getInputTiming(), inputDc.sync1OffsetNs,
-      outputSlave->getOutputTiming(), outputDc.sync1OffsetNs,
-      inputDc.sync0CycleNs);
-  }
-  if (!estimate.valid) {
-    printf("# Control timing input slave %d -> output slave %d: unresolved "
-           "(run EcPrintSlaveConfig for unknown endpoint fields)\n",
-           inputSlaveBusPosition, outputSlaveBusPosition);
+           "(status=%u; run EcPrintSlaveConfig for endpoint fields)\n",
+           inputSlaveBusPosition, outputSlaveBusPosition,
+           static_cast<unsigned int>(path.status));
     return 0;
   }
   printf("# Control timing input slave %d -> output slave %d: "
-         "delayNs=%lld uncertaintyNs=%llu\n",
+         "source=%u delayNs=%lld uncertaintyNs=%llu\n",
          inputSlaveBusPosition, outputSlaveBusPosition,
-         static_cast<long long>(estimate.delayNs),
-         static_cast<unsigned long long>(estimate.uncertaintyNs));
+         static_cast<unsigned int>(path.source),
+         static_cast<long long>(path.delayNs),
+         static_cast<unsigned long long>(path.uncertaintyNs));
   return 0;
 }
 

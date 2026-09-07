@@ -535,12 +535,27 @@ int ecSlaveConfigDC(
 
 /** Configure a terminal-specific correction to generic slave timing.
  * direction follows ec_direction_t: 1=output, 2=input. The event offset is a
- * signed correction relative to the SYNC event reported by 0x1C32/0x1C33. */
+ * signed correction relative to the SYNC event reported by 0x1C32/0x1C33.
+ * cycleOffset is relative to the most recent endpoint event at or before the
+ * exact application time: negative for input PDO age, positive for output
+ * application lead. */
 int ecSetSlaveTimingOverride(int slaveBusPosition,
                              int direction,
                              int32_t cycleOffset,
                              int32_t eventOffsetNs,
                              uint32_t uncertaintyNs);
+
+/** Override endpoint timing source. direction: 1=output, 2=input;
+ * source: 0=cycle-only, 1=SYNC0, 2=SYNC1. */
+int ecSetSlaveTimingSource(int slaveBusPosition,
+                           int direction,
+                           int source);
+
+/** Set the number of EtherCAT cycles between fresh endpoint values.
+ * direction: 1=output, 2=input. updateDivisor must be at least one. */
+int ecSetSlaveTimingUpdateDivisor(int slaveBusPosition,
+                                  int direction,
+                                  uint32_t updateDivisor);
 
 /** Link a 32- or 64-bit input PDO entry containing an EtherCAT DC timestamp to
  * a slave timing endpoint. direction: 1=output, 2=input. */

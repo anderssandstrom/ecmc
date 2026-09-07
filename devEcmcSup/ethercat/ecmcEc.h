@@ -220,7 +220,6 @@ public:
   uint64_t getLastReceiveTimeNs();
   uint64_t getLastSendTimeNs();
   const ecmcEcCycleTiming& getCycleTiming() const;
-
   uint32_t getSlaveVendorId(uint16_t alias,       /**< Slave alias. */
                             uint16_t slavePos /**< Slave position. */);
   uint32_t getSlaveProductCode(uint16_t alias,       /**< Slave alias. */

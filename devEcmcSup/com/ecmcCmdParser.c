@@ -2392,6 +2392,35 @@ static int handleCfgCommand(const char *myarg_1) {
                                     iValue5);
   }
 
+  /* Cfg.EcSetSlaveTimingSource(slave_position, direction, source)
+     direction: 1=output, 2=input
+     source: 0=cycle-only, 1=SYNC0, 2=SYNC1 */
+  nvals = sscanf(myarg_1,
+                 "EcSetSlaveTimingSource(%d,%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3);
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcSetSlaveTimingSource");
+    return ecSetSlaveTimingSource(iValue, iValue2, iValue3);
+  }
+
+  /* Cfg.EcSetSlaveTimingUpdateDivisor(slave_position, direction, divisor)
+     direction: 1=output, 2=input; divisor >= 1 */
+  nvals = sscanf(myarg_1,
+                 "EcSetSlaveTimingUpdateDivisor(%d,%d,%d)",
+                 &iValue,
+                 &iValue2,
+                 &iValue3);
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcSetSlaveTimingUpdateDivisor");
+    if (iValue3 < 1) {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
+    return ecSetSlaveTimingUpdateDivisor(iValue, iValue2,
+                                         (uint32_t)iValue3);
+  }
+
   /* Link a 32/64-bit DC timestamp PDO to an input or output endpoint. */
   nvals = sscanf(myarg_1,
                  "EcLinkSlaveTimingTimestamp(%d,%d,%[^,],%d,%d)",
