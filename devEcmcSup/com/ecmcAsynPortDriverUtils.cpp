@@ -574,6 +574,14 @@ int getAxEncFuncType(char *objPath,
         return 0;
       }
 
+      // Optional hardware/DC timestamp captured with the latch value
+      nvals = strcmp(objectFunctionStr, ECMC_ENC_LATCH_TIMESTAMP_STR);
+
+      if (nvals == 0) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP;
+        return 0;
+      }
+
       // Reset alarm
       nvals = strcmp(objectFunctionStr, ECMC_ENC_RESET_STR);
 

@@ -115,6 +115,7 @@ typedef struct {
 #define ECMC_ENCODER_ENTRY_INDEX_READY 9
 #define ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME 10
 #define ECMC_ENCODER_ENTRY_INDEX_STAT_HOME 11
+#define ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP 12
 
 // Encoders
 #define ECMC_MAX_ENCODERS 8
@@ -481,6 +482,7 @@ enum axisSubObjectType {
 #define ECMC_ENC_LATCHPOS_STR "latchpos"
 #define ECMC_ENC_LATCH_STATUS_STR "latchstatus"
 #define ECMC_ENC_LATCH_CONTROL_STR "latchcontrol"
+#define ECMC_ENC_LATCH_TIMESTAMP_STR "latchtimestamp"
 #define ECMC_ENC_RESET_STR "reset"
 #define ECMC_ENC_ALARM_0_STR "alarm0"
 #define ECMC_ENC_ALARM_1_STR "alarm1"

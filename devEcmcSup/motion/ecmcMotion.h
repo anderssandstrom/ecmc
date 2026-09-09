@@ -4032,6 +4032,13 @@ int linkEcEntryToAxisEnc(int   slaveBusPosition,
                          int   encoderEntryIndex,
                          int   entryBitIndex);
 
+/** Arm or disarm the generic touch probe on an axis encoder.
+ * Encoder indices in the public API start at one. */
+int axisTouchProbeArm(int axisIndex, int encoderIndex, int arm);
+
+/** Print the latest coherent touch-probe result. */
+int axisPrintTouchProbe(int axisIndex, int encoderIndex);
+
 /** \brief Links an EtherCAT entry to the drive object of the axis at axisIndex.
    *
    *

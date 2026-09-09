@@ -114,6 +114,10 @@ public:
   ecmcEncoder*               getConfigEnc();  // get current encoder being configured
   ecmcEncoder*               getPrimEnc();
   ecmcEncoder*               getCSPEnc();
+  int                        setTouchProbeArm(int encoderIndex, bool arm);
+  ecmcEcTimedValue<double>   getTouchProbeResult(int encoderIndex,
+                                                  uint64_t nearbyDcTimeNs,
+                                                  int *error);
   ecmcAxisSequencer*         getSeq();
   int                        getPosAct(double *pos);
   int                        getPosSet(double *pos);

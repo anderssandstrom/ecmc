@@ -16,6 +16,7 @@
 #define ECMC_EC_LIB_MAX_BITS 64
 
 #define ERROR_PLC_EC_LIB_BITS_OUT_OF_RANGE 0x20800
+#define ERROR_PLC_EC_LIB_TIMING_UNRESOLVED 0x20801
 
 extern ecmcEc *ec;
 
@@ -41,6 +42,9 @@ const char* ecLibCmdList[] = { "ec_set_bit(",
                                "ec_wrt_bits(",
                                "ec_chk_bits(",
                                "ec_get_time(",
+                               "ec_get_last_receive_time(",
+                               "ec_get_last_send_time(",
+                               "ec_get_slave_input_event_time(",
                                "ec_get_mm_type(",
                                "ec_get_mm_data(",
                                "ec_set_mm_data(",
@@ -60,7 +64,7 @@ const char* ecLibCmdList[] = { "ec_set_bit(",
                               };
 
 static int ec_errorCode = 0;
-static int ec_cmd_count = 29;
+static int ec_cmd_count = 32;
 
 inline double ec_set_bit(double value, double bitIndex)
 {
@@ -120,6 +124,63 @@ inline double ec_get_time() {
   }
 
   return (double)ec->getTimeNs();
+}
+
+/* Cached time of the receive phase in the current application cycle.
+ * Unlike ec_get_time(), this does not read a clock when the PLC calls it. */
+inline double ec_get_last_receive_time() {
+  ec_errorCode = 0;
+  if(!ec) {
+    ec_errorCode = ERROR_MAIN_EC_MASTER_NULL;
+    return -(double)ec_errorCode;
+  }
+
+  return (double)ec->getLastReceiveTimeNs();
+}
+
+/* Cached time of the most recently completed send phase.  During PLC
+ * execution this is normally the send phase from the preceding cycle. */
+inline double ec_get_last_send_time() {
+  ec_errorCode = 0;
+  if(!ec) {
+    ec_errorCode = ERROR_MAIN_EC_MASTER_NULL;
+    return -(double)ec_errorCode;
+  }
+
+  return (double)ec->getLastSendTimeNs();
+}
+
+inline double ec_get_slave_input_event_time(double slavePosition) {
+  ec_errorCode = 0;
+  if(!ec) {
+    ec_errorCode = ERROR_MAIN_EC_MASTER_NULL;
+    return -(double)ec_errorCode;
+  }
+  ecmcEcSlave *slave = ec->findSlave((int)slavePosition);
+  if(!slave) {
+    ec_errorCode = ERROR_MAIN_EC_SLAVE_NULL;
+    return -(double)ec_errorCode;
+  }
+  const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
+  const ecmcEcEndpointTiming& timing = slave->getInputTiming();
+  uint64_t eventTimeNs = 0;
+  bool valid = false;
+  if(timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||
+     timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
+    // Resolve the effective input event against the cycle in which the input
+    // process image becomes visible to ecmc. Slave-specific PDO generation
+    // age remains represented by timing.cycleOffset.
+    valid = ecmcEcResolveScheduledEventNs(cycle.receiveTimeNs, timing,
+      slave->getDcConfig(), slave->getDcSchedule(), cycle.nominalPeriodNs,
+      &eventTimeNs);
+  } else if(timing.source == ecmcEcTimingSource::CYCLE_ONLY) {
+    valid = ecmcEcResolveCycleEventNs(cycle, timing, &eventTimeNs);
+  }
+  if(!valid) {
+    ec_errorCode = ERROR_PLC_EC_LIB_TIMING_UNRESOLVED;
+    return -(double)ec_errorCode;
+  }
+  return (double)eventTimeNs;
 }
 
 inline double ec_get_time_l32() {

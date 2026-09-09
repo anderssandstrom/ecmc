@@ -985,6 +985,41 @@ ecmcEncoder * ecmcAxisBase::getCSPEnc() {
   return encArray_[data_.control_.cspDrvEncIndex];
 }
 
+int ecmcAxisBase::setTouchProbeArm(int encoderIndex, bool arm) {
+  int error = 0;
+  ecmcEncoder *encoder = getEnc(encoderIndex, &error);
+  if (!encoder) {
+    return error;
+  }
+  if (!encoder->getLatchFuncEnabled()) {
+    return ERROR_ENC_ENTRY_NULL;
+  }
+  if (arm) {
+    encoder->setTouchProbeAutoRearm(true);
+    encoder->setLatchControlEnabled(true);
+    encoder->setArmLatch(true);
+  } else {
+    encoder->setTouchProbeAutoRearm(false);
+    encoder->setLatchControlEnabled(false);
+  }
+  return 0;
+}
+
+ecmcEcTimedValue<double> ecmcAxisBase::getTouchProbeResult(
+  int encoderIndex,
+  uint64_t nearbyDcTimeNs,
+  int *error) {
+  ecmcEcTimedValue<double> result;
+  if (!error) {
+    return result;
+  }
+  ecmcEncoder *encoder = getEnc(encoderIndex, error);
+  if (!encoder) {
+    return result;
+  }
+  return encoder->getLatchTimedValue(nearbyDcTimeNs);
+}
+
 ecmcTrajectoryBase * ecmcAxisBase::getTraj() {
   return traj_;
 }

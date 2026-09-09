@@ -256,7 +256,21 @@ int setPLCExpr(int   index,
  *   5. retvalue=ec_get_err():
  *      Returns error code from last lib call.\n
  *
+ *   6. retvalue=ec_get_last_receive_time():
+ *      Returns the cached EtherCAT receive-phase time in nanoseconds.\n
+ *
+ *   7. retvalue=ec_get_last_send_time():
+ *      Returns the cached most recently completed EtherCAT send-phase time in
+ *      nanoseconds. During PLC execution this normally belongs to the
+ *      preceding application cycle.\n
+ *
  *  Function Lib: Motion
+ *   Touch-probe readers use one-based encoder indices:\n
+ *     mc_get_touch_probe_pos(axisIndex, encoderIndex)\n
+ *     mc_get_touch_probe_sequence(axisIndex, encoderIndex)\n
+ *   The position uses the encoder object's normal multiturn, scaling, and
+ *   engineering-offset conversion.\n
+ *
  *   1. retvalue = mc_move_abs(
  *                           <axIndex>,       : Axis index\n
  *                           <execute>,       : Trigger\n

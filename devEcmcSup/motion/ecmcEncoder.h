@@ -32,6 +32,7 @@
 #include "ecmcAxisData.h"
 #include "ecmcMotionUtils.h"
 #include "ecmcLookupTable.h"
+#include "ecmcEcTiming.h"
 
 #define ECMC_FILTER_VELO_DEF_SIZE 100
 #define ECMC_FILTER_POS_DEF_SIZE 10
@@ -96,9 +97,14 @@ public:
   void                  setLatchControlEnabled(bool enable);
   bool                  getLatchControlEnabled();
   void                  setArmLatch(bool arm);
+  void                  setTouchProbeAutoRearm(bool enable);
   bool                  getArmLatch();
   bool                  getNewValueLatched();
   double                getLatchPosEng();
+  ecmcEcTimedValue<double> getLatchTimedValue(uint64_t nearbyDcTimeNs) const;
+  uint64_t              getLatchSequence() const;
+  uint64_t              getLatchTimestampRaw() const;
+  int                   getLatchTimestampBits() const;
   ecmcOverUnderFlowType getOverUnderflow();
   int                   setVeloFilterSize(size_t size);
   int                   getVeloFilterSize();
@@ -241,7 +247,13 @@ protected:
   bool     encLatchControlEnabled_;
   bool     encLatchControlDisablePending_;
   bool     encLatchArm_;
+  bool     touchProbeAutoRearm_;
+  int      touchProbeRearmState_;
   double actEncLatchPos_;
+  uint64_t encLatchSequence_;
+  uint64_t encLatchTimestampRaw_;
+  int encLatchTimestampBits_;
+  bool encLatchTimestampValid_;
   bool enablePositionFilter_;
   bool enableVelocityFilter_;
   uint64_t hwReset_;

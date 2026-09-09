@@ -163,11 +163,17 @@ void ecmcEncoder::initVars() {
   delayCompStateValid_    = false;
   lookupTableScale_       = 1;
   encLatchArm_                   = 0;
+  touchProbeAutoRearm_           = false;
+  touchProbeRearmState_          = 0;
   encLatchControlEnabled_        = false;
   encLatchControlDisablePending_ = false;
   encLatchControlWordArm_        = 1;
   encLatchControlWordIdle_       = 0;
   encLatchControlBits_           = 1;  // default to write 1 bit to arm latch
+  encLatchSequence_              = 0;
+  encLatchTimestampRaw_          = 0;
+  encLatchTimestampBits_         = 0;
+  encLatchTimestampValid_        = false;
   allowOverUnderFlow_            = true;  // Allow as default
 }
 
@@ -793,6 +799,15 @@ int ecmcEncoder::readHwLatch(bool domainOK) {
 
   // if new latched value then calculate latched value in engineering units
   if (encLatchStatus_ > encLatchStatusOld_) {
+    encLatchTimestampValid_ = false;
+    if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
+      if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
+                           &encLatchTimestampRaw_)) {
+        return ERROR_ENC_ENTRY_READ_FAIL;
+      }
+      encLatchTimestampValid_ = encLatchTimestampBits_ == 32 ||
+                                encLatchTimestampBits_ == 64;
+    }
     if (entryTypeIsFloat(getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE))) {
       rawEncLatchPosMultiTurn_ = rawEncLatchPos_ + rawPosOffset_;
     } else {
@@ -810,6 +825,10 @@ int ecmcEncoder::readHwLatch(bool domainOK) {
     }
     actEncLatchPos_ = scale_ * rawEncLatchPosMultiTurn_ +
                       engOffset_;
+    ++encLatchSequence_;
+    if (touchProbeAutoRearm_ && encLatchArm_) {
+      touchProbeRearmState_ = 1;
+    }
   }
 
   return 0;
@@ -1011,15 +1030,24 @@ int ecmcEncoder::writeEntries() {
   }
 
   if (encLatchFunctEnabled_ && encLatchControlEnabled_) {
+    if (touchProbeAutoRearm_ && touchProbeRearmState_ == 2 &&
+        !encLatchStatus_) {
+      touchProbeRearmState_ = 0;
+    }
     // Arm latch or Idle
     uint64_t wordToWrite = encLatchControlWordIdle_;
-    if(encLatchArm_) {
+    if(encLatchArm_ &&
+       (!touchProbeAutoRearm_ || touchProbeRearmState_ == 0)) {
       wordToWrite = encLatchControlWordArm_;
     }
     // Note start bit is already stored in entry
     if (writeEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
                             encLatchControlBits_, wordToWrite)) {
         encLocalErrorId_ = ERROR_ENC_ENTRY_WRITE_FAIL;  // Write to error id will happen in readEntries        
+    } else if (touchProbeAutoRearm_ && touchProbeRearmState_ == 1) {
+      // Guarantee at least one transmitted idle cycle before waiting for the
+      // terminal's stored flag to clear.
+      touchProbeRearmState_ = 2;
     } else if (encLatchControlDisablePending_) {
       encLatchControlEnabled_ = false;
       encLatchControlDisablePending_ = false;
@@ -1101,6 +1129,23 @@ int ecmcEncoder::validate() {
       ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL);
   } else {
     encLatchFunctEnabled_ = false;
+  }
+
+  encLatchTimestampBits_ = 0;
+  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
+    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP);
+    if (errorCode) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    }
+    errorCode = getEntryBitCount(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
+                                 &encLatchTimestampBits_);
+    if (errorCode) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    }
+    if (encLatchTimestampBits_ != 32 && encLatchTimestampBits_ != 64) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                        ERROR_EC_ENTRY_INVALID_BIT_LENGTH);
+    }
   }
 
   // Check reset link
@@ -1312,6 +1357,14 @@ void ecmcEncoder::setArmLatch(bool arm) {
     encLatchControlWordIdle_ = tempValue;
   }
   encLatchArm_ = arm;
+  if (!arm) {
+    touchProbeRearmState_ = 0;
+  }
+}
+
+void ecmcEncoder::setTouchProbeAutoRearm(bool enable) {
+  touchProbeAutoRearm_ = enable;
+  touchProbeRearmState_ = 0;
 }
 
 /*
@@ -1333,6 +1386,41 @@ bool ecmcEncoder::getNewValueLatched() {
 */
 double ecmcEncoder::getLatchPosEng() {
   return actEncLatchPos_;
+}
+
+ecmcEcTimedValue<double> ecmcEncoder::getLatchTimedValue(
+  uint64_t nearbyDcTimeNs) const {
+  ecmcEcTimedValue<double> result;
+  if (!encLatchSequence_) {
+    return result;
+  }
+  result.value = actEncLatchPos_;
+  result.sequence = encLatchSequence_;
+  result.valid = true;
+  result.eventTimeNs = nearbyDcTimeNs;
+  result.quality = ecmcEcTimeQuality::CYCLE_BOUNDED;
+  result.uncertaintyNs = static_cast<uint32_t>(sampleTimeMs_ * 1.0e6);
+  if (encLatchTimestampValid_) {
+    result.eventTimeNs = encLatchTimestampBits_ == 32 ?
+      ecmcEcExtendDcTimestamp32(
+        static_cast<uint32_t>(encLatchTimestampRaw_), nearbyDcTimeNs) :
+      encLatchTimestampRaw_;
+    result.quality = ecmcEcTimeQuality::HARDWARE_TIMESTAMP;
+    result.uncertaintyNs = 0;
+  }
+  return result;
+}
+
+uint64_t ecmcEncoder::getLatchSequence() const {
+  return encLatchSequence_;
+}
+
+uint64_t ecmcEncoder::getLatchTimestampRaw() const {
+  return encLatchTimestampRaw_;
+}
+
+int ecmcEncoder::getLatchTimestampBits() const {
+  return encLatchTimestampBits_;
 }
 
 /*

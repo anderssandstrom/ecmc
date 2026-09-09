@@ -90,6 +90,8 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_move_ext_pos(",
                                "mc_home_pos(",
                                "mc_get_act_pos(",
+                               "mc_get_touch_probe_pos(",
+                               "mc_get_touch_probe_sequence(",
                                "mc_set_prim_enc(",
                                "mc_get_prim_enc(",
                                "mc_set_axis_error(",
@@ -166,7 +168,7 @@ static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
 static int statLastSeqExecuteArm_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int statLastSeqExecuteSetStep_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 78;
+static int mc_cmd_count = 80;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -509,6 +511,40 @@ inline double mc_get_act_pos(double axIndex, double encIndex)
   }
 
   return enc->getActPos();
+}
+
+inline double mc_get_touch_probe_pos(double axIndex, double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  int error = 0;
+  ecmcEncoder *enc=axes[axIndexInt]->getEnc(encIndexInt,&error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return enc->getLatchPosEng();
+}
+
+inline double mc_get_touch_probe_sequence(double axIndex, double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  int error = 0;
+  ecmcEncoder *enc=axes[axIndexInt]->getEnc(encIndexInt,&error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return (double)enc->getLatchSequence();
 }
 
 inline double mc_set_prim_enc(double axIndex, double encIndex)

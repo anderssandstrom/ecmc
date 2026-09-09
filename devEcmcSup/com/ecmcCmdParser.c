@@ -6524,6 +6524,21 @@ parse_getaxisdrv:
     SEND_OK_OR_ERROR_AND_RETURN(ecPrintControlTiming(iValue, iValue2));
   }
 
+  nvals = sscanf(myarg_1, "AxisTouchProbeArm(%d,%d,%d)=",
+                 &iValue, &iValue2, &iValue3);
+
+  if (nvals == 3) {
+    SEND_OK_OR_ERROR_AND_RETURN(
+      axisTouchProbeArm(iValue, iValue2, iValue3));
+  }
+
+  nvals = sscanf(myarg_1, "AxisPrintTouchProbe(%d,%d)=",
+                 &iValue, &iValue2);
+
+  if (nvals == 2) {
+    SEND_OK_OR_ERROR_AND_RETURN(axisPrintTouchProbe(iValue, iValue2));
+  }
+
   /* if we come here, we do not understand the command */
   SEND_OK_OR_ERROR_AND_RETURN(ERROR_MAIN_PARSER_UNKOWN_CMD);
 }

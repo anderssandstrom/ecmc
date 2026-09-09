@@ -785,6 +785,12 @@ int ecmcPLCTask::loadEcLib() {
   ecmcPLCTaskAddFunction("ec_wrt_bits",     ec_wrt_bits);
   ecmcPLCTaskAddFunction("ec_chk_bits",     ec_chk_bits);
   ecmcPLCTaskAddFunction("ec_get_time",     ec_get_time);
+  ecmcPLCTaskAddFunction("ec_get_last_receive_time",
+                         ec_get_last_receive_time);
+  ecmcPLCTaskAddFunction("ec_get_last_send_time",
+                         ec_get_last_send_time);
+  ecmcPLCTaskAddFunction("ec_get_slave_input_event_time",
+                         ec_get_slave_input_event_time);
   ecmcPLCTaskAddFunction("ec_get_mm_type",  ec_get_mm_type);
   ecmcPLCTaskAddFunction("ec_get_mm_data",  ec_get_mm_data);
   ecmcPLCTaskAddFunction("ec_set_mm_data",  ec_set_mm_data);
@@ -843,6 +849,10 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_move_ext_pos", mc_move_ext_pos);
   ecmcPLCTaskAddFunction("mc_home_pos",     mc_home_pos);
   ecmcPLCTaskAddFunction("mc_get_act_pos",  mc_get_act_pos);
+  ecmcPLCTaskAddFunction("mc_get_touch_probe_pos",
+                         mc_get_touch_probe_pos);
+  ecmcPLCTaskAddFunction("mc_get_touch_probe_sequence",
+                         mc_get_touch_probe_sequence);
   ecmcPLCTaskAddFunction("mc_set_prim_enc", mc_set_prim_enc);
   ecmcPLCTaskAddFunction("mc_get_prim_enc", mc_get_prim_enc);
   ecmcPLCTaskAddFunction("mc_set_axis_error", mc_set_axis_error);

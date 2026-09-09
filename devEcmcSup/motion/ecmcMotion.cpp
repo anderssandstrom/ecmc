@@ -4299,6 +4299,51 @@ int linkEcEntryToAxisEnc(int   slaveIndex,
                                                           bitIndex);
 }
 
+int axisTouchProbeArm(int axisIndex, int encoderIndex, int arm) {
+  LOGINFO4("%s/%s:%d axisIndex=%d encoderIndex=%d arm=%d\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, encoderIndex, arm);
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  if (encoderIndex < 1 || encoderIndex > ECMC_MAX_ENCODERS) {
+    return ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE;
+  }
+  return axes[axisIndex]->setTouchProbeArm(encoderIndex - 1, arm != 0);
+}
+
+int axisPrintTouchProbe(int axisIndex, int encoderIndex) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  if (encoderIndex < 1 || encoderIndex > ECMC_MAX_ENCODERS) {
+    return ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE;
+  }
+  const uint64_t nearbyDcTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+  int error = 0;
+  const ecmcEcTimedValue<double> result =
+    axes[axisIndex]->getTouchProbeResult(encoderIndex - 1,
+                                         nearbyDcTimeNs,
+                                         &error);
+  if (error) {
+    return error;
+  }
+  ecmcEncoder *encoder = axes[axisIndex]->getEnc(encoderIndex - 1, &error);
+  if (!encoder) {
+    return error;
+  }
+  printf("# Axis %d encoder %d touch probe: valid=%d sequence=%llu "
+         "position=%.15g timestampValid=%d timestampBits=%d "
+         "timestampRaw=%llu eventTimeNs=%llu quality=%s uncertaintyNs=%u\n",
+         axisIndex, encoderIndex, result.valid,
+         static_cast<unsigned long long>(result.sequence), result.value,
+         result.quality == ecmcEcTimeQuality::HARDWARE_TIMESTAMP,
+         encoder->getLatchTimestampBits(),
+         static_cast<unsigned long long>(encoder->getLatchTimestampRaw()),
+         static_cast<unsigned long long>(result.eventTimeNs),
+         result.quality == ecmcEcTimeQuality::HARDWARE_TIMESTAMP ?
+           "hardware-timestamp" :
+           (result.quality == ecmcEcTimeQuality::CYCLE_BOUNDED ?
+              "cycle-bounded" : "invalid"),
+         result.uncertaintyNs);
+  return 0;
+}
+
 int linkEcEntryToAxisDrv(int   slaveIndex,
                          char *entryIDString,
                          int   axisIndex,
