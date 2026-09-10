@@ -1,6 +1,7 @@
 Release Notes
 ===
 # 11.0.9
+* Fix inclue path in ecmcPluginClient.h
 * Make `Cfg.WriteEcEntryEcPath(<ec_path>,<value>)` convert values according to the entry datatype. F32/F64 entries now accept floating-point values, signed entries accept negative values, and integer parsing retains full 64-bit precision.
 * Add support for configuring fixed PDO mappings while retaining the established `EcAddEntry` mapping workflow.
 * Add `Cfg.EcAddEntryCyclicWrite(<to>,<from>)` to copy matching EtherCAT entry values every realtime cycle. Add the optional `force` parameter to bypass datatype matching and copy the smaller entry bit width: `Cfg.EcAddEntryCyclicWrite(<to>,<from>,<force>)`.
