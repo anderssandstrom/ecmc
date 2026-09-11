@@ -79,6 +79,9 @@ ecmcPositionCompare::ecmcPositionCompare() :
   resetValue_(0),
   linked_(false),
   activateIdlePending_(false),
+  accelerationValid_(false),
+  previousVelocity_(0),
+  previousSampleTimeNs_(0),
   asynParamsCreated_(false),
   asynState_(ECMC_POS_COMPARE_DISABLED),
   asynReason_(ECMC_POS_COMPARE_REASON_NONE),
@@ -94,6 +97,7 @@ ecmcPositionCompare::ecmcPositionCompare() :
   asynTargetParam_(NULL),
   asynPositionParam_(NULL),
   asynVelocityParam_(NULL),
+  asynAccelerationParam_(NULL),
   asynDirectionParam_(NULL),
   asynScheduledTimeParam_(NULL),
   asynLeadTimeParam_(NULL),
@@ -168,6 +172,9 @@ int ecmcPositionCompare::arm(double target,
   status_.pulseWidthNs = pulseWidthNs_;
   status_.eventTimeNs = 0;
   status_.reason = ECMC_POS_COMPARE_REASON_ARMED;
+  accelerationValid_ = false;
+  previousVelocity_ = 0;
+  previousSampleTimeNs_ = 0;
   // Force at least one RT cycle with the terminal in idle before a new
   // schedule command is allowed. Otherwise a command-thread re-arm can write
   // idle and the next RT cycle can overwrite it with schedule before the
@@ -191,6 +198,7 @@ int ecmcPositionCompare::cancel() {
 void ecmcPositionCompare::execute(bool masterOK,
                                   double position,
                                   double velocity,
+                                  double samplePeriodSec,
                                   uint64_t sampleTimeNs,
                                   bool sampleTimeValid,
                                   uint64_t controllerTimeNs) {
@@ -201,11 +209,6 @@ void ecmcPositionCompare::execute(bool masterOK,
     return;
   }
 
-  status_.position = position;
-  status_.velocity = velocity;
-  status_.sampleTimeNs = sampleTimeNs;
-  status_.controllerTimeNs = controllerTimeNs;
-
   if (!masterOK || !sampleTimeValid || !controllerTimeNs || !sampleTimeNs) {
     status_.state = ECMC_POS_COMPARE_ERROR;
     status_.reason = ECMC_POS_COMPARE_REASON_ERROR;
@@ -215,7 +218,9 @@ void ecmcPositionCompare::execute(bool masterOK,
   if (activateIdlePending_) {
     writeIdleActivate();
     activateIdlePending_ = false;
-    status_.reason = ECMC_POS_COMPARE_REASON_IDLE_CYCLE;
+    if (status_.state == ECMC_POS_COMPARE_ARMED) {
+      status_.reason = ECMC_POS_COMPARE_REASON_IDLE_CYCLE;
+    }
     return;
   }
 
@@ -258,8 +263,27 @@ void ecmcPositionCompare::execute(bool masterOK,
     return;
   }
 
+  double acceleration = 0;
+  if (accelerationValid_ && samplePeriodSec > 0) {
+    const long double dtSec = static_cast<long double>(samplePeriodSec);
+    acceleration =
+      static_cast<double>((static_cast<long double>(velocity) -
+                           static_cast<long double>(previousVelocity_)) /
+                          dtSec);
+  }
+  previousVelocity_ = velocity;
+  previousSampleTimeNs_ = sampleTimeNs;
+  accelerationValid_ = true;
+
+  status_.position = position;
+  status_.velocity = velocity;
+  status_.sampleTimeNs = sampleTimeNs;
+  status_.controllerTimeNs = controllerTimeNs;
+  status_.acceleration = acceleration;
+
   const double distance = status_.target - position;
-  if (std::fabs(velocity) < 1E-12) {
+  if (std::fabs(velocity) < 1E-12 &&
+      std::fabs(acceleration) < 1E-12) {
     status_.reason = ECMC_POS_COMPARE_REASON_WAIT_VELOCITY;
     return;
   }
@@ -268,9 +292,15 @@ void ecmcPositionCompare::execute(bool masterOK,
     return;
   }
 
-  const long double dtNs =
-    static_cast<long double>(distance) /
-    static_cast<long double>(velocity) * 1E9L;
+  long double dtNs = 0;
+  if (!calculateTimeToTargetNs(distance,
+                               velocity,
+                               acceleration,
+                               &dtNs)) {
+    status_.state = ECMC_POS_COMPARE_MISSED;
+    status_.reason = ECMC_POS_COMPARE_REASON_MISSED;
+    return;
+  }
   if (dtNs < 0 ||
       dtNs > static_cast<long double>(std::numeric_limits<uint64_t>::max())) {
     status_.state = ECMC_POS_COMPARE_MISSED;
@@ -373,6 +403,12 @@ int ecmcPositionCompare::createAsynParams(ecmcAsynPortDriver *asynPortDriver,
                           asynParamFloat64, ECMC_EC_F64,
                           reinterpret_cast<uint8_t*>(&status_.velocity),
                           sizeof(status_.velocity), &asynVelocityParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.acceleration",
+                          asynParamFloat64, ECMC_EC_F64,
+                          reinterpret_cast<uint8_t*>(&status_.acceleration),
+                          sizeof(status_.acceleration),
+                          &asynAccelerationParam_);
   if (error) return error;
   error = createAsynParam(asynPortDriver, axisId, "poscomp.direction",
                           asynParamInt32, ECMC_EC_S32,
@@ -565,6 +601,7 @@ void ecmcPositionCompare::refreshAsyn(bool force) {
   asynTargetParam_->refreshParamRT(force);
   asynPositionParam_->refreshParamRT(force);
   asynVelocityParam_->refreshParamRT(force);
+  asynAccelerationParam_->refreshParamRT(force);
   asynDirectionParam_->refreshParamRT(force);
   asynScheduledTimeParam_->refreshParamRT(force);
   asynLeadTimeParam_->refreshParamRT(force);
@@ -611,4 +648,58 @@ bool ecmcPositionCompare::directionMatches(double distance,
   }
   return (distance >= 0 && velocity > 0) ||
          (distance <= 0 && velocity < 0);
+}
+
+bool ecmcPositionCompare::calculateTimeToTargetNs(
+  double distance,
+  double velocity,
+  double acceleration,
+  long double *dtNs) const {
+  if (!dtNs) {
+    return false;
+  }
+
+  const long double distanceLd = static_cast<long double>(distance);
+  const long double velocityLd = static_cast<long double>(velocity);
+  const long double accelerationLd = static_cast<long double>(acceleration);
+
+  if (std::fabs(accelerationLd) < 1E-12L) {
+    if (std::fabs(velocityLd) < 1E-12L) {
+      return false;
+    }
+    *dtNs = distanceLd / velocityLd * 1E9L;
+    return *dtNs >= 0;
+  }
+
+  // Constant-acceleration estimate:
+  //   target = position + velocity*t + 0.5*acceleration*t^2
+  //   0.5*a*t^2 + v*t - distance = 0
+  const long double discriminant =
+    velocityLd * velocityLd + 2.0L * accelerationLd * distanceLd;
+  if (discriminant < 0) {
+    return false;
+  }
+  const long double sqrtDiscriminant = std::sqrt(discriminant);
+  const long double root1 = (-velocityLd - sqrtDiscriminant) / accelerationLd;
+  const long double root2 = (-velocityLd + sqrtDiscriminant) / accelerationLd;
+
+  long double selected = std::numeric_limits<long double>::infinity();
+  if (root1 >= 0 && root1 < selected) {
+    selected = root1;
+  }
+  if (root2 >= 0 && root2 < selected) {
+    selected = root2;
+  }
+  if (!std::isfinite(static_cast<double>(selected))) {
+    return false;
+  }
+
+  const long double eventVelocity =
+    velocityLd + accelerationLd * selected;
+  if (!directionMatches(distance, static_cast<double>(eventVelocity))) {
+    return false;
+  }
+
+  *dtNs = selected * 1E9L;
+  return true;
 }

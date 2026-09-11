@@ -57,6 +57,7 @@ struct ecmcPositionCompareStatus {
   double target;
   double position;
   double velocity;
+  double acceleration;
   int direction;
   uint64_t scheduledTimeNs;
   int64_t leadTimeNs;
@@ -78,6 +79,7 @@ struct ecmcPositionCompareStatus {
     target(0),
     position(0),
     velocity(0),
+    acceleration(0),
     direction(0),
     scheduledTimeNs(0),
     leadTimeNs(0),
@@ -108,6 +110,7 @@ public:
   void execute(bool masterOK,
                double position,
                double velocity,
+               double samplePeriodSec,
                uint64_t sampleTimeNs,
                bool sampleTimeValid,
                uint64_t controllerTimeNs);
@@ -140,6 +143,10 @@ private:
   int scheduleEvent(uint64_t outputValue, uint64_t eventTimeNs);
   void writeIdleActivate();
   bool directionMatches(double distance, double velocity) const;
+  bool calculateTimeToTargetNs(double distance,
+                               double velocity,
+                               double acceleration,
+                               long double *dtNs) const;
 
   uint64_t minLeadTimeNs_;
   uint64_t maxLeadTimeNs_;
@@ -150,6 +157,9 @@ private:
   ecmcPositionCompareStatus status_;
   bool linked_;
   bool activateIdlePending_;
+  bool accelerationValid_;
+  double previousVelocity_;
+  uint64_t previousSampleTimeNs_;
   bool asynParamsCreated_;
   int32_t asynState_;
   int32_t asynReason_;
@@ -165,6 +175,7 @@ private:
   ecmcAsynDataItem *asynTargetParam_;
   ecmcAsynDataItem *asynPositionParam_;
   ecmcAsynDataItem *asynVelocityParam_;
+  ecmcAsynDataItem *asynAccelerationParam_;
   ecmcAsynDataItem *asynDirectionParam_;
   ecmcAsynDataItem *asynScheduledTimeParam_;
   ecmcAsynDataItem *asynLeadTimeParam_;

@@ -4383,7 +4383,8 @@ int axisPrintPositionCompare(int axisIndex) {
   const ecmcPositionCompareStatus status =
     axes[axisIndex]->getPositionCompareStatus();
   printf("# Axis %d position compare: state=%d reason=%d sequence=%llu target=%.15g "
-         "position=%.15g velocity=%.15g direction=%d outputValue=%llu "
+         "position=%.15g velocity=%.15g acceleration=%.15g "
+         "direction=%d outputValue=%llu "
          "scheduledTimeNs=%llu leadTimeNs=%lld sampleAgeNs=%lld "
          "pulseWidthNs=%llu resetValue=%llu resetTimeNs=%llu "
          "sampleTimeNs=%llu controllerTimeNs=%llu eventTimeNs=%llu "
@@ -4395,6 +4396,7 @@ int axisPrintPositionCompare(int axisIndex) {
          status.target,
          status.position,
          status.velocity,
+         status.acceleration,
          status.direction,
          static_cast<unsigned long long>(status.outputValue),
          static_cast<unsigned long long>(status.scheduledTimeNs),

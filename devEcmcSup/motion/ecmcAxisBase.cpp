@@ -618,13 +618,14 @@ void ecmcAxisBase::postExecute(bool masterOK) {
     const bool sampleTimeValid =
       resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
     const uint64_t controllerTimeNs = ec ? ec->getLastSendTimeNs() : 0;
-    const double comparePosition = encoder ?
-      encoder->getActPos() : status.currentPositionActual;
-    const double compareVelocity = encoder ?
-      encoder->getActVel() : status.currentVelocityActual;
+    const double compareVelocity = status.sampleTime > 0 ?
+      (status.currentPositionSetpoint -
+       data_.statusOld_.currentPositionSetpoint) / status.sampleTime :
+      status.currentVelocitySetpoint;
     positionCompare_.execute(masterOK,
-                             comparePosition,
+                             status.currentPositionSetpoint,
                              compareVelocity,
+                             status.sampleTime,
                              encoderSampleTimeNs,
                              sampleTimeValid,
                              controllerTimeNs);
