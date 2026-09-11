@@ -80,6 +80,7 @@ public:
   void                  setActPos(double pos);
   double                getSampleTime();
   double                getActVel();
+  int                   getActPosSlaveId();
   void                  setHomed(bool homed);
   bool                  getHomed();
   encoderType           getType();
@@ -94,14 +95,25 @@ public:
   uint64_t              getRawMask();
   bool                  getLatchFuncEnabled();
   int                   setHomeLatchArmControlWord(uint64_t control, int bits);
+  int                   setTouchProbeArmControlWord(uint64_t control, int bits);
   void                  setLatchControlEnabled(bool enable);
   bool                  getLatchControlEnabled();
   void                  setArmLatch(bool arm);
+  bool                  getTouchProbeFuncEnabled();
+  void                  setTouchProbeControlEnabled(bool enable);
+  void                  setArmTouchProbe(bool arm);
   void                  setTouchProbeAutoRearm(bool enable);
+  bool                  getArmTouchProbe();
   bool                  getArmLatch();
   bool                  getNewValueLatched();
   double                getLatchPosEng();
+  double                getTouchProbePosEng() const;
   ecmcEcTimedValue<double> getLatchTimedValue(uint64_t nearbyDcTimeNs) const;
+  ecmcEcTimedValue<double> getTouchProbeTimedValue(
+    uint64_t nearbyDcTimeNs) const;
+  uint64_t              getTouchProbeSequence() const;
+  uint64_t              getTouchProbeTimestampRaw() const;
+  int                   getTouchProbeTimestampBits() const;
   uint64_t              getLatchSequence() const;
   uint64_t              getLatchTimestampRaw() const;
   int                   getLatchTimestampBits() const;
@@ -195,6 +207,7 @@ protected:
                         bool domainOK);
   int      readHwWarningError(bool domainOK);
   int      readHwLatch(bool domainOK);
+  int      readHwTouchProbe(bool domainOK);
   int      readHwReady(bool domainOK);
   
   encoderType encType_;
@@ -254,6 +267,22 @@ protected:
   uint64_t encLatchTimestampRaw_;
   int encLatchTimestampBits_;
   bool encLatchTimestampValid_;
+  bool     touchProbeFunctEnabled_;
+  bool     touchProbeStatus_;
+  bool     touchProbeStatusOld_;
+  double   rawTouchProbePos_;
+  double   rawTouchProbePosMultiTurn_;
+  uint64_t touchProbeControlWordArm_;
+  uint64_t touchProbeControlWordIdle_;
+  int      touchProbeControlBits_;
+  bool     touchProbeControlEnabled_;
+  bool     touchProbeControlDisablePending_;
+  bool     touchProbeArm_;
+  double   actTouchProbePos_;
+  uint64_t touchProbeSequence_;
+  uint64_t touchProbeTimestampRaw_;
+  int      touchProbeTimestampBits_;
+  bool     touchProbeTimestampValid_;
   bool enablePositionFilter_;
   bool enableVelocityFilter_;
   uint64_t hwReset_;

@@ -30,6 +30,7 @@
 #include "ecmcAxisData.h"
 #include "ecmcFilter.h"
 #include "ecmcMotionUtils.h"
+#include "ecmcPositionCompare.h"
 
 enum axisState {
   ECMC_AXIS_STATE_STARTUP  = 0,
@@ -118,6 +119,12 @@ public:
   ecmcEcTimedValue<double>   getTouchProbeResult(int encoderIndex,
                                                   uint64_t nearbyDcTimeNs,
                                                   int *error);
+  ecmcPositionCompare*       getPositionCompare();
+  int                        armPositionCompare(double target,
+                                                int direction,
+                                                uint64_t outputValue);
+  int                        cancelPositionCompare();
+  ecmcPositionCompareStatus  getPositionCompareStatus();
   ecmcAxisSequencer*         getSeq();
   int                        getPosAct(double *pos);
   int                        getPosSet(double *pos);
@@ -327,6 +334,7 @@ protected:
   ecmcTrajectoryBase *traj_;
   ecmcMonitor *mon_;
   ecmcEncoder *encArray_[ECMC_MAX_ENCODERS];
+  ecmcPositionCompare positionCompare_;
   ecmcAxisSequencer seq_;
   ecmcAxisData data_;
   axisState axisState_;

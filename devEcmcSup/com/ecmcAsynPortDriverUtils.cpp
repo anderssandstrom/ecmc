@@ -582,6 +582,38 @@ int getAxEncFuncType(char *objPath,
         return 0;
       }
 
+      // Touch probe status
+      nvals = strcmp(objectFunctionStr, ECMC_ENC_TOUCH_PROBE_STATUS_STR);
+
+      if (nvals == 0) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS;
+        return 0;
+      }
+
+      // Touch probe pos
+      nvals = strcmp(objectFunctionStr, ECMC_ENC_TOUCH_PROBE_POS_STR);
+
+      if (nvals == 0) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE;
+        return 0;
+      }
+
+      // Touch probe control
+      nvals = strcmp(objectFunctionStr, ECMC_ENC_TOUCH_PROBE_CONTROL_STR);
+
+      if (nvals == 0) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL;
+        return 0;
+      }
+
+      // Optional hardware/DC timestamp captured with the touch probe value
+      nvals = strcmp(objectFunctionStr, ECMC_ENC_TOUCH_PROBE_TIMESTAMP_STR);
+
+      if (nvals == 0) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP;
+        return 0;
+      }
+
       // Reset alarm
       nvals = strcmp(objectFunctionStr, ECMC_ENC_RESET_STR);
 

@@ -266,10 +266,26 @@ int setPLCExpr(int   index,
  *
  *  Function Lib: Motion
  *   Touch-probe readers use one-based encoder indices:\n
+ *     mc_touch_probe_arm(axisIndex, encoderIndex, arm)\n
+ *     mc_touch_probe_get_valid(axisIndex, encoderIndex)\n
  *     mc_get_touch_probe_pos(axisIndex, encoderIndex)\n
  *     mc_get_touch_probe_sequence(axisIndex, encoderIndex)\n
+ *     mc_touch_probe_get_time(axisIndex, encoderIndex)\n
+ *     mc_touch_probe_get_timestamp_raw(axisIndex, encoderIndex)\n
+ *     mc_touch_probe_get_timestamp_bits(axisIndex, encoderIndex)\n
  *   The position uses the encoder object's normal multiturn, scaling, and
  *   engineering-offset conversion.\n
+ *
+ *   Position-compare helpers:\n
+ *     mc_pos_compare_arm(axisIndex, target, direction, outputValue)\n
+ *     mc_pos_compare_cancel(axisIndex)\n
+ *     mc_pos_compare_get_state(axisIndex)\n
+ *     mc_pos_compare_get_sequence(axisIndex)\n
+ *     mc_pos_compare_get_scheduled_time(axisIndex)\n
+ *     mc_pos_compare_get_lead_time(axisIndex)\n
+ *     mc_pos_compare_get_sample_age(axisIndex)\n
+ *     mc_pos_compare_get_position(axisIndex)\n
+ *     mc_pos_compare_get_velocity(axisIndex)\n
  *
  *   1. retvalue = mc_move_abs(
  *                           <axIndex>,       : Axis index\n

@@ -167,10 +167,11 @@ inline double ec_get_slave_input_event_time(double slavePosition) {
   bool valid = false;
   if(timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||
      timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
-    // Resolve the effective input event against the cycle in which the input
-    // process image becomes visible to ecmc. Slave-specific PDO generation
-    // age remains represented by timing.cycleOffset.
-    valid = ecmcEcResolveScheduledEventNs(cycle.receiveTimeNs, timing,
+    // Resolve the effective input event in the EtherCAT/DC application-time
+    // domain. Slave-specific PDO generation age remains represented by
+    // timing.cycleOffset; host receive/frame timing must not be baked into the
+    // slave sample timestamp.
+    valid = ecmcEcResolveScheduledEventNs(cycle.applicationTimeNs, timing,
       slave->getDcConfig(), slave->getDcSchedule(), cycle.nominalPeriodNs,
       &eventTimeNs);
   } else if(timing.source == ecmcEcTimingSource::CYCLE_ONLY) {

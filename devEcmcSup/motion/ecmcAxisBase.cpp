@@ -19,6 +19,9 @@
 #include <iostream>
 #include "ecmcMotion.h"
 #include "ecmcErrorsList.h"
+#include "ecmcEc.h"
+#include "ecmcEcSlave.h"
+#include "ecmcGlobalsExtern.h"
 
 #define ecmcRtLoggerLogInfo(...) \
   ECMC_RT_LOG_AXIS_BASE_INFO(data_.status_.axisId, __VA_ARGS__)
@@ -28,6 +31,37 @@
   ECMC_RT_LOG_AXIS_BASE_DEBUG(data_.status_.axisId, __VA_ARGS__)
 
 namespace {
+bool resolveAxisEncoderSampleTimeNs(ecmcEncoder *encoder,
+                                    uint64_t *eventTimeNs) {
+  if (!ec || !encoder || !eventTimeNs) {
+    return false;
+  }
+  const int slaveId = encoder->getActPosSlaveId();
+  ecmcEcSlave *slave = ec->findSlave(slaveId);
+  if (!slave) {
+    const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
+    if (!cycle.applicationTimeNs) {
+      return false;
+    }
+    *eventTimeNs = cycle.applicationTimeNs;
+    return true;
+  }
+  const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
+  const ecmcEcEndpointTiming& timing = slave->getInputTiming();
+  if (timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||
+      timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
+    return ecmcEcResolveScheduledEventNs(cycle.applicationTimeNs, timing,
+                                         slave->getDcConfig(),
+                                         slave->getDcSchedule(),
+                                         cycle.nominalPeriodNs,
+                                         eventTimeNs);
+  }
+  if (timing.source == ecmcEcTimingSource::CYCLE_ONLY) {
+    return ecmcEcResolveCycleEventNs(cycle, timing, eventTimeNs);
+  }
+  return false;
+}
+
 const char *axisCommandToString(motionCommandTypes command) {
   switch (command) {
   case ECMC_CMD_NOCMD:
@@ -568,6 +602,24 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   for (int i = 0; i < encoderCount; i++) {
     encArray_[i]->writeEntries();
   }
+
+  if (positionCompare_.isActive()) {
+    uint64_t encoderSampleTimeNs = 0;
+    ecmcEncoder *encoder = getPrimEnc();
+    const bool sampleTimeValid =
+      resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
+    const uint64_t controllerTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+    const double comparePosition = encoder ?
+      encoder->getActPos() : status.currentPositionActual;
+    const double compareVelocity = encoder ?
+      encoder->getActVel() : status.currentVelocityActual;
+    positionCompare_.execute(masterOK,
+                             comparePosition,
+                             compareVelocity,
+                             encoderSampleTimeNs,
+                             sampleTimeValid,
+                             controllerTimeNs);
+  }
   
   status.cycleCounter++;
 
@@ -991,16 +1043,25 @@ int ecmcAxisBase::setTouchProbeArm(int encoderIndex, bool arm) {
   if (!encoder) {
     return error;
   }
-  if (!encoder->getLatchFuncEnabled()) {
+  if (!encoder->getTouchProbeFuncEnabled() && !encoder->getLatchFuncEnabled()) {
     return ERROR_ENC_ENTRY_NULL;
   }
   if (arm) {
     encoder->setTouchProbeAutoRearm(true);
-    encoder->setLatchControlEnabled(true);
-    encoder->setArmLatch(true);
+    if (encoder->getTouchProbeFuncEnabled()) {
+      encoder->setTouchProbeControlEnabled(true);
+      encoder->setArmTouchProbe(true);
+    } else {
+      encoder->setLatchControlEnabled(true);
+      encoder->setArmLatch(true);
+    }
   } else {
     encoder->setTouchProbeAutoRearm(false);
-    encoder->setLatchControlEnabled(false);
+    if (encoder->getTouchProbeFuncEnabled()) {
+      encoder->setTouchProbeControlEnabled(false);
+    } else {
+      encoder->setLatchControlEnabled(false);
+    }
   }
   return 0;
 }
@@ -1017,7 +1078,30 @@ ecmcEcTimedValue<double> ecmcAxisBase::getTouchProbeResult(
   if (!encoder) {
     return result;
   }
-  return encoder->getLatchTimedValue(nearbyDcTimeNs);
+  uint64_t resolvedNearbyDcTimeNs = nearbyDcTimeNs;
+  uint64_t sampleTimeNs = 0;
+  if (resolveAxisEncoderSampleTimeNs(encoder, &sampleTimeNs)) {
+    resolvedNearbyDcTimeNs = sampleTimeNs;
+  }
+  return encoder->getTouchProbeTimedValue(resolvedNearbyDcTimeNs);
+}
+
+ecmcPositionCompare* ecmcAxisBase::getPositionCompare() {
+  return &positionCompare_;
+}
+
+int ecmcAxisBase::armPositionCompare(double target,
+                                     int direction,
+                                     uint64_t outputValue) {
+  return positionCompare_.arm(target, direction, outputValue);
+}
+
+int ecmcAxisBase::cancelPositionCompare() {
+  return positionCompare_.cancel();
+}
+
+ecmcPositionCompareStatus ecmcAxisBase::getPositionCompareStatus() {
+  return positionCompare_.getStatus();
 }
 
 ecmcTrajectoryBase * ecmcAxisBase::getTraj() {

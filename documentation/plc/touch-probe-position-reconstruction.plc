@@ -19,6 +19,7 @@
 #   TP_SID                  ED7062 ecmc slave index (default 22)
 #   ENC_CH                  ED7062 channel, 01 or 02 (default 01)
 #   DS_BASE                 first of ten data storages (default 20)
+#   AUTO_ARM                arm/rearm touch probe through axis object (default 1)
 #   PRINT_RESULT            print one comparison line per event (default 1)
 #   PUSH_ASYN               push all storages after an event (default 0)
 #
@@ -52,6 +53,14 @@ if(${SELF}.firstscan) {
   # Ignore a touch-probe result left over from before this PLC was started.
   static.oldProbeSequence :=
     mc_get_touch_probe_sequence(${AX_ID=1},${ENC_ID=1});
+
+  if(${AUTO_ARM=1}) {
+    static.armError := mc_touch_probe_arm(${AX_ID=1},${ENC_ID=1},1);
+    if(static.armError) {
+      println('TP arm failed, error=', static.armError);
+    };
+  };
+
   ds_clear_data(${DS_BASE=20}+0);
   ds_clear_data(${DS_BASE=20}+1);
   ds_clear_data(${DS_BASE=20}+2);
@@ -94,18 +103,18 @@ static.newEvent := static.probeSequence != static.oldProbeSequence;
 # A changed, non-zero timestamp identifies one new positive-edge event.
 if(static.newEvent and static.historyCount >= 2) {
 
-  # Extend the 32-bit timestamp around this cycle's cached receive time.
-  # EtherCAT events more than 2^31 ns from receive are outside this test's
-  # supported history window.
-  static.receiveTimeLow32 := ec_chk_bits(static.receiveTime,0,31);
-  static.eventDelta := static.timestamp - static.receiveTimeLow32;
+  # Extend the 32-bit timestamp around the resolved slave input sample time.
+  # This keeps the comparison in the EtherCAT/DC time domain and avoids using
+  # host receive timing, which changes with frame length/topology.
+  static.sampleTimeLow32 := ec_chk_bits(static.sampleTime0,0,31);
+  static.eventDelta := static.timestamp - static.sampleTimeLow32;
   if(static.eventDelta > 2147483647) {
     static.eventDelta := static.eventDelta - 4294967296;
   };
   if(static.eventDelta < -2147483648) {
     static.eventDelta := static.eventDelta + 4294967296;
   };
-  static.eventTime := static.receiveTime + static.eventDelta;
+  static.eventTime := static.sampleTime0 + static.eventDelta;
 
   static.interpolationValid := 0;
   static.mode := -1;

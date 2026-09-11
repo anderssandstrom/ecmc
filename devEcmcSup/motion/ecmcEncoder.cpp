@@ -174,6 +174,22 @@ void ecmcEncoder::initVars() {
   encLatchTimestampRaw_          = 0;
   encLatchTimestampBits_         = 0;
   encLatchTimestampValid_        = false;
+  touchProbeFunctEnabled_        = false;
+  touchProbeStatus_              = false;
+  touchProbeStatusOld_           = false;
+  rawTouchProbePos_              = 0;
+  rawTouchProbePosMultiTurn_     = 0;
+  touchProbeControlWordArm_      = 1;
+  touchProbeControlWordIdle_     = 0;
+  touchProbeControlBits_         = 1;
+  touchProbeControlEnabled_      = false;
+  touchProbeControlDisablePending_ = false;
+  touchProbeArm_                 = false;
+  actTouchProbePos_              = 0;
+  touchProbeSequence_            = 0;
+  touchProbeTimestampRaw_        = 0;
+  touchProbeTimestampBits_       = 0;
+  touchProbeTimestampValid_      = false;
   allowOverUnderFlow_            = true;  // Allow as default
 }
 
@@ -345,6 +361,10 @@ double ecmcEncoder::getSampleTime() {
 
 double ecmcEncoder::getActVel() {
   return actVel_;
+}
+
+int ecmcEncoder::getActPosSlaveId() {
+  return getSlaveId(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
 }
 
 void ecmcEncoder::setHomed(bool homed) {
@@ -826,7 +846,81 @@ int ecmcEncoder::readHwLatch(bool domainOK) {
     actEncLatchPos_ = scale_ * rawEncLatchPosMultiTurn_ +
                       engOffset_;
     ++encLatchSequence_;
-    if (touchProbeAutoRearm_ && encLatchArm_) {
+    if (touchProbeAutoRearm_ && !touchProbeFunctEnabled_ && encLatchArm_) {
+      touchProbeRearmState_ = 1;
+    }
+  }
+
+  return 0;
+}
+
+int ecmcEncoder::readHwTouchProbe(bool domainOK) {
+  if (!touchProbeFunctEnabled_ || !domainOK) {
+    return 0;
+  }
+
+  uint64_t tempRaw = 0;
+  double tempRawDouble = 0;
+
+  if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS,
+                       &tempRaw)) {
+    return ERROR_ENC_ENTRY_READ_FAIL;
+  }
+  touchProbeStatusOld_ = touchProbeStatus_;
+  touchProbeStatus_    = tempRaw > 0;
+
+  if (entryTypeIsFloat(
+        getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
+    if (readEcEntryValueDouble(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
+                               &tempRawDouble)) {
+      return ERROR_ENC_ENTRY_READ_FAIL;
+    }
+    rawTouchProbePos_ = tempRawDouble;
+  } else {
+    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
+                         &tempRaw)) {
+      return ERROR_ENC_ENTRY_READ_FAIL;
+    }
+    rawTouchProbePos_ = (totalRawMask_ & tempRaw) - totalRawRegShift_;
+  }
+
+  uint64_t timestampRaw = touchProbeTimestampRaw_;
+  bool timestampValid = false;
+  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
+    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP,
+                         &timestampRaw)) {
+      return ERROR_ENC_ENTRY_READ_FAIL;
+    }
+    timestampValid = touchProbeTimestampBits_ == 32 ||
+                     touchProbeTimestampBits_ == 64;
+  }
+
+  const bool newStored = touchProbeStatus_ > touchProbeStatusOld_;
+  const bool newTimestamp = touchProbeStatus_ &&
+                            timestampValid &&
+                            (!touchProbeTimestampValid_ ||
+                             timestampRaw != touchProbeTimestampRaw_);
+
+  if (newStored || newTimestamp) {
+    touchProbeTimestampRaw_ = timestampRaw;
+    touchProbeTimestampValid_ = timestampValid;
+    if (entryTypeIsFloat(
+          getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
+      rawTouchProbePosMultiTurn_ = rawTouchProbePos_ + rawPosOffset_;
+    } else {
+      const int64_t turns = handleOverUnderFlow(
+        rawPosUintOld_,
+        clampDoubleToUInt64(rawTouchProbePos_),
+        rawTurnsOld_,
+        rawLimit_,
+        bits_);
+      const double rawWrapSpan = static_cast<double>(rawRange_) + 1.0;
+      rawTouchProbePosMultiTurn_ = static_cast<double>(turns) * rawWrapSpan +
+                                   rawTouchProbePos_ + rawPosOffset_;
+    }
+    actTouchProbePos_ = scale_ * rawTouchProbePosMultiTurn_ + engOffset_;
+    ++touchProbeSequence_;
+    if (touchProbeAutoRearm_ && touchProbeArm_) {
       touchProbeRearmState_ = 1;
     }
   }
@@ -1001,6 +1095,12 @@ double ecmcEncoder::readEntries(bool masterOK) {
     encLocalErrorId_ = errorLocal;
   }
 
+  errorLocal = readHwTouchProbe(domainOK_);
+
+  if (errorLocal && !encLocalErrorId_) {
+    encLocalErrorId_ = errorLocal;
+  }
+
   actPos_ = actPosLocal_;
   actVel_ = actVelLocal_;
 
@@ -1029,30 +1129,64 @@ int ecmcEncoder::writeEntries() {
     return 0;
   }
 
+  const bool latchTouchProbeMode = touchProbeAutoRearm_ &&
+                                   !touchProbeFunctEnabled_;
   if (encLatchFunctEnabled_ && encLatchControlEnabled_) {
-    if (touchProbeAutoRearm_ && touchProbeRearmState_ == 2 &&
+    if (latchTouchProbeMode && touchProbeRearmState_ == 2 &&
         !encLatchStatus_) {
       touchProbeRearmState_ = 0;
     }
     // Arm latch or Idle
     uint64_t wordToWrite = encLatchControlWordIdle_;
     if(encLatchArm_ &&
-       (!touchProbeAutoRearm_ || touchProbeRearmState_ == 0)) {
+       (!latchTouchProbeMode || touchProbeRearmState_ == 0)) {
       wordToWrite = encLatchControlWordArm_;
     }
     // Note start bit is already stored in entry
     if (writeEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
                             encLatchControlBits_, wordToWrite)) {
         encLocalErrorId_ = ERROR_ENC_ENTRY_WRITE_FAIL;  // Write to error id will happen in readEntries        
-    } else if (touchProbeAutoRearm_ && touchProbeRearmState_ == 1) {
+    } else if (latchTouchProbeMode && touchProbeRearmState_ == 1) {
       // Guarantee at least one transmitted idle cycle before waiting for the
       // terminal's stored flag to clear.
       touchProbeRearmState_ = 2;
+    } else if (latchTouchProbeMode && touchProbeRearmState_ == 2) {
+      // If the stored flag low phase was missed between cycles, do not remain
+      // idle forever. The terminal has now received an idle command for at
+      // least one complete cycle, so allow the next cycle to arm again.
+      touchProbeRearmState_ = 0;
     } else if (encLatchControlDisablePending_) {
       encLatchControlEnabled_ = false;
       encLatchControlDisablePending_ = false;
     }
     //printf("Writing arm cmd: %" PRIu64 "\n",wordToWrite);
+  }
+
+  if (touchProbeFunctEnabled_ && touchProbeControlEnabled_) {
+    if (touchProbeAutoRearm_ && touchProbeRearmState_ == 2 &&
+        !touchProbeStatus_) {
+      touchProbeRearmState_ = 0;
+    }
+    uint64_t wordToWrite = touchProbeControlWordIdle_;
+    if(touchProbeArm_ &&
+       (!touchProbeAutoRearm_ || touchProbeRearmState_ == 0)) {
+      wordToWrite = touchProbeControlWordArm_;
+    }
+    if (writeEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
+                         touchProbeControlBits_,
+                         wordToWrite)) {
+      encLocalErrorId_ = ERROR_ENC_ENTRY_WRITE_FAIL;
+    } else if (touchProbeAutoRearm_ && touchProbeRearmState_ == 1) {
+      touchProbeRearmState_ = 2;
+    } else if (touchProbeAutoRearm_ && touchProbeRearmState_ == 2) {
+      // If the stored flag low phase was missed between cycles, do not remain
+      // idle forever. The terminal has now received an idle command for at
+      // least one complete cycle, so allow the next cycle to arm again.
+      touchProbeRearmState_ = 0;
+    } else if (touchProbeControlDisablePending_) {
+      touchProbeControlEnabled_ = false;
+      touchProbeControlDisablePending_ = false;
+    }
   }
 
   int errorCode = 0;
@@ -1143,6 +1277,37 @@ int ecmcEncoder::validate() {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
     }
     if (encLatchTimestampBits_ != 32 && encLatchTimestampBits_ != 64) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                        ERROR_EC_ENTRY_INVALID_BIT_LENGTH);
+    }
+  }
+
+  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS) &&
+      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)  &&
+      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL)) {
+    touchProbeFunctEnabled_ = !validateEntry(
+      ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS) &&
+                              !validateEntry(
+      ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE) &&
+                              !validateEntry(
+      ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL);
+  } else {
+    touchProbeFunctEnabled_ = false;
+  }
+
+  touchProbeTimestampBits_ = 0;
+  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
+    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP);
+    if (errorCode) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    }
+    errorCode = getEntryBitCount(
+      ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP,
+      &touchProbeTimestampBits_);
+    if (errorCode) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+    }
+    if (touchProbeTimestampBits_ != 32 && touchProbeTimestampBits_ != 64) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                         ERROR_EC_ENTRY_INVALID_BIT_LENGTH);
     }
@@ -1325,6 +1490,10 @@ bool ecmcEncoder::getLatchFuncEnabled() {
   return encLatchFunctEnabled_;
 }
 
+bool ecmcEncoder::getTouchProbeFuncEnabled() {
+  return touchProbeFunctEnabled_;
+}
+
 void ecmcEncoder::setLatchControlEnabled(bool enable) {
   if (enable) {
     encLatchControlEnabled_ = true;
@@ -1344,6 +1513,21 @@ bool ecmcEncoder::getLatchControlEnabled() {
   return encLatchControlEnabled_;
 }
 
+void ecmcEncoder::setTouchProbeControlEnabled(bool enable) {
+  if (enable) {
+    touchProbeControlEnabled_ = true;
+    touchProbeControlDisablePending_ = false;
+    return;
+  }
+
+  touchProbeArm_ = false;
+  if (touchProbeControlEnabled_) {
+    touchProbeControlDisablePending_ = true;
+  } else {
+    touchProbeControlDisablePending_ = false;
+  }
+}
+
 /*
 * Arm encoder hardware latch
 */
@@ -1354,17 +1538,48 @@ void ecmcEncoder::setArmLatch(bool arm) {
     uint64_t tempValue = 0;
     readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
                     encLatchControlBits_,&tempValue);
-    encLatchControlWordIdle_ = tempValue;
+    encLatchControlWordIdle_ = tempValue & ~encLatchControlWordArm_;
   }
   encLatchArm_ = arm;
   if (!arm) {
     touchProbeRearmState_ = 0;
+  } else if (touchProbeAutoRearm_) {
+    // Always transmit idle for at least one complete cycle before arming in
+    // touch-probe mode. This makes manual and automatic re-arm deterministic
+    // even if the terminal's stored flag low phase is missed between cycles.
+    touchProbeRearmState_ = 2;
+  }
+}
+
+void ecmcEncoder::setArmTouchProbe(bool arm) {
+  if(!touchProbeArm_ && arm) {
+    uint64_t tempValue = 0;
+    readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
+                    touchProbeControlBits_,
+                    &tempValue);
+    touchProbeControlWordIdle_ = tempValue & ~touchProbeControlWordArm_;
+  }
+  touchProbeArm_ = arm;
+  if (!arm) {
+    touchProbeRearmState_ = 0;
+  } else if (touchProbeAutoRearm_) {
+    // Always transmit idle for at least one complete cycle before arming in
+    // touch-probe mode. This makes manual and automatic re-arm deterministic
+    // even if the terminal's stored flag low phase is missed between cycles.
+    touchProbeRearmState_ = 2;
   }
 }
 
 void ecmcEncoder::setTouchProbeAutoRearm(bool enable) {
+  if (touchProbeAutoRearm_ == enable) {
+    return;
+  }
   touchProbeAutoRearm_ = enable;
   touchProbeRearmState_ = 0;
+}
+
+bool ecmcEncoder::getArmTouchProbe() {
+  return touchProbeArm_;
 }
 
 /*
@@ -1388,6 +1603,10 @@ double ecmcEncoder::getLatchPosEng() {
   return actEncLatchPos_;
 }
 
+double ecmcEncoder::getTouchProbePosEng() const {
+  return touchProbeFunctEnabled_ ? actTouchProbePos_ : actEncLatchPos_;
+}
+
 ecmcEcTimedValue<double> ecmcEncoder::getLatchTimedValue(
   uint64_t nearbyDcTimeNs) const {
   ecmcEcTimedValue<double> result;
@@ -1409,6 +1628,47 @@ ecmcEcTimedValue<double> ecmcEncoder::getLatchTimedValue(
     result.uncertaintyNs = 0;
   }
   return result;
+}
+
+ecmcEcTimedValue<double> ecmcEncoder::getTouchProbeTimedValue(
+  uint64_t nearbyDcTimeNs) const {
+  if (!touchProbeFunctEnabled_) {
+    return getLatchTimedValue(nearbyDcTimeNs);
+  }
+
+  ecmcEcTimedValue<double> result;
+  if (!touchProbeSequence_) {
+    return result;
+  }
+  result.value = actTouchProbePos_;
+  result.sequence = touchProbeSequence_;
+  result.valid = true;
+  result.eventTimeNs = nearbyDcTimeNs;
+  result.quality = ecmcEcTimeQuality::CYCLE_BOUNDED;
+  result.uncertaintyNs = static_cast<uint32_t>(sampleTimeMs_ * 1.0e6);
+  if (touchProbeTimestampValid_) {
+    result.eventTimeNs = touchProbeTimestampBits_ == 32 ?
+      ecmcEcExtendDcTimestamp32(
+        static_cast<uint32_t>(touchProbeTimestampRaw_), nearbyDcTimeNs) :
+      touchProbeTimestampRaw_;
+    result.quality = ecmcEcTimeQuality::HARDWARE_TIMESTAMP;
+    result.uncertaintyNs = 0;
+  }
+  return result;
+}
+
+uint64_t ecmcEncoder::getTouchProbeSequence() const {
+  return touchProbeFunctEnabled_ ? touchProbeSequence_ : encLatchSequence_;
+}
+
+uint64_t ecmcEncoder::getTouchProbeTimestampRaw() const {
+  return touchProbeFunctEnabled_ ? touchProbeTimestampRaw_ :
+                                   encLatchTimestampRaw_;
+}
+
+int ecmcEncoder::getTouchProbeTimestampBits() const {
+  return touchProbeFunctEnabled_ ? touchProbeTimestampBits_ :
+                                   encLatchTimestampBits_;
 }
 
 uint64_t ecmcEncoder::getLatchSequence() const {
@@ -1930,6 +2190,12 @@ double ecmcEncoder::getLookupTableScale() {
 int ecmcEncoder::setHomeLatchArmControlWord(uint64_t control, int bits) {
   encLatchControlBits_ = bits;
   encLatchControlWordArm_ = control;
+  return 0;
+}
+
+int ecmcEncoder::setTouchProbeArmControlWord(uint64_t control, int bits) {
+  touchProbeControlBits_ = bits;
+  touchProbeControlWordArm_ = control;
   return 0;
 }
 

@@ -36,6 +36,7 @@
 #include "ecmcEc.h"
 #include "ecmcEcSlave.h"
 #include "ecmcEcEntry.h"
+#include "ecmcAsynPortDriverUtils.h"
 
 // TODO: REMOVE GLOBALS
 #include "ecmcGlobalsExtern.h"
@@ -2990,6 +2991,23 @@ int setAxisEncHomeLatchArmControlWord(int axisIndex, uint64_t control, int bits)
   return axes[axisIndex]->getConfigEnc()->setHomeLatchArmControlWord(control, bits);
 }
 
+int setAxisEncTouchProbeArmControlWord(int axisIndex,
+                                       uint64_t control,
+                                       int bits) {
+  LOGINFO4("%s/%s:%d axisIndex=%d control=%d\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           axisIndex,
+           bits);
+
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  CHECK_AXIS_ENCODER_CFG_RETURN_IF_ERROR(axisIndex);
+
+  return axes[axisIndex]->getConfigEnc()->setTouchProbeArmControlWord(control,
+                                                                      bits);
+}
+
 int setAxisEncDelayCompTime(int axisIndex, double cycles) {
   LOGINFO4("%s/%s:%d axisIndex=%d, cycles=%lf\n",
            __FILE__, __FUNCTION__, __LINE__, axisIndex, cycles);
@@ -4333,8 +4351,8 @@ int axisPrintTouchProbe(int axisIndex, int encoderIndex) {
          axisIndex, encoderIndex, result.valid,
          static_cast<unsigned long long>(result.sequence), result.value,
          result.quality == ecmcEcTimeQuality::HARDWARE_TIMESTAMP,
-         encoder->getLatchTimestampBits(),
-         static_cast<unsigned long long>(encoder->getLatchTimestampRaw()),
+         encoder->getTouchProbeTimestampBits(),
+         static_cast<unsigned long long>(encoder->getTouchProbeTimestampRaw()),
          static_cast<unsigned long long>(result.eventTimeNs),
          result.quality == ecmcEcTimeQuality::HARDWARE_TIMESTAMP ?
            "hardware-timestamp" :
@@ -4342,6 +4360,152 @@ int axisPrintTouchProbe(int axisIndex, int encoderIndex) {
               "cycle-bounded" : "invalid"),
          result.uncertaintyNs);
   return 0;
+}
+
+int axisPositionCompareArm(int axisIndex,
+                           double target,
+                           int direction,
+                           uint64_t outputValue) {
+  LOGINFO4("%s/%s:%d axisIndex=%d target=%lf direction=%d outputValue=%llu\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, target, direction,
+           static_cast<unsigned long long>(outputValue));
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  return axes[axisIndex]->armPositionCompare(target, direction, outputValue);
+}
+
+int axisPositionCompareCancel(int axisIndex) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  return axes[axisIndex]->cancelPositionCompare();
+}
+
+int axisPrintPositionCompare(int axisIndex) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex);
+  const ecmcPositionCompareStatus status =
+    axes[axisIndex]->getPositionCompareStatus();
+  printf("# Axis %d position compare: state=%d reason=%d sequence=%llu target=%.15g "
+         "position=%.15g velocity=%.15g direction=%d outputValue=%llu "
+         "scheduledTimeNs=%llu leadTimeNs=%lld sampleAgeNs=%lld "
+         "pulseWidthNs=%llu resetValue=%llu resetTimeNs=%llu "
+         "sampleTimeNs=%llu controllerTimeNs=%llu eventTimeNs=%llu "
+         "lastActivateValue=%llu lastOutputValue=%llu\n",
+         axisIndex,
+         status.state,
+         status.reason,
+         static_cast<unsigned long long>(status.sequence),
+         status.target,
+         status.position,
+         status.velocity,
+         status.direction,
+         static_cast<unsigned long long>(status.outputValue),
+         static_cast<unsigned long long>(status.scheduledTimeNs),
+         static_cast<long long>(status.leadTimeNs),
+         static_cast<long long>(status.sampleAgeNs),
+         static_cast<unsigned long long>(status.pulseWidthNs),
+         static_cast<unsigned long long>(status.resetValue),
+         static_cast<unsigned long long>(status.resetTimeNs),
+         static_cast<unsigned long long>(status.sampleTimeNs),
+         static_cast<unsigned long long>(status.controllerTimeNs),
+         static_cast<unsigned long long>(status.eventTimeNs),
+         static_cast<unsigned long long>(status.lastActivateValue),
+         static_cast<unsigned long long>(status.lastOutputValue));
+  fflush(stdout);
+  return 0;
+}
+
+int axisPositionCompareConfigure(int axisIndex,
+                                 uint64_t minLeadTimeNs,
+                                 uint64_t maxLeadTimeNs,
+                                 uint64_t activateIdle,
+                                 uint64_t activateSchedule,
+                                 uint64_t pulseWidthNs,
+                                 uint64_t resetValue) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+  return axes[axisIndex]->getPositionCompare()->configure(minLeadTimeNs,
+                                                          maxLeadTimeNs,
+                                                          activateIdle,
+                                                          activateSchedule,
+                                                          pulseWidthNs,
+                                                          resetValue);
+}
+
+int linkEcEntryToAxisPositionCompare(int   slaveIndex,
+                                     char *entryIDString,
+                                     int   axisIndex,
+                                     int   compareEntryIndex,
+                                     int   bitIndex) {
+  LOGINFO4(
+    "%s/%s:%d slave_index=%d entry=%s axis=%d compare_entry=%d bit_index=%d\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    slaveIndex,
+    entryIDString,
+    axisIndex,
+    compareEntryIndex,
+    bitIndex);
+
+  if ((entryIDString == NULL) || (strlen(entryIDString) == 0)) {
+    return 0;
+  }
+
+  if (compareEntryIndex >= ECMC_EC_ENTRY_LINKS_MAX || compareEntryIndex < 0) {
+    return ERROR_MAIN_ENCODER_ENTRY_INDEX_OUT_OF_RANGE;
+  }
+
+  if (ec == NULL) return ERROR_MAIN_EC_NULL;
+  ecmcEcSlave *slave = ec->findSlave(slaveIndex);
+  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
+  ecmcEcEntry *entry = slave->findEntry(std::string(entryIDString));
+  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
+
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
+
+  const int error =
+    axes[axisIndex]->getPositionCompare()->setEntryAtIndex(entry,
+                                                           compareEntryIndex,
+                                                           bitIndex);
+  if (error) {
+    return error;
+  }
+  slave->setEnableSDOCheck(1);
+  ecmcPositionCompare *compare = axes[axisIndex]->getPositionCompare();
+  if (compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) &&
+      compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) &&
+      compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_START_TIME)) {
+    return compare->validate();
+  }
+  return 0;
+}
+
+int linkEcEntryToAxisPositionComparePath(char *entryPath,
+                                         int   axisIndex,
+                                         int   compareEntryIndex) {
+  LOGINFO4("%s/%s:%d entryPath=%s axis=%d compare_entry=%d\n",
+           __FILE__, __FUNCTION__, __LINE__,
+           entryPath, axisIndex, compareEntryIndex);
+
+  if ((entryPath == NULL) || (strlen(entryPath) == 0)) {
+    return 0;
+  }
+  if (ec == NULL) return ERROR_MAIN_EC_NULL;
+
+  int masterId = -1;
+  int slaveIndex = -1;
+  int bitIndex = -1;
+  char entryId[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  const int parseError =
+    parseEcPath(entryPath, &masterId, &slaveIndex, entryId, &bitIndex);
+  if (parseError) {
+    return parseError;
+  }
+  if (masterId != ec->getMasterIndex()) {
+    return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+  }
+  return linkEcEntryToAxisPositionCompare(slaveIndex,
+                                          entryId,
+                                          axisIndex,
+                                          compareEntryIndex,
+                                          bitIndex);
 }
 
 int linkEcEntryToAxisDrv(int   slaveIndex,

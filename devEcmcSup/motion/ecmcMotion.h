@@ -3389,14 +3389,32 @@ int getAxisMonStopAtAnyLimit(int  axisIndex,
  *
  * \return 0 if success or otherwise an error code.\n
  * 
- * \note Example: Set control word to 0b10101 (21dec) and 5 bits:\n
- *       When latch needs to be armed, 5 bits of 21 dec will be\n
+ * \note Example: Set control word to 0b10001 (17dec) and 5 bits:\n
+ *       When latch needs to be armed, 5 bits of 17 dec will be\n
  *       written to the encoder control word, starting at the bit\n
  *       defined when linking the encoder control word\n
  *       This is an example for EL7062 terminal.\n
- * "Cfg.SetAxisEncHomeLatchArmControlWord(4,21,5)" //Command string to ecmcCmdParser.c.\n
+ * "Cfg.SetAxisEncHomeLatchArmControlWord(4,17,5)" //Command string to ecmcCmdParser.c.\n
  */
 int setAxisEncHomeLatchArmControlWord(int axisIndex, uint64_t control, int bits);
+
+/** \brief Set touch-probe control word to arm touch probe\n
+ *
+ * Same semantics as SetAxisEncHomeLatchArmControlWord(), but applies to the
+ * separate touch-probe control entry instead of the homing latch entry.
+ *
+ * \param[in] axisIndex Axis index.\n
+ * \param[in] control Control word.\n
+ * \param[in] bits Bit count to write.\n
+ *
+ * \return 0 if success or otherwise an error code.\n
+ *
+ * \note Example:
+ * "Cfg.SetAxisEncTouchProbeArmControlWord(4,17,5)"
+ */
+int setAxisEncTouchProbeArmControlWord(int axisIndex,
+                                       uint64_t control,
+                                       int bits);
 
 /** \brief Set latch limit settings.\n
  *
@@ -4038,6 +4056,37 @@ int axisTouchProbeArm(int axisIndex, int encoderIndex, int arm);
 
 /** Print the latest coherent touch-probe result. */
 int axisPrintTouchProbe(int axisIndex, int encoderIndex);
+
+/** Arm one generic timed position compare. Direction: -1 negative, 0 any, 1 positive. */
+int axisPositionCompareArm(int axisIndex,
+                           double target,
+                           int direction,
+                           uint64_t outputValue);
+
+/** Cancel the generic timed position compare. */
+int axisPositionCompareCancel(int axisIndex);
+
+/** Print the generic timed position compare status. */
+int axisPrintPositionCompare(int axisIndex);
+
+/** Configure the generic timed position compare lead window and activate values. */
+int axisPositionCompareConfigure(int axisIndex,
+                                 uint64_t minLeadTimeNs,
+                                 uint64_t maxLeadTimeNs,
+                                 uint64_t activateIdle,
+                                 uint64_t activateSchedule,
+                                 uint64_t pulseWidthNs,
+                                 uint64_t resetValue);
+
+int linkEcEntryToAxisPositionCompare(int   slaveBusPosition,
+                                     char *entryIdString,
+                                     int   axisIndex,
+                                     int   compareEntryIndex,
+                                     int   entryBitIndex);
+
+int linkEcEntryToAxisPositionComparePath(char *entryPath,
+                                         int   axisIndex,
+                                         int   compareEntryIndex);
 
 /** \brief Links an EtherCAT entry to the drive object of the axis at axisIndex.
    *

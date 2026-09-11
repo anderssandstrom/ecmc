@@ -849,10 +849,38 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_move_ext_pos", mc_move_ext_pos);
   ecmcPLCTaskAddFunction("mc_home_pos",     mc_home_pos);
   ecmcPLCTaskAddFunction("mc_get_act_pos",  mc_get_act_pos);
+  ecmcPLCTaskAddFunction("mc_touch_probe_arm",
+                         mc_touch_probe_arm);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_valid",
+                         mc_touch_probe_get_valid);
   ecmcPLCTaskAddFunction("mc_get_touch_probe_pos",
                          mc_get_touch_probe_pos);
   ecmcPLCTaskAddFunction("mc_get_touch_probe_sequence",
                          mc_get_touch_probe_sequence);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_time",
+                         mc_touch_probe_get_time);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_timestamp_raw",
+                         mc_touch_probe_get_timestamp_raw);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_timestamp_bits",
+                         mc_touch_probe_get_timestamp_bits);
+  ecmcPLCTaskAddFunction("mc_pos_compare_arm",
+                         mc_pos_compare_arm);
+  ecmcPLCTaskAddFunction("mc_pos_compare_cancel",
+                         mc_pos_compare_cancel);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_state",
+                         mc_pos_compare_get_state);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_sequence",
+                         mc_pos_compare_get_sequence);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_scheduled_time",
+                         mc_pos_compare_get_scheduled_time);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_lead_time",
+                         mc_pos_compare_get_lead_time);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_sample_age",
+                         mc_pos_compare_get_sample_age);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_position",
+                         mc_pos_compare_get_position);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_velocity",
+                         mc_pos_compare_get_velocity);
   ecmcPLCTaskAddFunction("mc_set_prim_enc", mc_set_prim_enc);
   ecmcPLCTaskAddFunction("mc_get_prim_enc", mc_get_prim_enc);
   ecmcPLCTaskAddFunction("mc_set_axis_error", mc_set_axis_error);

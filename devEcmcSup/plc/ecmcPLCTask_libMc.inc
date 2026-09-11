@@ -16,6 +16,7 @@
 #include "ecmcErrorsList.h"
 #include "ecmcAxisGroup.h"
 #include "ecmcMotionSequence.h"
+#include "ecmcGlobalsExtern.h"
 
 #define CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndex) {             \
   if(axIndex>=ECMC_MAX_AXES || axIndex<0){                    \
@@ -90,8 +91,22 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_move_ext_pos(",
                                "mc_home_pos(",
                                "mc_get_act_pos(",
+                               "mc_touch_probe_arm(",
+                               "mc_touch_probe_get_valid(",
                                "mc_get_touch_probe_pos(",
                                "mc_get_touch_probe_sequence(",
+                               "mc_touch_probe_get_time(",
+                               "mc_touch_probe_get_timestamp_raw(",
+                               "mc_touch_probe_get_timestamp_bits(",
+                               "mc_pos_compare_arm(",
+                               "mc_pos_compare_cancel(",
+                               "mc_pos_compare_get_state(",
+                               "mc_pos_compare_get_sequence(",
+                               "mc_pos_compare_get_scheduled_time(",
+                               "mc_pos_compare_get_lead_time(",
+                               "mc_pos_compare_get_sample_age(",
+                               "mc_pos_compare_get_position(",
+                               "mc_pos_compare_get_velocity(",
                                "mc_set_prim_enc(",
                                "mc_get_prim_enc(",
                                "mc_set_axis_error(",
@@ -168,7 +183,7 @@ static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
 static int statLastSeqExecuteArm_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int statLastSeqExecuteSetStep_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 80;
+static int mc_cmd_count = 94;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -527,7 +542,50 @@ inline double mc_get_touch_probe_pos(double axIndex, double encIndex)
   }
 
   mc_errorCode = 0;
-  return enc->getLatchPosEng();
+  return enc->getTouchProbePosEng();
+}
+
+inline double mc_touch_probe_arm(double axIndex, double encIndex, double arm)
+{
+  int index=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+  if (encIndexInt < 0 || encIndexInt >= ECMC_MAX_ENCODERS) {
+    mc_errorCode = ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE;
+    return (double)mc_errorCode;
+  }
+
+  mc_errorCode =
+    axes[index]->setTouchProbeArm(encIndexInt, (bool)arm);
+  return (double)mc_errorCode;
+}
+
+inline double mc_touch_probe_get_valid(double axIndex, double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  if (encIndexInt < 0 || encIndexInt >= ECMC_MAX_ENCODERS) {
+    mc_errorCode = ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE;
+    return 0.0;
+  }
+
+  int error = 0;
+  const uint64_t nearbyDcTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+  const ecmcEcTimedValue<double> result =
+    axes[axIndexInt]->getTouchProbeResult(encIndexInt,
+                                          nearbyDcTimeNs,
+                                          &error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return result.valid ? 1.0 : 0.0;
 }
 
 inline double mc_get_touch_probe_sequence(double axIndex, double encIndex)
@@ -544,7 +602,155 @@ inline double mc_get_touch_probe_sequence(double axIndex, double encIndex)
   }
 
   mc_errorCode = 0;
-  return (double)enc->getLatchSequence();
+  return (double)enc->getTouchProbeSequence();
+}
+
+inline double mc_touch_probe_get_time(double axIndex, double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  if (encIndexInt < 0 || encIndexInt >= ECMC_MAX_ENCODERS) {
+    mc_errorCode = ERROR_AXIS_ENC_COUNT_OUT_OF_RANGE;
+    return 0.0;
+  }
+
+  int error = 0;
+  const uint64_t nearbyDcTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+  const ecmcEcTimedValue<double> result =
+    axes[axIndexInt]->getTouchProbeResult(encIndexInt,
+                                          nearbyDcTimeNs,
+                                          &error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return (double)result.eventTimeNs;
+}
+
+inline double mc_touch_probe_get_timestamp_raw(double axIndex,
+                                               double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  int error = 0;
+  ecmcEncoder *enc=axes[axIndexInt]->getEnc(encIndexInt,&error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return (double)enc->getTouchProbeTimestampRaw();
+}
+
+inline double mc_touch_probe_get_timestamp_bits(double axIndex,
+                                                double encIndex)
+{
+  int axIndexInt=(int)axIndex;
+  int encIndexInt=(int)encIndex - 1;
+
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(axIndexInt);
+  int error = 0;
+  ecmcEncoder *enc=axes[axIndexInt]->getEnc(encIndexInt,&error);
+  if(error){
+    mc_errorCode = error;
+    return 0.0;
+  }
+
+  mc_errorCode = 0;
+  return (double)enc->getTouchProbeTimestampBits();
+}
+
+inline double mc_pos_compare_arm(double axIndex,
+                                 double target,
+                                 double direction,
+                                 double outputValue)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  mc_errorCode = axes[index]->armPositionCompare(target,
+                                                 (int)direction,
+                                                 (uint64_t)outputValue);
+  return (double)mc_errorCode;
+}
+
+inline double mc_pos_compare_cancel(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+
+  mc_errorCode = axes[index]->cancelPositionCompare();
+  return (double)mc_errorCode;
+}
+
+inline ecmcPositionCompareStatus mc_pos_compare_status(int index)
+{
+  return axes[index]->getPositionCompareStatus();
+}
+
+inline double mc_pos_compare_get_state(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return (double)mc_pos_compare_status(index).state;
+}
+
+inline double mc_pos_compare_get_sequence(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return (double)mc_pos_compare_status(index).sequence;
+}
+
+inline double mc_pos_compare_get_scheduled_time(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return (double)mc_pos_compare_status(index).scheduledTimeNs;
+}
+
+inline double mc_pos_compare_get_lead_time(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return (double)mc_pos_compare_status(index).leadTimeNs;
+}
+
+inline double mc_pos_compare_get_sample_age(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return (double)mc_pos_compare_status(index).sampleAgeNs;
+}
+
+inline double mc_pos_compare_get_position(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return mc_pos_compare_status(index).position;
+}
+
+inline double mc_pos_compare_get_velocity(double axIndex)
+{
+  int index=(int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  mc_errorCode = 0;
+  return mc_pos_compare_status(index).velocity;
 }
 
 inline double mc_set_prim_enc(double axIndex, double encIndex)

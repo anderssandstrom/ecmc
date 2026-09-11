@@ -785,6 +785,9 @@ static int handleCfgCommand(const char *myarg_1) {
   int iValue10      = 0;
   int nvals         = 0;
   uint64_t u64Value = 0;
+  uint64_t u64Value2 = 0;
+  uint64_t u64Value3 = 0;
+  uint64_t u64Value4 = 0;
   double   dValue   = 0;
   double   dValue2  = 0;
   double   dValue3  = 0;
@@ -1668,6 +1671,77 @@ static int handleCfgCommand(const char *myarg_1) {
   if (nvals == 5) {
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("LinkEcEntryToAxisEncoder");
     return linkEcEntryToAxisEnc(iValue, cIdBuffer, iValue3, iValue4, iValue5);
+  }
+
+  /// "Cfg.LinkEcEntryToAxisPositionCompare(slaveBusPosition,entryIdString,
+  /// axisIndex,compareEntryIndex,entrybitIndex)"
+  cIdBuffer[0] = '\0';
+  nvals        = sscanf(myarg_1,
+                        "LinkEcEntryToAxisPositionCompare(%d,%[^,],%d,%d,%d)",
+                        &iValue,
+                        cIdBuffer,
+                        &iValue3,
+                        &iValue4,
+                        &iValue5);
+
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LinkEcEntryToAxisPositionCompare");
+    return linkEcEntryToAxisPositionCompare(iValue, cIdBuffer, iValue3, iValue4, iValue5);
+  }
+
+  /// "Cfg.LinkEcEntryToAxisPositionCompare(ecEntryPathString,axisIndex,compareEntryIndex)"
+  cIdBuffer[0] = '\0';
+  nvals        = sscanf(myarg_1,
+                        "LinkEcEntryToAxisPositionCompare(%[^,],%d,%d)",
+                        cIdBuffer,
+                        &iValue3,
+                        &iValue4);
+
+  if (nvals == 3) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("LinkEcEntryToAxisPositionCompare");
+    return linkEcEntryToAxisPositionComparePath(cIdBuffer, iValue3, iValue4);
+  }
+
+  /// "Cfg.AxisPositionCompareConfigure(axisIndex,minLeadNs,maxLeadNs,activateIdle,activateSchedule,pulseWidthNs,resetValue)"
+  nvals = sscanf(myarg_1,
+                 "AxisPositionCompareConfigure(%d,%" SCNu64 ",%" SCNu64 ",%d,%d,%" SCNu64 ",%" SCNu64 ")",
+                 &iValue,
+                 &u64Value,
+                 &u64Value2,
+                 &iValue4,
+                 &iValue5,
+                 &u64Value3,
+                 &u64Value4);
+
+  if (nvals == 7) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AxisPositionCompareConfigure");
+    return axisPositionCompareConfigure(iValue,
+                                        u64Value,
+                                        u64Value2,
+                                        (uint64_t)iValue4,
+                                        (uint64_t)iValue5,
+                                        u64Value3,
+                                        u64Value4);
+  }
+
+  /// "Cfg.AxisPositionCompareConfigure(axisIndex,minLeadNs,maxLeadNs,activateIdle,activateSchedule)"
+  nvals = sscanf(myarg_1,
+                 "AxisPositionCompareConfigure(%d,%" SCNu64 ",%" SCNu64 ",%d,%d)",
+                 &iValue,
+                 &u64Value,
+                 &u64Value2,
+                 &iValue4,
+                 &iValue5);
+
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AxisPositionCompareConfigure");
+    return axisPositionCompareConfigure(iValue,
+                                        u64Value,
+                                        u64Value2,
+                                        (uint64_t)iValue4,
+                                        (uint64_t)iValue5,
+                                        0,
+                                        0);
   }
 
   /// "Cfg.LinkEcEntryToAxisDrive(slaveBusPosition,entryIdString,
@@ -3895,6 +3969,16 @@ parse_cfg_setaxisdrv:
                    &iValue2);
     if (nvals == 3) {
       return setAxisEncHomeLatchArmControlWord(iValue,u64Value,iValue2);
+    }
+
+    /*int Cfg.SetAxisEncTouchProbeArmControlWord(int axis_no, uint64 control, int bitCount);*/
+    nvals = sscanf(myarg_1,
+                   "SetAxisEncTouchProbeArmControlWord(%d,%" PRIu64 ",%d)",
+                   &iValue,
+                   &u64Value,
+                   &iValue2);
+    if (nvals == 3) {
+      return setAxisEncTouchProbeArmControlWord(iValue,u64Value,iValue2);
     }
 
     /*int Cfg.SetAxisEncInvHwReady(int axis_no, int count);*/
@@ -6537,6 +6621,26 @@ parse_getaxisdrv:
 
   if (nvals == 2) {
     SEND_OK_OR_ERROR_AND_RETURN(axisPrintTouchProbe(iValue, iValue2));
+  }
+
+  nvals = sscanf(myarg_1, "AxisPositionCompareArm(%d,%lf,%d,%" SCNu64 ")=",
+                 &iValue, &fValue, &iValue2, &u64Value);
+
+  if (nvals == 4) {
+    SEND_OK_OR_ERROR_AND_RETURN(
+      axisPositionCompareArm(iValue, fValue, iValue2, u64Value));
+  }
+
+  nvals = sscanf(myarg_1, "AxisPositionCompareCancel(%d)=", &iValue);
+
+  if (nvals == 1) {
+    SEND_OK_OR_ERROR_AND_RETURN(axisPositionCompareCancel(iValue));
+  }
+
+  nvals = sscanf(myarg_1, "AxisPrintPositionCompare(%d)=", &iValue);
+
+  if (nvals == 1) {
+    SEND_OK_OR_ERROR_AND_RETURN(axisPrintPositionCompare(iValue));
   }
 
   /* if we come here, we do not understand the command */
