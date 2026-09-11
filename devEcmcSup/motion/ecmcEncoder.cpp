@@ -13,6 +13,20 @@
 #include "ecmcEncoder.h"
 #include "ecmcRtLogger.h"
 #include <algorithm>
+#include <cstring>
+
+namespace {
+asynStatus asynWriteTouchProbeArmCmd(void *data,
+                                     size_t bytes,
+                                     asynParamType asynParType,
+                                     void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcEncoder*>(userObj)->
+         touchProbeAsynWriteArmCmd(data, bytes, asynParType);
+}
+}
 
 #define ecmcRtLoggerLogInfo(...) \
   ECMC_RT_LOG_AXIS_ENC_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
@@ -190,6 +204,23 @@ void ecmcEncoder::initVars() {
   touchProbeTimestampRaw_        = 0;
   touchProbeTimestampBits_       = 0;
   touchProbeTimestampValid_      = false;
+  touchProbeAsynParamsCreated_   = false;
+  touchProbeAsynValid_           = 0;
+  touchProbeAsynSequence_        = 0;
+  touchProbeAsynPosition_        = 0;
+  touchProbeAsynTimestampValid_  = 0;
+  touchProbeAsynTimestampRaw_    = 0;
+  touchProbeAsynEventTimeNs_     = 0;
+  touchProbeAsynArmed_           = 0;
+  touchProbeAsynArmCmd_          = 0;
+  touchProbeAsynValidParam_      = NULL;
+  touchProbeAsynSequenceParam_   = NULL;
+  touchProbeAsynPositionParam_   = NULL;
+  touchProbeAsynTimestampValidParam_ = NULL;
+  touchProbeAsynTimestampRawParam_ = NULL;
+  touchProbeAsynEventTimeParam_  = NULL;
+  touchProbeAsynArmedParam_      = NULL;
+  touchProbeAsynArmCmdParam_     = NULL;
   allowOverUnderFlow_            = true;  // Allow as default
 }
 
@@ -1966,6 +1997,181 @@ int ecmcEncoder::initAsyn() {
   return 0;
 }
 
+int ecmcEncoder::createTouchProbeAsynParams() {
+  if (touchProbeAsynParamsCreated_) {
+    return 0;
+  }
+  if (asynPortDriver_ == NULL) {
+    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: AsynPortDriver object is NULL (0x%x).\n",
+           __FILE__,
+           __FUNCTION__,
+           __LINE__,
+           data_->status_.axisId,
+           ERROR_AXIS_ASYN_PORT_OBJ_NULL);
+    return ERROR_AXIS_ASYN_PORT_OBJ_NULL;
+  }
+
+  int error = 0;
+  error = createTouchProbeAsynParam("enc.touchprobe.valid",
+                                    asynParamInt32,
+                                    ECMC_EC_S32,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynValid_),
+                                    sizeof(touchProbeAsynValid_),
+                                    &touchProbeAsynValidParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.sequence",
+                                    asynParamInt64,
+                                    ECMC_EC_U64,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynSequence_),
+                                    sizeof(touchProbeAsynSequence_),
+                                    &touchProbeAsynSequenceParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.position",
+                                    asynParamFloat64,
+                                    ECMC_EC_F64,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynPosition_),
+                                    sizeof(touchProbeAsynPosition_),
+                                    &touchProbeAsynPositionParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.timestampvalid",
+                                    asynParamInt32,
+                                    ECMC_EC_S32,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynTimestampValid_),
+                                    sizeof(touchProbeAsynTimestampValid_),
+                                    &touchProbeAsynTimestampValidParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.timestampraw",
+                                    asynParamInt64,
+                                    ECMC_EC_U64,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynTimestampRaw_),
+                                    sizeof(touchProbeAsynTimestampRaw_),
+                                    &touchProbeAsynTimestampRawParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.eventtimens",
+                                    asynParamInt64,
+                                    ECMC_EC_U64,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynEventTimeNs_),
+                                    sizeof(touchProbeAsynEventTimeNs_),
+                                    &touchProbeAsynEventTimeParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.armed",
+                                    asynParamInt32,
+                                    ECMC_EC_S32,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynArmed_),
+                                    sizeof(touchProbeAsynArmed_),
+                                    &touchProbeAsynArmedParam_);
+  if (error) return error;
+  error = createTouchProbeAsynParam("enc.touchprobe.armcmd",
+                                    asynParamInt32,
+                                    ECMC_EC_S32,
+                                    reinterpret_cast<uint8_t*>(
+                                      &touchProbeAsynArmCmd_),
+                                    sizeof(touchProbeAsynArmCmd_),
+                                    &touchProbeAsynArmCmdParam_);
+  if (error) return error;
+  touchProbeAsynArmCmdParam_->setAllowWriteToEcmc(true);
+  touchProbeAsynArmCmdParam_->setExeCmdFunctPtr(asynWriteTouchProbeArmCmd,
+                                                this);
+
+  touchProbeAsynParamsCreated_ = true;
+  refreshTouchProbeAsyn(0, true);
+  return 0;
+}
+
+int ecmcEncoder::createTouchProbeAsynParam(
+  const char *name,
+  asynParamType asynType,
+  ecmcEcDataType ecmcType,
+  uint8_t *data,
+  size_t bytes,
+  ecmcAsynDataItem **asynParamOut) {
+  const int localIndex = index_ + 1;
+  char buffer[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  const int charCount = snprintf(buffer,
+                                 sizeof(buffer),
+                                 ECMC_AX_STR "%d.%s%d",
+                                 data_->status_.axisId,
+                                 name,
+                                 localIndex);
+  if (charCount >= static_cast<int>(sizeof(buffer)) - 1) {
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to generate %s; buffer too small (0x%x).\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      data_->status_.axisId,
+      name,
+      ERROR_AXIS_ASYN_PRINT_TO_BUFFER_FAIL);
+    return ERROR_AXIS_ASYN_PRINT_TO_BUFFER_FAIL;
+  }
+  ecmcAsynDataItem *param = asynPortDriver_->addNewAvailParam(buffer,
+                                                              asynType,
+                                                              data,
+                                                              bytes,
+                                                              ecmcType,
+                                                              0);
+  if (!param) {
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Failed to create default parameter for %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      data_->status_.axisId,
+      buffer);
+    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  }
+  param->setAllowWriteToEcmc(false);
+  param->refreshParam(1);
+  *asynParamOut = param;
+  return 0;
+}
+
+asynStatus ecmcEncoder::touchProbeAsynWriteArmCmd(void *data,
+                                                  size_t bytes,
+                                                  asynParamType asynParType) {
+  if (bytes != sizeof(int32_t) || asynParType != asynParamInt32) {
+    return asynError;
+  }
+  memcpy(&touchProbeAsynArmCmd_, data, bytes);
+  setArmTouchProbe(touchProbeAsynArmCmd_ != 0);
+  return asynSuccess;
+}
+
+void ecmcEncoder::refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs, bool force) {
+  if (!touchProbeAsynParamsCreated_) {
+    return;
+  }
+  const ecmcEcTimedValue<double> result =
+    getTouchProbeTimedValue(nearbyDcTimeNs);
+  touchProbeAsynValid_ = result.valid ? 1 : 0;
+  touchProbeAsynSequence_ = result.sequence;
+  touchProbeAsynPosition_ = result.value;
+  touchProbeAsynTimestampValid_ = touchProbeFunctEnabled_ ?
+    (touchProbeTimestampValid_ ? 1 : 0) :
+    (encLatchTimestampValid_ ? 1 : 0);
+  touchProbeAsynTimestampRaw_ = getTouchProbeTimestampRaw();
+  touchProbeAsynEventTimeNs_ = result.eventTimeNs;
+  touchProbeAsynArmed_ = touchProbeFunctEnabled_ ?
+    (touchProbeArm_ ? 1 : 0) :
+    (encLatchArm_ ? 1 : 0);
+
+  touchProbeAsynValidParam_->refreshParamRT(force);
+  touchProbeAsynSequenceParam_->refreshParamRT(force);
+  touchProbeAsynPositionParam_->refreshParamRT(force);
+  touchProbeAsynTimestampValidParam_->refreshParamRT(force);
+  touchProbeAsynTimestampRawParam_->refreshParamRT(force);
+  touchProbeAsynEventTimeParam_->refreshParamRT(force);
+  touchProbeAsynArmedParam_->refreshParamRT(force);
+  touchProbeAsynArmCmdParam_->refreshParamRT(force);
+}
+
 void ecmcEncoder::setMaxPosDiffToPrimEnc(double distance) {
   maxPosDiffToPrimEnc_ = std::abs(distance);
 }
@@ -2196,7 +2402,7 @@ int ecmcEncoder::setHomeLatchArmControlWord(uint64_t control, int bits) {
 int ecmcEncoder::setTouchProbeArmControlWord(uint64_t control, int bits) {
   touchProbeControlBits_ = bits;
   touchProbeControlWordArm_ = control;
-  return 0;
+  return createTouchProbeAsynParams();
 }
 
 int ecmcEncoder::setAllowOverUnderFlow(bool allow) {

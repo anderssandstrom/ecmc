@@ -111,6 +111,12 @@ public:
   ecmcEcTimedValue<double> getLatchTimedValue(uint64_t nearbyDcTimeNs) const;
   ecmcEcTimedValue<double> getTouchProbeTimedValue(
     uint64_t nearbyDcTimeNs) const;
+  int                   createTouchProbeAsynParams();
+  void                  refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs,
+                                              bool force);
+  asynStatus            touchProbeAsynWriteArmCmd(void *data,
+                                                  size_t bytes,
+                                                  asynParamType asynParType);
   uint64_t              getTouchProbeSequence() const;
   uint64_t              getTouchProbeTimestampRaw() const;
   int                   getTouchProbeTimestampBits() const;
@@ -203,6 +209,12 @@ protected:
   uint8_t* getActPosPtr();
   uint8_t* getActVelPtr();
   int      initAsyn();
+  int      createTouchProbeAsynParam(const char *name,
+                                     asynParamType asynType,
+                                     ecmcEcDataType ecmcType,
+                                     uint8_t *data,
+                                     size_t bytes,
+                                     ecmcAsynDataItem **asynParamOut);
   int      readHwActPos(bool masterOK,
                         bool domainOK);
   int      readHwWarningError(bool domainOK);
@@ -320,6 +332,23 @@ protected:
   ecmcAsynDataItem *encPosAct_;
   ecmcAsynDataItem *encVelAct_;
   ecmcAsynDataItem *encErrId_;
+  bool touchProbeAsynParamsCreated_;
+  int32_t touchProbeAsynValid_;
+  uint64_t touchProbeAsynSequence_;
+  double touchProbeAsynPosition_;
+  int32_t touchProbeAsynTimestampValid_;
+  uint64_t touchProbeAsynTimestampRaw_;
+  uint64_t touchProbeAsynEventTimeNs_;
+  int32_t touchProbeAsynArmed_;
+  int32_t touchProbeAsynArmCmd_;
+  ecmcAsynDataItem *touchProbeAsynValidParam_;
+  ecmcAsynDataItem *touchProbeAsynSequenceParam_;
+  ecmcAsynDataItem *touchProbeAsynPositionParam_;
+  ecmcAsynDataItem *touchProbeAsynTimestampValidParam_;
+  ecmcAsynDataItem *touchProbeAsynTimestampRawParam_;
+  ecmcAsynDataItem *touchProbeAsynEventTimeParam_;
+  ecmcAsynDataItem *touchProbeAsynArmedParam_;
+  ecmcAsynDataItem *touchProbeAsynArmCmdParam_;
 
   int hwReadyInvert_;
   int index_; // Index of this encoder (im axis object)

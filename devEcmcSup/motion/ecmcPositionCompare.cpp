@@ -9,7 +9,66 @@
 #include "ecmcPositionCompare.h"
 #include "ecmcErrorsList.h"
 #include <cmath>
+#include <cstring>
 #include <limits>
+#include <stdio.h>
+
+namespace {
+asynStatus asynWritePositionCompareTargetCmd(void *data,
+                                             size_t bytes,
+                                             asynParamType asynParType,
+                                             void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPositionCompare*>(userObj)->
+         asynWriteTargetCmd(data, bytes, asynParType);
+}
+
+asynStatus asynWritePositionCompareDirectionCmd(void *data,
+                                                size_t bytes,
+                                                asynParamType asynParType,
+                                                void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPositionCompare*>(userObj)->
+         asynWriteDirectionCmd(data, bytes, asynParType);
+}
+
+asynStatus asynWritePositionCompareOutputCmd(void *data,
+                                             size_t bytes,
+                                             asynParamType asynParType,
+                                             void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPositionCompare*>(userObj)->
+         asynWriteOutputCmd(data, bytes, asynParType);
+}
+
+asynStatus asynWritePositionCompareArmCmd(void *data,
+                                          size_t bytes,
+                                          asynParamType asynParType,
+                                          void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPositionCompare*>(userObj)->
+         asynWriteArmCmd(data, bytes, asynParType);
+}
+
+asynStatus asynWritePositionCompareCancelCmd(void *data,
+                                             size_t bytes,
+                                             asynParamType asynParType,
+                                             void *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPositionCompare*>(userObj)->
+         asynWriteCancelCmd(data, bytes, asynParType);
+}
+}
 
 ecmcPositionCompare::ecmcPositionCompare() :
   minLeadTimeNs_(2000000),
@@ -19,7 +78,35 @@ ecmcPositionCompare::ecmcPositionCompare() :
   pulseWidthNs_(0),
   resetValue_(0),
   linked_(false),
-  activateIdlePending_(false) {}
+  activateIdlePending_(false),
+  asynParamsCreated_(false),
+  asynState_(ECMC_POS_COMPARE_DISABLED),
+  asynReason_(ECMC_POS_COMPARE_REASON_NONE),
+  asynDirection_(0),
+  asynTargetCmd_(0),
+  asynDirectionCmd_(0),
+  asynOutputCmd_(1),
+  asynArmCmd_(0),
+  asynCancelCmd_(0),
+  asynStateParam_(NULL),
+  asynReasonParam_(NULL),
+  asynSequenceParam_(NULL),
+  asynTargetParam_(NULL),
+  asynPositionParam_(NULL),
+  asynVelocityParam_(NULL),
+  asynDirectionParam_(NULL),
+  asynScheduledTimeParam_(NULL),
+  asynLeadTimeParam_(NULL),
+  asynSampleAgeParam_(NULL),
+  asynPulseWidthParam_(NULL),
+  asynResetTimeParam_(NULL),
+  asynLastActivateParam_(NULL),
+  asynLastOutputParam_(NULL),
+  asynTargetCmdParam_(NULL),
+  asynDirectionCmdParam_(NULL),
+  asynOutputCmdParam_(NULL),
+  asynArmCmdParam_(NULL),
+  asynCancelCmdParam_(NULL) {}
 
 int ecmcPositionCompare::configure(uint64_t minLeadTimeNs,
                                    uint64_t maxLeadTimeNs,
@@ -245,6 +332,253 @@ bool ecmcPositionCompare::isActive() const {
   return status_.state == ECMC_POS_COMPARE_ARMED ||
          status_.state == ECMC_POS_COMPARE_QUEUED ||
          status_.state == ECMC_POS_COMPARE_RESET_QUEUED;
+}
+
+int ecmcPositionCompare::createAsynParams(ecmcAsynPortDriver *asynPortDriver,
+                                          int axisId) {
+  if (asynParamsCreated_) {
+    return 0;
+  }
+  if (!asynPortDriver) {
+    return ERROR_AXIS_ASYN_PORT_OBJ_NULL;
+  }
+
+  int error = 0;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.state",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynState_),
+                          sizeof(asynState_), &asynStateParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.reason",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynReason_),
+                          sizeof(asynReason_), &asynReasonParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.sequence",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.sequence),
+                          sizeof(status_.sequence), &asynSequenceParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.target",
+                          asynParamFloat64, ECMC_EC_F64,
+                          reinterpret_cast<uint8_t*>(&status_.target),
+                          sizeof(status_.target), &asynTargetParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.position",
+                          asynParamFloat64, ECMC_EC_F64,
+                          reinterpret_cast<uint8_t*>(&status_.position),
+                          sizeof(status_.position), &asynPositionParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.velocity",
+                          asynParamFloat64, ECMC_EC_F64,
+                          reinterpret_cast<uint8_t*>(&status_.velocity),
+                          sizeof(status_.velocity), &asynVelocityParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.direction",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynDirection_),
+                          sizeof(asynDirection_), &asynDirectionParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.scheduledtimens",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.scheduledTimeNs),
+                          sizeof(status_.scheduledTimeNs),
+                          &asynScheduledTimeParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.leadtimens",
+                          asynParamInt64, ECMC_EC_S64,
+                          reinterpret_cast<uint8_t*>(&status_.leadTimeNs),
+                          sizeof(status_.leadTimeNs), &asynLeadTimeParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.sampleagens",
+                          asynParamInt64, ECMC_EC_S64,
+                          reinterpret_cast<uint8_t*>(&status_.sampleAgeNs),
+                          sizeof(status_.sampleAgeNs), &asynSampleAgeParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.pulsewidthns",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.pulseWidthNs),
+                          sizeof(status_.pulseWidthNs), &asynPulseWidthParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.resettimens",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.resetTimeNs),
+                          sizeof(status_.resetTimeNs), &asynResetTimeParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.lastactivate",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.lastActivateValue),
+                          sizeof(status_.lastActivateValue),
+                          &asynLastActivateParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.lastoutput",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&status_.lastOutputValue),
+                          sizeof(status_.lastOutputValue),
+                          &asynLastOutputParam_);
+  if (error) return error;
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.targetcmd",
+                          asynParamFloat64, ECMC_EC_F64,
+                          reinterpret_cast<uint8_t*>(&asynTargetCmd_),
+                          sizeof(asynTargetCmd_), &asynTargetCmdParam_);
+  if (error) return error;
+  asynTargetCmdParam_->setAllowWriteToEcmc(true);
+  asynTargetCmdParam_->setExeCmdFunctPtr(asynWritePositionCompareTargetCmd,
+                                         this);
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.directioncmd",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynDirectionCmd_),
+                          sizeof(asynDirectionCmd_), &asynDirectionCmdParam_);
+  if (error) return error;
+  asynDirectionCmdParam_->setAllowWriteToEcmc(true);
+  asynDirectionCmdParam_->setExeCmdFunctPtr(asynWritePositionCompareDirectionCmd,
+                                            this);
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.outputcmd",
+                          asynParamInt64, ECMC_EC_U64,
+                          reinterpret_cast<uint8_t*>(&asynOutputCmd_),
+                          sizeof(asynOutputCmd_), &asynOutputCmdParam_);
+  if (error) return error;
+  asynOutputCmdParam_->setAllowWriteToEcmc(true);
+  asynOutputCmdParam_->setExeCmdFunctPtr(asynWritePositionCompareOutputCmd,
+                                         this);
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.armcmd",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynArmCmd_),
+                          sizeof(asynArmCmd_), &asynArmCmdParam_);
+  if (error) return error;
+  asynArmCmdParam_->setAllowWriteToEcmc(true);
+  asynArmCmdParam_->setExeCmdFunctPtr(asynWritePositionCompareArmCmd, this);
+  error = createAsynParam(asynPortDriver, axisId, "poscomp.cancelcmd",
+                          asynParamInt32, ECMC_EC_S32,
+                          reinterpret_cast<uint8_t*>(&asynCancelCmd_),
+                          sizeof(asynCancelCmd_), &asynCancelCmdParam_);
+  if (error) return error;
+  asynCancelCmdParam_->setAllowWriteToEcmc(true);
+  asynCancelCmdParam_->setExeCmdFunctPtr(asynWritePositionCompareCancelCmd,
+                                         this);
+
+  asynParamsCreated_ = true;
+  refreshAsyn(true);
+  return 0;
+}
+
+int ecmcPositionCompare::createAsynParam(
+  ecmcAsynPortDriver *asynPortDriver,
+  int axisId,
+  const char *name,
+  asynParamType asynType,
+  ecmcEcDataType ecmcType,
+  uint8_t *data,
+  size_t bytes,
+  ecmcAsynDataItem **asynParamOut) {
+  char buffer[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  const int charCount = snprintf(buffer,
+                                 sizeof(buffer),
+                                 ECMC_AX_STR "%d.%s",
+                                 axisId,
+                                 name);
+  if (charCount >= static_cast<int>(sizeof(buffer)) - 1) {
+    return ERROR_AXIS_ASYN_PRINT_TO_BUFFER_FAIL;
+  }
+  ecmcAsynDataItem *param =
+    asynPortDriver->addNewAvailParam(buffer, asynType, data, bytes, ecmcType, 0);
+  if (!param) {
+    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  }
+  param->setAllowWriteToEcmc(false);
+  param->refreshParam(1);
+  *asynParamOut = param;
+  return 0;
+}
+
+asynStatus ecmcPositionCompare::asynWriteTargetCmd(void *data,
+                                                   size_t bytes,
+                                                   asynParamType asynParType) {
+  if (bytes != sizeof(double) || asynParType != asynParamFloat64) {
+    return asynError;
+  }
+  memcpy(&asynTargetCmd_, data, bytes);
+  return asynSuccess;
+}
+
+asynStatus ecmcPositionCompare::asynWriteDirectionCmd(
+  void *data,
+  size_t bytes,
+  asynParamType asynParType) {
+  if (bytes != sizeof(int32_t) || asynParType != asynParamInt32) {
+    return asynError;
+  }
+  int32_t direction = 0;
+  memcpy(&direction, data, bytes);
+  if (direction < -1 || direction > 1) {
+    return asynError;
+  }
+  asynDirectionCmd_ = direction;
+  return asynSuccess;
+}
+
+asynStatus ecmcPositionCompare::asynWriteOutputCmd(void *data,
+                                                   size_t bytes,
+                                                   asynParamType asynParType) {
+  if (bytes != sizeof(uint64_t) || asynParType != asynParamInt64) {
+    return asynError;
+  }
+  memcpy(&asynOutputCmd_, data, bytes);
+  return asynSuccess;
+}
+
+asynStatus ecmcPositionCompare::asynWriteArmCmd(void *data,
+                                                size_t bytes,
+                                                asynParamType asynParType) {
+  if (bytes != sizeof(int32_t) || asynParType != asynParamInt32) {
+    return asynError;
+  }
+  memcpy(&asynArmCmd_, data, bytes);
+  if (!asynArmCmd_) {
+    return asynSuccess;
+  }
+  return arm(asynTargetCmd_, asynDirectionCmd_, asynOutputCmd_) ?
+         asynError : asynSuccess;
+}
+
+asynStatus ecmcPositionCompare::asynWriteCancelCmd(void *data,
+                                                   size_t bytes,
+                                                   asynParamType asynParType) {
+  if (bytes != sizeof(int32_t) || asynParType != asynParamInt32) {
+    return asynError;
+  }
+  memcpy(&asynCancelCmd_, data, bytes);
+  if (!asynCancelCmd_) {
+    return asynSuccess;
+  }
+  return cancel() ? asynError : asynSuccess;
+}
+
+void ecmcPositionCompare::refreshAsyn(bool force) {
+  if (!asynParamsCreated_) {
+    return;
+  }
+  updateAsynShadow();
+  asynStateParam_->refreshParamRT(force);
+  asynReasonParam_->refreshParamRT(force);
+  asynSequenceParam_->refreshParamRT(force);
+  asynTargetParam_->refreshParamRT(force);
+  asynPositionParam_->refreshParamRT(force);
+  asynVelocityParam_->refreshParamRT(force);
+  asynDirectionParam_->refreshParamRT(force);
+  asynScheduledTimeParam_->refreshParamRT(force);
+  asynLeadTimeParam_->refreshParamRT(force);
+  asynSampleAgeParam_->refreshParamRT(force);
+  asynPulseWidthParam_->refreshParamRT(force);
+  asynResetTimeParam_->refreshParamRT(force);
+  asynLastActivateParam_->refreshParamRT(force);
+  asynLastOutputParam_->refreshParamRT(force);
+}
+
+void ecmcPositionCompare::updateAsynShadow() {
+  asynState_ = static_cast<int32_t>(status_.state);
+  asynReason_ = static_cast<int32_t>(status_.reason);
+  asynDirection_ = static_cast<int32_t>(status_.direction);
 }
 
 int ecmcPositionCompare::scheduleEvent(uint64_t outputValue,

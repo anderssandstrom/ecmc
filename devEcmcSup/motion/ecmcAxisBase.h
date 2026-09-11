@@ -120,6 +120,7 @@ public:
                                                   uint64_t nearbyDcTimeNs,
                                                   int *error);
   ecmcPositionCompare*       getPositionCompare();
+  int                        createPositionCompareAsynParams();
   int                        armPositionCompare(double target,
                                                 int direction,
                                                 uint64_t outputValue);

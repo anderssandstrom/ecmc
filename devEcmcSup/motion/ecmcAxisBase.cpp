@@ -603,6 +603,15 @@ void ecmcAxisBase::postExecute(bool masterOK) {
     encArray_[i]->writeEntries();
   }
 
+  for (int i = 0; i < encoderCount; i++) {
+    uint64_t encoderSampleTimeNs = 0;
+    const bool sampleTimeValid =
+      resolveAxisEncoderSampleTimeNs(encArray_[i], &encoderSampleTimeNs);
+    encArray_[i]->refreshTouchProbeAsyn(sampleTimeValid ?
+                                        encoderSampleTimeNs : 0,
+                                        false);
+  }
+
   if (positionCompare_.isActive()) {
     uint64_t encoderSampleTimeNs = 0;
     ecmcEncoder *encoder = getPrimEnc();
@@ -620,6 +629,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
                              sampleTimeValid,
                              controllerTimeNs);
   }
+  positionCompare_.refreshAsyn(false);
   
   status.cycleCounter++;
 
@@ -1088,6 +1098,11 @@ ecmcEcTimedValue<double> ecmcAxisBase::getTouchProbeResult(
 
 ecmcPositionCompare* ecmcAxisBase::getPositionCompare() {
   return &positionCompare_;
+}
+
+int ecmcAxisBase::createPositionCompareAsynParams() {
+  return positionCompare_.createAsynParams(asynPortDriver_,
+                                           data_.status_.axisId);
 }
 
 int ecmcAxisBase::armPositionCompare(double target,

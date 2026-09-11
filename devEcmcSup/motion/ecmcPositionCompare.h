@@ -14,7 +14,10 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "ecmcEcEntryLink.h"
+#include "ecmcAsynDataItem.h"
+#include "ecmcAsynPortDriver.h"
 
 #define ECMC_POS_COMPARE_ENTRY_OUTPUT      0
 #define ECMC_POS_COMPARE_ENTRY_ACTIVATE    1
@@ -111,8 +114,29 @@ public:
   ecmcPositionCompareStatus getStatus() const;
   bool isLinked() const;
   bool isActive() const;
+  int createAsynParams(ecmcAsynPortDriver *asynPortDriver, int axisId);
+  void refreshAsyn(bool force);
+  asynStatus asynWriteTargetCmd(void *data, size_t bytes,
+                                asynParamType asynParType);
+  asynStatus asynWriteDirectionCmd(void *data, size_t bytes,
+                                   asynParamType asynParType);
+  asynStatus asynWriteOutputCmd(void *data, size_t bytes,
+                                asynParamType asynParType);
+  asynStatus asynWriteArmCmd(void *data, size_t bytes,
+                             asynParamType asynParType);
+  asynStatus asynWriteCancelCmd(void *data, size_t bytes,
+                                asynParamType asynParType);
 
 private:
+  int createAsynParam(ecmcAsynPortDriver *asynPortDriver,
+                      int axisId,
+                      const char *name,
+                      asynParamType asynType,
+                      ecmcEcDataType ecmcType,
+                      uint8_t *data,
+                      size_t bytes,
+                      ecmcAsynDataItem **asynParamOut);
+  void updateAsynShadow();
   int scheduleEvent(uint64_t outputValue, uint64_t eventTimeNs);
   void writeIdleActivate();
   bool directionMatches(double distance, double velocity) const;
@@ -126,6 +150,34 @@ private:
   ecmcPositionCompareStatus status_;
   bool linked_;
   bool activateIdlePending_;
+  bool asynParamsCreated_;
+  int32_t asynState_;
+  int32_t asynReason_;
+  int32_t asynDirection_;
+  double asynTargetCmd_;
+  int32_t asynDirectionCmd_;
+  uint64_t asynOutputCmd_;
+  int32_t asynArmCmd_;
+  int32_t asynCancelCmd_;
+  ecmcAsynDataItem *asynStateParam_;
+  ecmcAsynDataItem *asynReasonParam_;
+  ecmcAsynDataItem *asynSequenceParam_;
+  ecmcAsynDataItem *asynTargetParam_;
+  ecmcAsynDataItem *asynPositionParam_;
+  ecmcAsynDataItem *asynVelocityParam_;
+  ecmcAsynDataItem *asynDirectionParam_;
+  ecmcAsynDataItem *asynScheduledTimeParam_;
+  ecmcAsynDataItem *asynLeadTimeParam_;
+  ecmcAsynDataItem *asynSampleAgeParam_;
+  ecmcAsynDataItem *asynPulseWidthParam_;
+  ecmcAsynDataItem *asynResetTimeParam_;
+  ecmcAsynDataItem *asynLastActivateParam_;
+  ecmcAsynDataItem *asynLastOutputParam_;
+  ecmcAsynDataItem *asynTargetCmdParam_;
+  ecmcAsynDataItem *asynDirectionCmdParam_;
+  ecmcAsynDataItem *asynOutputCmdParam_;
+  ecmcAsynDataItem *asynArmCmdParam_;
+  ecmcAsynDataItem *asynCancelCmdParam_;
 };
 
 #endif  /* ECMCPOSITIONCOMPARE_H_ */

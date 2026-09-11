@@ -4420,12 +4420,17 @@ int axisPositionCompareConfigure(int axisIndex,
                                  uint64_t pulseWidthNs,
                                  uint64_t resetValue) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
-  return axes[axisIndex]->getPositionCompare()->configure(minLeadTimeNs,
-                                                          maxLeadTimeNs,
-                                                          activateIdle,
-                                                          activateSchedule,
-                                                          pulseWidthNs,
-                                                          resetValue);
+  int error =
+    axes[axisIndex]->getPositionCompare()->configure(minLeadTimeNs,
+                                                     maxLeadTimeNs,
+                                                     activateIdle,
+                                                     activateSchedule,
+                                                     pulseWidthNs,
+                                                     resetValue);
+  if (error) {
+    return error;
+  }
+  return axes[axisIndex]->createPositionCompareAsynParams();
 }
 
 int linkEcEntryToAxisPositionCompare(int   slaveIndex,
