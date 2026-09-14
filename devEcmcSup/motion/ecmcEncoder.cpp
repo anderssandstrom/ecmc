@@ -99,6 +99,7 @@ void ecmcEncoder::initVars() {
   invScale_               = 0;
   engOffset_              = 0;
   actPos_                 = 0;
+  actPosUncompensated_    = 0;
   actPosOld_              = 0;
   actPosDelayBaseOld_     = 0;
   sampleTimeMs_           = 1;
@@ -356,6 +357,10 @@ double ecmcEncoder::getScale() {
 
 double ecmcEncoder::getActPos() {
   return actPos_;
+}
+
+double ecmcEncoder::getActPosUncompensated() {
+  return actPosUncompensated_;
 }
 
 void ecmcEncoder::setActPos(double pos) {
@@ -729,6 +734,11 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
     actPosLocal_ = positionFilter_->getFiltPos(actPosLocal_,
                                                moduloRange);
   }
+
+  // This value belongs to the encoder PDO sample time. Delay compensation
+  // below aligns feedback with the trajectory and therefore has another time
+  // meaning; hardware position compare must not use that extrapolated value.
+  actPosUncompensated_ = actPosLocal_;
 
   if (!enableDelayTime_) {
     delayCompStateValid_ = false;

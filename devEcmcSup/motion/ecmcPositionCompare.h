@@ -110,7 +110,7 @@ public:
   void execute(bool masterOK,
                double position,
                double velocity,
-               double samplePeriodSec,
+               double acceleration,
                uint64_t sampleTimeNs,
                bool sampleTimeValid,
                uint64_t controllerTimeNs);
@@ -157,9 +157,6 @@ private:
   ecmcPositionCompareStatus status_;
   bool linked_;
   bool activateIdlePending_;
-  bool accelerationValid_;
-  double previousVelocity_;
-  uint64_t previousSampleTimeNs_;
   bool asynParamsCreated_;
   int32_t asynState_;
   int32_t asynReason_;

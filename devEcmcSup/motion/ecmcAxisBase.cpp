@@ -618,14 +618,22 @@ void ecmcAxisBase::postExecute(bool masterOK) {
     const bool sampleTimeValid =
       resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
     const uint64_t controllerTimeNs = ec ? ec->getLastSendTimeNs() : 0;
-    const double compareVelocity = status.sampleTime > 0 ?
-      (status.currentPositionSetpoint -
-       data_.statusOld_.currentPositionSetpoint) / status.sampleTime :
-      status.currentVelocitySetpoint;
+    const double compareVelocity = status.currentVelocitySetpoint;
+    double compareAcceleration = 0;
+    ecmcAxisPVTSequence *pvt = seq_.getPVTObject();
+    if (status.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL) {
+      compareAcceleration =
+        status.command == ECMC_CMD_MOVEPVTABS && pvt ?
+          pvt->getCurrAcceleration() : traj_->getCurrentAcc();
+    } else if (status.sampleTime > 0) {
+      compareAcceleration =
+        (status.currentVelocitySetpoint -
+         data_.statusOld_.currentVelocitySetpoint) / status.sampleTime;
+    }
     positionCompare_.execute(masterOK,
-                             status.currentPositionSetpoint,
+                             encoder->getActPosUncompensated(),
                              compareVelocity,
-                             status.sampleTime,
+                             compareAcceleration,
                              encoderSampleTimeNs,
                              sampleTimeValid,
                              controllerTimeNs);

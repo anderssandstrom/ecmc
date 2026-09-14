@@ -77,6 +77,10 @@ double ecmcTrajectoryBase::getNextVel() {
   return currentVelocitySetpoint_;
 }
 
+double ecmcTrajectoryBase::getCurrentAcc() {
+  return currentAccelerationSetpoint_;
+}
+
 double ecmcTrajectoryBase::getTargetVel() {
   return targetVelocity_;
 }

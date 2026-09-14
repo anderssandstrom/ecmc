@@ -75,6 +75,7 @@ public:
   double                getScaleDenom();
   double                getScale();
   double                getActPos();
+  double                getActPosUncompensated();
   double                getAbsRangeEng();
   int64_t               getAbsRangeRaw();
   void                  setActPos(double pos);
@@ -252,6 +253,7 @@ protected:
   double engOffset_;
   double actPos_;
   double actPosLocal_;
+  double actPosUncompensated_;
   double actPosOld_;
   double actPosDelayBaseOld_;
   double sampleTimeMs_;

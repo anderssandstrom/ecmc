@@ -79,9 +79,6 @@ ecmcPositionCompare::ecmcPositionCompare() :
   resetValue_(0),
   linked_(false),
   activateIdlePending_(false),
-  accelerationValid_(false),
-  previousVelocity_(0),
-  previousSampleTimeNs_(0),
   asynParamsCreated_(false),
   asynState_(ECMC_POS_COMPARE_DISABLED),
   asynReason_(ECMC_POS_COMPARE_REASON_NONE),
@@ -172,9 +169,6 @@ int ecmcPositionCompare::arm(double target,
   status_.pulseWidthNs = pulseWidthNs_;
   status_.eventTimeNs = 0;
   status_.reason = ECMC_POS_COMPARE_REASON_ARMED;
-  accelerationValid_ = false;
-  previousVelocity_ = 0;
-  previousSampleTimeNs_ = 0;
   // Force at least one RT cycle with the terminal in idle before a new
   // schedule command is allowed. Otherwise a command-thread re-arm can write
   // idle and the next RT cycle can overwrite it with schedule before the
@@ -198,7 +192,7 @@ int ecmcPositionCompare::cancel() {
 void ecmcPositionCompare::execute(bool masterOK,
                                   double position,
                                   double velocity,
-                                  double samplePeriodSec,
+                                  double acceleration,
                                   uint64_t sampleTimeNs,
                                   bool sampleTimeValid,
                                   uint64_t controllerTimeNs) {
@@ -262,18 +256,6 @@ void ecmcPositionCompare::execute(bool masterOK,
     }
     return;
   }
-
-  double acceleration = 0;
-  if (accelerationValid_ && samplePeriodSec > 0) {
-    const long double dtSec = static_cast<long double>(samplePeriodSec);
-    acceleration =
-      static_cast<double>((static_cast<long double>(velocity) -
-                           static_cast<long double>(previousVelocity_)) /
-                          dtSec);
-  }
-  previousVelocity_ = velocity;
-  previousSampleTimeNs_ = sampleTimeNs;
-  accelerationValid_ = true;
 
   status_.position = position;
   status_.velocity = velocity;
