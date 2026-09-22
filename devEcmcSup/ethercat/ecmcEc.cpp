@@ -1371,6 +1371,37 @@ void ecmcEc::slowExecute() {
   }
 }
 
+bool ecmcEc::timingStartupReady(bool reportPending) const {
+  bool ready = true;
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (slaveArray_[i] && !slaveArray_[i]->timingStartupReady()) {
+      ready = false;
+      if (reportPending) {
+        LOGERR("EtherCAT slave %d: timing discovery/publication still pending.\n",
+               slaveArray_[i]->getSlaveBusPosition());
+      }
+    }
+  }
+  return ready;
+}
+
+void ecmcEc::resetStartupCommunicationErrors() {
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (!slaveArray_[i]) {
+      continue;
+    }
+    const int error = slaveArray_[i]->getErrorID();
+    if (error == ERROR_EC_SLAVE_NOT_OPERATIONAL ||
+        error == ERROR_EC_SLAVE_NOT_ONLINE) {
+      slaveArray_[i]->errorReset();
+    }
+  }
+  if (getErrorID() == ERROR_EC_SLAVE_NOT_OPERATIONAL ||
+      getErrorID() == ERROR_EC_SLAVE_NOT_ONLINE) {
+    errorReset();
+  }
+}
+
 int ecmcEc::reset() {
   ecrt_master_reset(master_);
   return 0;

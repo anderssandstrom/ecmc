@@ -599,6 +599,19 @@ int ecmcEcSlave::updateInputProcessImage() {
   executeSmTimingDiscovery();
   executeDcScheduleDiscovery();
 
+  // Publish the final startup snapshot even when slow diagnostics are disabled.
+  if (!timingStartupReady_.load(std::memory_order_relaxed)) {
+    bool complete = !dcSchedule_.discoveryAttempted ||
+                    dcSchedule_.discoveryComplete;
+    for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
+      complete &= smTimingRequests_[i].finished;
+    }
+    if (complete) {
+      refreshTimingAsyn();
+      timingStartupReady_.store(true, std::memory_order_release);
+    }
+  }
+
   return 0;
 }
 
@@ -842,6 +855,7 @@ void ecmcEcSlave::prepareSmTiming(uint16_t objectIndex,
 }
 
 void ecmcEcSlave::discoverSmTiming() {
+  timingStartupReady_.store(false, std::memory_order_release);
   if (simSlave_ || smTimingRequestCount_ != 0) {
     return;
   }
@@ -916,6 +930,11 @@ void ecmcEcSlave::executeDcScheduleDiscovery() {
   static const size_t sizes[] = {sizeof(uint64_t), sizeof(uint32_t),
                                  sizeof(uint32_t)};
   if (!dcScheduleRequestStarted_) {
+    if (dcScheduleStage_ == 0) {
+      ecmcRtLoggerLogInfo(
+        "EtherCAT master %d slave %d: reading DC timing registers "
+        "0x0990, 0x09A0, 0x09A4.\n", masterId_, slavePosition_);
+    }
     // EtherLab releases differ here: some declare this function void and
     // newer releases return an error code. Ignoring the return is compatible
     // with both; completion/error is reported by ecrt_reg_request_state().
@@ -986,6 +1005,15 @@ void ecmcEcSlave::executeSmTimingDiscovery() {
       continue;
     }
     if (!item.started) {
+      if (!smTimingReadLogged_) {
+        ecmcRtLoggerLogInfo(
+          "EtherCAT master %d slave %d: reading SyncManager timing "
+          "objects (0x1C32 output: %s, 0x1C33 input: %s).\n",
+          masterId_, slavePosition_,
+          outputSmTiming_.discoveryAttempted ? "requested" : "not requested",
+          inputSmTiming_.discoveryAttempted ? "requested" : "not requested");
+        smTimingReadLogged_ = true;
+      }
       ecrt_sdo_request_read(item.request);
       item.started = true;
       return;
@@ -1673,6 +1701,11 @@ void ecmcEcSlave::refreshTimingAsyn() {
   ecmcRtLoggerPortDriverSetEcTiming(slavePosition_, 1,
                                     &outputTimingAsynData_);
   timingAsynDirty_ = false;
+}
+
+bool ecmcEcSlave::timingStartupReady() const {
+  return timingStartupReady_.load(std::memory_order_acquire) &&
+         ecmcRtLoggerPortDriverEcTimingPublished(slavePosition_);
 }
 
 int ecmcEcSlave::validate() {

@@ -67,7 +67,7 @@
 #define EC_MAX_ENTRIES 8192
 #define EC_MAX_MEM_MAPS 64
 #define EC_MAX_SLAVES 512
-#define EC_START_TIMEOUT_S 30
+#define EC_START_TIMEOUT_S 45
 #define ECMC_EC_MAX_VERIFY_PRODUCTS 32
 
 typedef struct {

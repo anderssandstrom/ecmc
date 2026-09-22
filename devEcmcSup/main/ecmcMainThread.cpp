@@ -58,6 +58,16 @@ static struct timespec masterActivationTimeOffset    = {};
 static struct timespec masterActivationTimeRealtime  = {};
 static std::atomic<int> iocExitRequested {0};
 static std::atomic<int> iocExitCode {0};
+static std::atomic<bool> iocRunning {false};
+static std::atomic<bool> startupMotionHeld {true};
+
+void ecmcNotifyIocRunning(void) {
+  iocRunning.store(true, std::memory_order_release);
+}
+
+int ecmcStartupMotionHeld(void) {
+  return startupMotionHeld.load(std::memory_order_acquire);
+}
 
 /*****************************************************************************/
 
@@ -367,7 +377,27 @@ void cyclic_task(void *usr) {
     }
   }
 
-  if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
+  // Read once per runtime entry; permit legacy startup for existing IOCs.
+  const char *startupGate = getenv("ECMC_STARTUP_GATE");
+  const bool startupGateEnabled = !startupGate || strcmp(startupGate, "0") != 0;
+  // Explicit opt-out for applications that never call iocInit/iocRun.
+  const char *waitForIoc = getenv("ECMC_WAIT_FOR_IOC_RUNNING");
+  const bool waitForIocRunning = !waitForIoc || strcmp(waitForIoc, "0") != 0;
+  bool startupReleased = !startupGateEnabled;
+  bool startupExecutionReady = !startupGateEnabled;
+  bool startupTimedOut = false;
+  double startupWaitSeconds = 0;
+  double startupStableSeconds = 0;
+  startupMotionHeld.store(startupGateEnabled, std::memory_order_release);
+  if (startupGateEnabled) {
+    ecmcRtLoggerLogInfo("Startup gate enabled: holding axes and PLCs until IOC readiness and EtherCAT stabilization.\n");
+  } else {
+    ecmcRtLoggerLogInfo("Startup gate disabled: using legacy axis/PLC startup.\n");
+  }
+
+  // Ownership belongs to this thread, not to the asynchronously changed mode.
+  ecmcAsynPortDriver *heldAsynPort = nullptr;
+  epicsMutexId heldRTMutex = nullptr;
 
   while (appModeCmd == ECMC_MODE_RUNTIME) {
     if (iocExitRequested.load(std::memory_order_acquire)) {
@@ -384,25 +414,37 @@ void cyclic_task(void *usr) {
       wakeupTime.tv_nsec -= MCU_NSEC_PER_SEC;
     }
 
-    /* Only lock asyn port when ec is started
-     * otherwise deadlock in stratup phase
-     * (sleep in waitforstartup() this is called
-     * in asyn thread) .
-     * */
-    if ((appModeStat == ECMC_MODE_RUNTIME) && localAsynPort) {
-      localAsynPort->unlock();
+    // Release in reverse acquisition order, only if we acquired the lock.
+    if (heldRTMutex) {
+      epicsMutexUnlock(heldRTMutex);
+      heldRTMutex = nullptr;
+    }
+    if (heldAsynPort) {
+      heldAsynPort->unlock();
+      heldAsynPort = nullptr;
     }
 
-    // Mutex for motor record access
-    if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeupTime, NULL);
 
+    // Startup may still hold the asyn port while waiting for the RT thread.
     if ((appModeStat == ECMC_MODE_RUNTIME) && localAsynPort) {
-      localAsynPort->lock();
+      if (localAsynPort->lock() != asynSuccess) {
+        ecmcRtLoggerLogError("RT thread: failed to lock asyn port; stopping runtime.\n");
+        appModeCmd = ECMC_MODE_CONFIG;
+        break;
+      }
+      heldAsynPort = localAsynPort;
     }
 
     // Mutex for motor record access
-    if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
+    if (ecmcRTMutex) {
+      if (epicsMutexLock(ecmcRTMutex) != epicsMutexLockOK) {
+        ecmcRtLoggerLogError("RT thread: failed to lock motor-access mutex; stopping runtime.\n");
+        appModeCmd = ECMC_MODE_CONFIG;
+        break;
+      }
+      heldRTMutex = ecmcRTMutex;
+    }
 
     clock_gettime(CLOCK_MONOTONIC, &startTime);
 
@@ -462,7 +504,48 @@ void cyclic_task(void *usr) {
       }
     }
 
-    for (i = 0; i < activeMotionSeqCount; i++) {
+    if (!startupReleased && !startupTimedOut &&
+        (!waitForIocRunning || iocRunning.load(std::memory_order_acquire))) {
+      startupWaitSeconds += mcuPeriod / 1.0e9;
+      const bool timingReady = !ecInitDone || ec->timingStartupReady();
+      if (ecStat && timingReady) {
+        startupStableSeconds += mcuPeriod / 1.0e9;
+      } else {
+        startupStableSeconds = 0;
+      }
+      if (startupStableSeconds >= 2.0) {
+        // One reset attempt per startup, only for transient bus/axis errors.
+        if (ecInitDone) {
+          ec->resetStartupCommunicationErrors();
+        }
+        for (i = 0; i < activeAxisCount; ++i) {
+          const int error = activeAxes[i]->getErrorID();
+          if (error == ERROR_AXIS_HW_NOT_READY ||
+              error == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) {
+            activeAxes[i]->errorReset();
+          }
+        }
+        startupReleased = true;
+        startupMotionHeld.store(false, std::memory_order_release);
+        ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization.\n");
+      } else if (startupWaitSeconds >= ecTimeoutSeconds) {
+        startupTimedOut = true;
+        ecmcRtLoggerLogError("Startup: EtherCAT did not stabilize after IOC running; axes and PLCs remain held. Restart runtime after resolving the bus fault.\n");
+      }
+    }
+
+    if (startupReleased && !startupExecutionReady) {
+      bool axesReady = true;
+      for (i = 0; i < activeAxisCount; ++i) {
+        axesReady &= !activeAxes[i]->getInStartupPhase();
+      }
+      if (axesReady) {
+        startupExecutionReady = true;
+        ecmcRtLoggerLogInfo("Startup: axes initialized; releasing PLCs and motion command producers.\n");
+      }
+    }
+
+    for (i = 0; startupExecutionReady && i < activeMotionSeqCount; i++) {
       activeMotionSeqs[i]->executeRT(mcuPeriod / 1.0e9);
     }
 
@@ -483,26 +566,28 @@ void cyclic_task(void *usr) {
     // Motion
     for (i = 0; i < activeAxisCount; i++) {
       auto * const axis = activeAxes[i];
-      plcs->execute(activeAxisPlcId[i], ecStat);
+      if (startupExecutionReady) {
+        plcs->execute(activeAxisPlcId[i], ecStat);
+      }
       axis->execute(ecStat);
     }
 
     // PVT motion
-    if(pvtCtrl_) {
+    if(startupExecutionReady && pvtCtrl_) {
       pvtCtrl_->execute();
     }
 
     // Master Slave statemachines
-    for (int i = 0; i < activeMasterSlaveCount; i++) {
+    for (int i = 0; startupExecutionReady && i < activeMasterSlaveCount; i++) {
       activeMasterSlaves[i]->execute();
     }
 
     // Plugins
-    for (i = 0; i < activePluginCount; i++) {
+    for (i = 0; startupExecutionReady && i < activePluginCount; i++) {
       pluginsError = activePlugins[i]->exeRTFunc(controllerError);
     }
 
-    for (i = 0; i < activeCppLogicCount; i++) {
+    for (i = 0; startupExecutionReady && i < activeCppLogicCount; i++) {
       cppLogicError = activeCppLogics[i]->exeRTFunc(controllerError);
     }
 
@@ -511,7 +596,7 @@ void cyclic_task(void *usr) {
     }
 
     // PLCs
-    if (plcs) {
+    if (startupExecutionReady && plcs) {
       plcs->execute(ecStat);
     }
 
@@ -570,6 +655,14 @@ void cyclic_task(void *usr) {
     clock_gettime(CLOCK_MONOTONIC, &endTime);
   }  // enc of RT-loop
 
+  // Normal configuration transitions and IOC-exit requests both release locks.
+  if (heldRTMutex) {
+    epicsMutexUnlock(heldRTMutex);
+  }
+  if (heldAsynPort) {
+    heldAsynPort->unlock();
+  }
+
   appModeStat = ECMC_MODE_CONFIG;
 
   // Write to SHM the this ioc closes down
@@ -578,9 +671,6 @@ void cyclic_task(void *usr) {
   }
 
   if (iocExitRequested.load(std::memory_order_acquire)) {
-    if (ecmcRTMutex) {
-      epicsMutexUnlock(ecmcRTMutex);
-    }
     ecmcCleanup(iocExitCode.load(std::memory_order_relaxed));
   }
 }
@@ -694,16 +784,18 @@ int waitForThreadToStart(int timeoutSeconds) {
       return 0;
     }
 
-    if (ec->statusOK()) {
-      clock_nanosleep(CLOCK_MONOTONIC, 0, &timeToPause, NULL);
-      LOGINFO("EtherCAT bus started!\n");
+    if (ec->statusOK() && ec->timingStartupReady()) {
+      LOGINFO("EtherCAT bus started; timing discovery and publication complete.\n");
       return 0;
     }
   }
-  LOGERR("Timeout error: EtherCAT bus did not start correctly in %ds.\n",
+  LOGERR("Timeout error: EtherCAT bus/timing startup did not finish in %ds.\n",
          timeoutSeconds);
+  const bool timingPending = !ec->timingStartupReady(true);
+  const int startupError = timingPending ?
+    ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT : ec->getErrorID();
   setAppMode(0);
-  return ec->getErrorID();
+  return startupError ? startupError : ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT;
 }
 
 int lockMem(int size) {

@@ -33,6 +33,9 @@
 
 #ifdef __cplusplus
 extern "C" {
+
+void ecmcNotifyIocRunning(void);
+int ecmcStartupMotionHeld(void);
 #endif  // ifdef __cplusplus
 
 // Error Codes
@@ -61,9 +64,9 @@ int setAppMode(int mode);
 
 /** \brief Set EtherCAT startup timeout time
  *
- * Can be needed if many slaves in ethercat network. Default time is 30s.
+ * Includes bus readiness and timing discovery/publication. Default time is 45s.
  *
- * \param[in] timeSeconds  Timeout in seconds (default 30s).\n
+ * \param[in] timeSeconds  Timeout in seconds (default 45s).\n
  *
  * \return 0 if success or otherwise an error code.\n
  *

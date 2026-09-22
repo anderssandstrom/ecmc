@@ -22,6 +22,7 @@
 #include "ecmcEc.h"
 #include "ecmcEcSlave.h"
 #include "ecmcGlobalsExtern.h"
+#include "ecmcMainThread.h"
 
 #define ecmcRtLoggerLogInfo(...) \
   ECMC_RT_LOG_AXIS_BASE_INFO(data_.status_.axisId, __VA_ARGS__)
@@ -413,6 +414,11 @@ void ecmcAxisBase::initVars() {
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
+  if (ecmcStartupMotionHeld()) {
+    axisState_ = ECMC_AXIS_STATE_STARTUP;
+    setInStartupPhase(true);
+    setEnable(false);
+  }
   auto &status = data_.status_;
   auto &statusWord = status.statusWord_;
   auto &interlocks = data_.interlocks_;
@@ -454,7 +460,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
     statusWord.busy = true;
     status.distToStop = 0;
 
-    if (masterOK) {
+    if (masterOK && !ecmcStartupMotionHeld()) {
       
       if (!hwReady_) {
         setErrorID(ERROR_AXIS_HW_NOT_READY);
@@ -465,7 +471,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
       }
     }
 
-    if (masterOK && hwReady_ && hwReadyOld_) {
+    if (!ecmcStartupMotionHeld() && masterOK && hwReady_ && hwReadyOld_) {
       // Auto reset hardware error if starting up
       if ((getErrorID() == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) &&
           data_.status_.statusWord_.instartup) {
@@ -612,7 +618,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
                                         false);
   }
 
-  if (positionCompare_.isActive()) {
+  if (!ecmcStartupMotionHeld() && positionCompare_.isActive()) {
     uint64_t encoderSampleTimeNs = 0;
     ecmcEncoder *encoder = getPrimEnc();
     const bool sampleTimeValid =
