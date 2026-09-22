@@ -1,0 +1,207 @@
+# EL5042 relative timing verification against another axis encoder.
+#
+# Run as a GENERAL PLC every EtherCAT cycle. This PLC does not arm touch probes
+# or position compare outputs. It samples two already configured ecmc encoders
+# on the same axis and logs their position difference in constant-velocity
+# motion.
+#
+# Intended use:
+#   ENC_REF_ID = open-loop / reference encoder, for example EL7062/ED7062
+#   ENC_BISS_ID = EL5042 BiSS-C encoder
+#
+# The useful timing estimate comes from the latest constant-velocity segment in
+# each direction:
+#   diff_pos = mean(ENC_BISS - ENC_REF) while moving positive
+#   diff_neg = mean(ENC_BISS - ENC_REF) while moving negative
+#   relative_delay = (diff_neg - diff_pos) / (2 * speed)
+#
+# A positive relative_delay means ENC_BISS appears delayed relative to ENC_REF.
+# This estimate still includes mechanics/following error, so use it as a
+# plausibility check for the configured EtherCAT/DC timing model, not as a pure
+# terminal-only measurement.
+#
+# PLC macros:
+#   AX_ID                   axis containing both encoders (default 1)
+#   ENC_REF_ID              one-based reference encoder index (default 1)
+#   ENC_BISS_ID             one-based EL5042 encoder index (default 2)
+#   REF_SID                 reference encoder slave index (default 22)
+#   BISS_SID                EL5042 slave index (default 9)
+#   DS_BASE                 first of ten data storages (default 20)
+#   SAMPLE_DIV              append every N PLC cycles (default 1)
+#   PRINT_EVERY             print summary every N accepted samples (default 100)
+#   MIN_VEL                 minimum abs velocity for segment averaging (default 8)
+#   PRINT_RESULT            print periodic summary (default 1)
+#   PUSH_ASYN               push storages after each append (default 0)
+#
+# Data storages DS_BASE + n:
+#   0 sequence                    5 reference velocity [engineering units/s]
+#   1 reference sample time [ns]  6 EL5042 velocity [engineering units/s]
+#   2 EL5042 sample time [ns]     7 mean diff while ref velocity positive
+#   3 reference position          8 mean diff while ref velocity negative
+#   4 EL5042-reference diff       9 estimated relative delay [ns]
+
+if(${SELF}.firstscan) {
+  static.sequence := 0;
+  static.cycleCounter := 0;
+  static.printCounter := 0;
+  static.activeDir := 0;
+  static.sampleDir := 0;
+  static.posCount := 0;
+  static.negCount := 0;
+  static.posDiffSum := 0;
+  static.negDiffSum := 0;
+  static.posVelSum := 0;
+  static.negVelSum := 0;
+  static.meanPosDiff := 0;
+  static.meanNegDiff := 0;
+  static.meanAbsSpeed := 0;
+  static.relativeDelayNs := 0;
+
+  static.refTimeOld := ec_get_slave_input_event_time(${REF_SID=22});
+  static.bissTimeOld := ec_get_slave_input_event_time(${BISS_SID=9});
+  static.refPosOld := mc_get_act_pos(${AX_ID=1},${ENC_REF_ID=1});
+  static.bissPosOld := mc_get_act_pos(${AX_ID=1},${ENC_BISS_ID=2});
+
+  ds_clear_data(${DS_BASE=20}+0);
+  ds_clear_data(${DS_BASE=20}+1);
+  ds_clear_data(${DS_BASE=20}+2);
+  ds_clear_data(${DS_BASE=20}+3);
+  ds_clear_data(${DS_BASE=20}+4);
+  ds_clear_data(${DS_BASE=20}+5);
+  ds_clear_data(${DS_BASE=20}+6);
+  ds_clear_data(${DS_BASE=20}+7);
+  ds_clear_data(${DS_BASE=20}+8);
+  ds_clear_data(${DS_BASE=20}+9);
+};
+
+static.cycleCounter := static.cycleCounter + 1;
+
+if(static.cycleCounter >= ${SAMPLE_DIV=1}) {
+  static.cycleCounter := 0;
+  static.sequence := static.sequence + 1;
+
+  static.refTime := ec_get_slave_input_event_time(${REF_SID=22});
+  static.bissTime := ec_get_slave_input_event_time(${BISS_SID=9});
+  static.refPos := mc_get_act_pos(${AX_ID=1},${ENC_REF_ID=1});
+  static.bissPos := mc_get_act_pos(${AX_ID=1},${ENC_BISS_ID=2});
+  static.diff := static.bissPos - static.refPos;
+
+  static.refVel := 0;
+  if(static.refTime != static.refTimeOld) {
+    static.refVel := (static.refPos-static.refPosOld) * 1E9 /
+                     (static.refTime-static.refTimeOld);
+  };
+
+  static.bissVel := 0;
+  if(static.bissTime != static.bissTimeOld) {
+    static.bissVel := (static.bissPos-static.bissPosOld) * 1E9 /
+                      (static.bissTime-static.bissTimeOld);
+  };
+
+  static.sampleDir := 0;
+  if(static.refVel > ${MIN_VEL=8}) {
+    static.sampleDir := 1;
+  };
+  if(static.refVel < -${MIN_VEL=8}) {
+    static.sampleDir := -1;
+  };
+
+  # Start a fresh segment whenever entering a constant-velocity band or
+  # changing direction. This avoids mixing old runs and acceleration/deceleration
+  # samples into the current delay estimate.
+  if(static.sampleDir != static.activeDir) {
+    static.activeDir := static.sampleDir;
+    if(static.sampleDir > 0) {
+      static.posCount := 0;
+      static.posDiffSum := 0;
+      static.posVelSum := 0;
+    };
+    if(static.sampleDir < 0) {
+      static.negCount := 0;
+      static.negDiffSum := 0;
+      static.negVelSum := 0;
+    };
+  };
+
+  if(static.sampleDir > 0) {
+    static.posCount := static.posCount + 1;
+    static.posDiffSum := static.posDiffSum + static.diff;
+    static.posVelSum := static.posVelSum + static.refVel;
+  };
+
+  if(static.sampleDir < 0) {
+    static.negCount := static.negCount + 1;
+    static.negDiffSum := static.negDiffSum + static.diff;
+    static.negVelSum := static.negVelSum + static.refVel;
+  };
+
+  if(static.posCount > 0) {
+    static.meanPosDiff := static.posDiffSum/static.posCount;
+  };
+
+  if(static.negCount > 0) {
+    static.meanNegDiff := static.negDiffSum/static.negCount;
+  };
+
+  if(static.posCount > 0 and static.negCount > 0) {
+    static.meanAbsSpeed :=
+      (static.posVelSum/static.posCount -
+       static.negVelSum/static.negCount) / 2;
+    if(abs(static.meanAbsSpeed) > 1E-12) {
+      static.relativeDelayNs :=
+        (static.meanNegDiff-static.meanPosDiff) /
+        (2*static.meanAbsSpeed) * 1E9;
+    };
+  };
+
+  ds_append_data(${DS_BASE=20}+0,static.sequence);
+  ds_append_data(${DS_BASE=20}+1,static.refTime);
+  ds_append_data(${DS_BASE=20}+2,static.bissTime);
+  ds_append_data(${DS_BASE=20}+3,static.refPos);
+  ds_append_data(${DS_BASE=20}+4,static.diff);
+  ds_append_data(${DS_BASE=20}+5,static.refVel);
+  ds_append_data(${DS_BASE=20}+6,static.bissVel);
+  ds_append_data(${DS_BASE=20}+7,static.meanPosDiff);
+  ds_append_data(${DS_BASE=20}+8,static.meanNegDiff);
+  ds_append_data(${DS_BASE=20}+9,static.relativeDelayNs);
+
+  if(${PUSH_ASYN=0}) {
+    ds_push_asyn(${DS_BASE=20}+0);
+    ds_push_asyn(${DS_BASE=20}+1);
+    ds_push_asyn(${DS_BASE=20}+2);
+    ds_push_asyn(${DS_BASE=20}+3);
+    ds_push_asyn(${DS_BASE=20}+4);
+    ds_push_asyn(${DS_BASE=20}+5);
+    ds_push_asyn(${DS_BASE=20}+6);
+    ds_push_asyn(${DS_BASE=20}+7);
+    ds_push_asyn(${DS_BASE=20}+8);
+    ds_push_asyn(${DS_BASE=20}+9);
+  };
+
+  if(static.sampleDir != 0) {
+    static.printCounter := static.printCounter + 1;
+  };
+  if(${PRINT_RESULT=1} and
+     static.sampleDir != 0 and
+     static.printCounter >= ${PRINT_EVERY=100}) {
+    static.printCounter := 0;
+    println('EL5042 delay seq=', static.sequence,
+            ' ref=', static.refPos,
+            ' biss=', static.bissPos,
+            ' diff=', static.diff,
+            ' refVel=', static.refVel,
+            ' bissVel=', static.bissVel,
+            ' meanDiffPos=', static.meanPosDiff,
+            ' posCount=', static.posCount,
+            ' meanDiffNeg=', static.meanNegDiff,
+            ' negCount=', static.negCount,
+            ' relDelay_us=', static.relativeDelayNs/1000,
+            ' biss_minus_ref_sample_us=',
+              (static.bissTime-static.refTime)/1000);
+  };
+
+  static.refTimeOld := static.refTime;
+  static.bissTimeOld := static.bissTime;
+  static.refPosOld := static.refPos;
+  static.bissPosOld := static.bissPos;
+};

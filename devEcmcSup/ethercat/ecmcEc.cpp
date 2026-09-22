@@ -625,6 +625,15 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
 
   updateInputProcessImage();
 
+  // Keep for later investigation in master->dc_ref_clock delay.
+  //uint32_t time32=0;
+  //uint32_t time32_2=0;
+  //uint32_t low = (uint32_t)(lastSendTimeNs_ & 0xFFFFFFFFULL);
+  //time32_2=ecrt_master_sync_monitor_process(master_);
+  //ecrt_master_reference_clock_time(master_,&time32);
+  //double diff =((double)low -(double)time32);
+  //printf("sendTimeNs_low %u,  ref clock %u, diff %lf, sync %u \n", low,time32, diff,  time32_2);
+  
 }
 
 void ecmcEc::send(timespec timeOffset) {
@@ -658,6 +667,9 @@ void ecmcEc::send(timespec timeOffset) {
   ecrt_master_sync_reference_clock(master_);
   ecrt_master_sync_slave_clocks(master_);
 
+  // Keep for later investigation in master->dc_ref_clock delay.
+  //ecrt_master_sync_monitor_queue(master_);
+
   ecrt_master_send(master_);
 
   // Update asyn time
@@ -670,6 +682,7 @@ void ecmcEc::send(timespec timeOffset) {
       startupCounter_++;
     }
   }
+
 }
 
 int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
