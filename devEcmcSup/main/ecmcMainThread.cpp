@@ -306,7 +306,7 @@ void cyclic_task(void *usr) {
   const struct timespec cycletime = { 0, (long int)mcuPeriod };
   int masterId                    = ec->getMasterIndex();
   const bool hasRealMaster        = masterId >= 0;
-  int axisDiagFreqCached          = -1;
+  int diagnosticsUpdateFreqHzCached = -1;
   int slowCycleInterval           = 1;
   int activeAxisCount             = 0;
   ecmcAxisBase *activeAxes[ECMC_MAX_AXES] = {};
@@ -525,13 +525,13 @@ void cyclic_task(void *usr) {
     if (counter) {
       counter--;
     } else {    // Lower freq
-      if (axisDiagFreq > 0) {
-        if (axisDiagFreq != axisDiagFreqCached) {
-          slowCycleInterval = mcuFrequency / axisDiagFreq;
+      if (diagnosticsUpdateFreqHz > 0) {
+        if (diagnosticsUpdateFreqHz != diagnosticsUpdateFreqHzCached) {
+          slowCycleInterval = mcuFrequency / diagnosticsUpdateFreqHz;
           if (slowCycleInterval < 1) {
             slowCycleInterval = 1;
           }
-          axisDiagFreqCached = axisDiagFreq;
+          diagnosticsUpdateFreqHzCached = diagnosticsUpdateFreqHz;
         }
         counter = slowCycleInterval;
 
@@ -600,7 +600,7 @@ int ecmcInitThread(void) {
   appModeCmdOld = appModeCmd;
 
   axisDiagIndex = 0;
-  axisDiagFreq  = 10;
+  diagnosticsUpdateFreqHz = 10;
   setDiagAxisEnable(0);
   cppLogicError = 0;
 

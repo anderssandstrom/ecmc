@@ -4833,7 +4833,7 @@ int setDiagAxisFreq(int value) {
   if ((value < 1) ||
       (value > 500)) return ERROR_MAIN_DIAG_AXIS_FREQ_OUT_OF_RANGE;
 
-  axisDiagFreq = value;
+  diagnosticsUpdateFreqHz = value;
   return 0;
 }
 

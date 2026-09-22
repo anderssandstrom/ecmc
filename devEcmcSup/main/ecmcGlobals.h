@@ -50,7 +50,7 @@ ecmcMasterSlaveStateMachine *masterSlaveSMs[ECMC_MAX_MST_SLVS_SMS];
 // Mutex for motor record access
 epicsMutexId ecmcRTMutex;
 int axisDiagIndex;
-int axisDiagFreq;
+int diagnosticsUpdateFreqHz;
 int controllerError              = ERROR_MAIN_IN_STARTUP_PHASE;
 int controllerErrorOld           = -2;
 int controllerReset              = 0;
