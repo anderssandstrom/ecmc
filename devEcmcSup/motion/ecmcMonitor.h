@@ -165,6 +165,7 @@ private:
   int                checkAtTarget();
   int                checkPositionLag();
   int                checkEncoderDiff();
+  void               rebuildEncoderDiffList();
   int                checkMaxVelocity();
   int                checkVelocityDiff();
   int                checkCntrlMaxOutput();
@@ -228,6 +229,10 @@ private:
   ecmcSwitchPolarity highLimPolarity_;
   ecmcSwitchPolarity homePolarity_;
   ecmcEncoder **encArray_;
+  ecmcEncoder *diffEncArray_[ECMC_MAX_ENCODERS] = {};
+  int diffEncCount_ = 0;
+  int diffEncPrimaryIndex_ = -1;
+  int diffEncConfiguredCount_ = -1;
   int enableDiffEncsMon_;
   double ctrlDeadbandTol_; // controller deadband
   int ctrlDeadbandCounter_;

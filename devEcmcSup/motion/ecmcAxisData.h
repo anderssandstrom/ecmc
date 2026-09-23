@@ -177,6 +177,8 @@ public:
   ecmcAxisDataStatus statusOld_;
   ecmcAxisDataInterlocks interlocks_;
   ecmcAxisDataInterlocks interlocksOld_;
+  // Threshold setters invalidate the monitor's compact encoder-difference list.
+  bool encoderDiffConfigChanged_ = true;
   ecmcAsynDataItem *axAsynParams_[ECMC_ASYN_AX_PAR_COUNT];
 private:
   int      setSummaryInterlocks();

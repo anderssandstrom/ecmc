@@ -131,8 +131,8 @@ double ecmcTrajectoryTrapetz::internalTraj(double *actVelocity,
   *trajBusy                     = localBusy_;
   prevStepSize_                 = thisStepSize_;
   localCurrentPositionSetpoint_ = posSetTemp;
-  *actAcceleration              = (currentVelocitySetpoint_ - *actVelocity) /
-                                  sampleTime_;
+  *actAcceleration              = (currentVelocitySetpoint_ - *actVelocity) *
+                                  invSampleTime_;
 
   return posSetTemp;
 }

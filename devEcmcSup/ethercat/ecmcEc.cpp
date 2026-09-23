@@ -225,6 +225,9 @@ int ecmcEc::addSlave(
     productCode);
 
   if (slaveCounter_ < EC_MAX_SLAVES - 1) {
+    if (slavesByBusPosition_.size() <= position) {
+      slavesByBusPosition_.resize(static_cast<size_t>(position) + 1, nullptr);
+    }
     slaveArray_[slaveCounter_] = new ecmcEcSlave(asynPortDriver_,
                                                  masterIndex_,
                                                  master_,
@@ -247,6 +250,10 @@ int ecmcEc::addSlave(
       delete slaveArray_[slaveCounter_];
       slaveArray_[slaveCounter_] = NULL;
       return -errorCode;
+    }
+    // Preserve findSlave's original first-match behavior for duplicate positions.
+    if (!slavesByBusPosition_[position]) {
+      slavesByBusPosition_[position] = slaveArray_[slaveCounter_];
     }
     slaveCounter_++;
 
@@ -1274,13 +1281,9 @@ ecmcEcSlave * ecmcEc::findSlave(int busPosition) {
     return simSlave_;
   }
 
-  for (int i = 0; i < slaveCounter_; i++) {
-    ecmcEcSlave * const slave = slaveArray_[i];
-    if (slave != NULL) {
-      if (slave->getSlaveBusPosition() == busPosition) {
-        return slave;
-      }
-    }
+  if (busPosition >= 0 &&
+      static_cast<size_t>(busPosition) < slavesByBusPosition_.size()) {
+    return slavesByBusPosition_[busPosition];
   }
   return NULL;
 }

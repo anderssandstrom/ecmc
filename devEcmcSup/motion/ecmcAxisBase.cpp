@@ -610,10 +610,16 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   }
 
   for (int i = 0; i < encoderCount; i++) {
+    auto *const encoder = encArray_[i];
+    // Avoid the slave lookup and timing calculation when there is nothing
+    // to publish. Use the same condition as refreshTouchProbeAsyn().
+    if (!encoder->hasTouchProbeAsynParams()) {
+      continue;
+    }
     uint64_t encoderSampleTimeNs = 0;
     const bool sampleTimeValid =
-      resolveAxisEncoderSampleTimeNs(encArray_[i], &encoderSampleTimeNs);
-    encArray_[i]->refreshTouchProbeAsyn(sampleTimeValid ?
+      resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
+    encoder->refreshTouchProbeAsyn(sampleTimeValid ?
                                         encoderSampleTimeNs : 0,
                                         false);
   }

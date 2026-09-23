@@ -71,6 +71,8 @@ void ecmcPLCTask::initVars() {
   compiled_            = false;
   globalVariableCount_ = 0;
   localVariableCount_  = 0;
+  readVariableCount_ = 0;
+  globalWriteVariableCount_ = 0;
   inStartup_           = 1;
   skipCycles_          = 0;
   skipCyclesCounter_   = 0;
@@ -155,6 +157,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
   }
 
   localVariableCount_++;
+  rebuildVariableAccessLists();
   return 0;
 }
 
@@ -180,6 +183,7 @@ int ecmcPLCTask::compile() {
                       ERROR_PLC_COMPILE_ERROR);
   }
 
+  rebuildVariableAccessLists();
   compiled_   = true;
   newExpr_    = false;
   exprStrRaw_ = "";
@@ -188,6 +192,25 @@ int ecmcPLCTask::compile() {
 
 bool ecmcPLCTask::getCompiled() {
   return compiled_;
+}
+
+void ecmcPLCTask::rebuildVariableAccessLists() {
+  readVariableCount_ = 0;
+  globalWriteVariableCount_ = 0;
+  // Preserve local-before-global read order. Only immutable source type is
+  // used for membership; read-only status is checked live during execution.
+  for (int i = 0; i < localVariableCount_; ++i) {
+    if (localArray_[i] && localArray_[i]->needsRead()) {
+      readArray_[readVariableCount_++] = localArray_[i];
+    }
+  }
+  for (int i = 0; i < globalVariableCount_; ++i) {
+    auto *const variable = globalArray_[i];
+    if (variable && variable->needsRead()) {
+      readArray_[readVariableCount_++] = variable;
+      globalWriteArray_[globalWriteVariableCount_++] = variable;
+    }
+  }
 }
 
 int ecmcPLCTask::execute(bool ecOK) {
@@ -210,36 +233,29 @@ int ecmcPLCTask::execute(bool ecOK) {
     return 0;
   }
 
-  const int localCount = localVariableCount_;
-  for (int i = 0; i < localCount; i++) {
-    ecmcPLCDataIF * const localData = localArray_[i];
-    if (localData) {
-      localData->read();
-    }
-  }
-
-  const int globalCount = globalVariableCount_;
-  for (int i = 0; i < globalCount; i++) {
-    ecmcPLCDataIF * const globalData = globalArray_[i];
-    if (globalData) {
-      globalData->read();
-    }
+  const int readCount = readVariableCount_;
+  for (int i = 0; i < readCount; i++) {
+    readArray_[i]->read();
   }
 
   // Run equation
   exprtk_->refresh();
 
+  const int localCount = localVariableCount_;
   for (int i = 0; i < localCount; i++) {
     ecmcPLCDataIF * const localData = localArray_[i];
     if (localData) {
-      localData->write();
+      if (localData->needsWrite()) {
+        localData->write();
+      }
       localData->updateAsyn(0);
     }
   }
 
-  for (int i = 0; i < globalCount; i++) {
-    ecmcPLCDataIF * const globalData = globalArray_[i];
-    if (globalData) {
+  const int globalWriteCount = globalWriteVariableCount_;
+  for (int i = 0; i < globalWriteCount; i++) {
+    ecmcPLCDataIF * const globalData = globalWriteArray_[i];
+    if (globalData->needsWrite()) {
       globalData->write();
 
       // Update globals "centrally2 in ecmcPLCMain
@@ -320,6 +336,7 @@ int ecmcPLCTask::clearExpr() {
     }
   }
   localVariableCount_ = 0;
+  rebuildVariableAccessLists();
   return 0;
 }
 
@@ -475,6 +492,7 @@ int ecmcPLCTask::addAndReisterGlobalVar(ecmcPLCDataIF *dataIF) {
 
     globalArray_[globalVariableCount_] = dataIF;
     globalVariableCount_++;
+    rebuildVariableAccessLists();
   }
   return 0;
 }

@@ -377,6 +377,8 @@ void cyclic_task(void *usr) {
     }
   }
 
+  prepareControllerErrorObjectsRT();
+
   // Read once per runtime entry; permit legacy startup for existing IOCs.
   const char *startupGate = getenv("ECMC_STARTUP_GATE");
   const bool startupGateEnabled = !startupGate || strcmp(startupGate, "0") != 0;
@@ -654,6 +656,8 @@ void cyclic_task(void *usr) {
     }
     clock_gettime(CLOCK_MONOTONIC, &endTime);
   }  // enc of RT-loop
+
+  clearControllerErrorObjectsRT();
 
   // Normal configuration transitions and IOC-exit requests both release locks.
   if (heldRTMutex) {
