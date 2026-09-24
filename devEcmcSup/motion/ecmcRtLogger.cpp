@@ -176,15 +176,14 @@ void logMessageV(int level,
     return;
   }
 
-  char buffer[ECMC_RT_LOGGER_MSG_SIZE];
-  va_list argsCopy;
-  va_copy(argsCopy, args);
-  vsnprintf(buffer, sizeof(buffer), fmt, argsCopy);
-  va_end(argsCopy);
-  normalizeSeverityText(buffer, sizeof(buffer), level);
-
   if (!started_.load(std::memory_order_acquire) ||
       !enabled_.load(std::memory_order_acquire)) {
+    char buffer[ECMC_RT_LOGGER_MSG_SIZE];
+    va_list argsCopy;
+    va_copy(argsCopy, args);
+    vsnprintf(buffer, sizeof(buffer), fmt, argsCopy);
+    va_end(argsCopy);
+    normalizeSeverityText(buffer, sizeof(buffer), level);
     printMessage(level, buffer);
     return;
   }
@@ -201,9 +200,12 @@ void logMessageV(int level,
   queue_[writeIndex].level = level;
   queue_[writeIndex].sourceType = sourceType;
   queue_[writeIndex].sourceIndex = sourceIndex;
-  const size_t copyLength = strnlen(buffer, ECMC_RT_LOGGER_MSG_SIZE - 1);
-  memcpy(queue_[writeIndex].message, buffer, copyLength);
-  queue_[writeIndex].message[copyLength] = '\0';
+  // The consumer cannot see this slot until the release-store below.
+  va_list argsCopy;
+  va_copy(argsCopy, args);
+  vsnprintf(queue_[writeIndex].message, ECMC_RT_LOGGER_MSG_SIZE, fmt, argsCopy);
+  va_end(argsCopy);
+  normalizeSeverityText(queue_[writeIndex].message, ECMC_RT_LOGGER_MSG_SIZE, level);
   writeIndex_.store(nextWriteIndex, std::memory_order_release);
 }
 

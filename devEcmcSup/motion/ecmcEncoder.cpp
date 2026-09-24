@@ -71,6 +71,7 @@ ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
     positionFilter_ = NULL;
     return;
   }
+  refreshDelayCompensationConstants();
 }
 
 ecmcEncoder::~ecmcEncoder() {
@@ -97,6 +98,9 @@ void ecmcEncoder::initVars() {
   rawPosUint_             = 0;
   scale_                  = 0;
   invScale_               = 0;
+  delayCompAbsScale_       = 0;
+  delayCompMinTrustedVel_  = 0;
+  delayCompMaxDistance_    = 0;
   engOffset_              = 0;
   actPos_                 = 0;
   actPosUncompensated_    = 0;
@@ -333,6 +337,7 @@ int ecmcEncoder::setScaleNum(double scaleNum) {
   if (std::abs(scaleDenom_) > 0) {
     scale_ = scaleNum_ / scaleDenom_;
     invScale_ = 1.0 / scale_;
+    refreshDelayCompensationConstants();
   }
   return 0;
 }
@@ -348,6 +353,7 @@ int ecmcEncoder::setScaleDenom(double scaleDenom) {
   }
   scale_ = scaleNum_ / scaleDenom_;
   invScale_ = 1.0 / scale_;
+  refreshDelayCompensationConstants();
   return 0;
 }
 
@@ -792,25 +798,22 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   }
 
   double compensation = 0.0;
-  const double absScale = std::abs(scale_);
-  const double delayCycles = getDelayCycles();
-  const double minTrustedVel =
-    (!actPosEntryUsesFloatingPoint() && absScale > 0.0) ?
-      (absScale * invSampleTime_ /
-       static_cast<double>(enableVelocityFilter_ ? velocityFilter_->getFilterSize() : 1U)) :
-      0.0;
+  // Keep the entry-type check live so relinking an encoder cannot leave stale
+  // quantization settings. The numeric limits change only with configuration.
+  const bool quantized =
+    !actPosEntryUsesFloatingPoint() && delayCompAbsScale_ > 0.0;
+  const double minTrustedVel = quantized ? delayCompMinTrustedVel_ : 0.0;
 
   if (std::abs(actVelLocal_) >= minTrustedVel) {
     compensation = delayTimeS_ * actVelLocal_;
 
     // Limit compensation for quantized encoders so a transient velocity spike
     // does not produce a disproportionate position jump.
-    if (!actPosEntryUsesFloatingPoint() && absScale > 0.0) {
-      const double maxCompensation = absScale * std::max(1.0, std::ceil(delayCycles));
-      if (compensation > maxCompensation) {
-        compensation = maxCompensation;
-      } else if (compensation < -maxCompensation) {
-        compensation = -maxCompensation;
+    if (quantized) {
+      if (compensation > delayCompMaxDistance_) {
+        compensation = delayCompMaxDistance_;
+      } else if (compensation < -delayCompMaxDistance_) {
+        compensation = -delayCompMaxDistance_;
       }
     }
   }
@@ -1767,7 +1770,11 @@ int ecmcEncoder::setVeloFilterSize(size_t size) {
   if (size < 1) {
     size = 1;
   }
-  return velocityFilter_->setFilterSize(size);
+  const int errorCode = velocityFilter_->setFilterSize(size);
+  if (!errorCode) {
+    refreshDelayCompensationConstants();
+  }
+  return errorCode;
 }
 
 int ecmcEncoder::getVeloFilterSize() {
@@ -1807,6 +1814,7 @@ int ecmcEncoder::getPosFilterEnable() {
 
 int ecmcEncoder::setVelFilterEnable(bool enable) {
   enableVelocityFilter_ = enable;
+  refreshDelayCompensationConstants();
   return 0;
 }
 
@@ -2193,6 +2201,7 @@ void ecmcEncoder::refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs, bool force) {
 
 void ecmcEncoder::setMaxPosDiffToPrimEnc(double distance) {
   maxPosDiffToPrimEnc_ = std::abs(distance);
+  data_->encoderDiffConfigChanged_ = true;
 }
 
 double ecmcEncoder::getMaxPosDiffToPrimEnc() {
@@ -2389,7 +2398,20 @@ int ecmcEncoder::setDelayCyclesAndEnable(double cycles, bool enable) {
   delayTimeS_      = cycles * sampleTimeMs_ / 1000;
   enableDelayTime_ = enable;
   delayCompStateValid_ = false;
+  refreshDelayCompensationConstants();
   return 0;
+}
+
+void ecmcEncoder::refreshDelayCompensationConstants() {
+  delayCompAbsScale_ = std::abs(scale_);
+  delayCompMinTrustedVel_ = 0.0;
+  delayCompMaxDistance_ = 0.0;
+  if (delayCompAbsScale_ > 0.0) {
+    delayCompMinTrustedVel_ = delayCompAbsScale_ * invSampleTime_ /
+      static_cast<double>(enableVelocityFilter_ ? velocityFilter_->getFilterSize() : 1U);
+    delayCompMaxDistance_ = delayCompAbsScale_ *
+      std::max(1.0, std::ceil(getDelayCycles()));
+  }
 }
 
 double ecmcEncoder::getDelayCycles() {

@@ -48,8 +48,8 @@ int ecmcError::setErrorID(const char *fileName,
                           int         errorID) {
 
   // Only printout if not already printout
-  if(!errorInBuffer(errorID)) {
-    if (errorID != errorId_) {
+  if (errorID != errorId_) {
+    if (!errorInBuffer(errorID)) {
       if (errorPathValid_) {
         LOGERR("%s/%s:%d: %s=%s;\n",
                fileName,
@@ -76,8 +76,8 @@ int ecmcError::setErrorID(const char       *fileName,
                           int               errorID,
                           ecmcAlarmSeverity severity) {
   // Only printout if not already printout
-  if(!errorInBuffer(errorID)) {
-    if ((errorID != errorId_) && (severity > currSeverity_)) {
+  if ((errorID != errorId_) && (severity > currSeverity_)) {
+    if (!errorInBuffer(errorID)) {
       LOGERR("%s/%s:%d: %s (0x%x).\n",
              fileName,
              functionName,

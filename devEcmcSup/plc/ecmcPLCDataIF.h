@@ -66,6 +66,15 @@ public:
   ~ecmcPLCDataIF();
   int                 read();
   int                 write();
+  // Source is fixed at construction; static/global storage is already shared
+  // with ExprTk and needs no read/write transfer.
+  bool                needsRead() const {
+    return source_ != ECMC_RECORDER_SOURCE_STATIC_VAR &&
+           source_ != ECMC_RECORDER_SOURCE_GLOBAL_VAR;
+  }
+  bool                needsWrite() const {
+    return needsRead() && !readOnly_;
+  }
   double&             getDataRef();
   double              getData();
   void                setData(double data);

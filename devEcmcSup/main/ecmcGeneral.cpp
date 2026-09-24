@@ -20,6 +20,49 @@
 #include "ecmcErrorsList.h"
 #include "ecmcDefinitions.h"
 
+namespace {
+// Keep concrete pointer types: some classes hide ecmcError's accessors.
+template <typename T, int Capacity>
+struct ControllerErrorObjects {
+  T *objects[Capacity] = {};
+  int count = 0;
+
+  void rebuild(T *const *source) {
+    count = 0;
+    for (int i = 0; i < Capacity; ++i) {
+      if (source[i]) {
+        objects[count++] = source[i];
+      }
+    }
+  }
+};
+
+// Only the RT thread enables this snapshot. Configuration and command threads
+// continue to inspect the live arrays. Like cyclic_task's execution lists,
+// membership is fixed for one runtime entry, but error values are read live.
+struct ControllerErrorObjectsRT {
+  bool enabled = false;
+  ControllerErrorObjects<ecmcDataStorage, ECMC_MAX_DATA_STORAGE_OBJECTS> storages;
+  ControllerErrorObjects<ecmcAxisBase, ECMC_MAX_AXES> axes;
+  ControllerErrorObjects<ecmcPluginLib, ECMC_MAX_PLUGINS> plugins;
+  ControllerErrorObjects<ecmcCppLogicLib, ECMC_MAX_PLUGINS> cppLogics;
+};
+
+thread_local ControllerErrorObjectsRT errorObjectsRT;
+}
+
+void prepareControllerErrorObjectsRT() {
+  errorObjectsRT.storages.rebuild(dataStorages);
+  errorObjectsRT.axes.rebuild(axes);
+  errorObjectsRT.plugins.rebuild(plugins);
+  errorObjectsRT.cppLogics.rebuild(cppLogics);
+  errorObjectsRT.enabled = true;
+}
+
+void clearControllerErrorObjectsRT() {
+  errorObjectsRT.enabled = false;
+}
+
 int getControllerError() {
   // EtherCAT errors
   if (ec->getInitDone()) {
@@ -29,10 +72,14 @@ int getControllerError() {
   }
 
   // Data Storages
-  for (int i = 0; i < ECMC_MAX_DATA_STORAGE_OBJECTS; i++) {
-    if (dataStorages[i] != NULL) {
-      if (dataStorages[i]->getError()) {
-        return dataStorages[i]->getErrorID();
+  auto *const *dataStoragesToCheck = errorObjectsRT.enabled ?
+    errorObjectsRT.storages.objects : dataStorages;
+  const int dataStoragesCount = errorObjectsRT.enabled ?
+    errorObjectsRT.storages.count : ECMC_MAX_DATA_STORAGE_OBJECTS;
+  for (int i = 0; i < dataStoragesCount; i++) {
+    if (dataStoragesToCheck[i] != NULL) {
+      if (dataStoragesToCheck[i]->getError()) {
+        return dataStoragesToCheck[i]->getErrorID();
       }
     }
   }
@@ -45,10 +92,14 @@ int getControllerError() {
   }
 
   // Axes
-  for (int i = 0; i < ECMC_MAX_AXES; i++) {
-    if (axes[i] != NULL) {
-      if (axes[i]->getError()) {
-        return axes[i]->getErrorID();
+  auto *const *axesToCheck = errorObjectsRT.enabled ?
+    errorObjectsRT.axes.objects : axes;
+  const int axesCount = errorObjectsRT.enabled ?
+    errorObjectsRT.axes.count : ECMC_MAX_AXES;
+  for (int i = 0; i < axesCount; i++) {
+    if (axesToCheck[i] != NULL) {
+      if (axesToCheck[i]->getError()) {
+        return axesToCheck[i]->getErrorID();
       }
     }
   }
@@ -61,18 +112,26 @@ int getControllerError() {
   }
 
   // Plugin objects
-  for (int i = 0; i < ECMC_MAX_PLUGINS; i++) {
-    if (plugins[i]) {
-      if (plugins[i]->getError()) {
-        return plugins[i]->getErrorID();
+  auto *const *pluginsToCheck = errorObjectsRT.enabled ?
+    errorObjectsRT.plugins.objects : plugins;
+  const int pluginsCount = errorObjectsRT.enabled ?
+    errorObjectsRT.plugins.count : ECMC_MAX_PLUGINS;
+  for (int i = 0; i < pluginsCount; i++) {
+    if (pluginsToCheck[i]) {
+      if (pluginsToCheck[i]->getError()) {
+        return pluginsToCheck[i]->getErrorID();
       }
     }
   }
 
-  for (int i = 0; i < ECMC_MAX_PLUGINS; i++) {
-    if (cppLogics[i]) {
-      if (cppLogics[i]->getError()) {
-        return cppLogics[i]->getErrorID();
+  auto *const *cppLogicsToCheck = errorObjectsRT.enabled ?
+    errorObjectsRT.cppLogics.objects : cppLogics;
+  const int cppLogicsCount = errorObjectsRT.enabled ?
+    errorObjectsRT.cppLogics.count : ECMC_MAX_PLUGINS;
+  for (int i = 0; i < cppLogicsCount; i++) {
+    if (cppLogicsToCheck[i]) {
+      if (cppLogicsToCheck[i]->getError()) {
+        return cppLogicsToCheck[i]->getErrorID();
       }
     }
   }

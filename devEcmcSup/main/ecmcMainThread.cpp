@@ -378,6 +378,8 @@ void cyclic_task(void *usr) {
     }
   }
 
+  prepareControllerErrorObjectsRT();
+
   // Snapshot the configuration once per runtime entry.
   const bool startupGateEnabled =
     startupGateConfigured.load(std::memory_order_acquire);
@@ -655,6 +657,8 @@ void cyclic_task(void *usr) {
     }
     clock_gettime(CLOCK_MONOTONIC, &endTime);
   }  // enc of RT-loop
+
+  clearControllerErrorObjectsRT();
 
   // Normal configuration transitions and IOC-exit requests both release locks.
   if (heldRTMutex) {

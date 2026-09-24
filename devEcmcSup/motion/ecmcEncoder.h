@@ -113,6 +113,9 @@ public:
   ecmcEcTimedValue<double> getTouchProbeTimedValue(
     uint64_t nearbyDcTimeNs) const;
   int                   createTouchProbeAsynParams();
+  bool                  hasTouchProbeAsynParams() const {
+    return touchProbeAsynParamsCreated_;
+  }
   void                  refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs,
                                               bool force);
   asynStatus            touchProbeAsynWriteArmCmd(void *data,
@@ -195,6 +198,7 @@ public:
   int                   setAllowOverUnderFlow(bool allow);
 protected:
   void                  initVars();
+  void                  refreshDelayCompensationConstants();
   bool                  entryTypeIsFloat(ecmcEcDataType type) const;
   static int64_t        clampDoubleToInt64(double value);
   static uint64_t       clampDoubleToUInt64(double value);
@@ -376,6 +380,9 @@ protected:
   double delayTimeS_; // Compensate for delay between setpoint and actual value (should default to 2 cycles)
   bool enableDelayTime_;
   bool delayCompStateValid_;
+  double delayCompAbsScale_;
+  double delayCompMinTrustedVel_;
+  double delayCompMaxDistance_;
   bool allowOverUnderFlow_;
 };
 

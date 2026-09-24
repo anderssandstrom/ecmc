@@ -1207,6 +1207,20 @@ int ecmcMonitor::checkPositionLag() {
   return 0;
 }
 
+void ecmcMonitor::rebuildEncoderDiffList() {
+  diffEncCount_ = 0;
+  diffEncPrimaryIndex_ = data_->control_.primaryEncIndex;
+  diffEncConfiguredCount_ = data_->status_.encoderCount;
+  // Preserve encoder order. Homed state is intentionally checked live.
+  for (int i = 0; i < diffEncConfiguredCount_; ++i) {
+    auto *const enc = encArray_[i];
+    if (i != diffEncPrimaryIndex_ && enc->getMaxPosDiffToPrimEnc() != 0) {
+      diffEncArray_[diffEncCount_++] = enc;
+    }
+  }
+  data_->encoderDiffConfigChanged_ = false;
+}
+
 int ecmcMonitor::checkEncoderDiff() {
   data_->interlocks_.encDiffInterlock = false;
 
@@ -1220,7 +1234,14 @@ int ecmcMonitor::checkEncoderDiff() {
   }
 
   const int primaryEncIndex = data_->control_.primaryEncIndex;
-  const int encoderCount = data_->status_.encoderCount;
+  if (data_->encoderDiffConfigChanged_ ||
+      diffEncPrimaryIndex_ != primaryEncIndex ||
+      diffEncConfiguredCount_ != data_->status_.encoderCount) {
+    rebuildEncoderDiffList();
+  }
+  if (diffEncCount_ == 0) {
+    return 0;
+  }
   const double moduloRange = data_->control_.moduloRange;
   ecmcEncoder *primaryEnc = encArray_[primaryEncIndex];
 
@@ -1234,19 +1255,13 @@ int ecmcMonitor::checkEncoderDiff() {
   bool   encDiffILock  = false;
   double primEncActPos = primaryEnc->getActPos();
 
-  for (int i = 0; i < encoderCount; i++) {
-    auto * const enc = encArray_[i];
-    // Do not check prim encoder vs itself or if this encoder is not homed
-    if ((i == primaryEncIndex) || !enc->getHomed()) {
+  for (int i = 0; i < diffEncCount_; i++) {
+    auto * const enc = diffEncArray_[i];
+    if (!enc->getHomed()) {
       continue;
     }
 
     maxDiff = enc->getMaxPosDiffToPrimEnc();
-
-    // disable functionality if getMaxPosDiffToPrimEnc() == 0
-    if (maxDiff == 0) {
-      continue;
-    }
 
     double diff = ecmcMotionUtils::getPosErrorModAbs(primEncActPos,
                                                      enc->getActPos(),

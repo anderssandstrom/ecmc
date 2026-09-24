@@ -85,6 +85,7 @@ public:
 
 private:
   void initVars();
+  void rebuildVariableAccessLists();
   int  initAsyn(int plcIndex);
   void updateAsyn();
   int  varExist(char *varName);
@@ -113,6 +114,10 @@ private:
   exprtkWrap *exprtk_;
   ecmcPLCDataIF *globalArray_[ECMC_MAX_PLC_VARIABLES];
   ecmcPLCDataIF *localArray_[ECMC_MAX_PLC_VARIABLES];
+  ecmcPLCDataIF *readArray_[2 * ECMC_MAX_PLC_VARIABLES];
+  ecmcPLCDataIF *globalWriteArray_[ECMC_MAX_PLC_VARIABLES];
+  int readVariableCount_;
+  int globalWriteVariableCount_;
   int globalVariableCount_;
   int localVariableCount_;
   int inStartup_;
