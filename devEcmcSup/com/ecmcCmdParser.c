@@ -858,6 +858,14 @@ static int handleCfgCommand(const char *myarg_1) {
     return validateConfig();
   }
 
+  /// "Cfg.SetStartupGate(enable)"
+  nvals = sscanf(myarg_1, "SetStartupGate(%d)", &iValue);
+
+  if (nvals == 1) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetStartupGate");
+    return setStartupGate(iValue);
+  }
+
   /// "Cfg.SetEcStartupTimeout(timeSeconds)"
   nvals = sscanf(myarg_1, "SetEcStartupTimeout(%d)", &iValue);
 

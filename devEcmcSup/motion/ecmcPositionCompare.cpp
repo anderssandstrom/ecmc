@@ -153,7 +153,8 @@ int ecmcPositionCompare::arm(double target,
                              int direction,
                              uint64_t outputValue) {
   if (!linked_) {
-    return ERROR_MAIN_EC_ENTRY_NULL;
+    int error = validate();
+    if (error) return error;
   }
   if (direction < -1 || direction > 1) {
     return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
@@ -174,7 +175,6 @@ int ecmcPositionCompare::arm(double target,
   // idle and the next RT cycle can overwrite it with schedule before the
   // EL2252 has observed a clean idle->schedule transition.
   activateIdlePending_ = true;
-  writeIdleActivate();
   status_.state = ECMC_POS_COMPARE_ARMED;
   return 0;
 }
@@ -184,8 +184,7 @@ int ecmcPositionCompare::cancel() {
   status_.scheduledTimeNs = 0;
   status_.resetTimeNs = 0;
   status_.reason = ECMC_POS_COMPARE_REASON_NONE;
-  activateIdlePending_ = false;
-  writeIdleActivate();
+  activateIdlePending_ = linked_;
   return 0;
 }
 
@@ -197,12 +196,20 @@ void ecmcPositionCompare::execute(bool masterOK,
                                   bool sampleTimeValid,
                                   uint64_t controllerTimeNs) {
   if (!linked_ ||
-      (status_.state != ECMC_POS_COMPARE_ARMED &&
+      (!activateIdlePending_ && status_.state != ECMC_POS_COMPARE_ARMED &&
        status_.state != ECMC_POS_COMPARE_QUEUED &&
        status_.state != ECMC_POS_COMPARE_RESET_QUEUED)) {
     return;
   }
 
+  // A new request can wait for startup/domain readiness without touching PDOs.
+  // Already scheduled events retain the normal error handling below.
+  if ((status_.state == ECMC_POS_COMPARE_ARMED ||
+       status_.state == ECMC_POS_COMPARE_DISABLED) &&
+      (!masterOK || !checkDomainOKAllEntries() || !sampleTimeValid ||
+       !controllerTimeNs || !sampleTimeNs)) {
+    return;
+  }
   if (!masterOK || !sampleTimeValid || !controllerTimeNs || !sampleTimeNs) {
     status_.state = ECMC_POS_COMPARE_ERROR;
     status_.reason = ECMC_POS_COMPARE_REASON_ERROR;
@@ -210,7 +217,12 @@ void ecmcPositionCompare::execute(bool masterOK,
   }
 
   if (activateIdlePending_) {
-    writeIdleActivate();
+    if (writeIdleActivate()) {
+      status_.state = ECMC_POS_COMPARE_ERROR;
+      status_.reason = ECMC_POS_COMPARE_REASON_ERROR;
+      activateIdlePending_ = false;
+      return;
+    }
     activateIdlePending_ = false;
     if (status_.state == ECMC_POS_COMPARE_ARMED) {
       status_.reason = ECMC_POS_COMPARE_REASON_IDLE_CYCLE;
@@ -341,7 +353,7 @@ bool ecmcPositionCompare::isLinked() const {
 }
 
 bool ecmcPositionCompare::isActive() const {
-  return status_.state == ECMC_POS_COMPARE_ARMED ||
+  return activateIdlePending_ || status_.state == ECMC_POS_COMPARE_ARMED ||
          status_.state == ECMC_POS_COMPARE_QUEUED ||
          status_.state == ECMC_POS_COMPARE_RESET_QUEUED;
 }
@@ -613,11 +625,13 @@ int ecmcPositionCompare::scheduleEvent(uint64_t outputValue,
   return 0;
 }
 
-void ecmcPositionCompare::writeIdleActivate() {
+int ecmcPositionCompare::writeIdleActivate() {
   if (linked_) {
-    writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateIdle_);
+    int error = writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateIdle_);
+    if (error) return error;
     status_.lastActivateValue = activateIdle_;
   }
+  return 0;
 }
 
 bool ecmcPositionCompare::directionMatches(double distance,

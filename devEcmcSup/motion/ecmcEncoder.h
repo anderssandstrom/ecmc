@@ -274,6 +274,7 @@ protected:
   bool     encLatchControlEnabled_;
   bool     encLatchControlDisablePending_;
   bool     encLatchArm_;
+  bool     latchIdleReadPending_ = false;
   bool     touchProbeAutoRearm_;
   int      touchProbeRearmState_;
   double actEncLatchPos_;
@@ -292,6 +293,7 @@ protected:
   bool     touchProbeControlEnabled_;
   bool     touchProbeControlDisablePending_;
   bool     touchProbeArm_;
+  bool     touchProbeIdleReadPending_ = false;
   double   actTouchProbePos_;
   uint64_t touchProbeSequence_;
   uint64_t touchProbeTimestampRaw_;

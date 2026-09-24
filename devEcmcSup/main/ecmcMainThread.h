@@ -62,6 +62,15 @@ int ecmcInitThread(void);
  */
 int setAppMode(int mode);
 
+/** \brief Configure the IOC startup gate before entering runtime.
+ *
+ * \param[in] enable 1 (default): wait for IOC readiness and bus stabilization;
+ *                   0: legacy axis/PLC startup.
+ * Configuration mode only. Values other than 0 and 1 are rejected.
+ * Example: "Cfg.SetStartupGate(0)".
+ */
+int setStartupGate(int enable);
+
 /** \brief Set EtherCAT startup timeout time
  *
  * Includes bus readiness and timing discovery/publication. Default time is 45s.

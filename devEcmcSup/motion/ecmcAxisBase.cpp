@@ -1068,6 +1068,11 @@ int ecmcAxisBase::setTouchProbeArm(int encoderIndex, bool arm) {
   if (!encoder) {
     return error;
   }
+  // Configuration-time requests precede the normal runtime validation pass.
+  if (appModeStat == ECMC_MODE_CONFIG) {
+    error = encoder->validate();
+    if (error) return error;
+  }
   if (!encoder->getTouchProbeFuncEnabled() && !encoder->getLatchFuncEnabled()) {
     return ERROR_ENC_ENTRY_NULL;
   }

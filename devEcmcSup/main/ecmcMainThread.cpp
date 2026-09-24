@@ -60,6 +60,7 @@ static std::atomic<int> iocExitRequested {0};
 static std::atomic<int> iocExitCode {0};
 static std::atomic<bool> iocRunning {false};
 static std::atomic<bool> startupMotionHeld {true};
+static std::atomic<bool> startupGateConfigured {true};
 
 void ecmcNotifyIocRunning(void) {
   iocRunning.store(true, std::memory_order_release);
@@ -377,9 +378,9 @@ void cyclic_task(void *usr) {
     }
   }
 
-  // Read once per runtime entry; permit legacy startup for existing IOCs.
-  const char *startupGate = getenv("ECMC_STARTUP_GATE");
-  const bool startupGateEnabled = !startupGate || strcmp(startupGate, "0") != 0;
+  // Snapshot the configuration once per runtime entry.
+  const bool startupGateEnabled =
+    startupGateConfigured.load(std::memory_order_acquire);
   // Explicit opt-out for applications that never call iocInit/iocRun.
   const char *waitForIoc = getenv("ECMC_WAIT_FOR_IOC_RUNNING");
   const bool waitForIocRunning = !waitForIoc || strcmp(waitForIoc, "0") != 0;
@@ -1056,6 +1057,17 @@ int setAppMode(int mode) {
 
     break;
   }
+  return 0;
+}
+
+int setStartupGate(int enable) {
+  if (appModeStat != ECMC_MODE_CONFIG || appModeCmd != ECMC_MODE_CONFIG) {
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  }
+  if (enable != 0 && enable != 1) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+  startupGateConfigured.store(enable != 0, std::memory_order_release);
   return 0;
 }
 

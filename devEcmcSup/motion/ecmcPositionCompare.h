@@ -141,7 +141,7 @@ private:
                       ecmcAsynDataItem **asynParamOut);
   void updateAsynShadow();
   int scheduleEvent(uint64_t outputValue, uint64_t eventTimeNs);
-  void writeIdleActivate();
+  int writeIdleActivate();
   bool directionMatches(double distance, double velocity) const;
   bool calculateTimeToTargetNs(double distance,
                                double velocity,

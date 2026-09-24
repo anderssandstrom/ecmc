@@ -1,14 +1,22 @@
 # IOC startup gate
 
-The gate is enabled by default. To restore legacy axis/PLC startup, set this
-before `Cfg.SetAppMode(1)`:
+`ecmccfg/scripts/setAppMode.cmd` passes `ECMC_STARTUP_GATE` to the configuration
+command before starting runtime, defaulting to `0` (legacy startup). Set the
+variable to `1` before that script runs to enable the gate. `startup.cmd` only
+initializes the variable's default.
+
+Without that script, the C++ default is enabled. To select legacy startup
+directly, use this before `Cfg.SetAppMode(1)`:
 
 ```iocsh
-epicsEnvSet("ECMC_STARTUP_GATE", "0")
+ecmcConfigOrDie "Cfg.SetStartupGate(0)"
 ```
 
-Set it to `1` (or leave it unset) to enable the gate. It is read once on each
-runtime entry. Disabling it also disables the new one-time startup reset and
+Use `Cfg.SetStartupGate(1)` to enable the gate (the default). The command accepts
+only `0` or `1` and is configuration-mode only. Its setting is used on each
+runtime entry. C++ no longer reads `ECMC_STARTUP_GATE` directly; `setAppMode.cmd`
+translates the variable into the command above.
+Disabling the gate also disables the new one-time startup reset and
 the post-IOC stabilization wait. The separate timing-discovery wait and the
 45-second default bus startup timeout remain in effect.
 
@@ -32,6 +40,15 @@ ordinary plugins and C++ logic begin executing.
 
 This is a startup gate, not a runtime fault-recovery mechanism. After release,
 normal fault handling remains active; the gate does not repeatedly reset errors.
+
+`AxisTouchProbeArm` and `AxisPositionCompareArm` also accept requests in
+configuration mode, after their encoder/axis and EtherCAT links are configured.
+They validate configuration and store the request without command-time PDO
+access. `OK` means accepted, not that the hardware is already armed. Touch-probe
+control is applied by the cyclic encoder writer when its domain is valid;
+position compare additionally waits for the startup gate and valid timing.
+PC cancellation also defers its idle write to the cyclic thread. This does not
+mask domain faults or suppress motor-record STOP requests from interlocks.
 If the bus fails to stabilize within the configured startup timeout after IOC
 running (45 seconds by default), execution remains held and an error is logged.
 Resolve the fault and restart runtime to retry. Axis hardware errors can still

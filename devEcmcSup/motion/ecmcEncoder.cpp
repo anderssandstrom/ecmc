@@ -1173,6 +1173,14 @@ int ecmcEncoder::writeEntries() {
   const bool latchTouchProbeMode = touchProbeAutoRearm_ &&
                                    !touchProbeFunctEnabled_;
   if (encLatchFunctEnabled_ && encLatchControlEnabled_) {
+    if (latchIdleReadPending_) {
+      uint64_t value = 0;
+      int error = readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
+                                  encLatchControlBits_, &value);
+      if (error) return error;
+      encLatchControlWordIdle_ = value & ~encLatchControlWordArm_;
+      latchIdleReadPending_ = false;
+    }
     if (latchTouchProbeMode && touchProbeRearmState_ == 2 &&
         !encLatchStatus_) {
       touchProbeRearmState_ = 0;
@@ -1204,6 +1212,14 @@ int ecmcEncoder::writeEntries() {
   }
 
   if (touchProbeFunctEnabled_ && touchProbeControlEnabled_) {
+    if (touchProbeIdleReadPending_) {
+      uint64_t value = 0;
+      int error = readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
+                                  touchProbeControlBits_, &value);
+      if (error) return error;
+      touchProbeControlWordIdle_ = value & ~touchProbeControlWordArm_;
+      touchProbeIdleReadPending_ = false;
+    }
     if (touchProbeAutoRearm_ && touchProbeRearmState_ == 2 &&
         !touchProbeStatus_) {
       touchProbeRearmState_ = 0;
@@ -1574,12 +1590,9 @@ void ecmcEncoder::setTouchProbeControlEnabled(bool enable) {
 */
 void ecmcEncoder::setArmLatch(bool arm) {
 
-  // read control word before arm to be able to restore after
+  // Capture the idle word in the cyclic writer once the domain is valid.
   if(!encLatchArm_ && arm) {
-    uint64_t tempValue = 0;
-    readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
-                    encLatchControlBits_,&tempValue);
-    encLatchControlWordIdle_ = tempValue & ~encLatchControlWordArm_;
+    latchIdleReadPending_ = true;
   }
   encLatchArm_ = arm;
   if (!arm) {
@@ -1594,11 +1607,7 @@ void ecmcEncoder::setArmLatch(bool arm) {
 
 void ecmcEncoder::setArmTouchProbe(bool arm) {
   if(!touchProbeArm_ && arm) {
-    uint64_t tempValue = 0;
-    readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
-                    touchProbeControlBits_,
-                    &tempValue);
-    touchProbeControlWordIdle_ = tempValue & ~touchProbeControlWordArm_;
+    touchProbeIdleReadPending_ = true;
   }
   touchProbeArm_ = arm;
   if (!arm) {
