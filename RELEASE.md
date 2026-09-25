@@ -1,6 +1,6 @@
 Release Notes
 ===
-# 11.0.9
+# 11.1.0
 * Fix inclue path in ecmcPluginClient.h
 * Make `Cfg.WriteEcEntryEcPath(<ec_path>,<value>)` convert values according to the entry datatype. F32/F64 entries now accept floating-point values, signed entries accept negative values, and integer parsing retains full 64-bit precision.
 * Add support for configuring fixed PDO mappings while retaining the established `EcAddEntry` mapping workflow.
@@ -42,7 +42,6 @@ Release Notes
 * Count absolute, relative, homing, velocity, and tweak requests arriving through the ecmc axis control word even when the request is later rejected or ignored.
 * Reduce diagnostic overhead by publishing RT logger axis data only for configured axes and keeping diagnostic file output and asyn publication in the logger worker thread.
 * Keep the motor-record message field focused on ecmc errors and warnings instead of overwriting it with normal moving/stopped state text.
-* Complete motor-record `DMOV` when motion terminates through a stop, error, disable, or interlock while remaining away from target. Successful arrival remains distinguishable through `AtTarget` and alarm/problem status.
 * Trigger the motor-record interlock STOP notification only on the interlock rising edge, and make motor command sample-age handling safe across the 32-bit axis cycle-counter wrap.
 * When resetting a stopped internal-source axis after a position-lag error, synchronize its internal trajectory start, setpoint, and target to the actual position to avoid immediately retriggering the same error.
 * Harden the master/slave state machine with bounded prepare and master-disable waits, trajectory-source verification and recovery, lost-enable/error recovery, startup ownership validation, explicit transition reasons, retained fault history, and richer packed status metadata.
@@ -70,6 +69,10 @@ Release Notes
   disable requests are consumed by the realtime thread. ecmccfg exposes these
   commands as `MCU-StopAll` and `MCU-DisableAll`.
 * Add optional startup ordering that allows EPICS to start before realtime execution, supporting restore workflows that must complete before ecmc motion and PLC processing begin.
+
+# 11.0.9
+* Fix sync between ecmc and motor record (DMOV)
+* Fix thread status bit
 
 # 11.0.8
 * Add IOC shell commands `ecmcReadParam(<paramName>)` and `ecmcWriteParam(<paramName>,<value>)` for scalar ecmc data items listed by `ecmcGrepParam`, including parameter alias lookup.

@@ -2194,7 +2194,8 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
   // Ensure data is polled after command was executed ensure 2 polls after 
   if (dataIsSampledAfterNewCmd()/* && pollsAfterNewCommandCounter_>=2*/) {
     if(!drvlocal.moveReady && !drvlocal.ecmcBusy) {
-      // DMOV reports a terminal operation; AtTarget and alarms report success.
+      // DMOV reports that the operation has terminated. AtTarget and the
+      // alarm/problem status distinguish successful arrival from an abort.
       const bool terminalFailure =
         drvlocal.status_.errorCode != 0 ||
         drvlocal.ecmcSummaryInterlock ||
