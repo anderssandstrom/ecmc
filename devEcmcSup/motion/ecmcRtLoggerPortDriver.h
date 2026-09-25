@@ -20,6 +20,7 @@ struct ecmcEcTimingDiag {
   int32_t reference;
   int32_t syncType;
   int32_t cycleOffset;
+  int32_t updateDivisor;
   int32_t timestampBits;
   int64_t cycleTimeNs;
   int64_t shiftTimeNs;

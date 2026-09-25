@@ -136,6 +136,7 @@ public:
     // SYNC1 shift time [ns].
     int32_t sync1Shift);
   const ecmcEcDcConfig& getDcConfig() const;
+  const ecmcEcDcSchedule& getDcSchedule() const;
   void setNominalTimingCycleNs(uint32_t cycleTimeNs);
   void discoverSmTiming();
   const ecmcEcSmTiming& getInputSmTiming() const;
@@ -144,6 +145,10 @@ public:
                         int32_t cycleOffset,
                         int32_t eventOffsetNs,
                         uint32_t uncertaintyNs);
+  int setTimingSource(ec_direction_t direction,
+                      ecmcEcTimingSource source);
+  int setTimingUpdateDivisor(ec_direction_t direction,
+                             uint32_t updateDivisor);
   int linkTimingTimestamp(ec_direction_t direction,
                           const std::string& entryId,
                           uint8_t bits,
@@ -236,6 +241,8 @@ private:
                             ecmcEcSmTiming *timing,
                             ecmcEcSmTimingValue *value);
   void executeSmTimingDiscovery();
+  void prepareDcScheduleDiscovery();
+  void executeDcScheduleDiscovery();
   void resolveEndpointTiming(const ecmcEcSmTiming& smTiming,
                              const ecmcEcTimingOverride& timingOverride,
                              const ecmcEcTimestampConfig& timestampConfig,
@@ -304,6 +311,11 @@ private:
   ecmcEcEndpointTiming outputTiming_;
   smTimingRequest smTimingRequests_[20];
   uint8_t smTimingRequestCount_;
+  bool smTimingDiscoveryComplete_;
+  ec_reg_request_t *dcScheduleRequest_;
+  ecmcEcDcSchedule dcSchedule_;
+  uint8_t dcScheduleStage_;
+  bool dcScheduleRequestStarted_;
   uint32_t nominalTimingCycleNs_;
   bool hasProcessDataInput_;
   bool hasProcessDataOutput_;

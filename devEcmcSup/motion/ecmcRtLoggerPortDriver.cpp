@@ -69,18 +69,20 @@ constexpr size_t ECMC_RT_LOGGER_DIAG_AXIS_REPORT_SIZE = 1024;
 constexpr size_t ECMC_RT_LOGGER_AXIS_MR_CMD_TEXT_SIZE = 160;
 constexpr size_t ECMC_RT_LOGGER_AXIS_MS_BLOCK_TEXT_SIZE = 160;
 constexpr int ECMC_EC_TIMING_DIRECTIONS = 2;
-constexpr int ECMC_EC_TIMING_FIELDS = 12;
+constexpr int ECMC_EC_TIMING_FIELDS = 13;
 
-const char *ECMC_EC_TIMING_PARAM_NAMES[2][12] = {
+const char *ECMC_EC_TIMING_PARAM_NAMES[2][ECMC_EC_TIMING_FIELDS] = {
   {"timing.input.status", "timing.input.source", "timing.input.reference",
    "timing.input.syncType", "timing.input.cycleOffset",
-   "timing.input.timestampBits", "timing.input.cycleTimeNs",
+   "timing.input.updateDivisor", "timing.input.timestampBits",
+   "timing.input.cycleTimeNs",
    "timing.input.shiftTimeNs", "timing.input.calculationCopyTimeNs",
    "timing.input.eventOffsetNs", "timing.input.uncertaintyNs",
    "timing.input.timestampCorrectionNs"},
   {"timing.output.status", "timing.output.source", "timing.output.reference",
    "timing.output.syncType", "timing.output.cycleOffset",
-   "timing.output.timestampBits", "timing.output.cycleTimeNs",
+   "timing.output.updateDivisor", "timing.output.timestampBits",
+   "timing.output.cycleTimeNs",
    "timing.output.shiftTimeNs", "timing.output.calculationCopyTimeNs",
    "timing.output.eventOffsetNs", "timing.output.uncertaintyNs",
    "timing.output.timestampCorrectionNs"}
@@ -279,7 +281,7 @@ public:
          ++direction) {
       for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
         createRequiredParam(ECMC_EC_TIMING_PARAM_NAMES[direction][field],
-                            field < 6 ? asynParamInt32 : asynParamInt64,
+                            field < 7 ? asynParamInt32 : asynParamInt64,
                             &ecTimingParam_[direction][field]);
       }
     }
@@ -785,7 +787,7 @@ private:
           continue;
         }
         for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
-          if (field < 6) {
+          if (field < 7) {
             setIntegerParam(slave, ecTimingParam_[direction][field],
                             static_cast<int>(values[field]));
           } else {
@@ -1351,9 +1353,10 @@ void ecmcRtLoggerPortDriverSetEcTiming(int slavePosition,
   target.version.fetch_add(1, std::memory_order_acq_rel);
   const int64_t values[ECMC_EC_TIMING_FIELDS] = {
     timing->status, timing->source, timing->reference, timing->syncType,
-    timing->cycleOffset, timing->timestampBits, timing->cycleTimeNs,
-    timing->shiftTimeNs, timing->calculationCopyTimeNs, timing->eventOffsetNs,
-    timing->uncertaintyNs, timing->timestampCorrectionNs
+    timing->cycleOffset, timing->updateDivisor, timing->timestampBits,
+    timing->cycleTimeNs, timing->shiftTimeNs, timing->calculationCopyTimeNs,
+    timing->eventOffsetNs, timing->uncertaintyNs,
+    timing->timestampCorrectionNs
   };
   for (int field = 0; field < ECMC_EC_TIMING_FIELDS; ++field) {
     target.value[field].store(values[field], std::memory_order_relaxed);

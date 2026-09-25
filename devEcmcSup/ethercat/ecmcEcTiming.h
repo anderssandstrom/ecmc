@@ -27,6 +27,33 @@ enum class ecmcEcTimingReference : uint8_t {
   SYNC
 };
 
+/* Quality travels with a value so consumers can distinguish an exact hardware
+ * event from a nominal schedule reconstruction or a cycle-bounded estimate. */
+enum class ecmcEcTimeQuality : uint8_t {
+  INVALID = 0,
+  CYCLE_BOUNDED,
+  DC_SCHEDULE,
+  HARDWARE_TIMESTAMP
+};
+
+template<typename T>
+struct ecmcEcTimedValue {
+  T value;
+  uint64_t eventTimeNs;
+  uint64_t sequence;
+  uint32_t uncertaintyNs;
+  ecmcEcTimeQuality quality;
+  bool valid;
+
+  ecmcEcTimedValue() :
+    value(),
+    eventTimeNs(0),
+    sequence(0),
+    uncertaintyNs(0),
+    quality(ecmcEcTimeQuality::INVALID),
+    valid(false) {}
+};
+
 struct ecmcEcEndpointTiming {
   bool valid;
   ecmcEcTimingSource source;
@@ -34,6 +61,7 @@ struct ecmcEcEndpointTiming {
   int32_t cycleOffset;
   int32_t eventOffsetNs;
   uint32_t uncertaintyNs;
+  uint32_t updateDivisor;
   bool cycleOffsetKnown;
   bool eventOffsetKnown;
   bool overrideApplied;
@@ -50,6 +78,7 @@ struct ecmcEcEndpointTiming {
     cycleOffset(0),
     eventOffsetNs(0),
     uncertaintyNs(0),
+    updateDivisor(1),
     cycleOffsetKnown(false),
     eventOffsetKnown(false),
     overrideApplied(false),
@@ -61,19 +90,28 @@ struct ecmcEcEndpointTiming {
 };
 
 /* Optional terminal-specific correction supplied by the hardware
- * configuration. The correction is relative to the SYNC event selected by
- * the terminal's 0x1C32/0x1C33 synchronization type. */
+ * configuration. cycleOffset is relative to the most recent selected endpoint
+ * event at or before application time. eventOffsetNs is relative to the SYNC
+ * event selected by the terminal's 0x1C32/0x1C33 synchronization type. */
 struct ecmcEcTimingOverride {
   bool configured;
+  bool sourceConfigured;
+  bool updateDivisorConfigured;
+  ecmcEcTimingSource source;
   int32_t cycleOffset;
   int32_t eventOffsetNs;
   uint32_t uncertaintyNs;
+  uint32_t updateDivisor;
 
   ecmcEcTimingOverride() :
     configured(false),
+    sourceConfigured(false),
+    updateDivisorConfigured(false),
+    source(ecmcEcTimingSource::CYCLE_ONLY),
     cycleOffset(0),
     eventOffsetNs(0),
-    uncertaintyNs(0) {}
+    uncertaintyNs(0),
+    updateDivisor(1) {}
 };
 
 struct ecmcEcTimestampConfig {
@@ -109,6 +147,43 @@ struct ecmcEcDelayEstimate {
   ecmcEcDelayEstimate() : valid(false), delayNs(0), uncertaintyNs(0) {}
 };
 
+enum class ecmcEcDelaySource : uint8_t {
+  INVALID = 0,
+  CYCLE,
+  DC_SYNC,
+  TIMESTAMP
+};
+
+enum class ecmcEcDelayStatus : uint8_t {
+  OK = 0,
+  INPUT_INVALID,
+  OUTPUT_INVALID,
+  CYCLE_TIME_UNKNOWN,
+  OFFSET_UNKNOWN,
+  TIMING_DOMAIN_MISMATCH,
+  TIMESTAMP_REQUIRED,
+  SCHEDULE_UNKNOWN
+};
+
+/* Result of relating an encoder/input event to a drive/output application
+ * event. A positive delay means that the output event occurs after the input
+ * event. No value is guessed when the endpoints cannot be put on a common
+ * time base. */
+struct ecmcEcTimingPath {
+  bool valid;
+  ecmcEcDelaySource source;
+  ecmcEcDelayStatus status;
+  int64_t delayNs;
+  uint64_t uncertaintyNs;
+
+  ecmcEcTimingPath() :
+    valid(false),
+    source(ecmcEcDelaySource::INVALID),
+    status(ecmcEcDelayStatus::TIMING_DOMAIN_MISMATCH),
+    delayNs(0),
+    uncertaintyNs(0) {}
+};
+
 struct ecmcEcDcConfig {
   bool configured;
   uint16_t assignActivate;
@@ -125,6 +200,76 @@ struct ecmcEcDcConfig {
     sync1OffsetNs(0),
     sync1ShiftNs(0) {}
 };
+
+/* ESC cyclic-unit schedule read once after activation. These are raw
+ * register values and are kept separate from the configured DC values. */
+struct ecmcEcDcSchedule {
+  bool discoveryAttempted;
+  bool discoveryComplete;
+  uint64_t startTimeNs;   // 0x0990
+  uint32_t sync0CycleNs;  // 0x09A0
+  uint32_t sync1CycleNs;  // 0x09A4
+  int requestError;
+
+  ecmcEcDcSchedule() :
+    discoveryAttempted(false),
+    discoveryComplete(false),
+    startTimeNs(0),
+    sync0CycleNs(0),
+    sync1CycleNs(0),
+    requestError(0) {}
+};
+
+/* Resolve an endpoint against the most recent occurrence of its selected
+ * SYNC event at or before applicationTimeNs. cycleOffset is therefore an
+ * explicit PDO generation age (negative) or output lead (positive). 0x0990
+ * already includes the configured SYNC0 shift. No absolute event is guessed
+ * when the actual ESC schedule was not readable. */
+inline bool ecmcEcResolveScheduledEventNs(
+  uint64_t applicationTimeNs,
+  const ecmcEcEndpointTiming& endpoint,
+  const ecmcEcDcConfig& dc,
+  const ecmcEcDcSchedule& schedule,
+  uint32_t periodNs,
+  uint64_t *eventTimeNs) {
+  if (!eventTimeNs || !applicationTimeNs ||
+      applicationTimeNs >
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+      !periodNs || !endpoint.valid ||
+      !endpoint.cycleOffsetKnown || !endpoint.eventOffsetKnown ||
+      !schedule.discoveryComplete || !schedule.startTimeNs ||
+      !schedule.sync0CycleNs ||
+      (endpoint.source != ecmcEcTimingSource::SYNC0_DERIVED &&
+       endpoint.source != ecmcEcTimingSource::SYNC1_DERIVED)) {
+    return false;
+  }
+
+  if (schedule.startTimeNs >
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    return false;
+  }
+  int64_t firstEventNs = static_cast<int64_t>(schedule.startTimeNs);
+  if (endpoint.source == ecmcEcTimingSource::SYNC1_DERIVED) {
+    firstEventNs += dc.sync1OffsetNs;
+  }
+  firstEventNs += endpoint.eventOffsetNs;
+
+  const int64_t anchor = static_cast<int64_t>(applicationTimeNs);
+  const int64_t period = static_cast<int64_t>(periodNs);
+  int64_t latestEventNs = firstEventNs;
+  if (latestEventNs <= anchor) {
+    latestEventNs += ((anchor - latestEventNs) / period) * period;
+  } else {
+    latestEventNs -= ((latestEventNs - anchor + period - 1) / period) * period;
+  }
+  const int64_t resolvedEventNs = latestEventNs +
+    static_cast<int64_t>(endpoint.cycleOffset) * period;
+  if (resolvedEventNs < 0) {
+    return false;
+  }
+  *eventTimeNs = static_cast<uint64_t>(resolvedEventNs);
+  return true;
+}
 
 struct ecmcEcSmTimingValue {
   bool available;
@@ -163,51 +308,6 @@ struct ecmcEcSmTiming {
     discoveryComplete(false),
     objectIndex(index) {}
 };
-
-/*
- * Resolve a physical event against the SYNC0 time of the reference cycle.
- * sync1OffsetNs is the configured time between SYNC0 and SYNC1 (the
- * sync1_cycle argument of ecrt_slave_config_dc), not sync1_shift.
- *
- * Hardware timestamps and cycle-only timing cannot be resolved by this
- * schedule helper. The caller must use the timestamp directly or retain a
- * bounded cycle-time estimate, respectively.
- */
-inline bool ecmcEcResolveSyncEventNs(uint64_t referenceSync0Ns,
-                                    uint32_t sync0CycleNs,
-                                    uint32_t sync1OffsetNs,
-                                    const ecmcEcEndpointTiming& endpoint,
-                                    uint64_t *eventTimeNs) {
-  if (!eventTimeNs || !endpoint.valid || !endpoint.cycleOffsetKnown ||
-      !endpoint.eventOffsetKnown || sync0CycleNs == 0 ||
-      (endpoint.source != ecmcEcTimingSource::SYNC0_DERIVED &&
-       endpoint.source != ecmcEcTimingSource::SYNC1_DERIVED)) {
-    return false;
-  }
-
-  int64_t relativeNs = static_cast<int64_t>(endpoint.cycleOffset) *
-                       static_cast<int64_t>(sync0CycleNs);
-  if (endpoint.source == ecmcEcTimingSource::SYNC1_DERIVED) {
-    relativeNs += static_cast<int64_t>(sync1OffsetNs);
-  }
-  relativeNs += static_cast<int64_t>(endpoint.eventOffsetNs);
-
-  if (relativeNs < 0) {
-    const uint64_t magnitude = static_cast<uint64_t>(-relativeNs);
-    if (magnitude > referenceSync0Ns) {
-      return false;
-    }
-    *eventTimeNs = referenceSync0Ns - magnitude;
-    return true;
-  }
-
-  const uint64_t positive = static_cast<uint64_t>(relativeNs);
-  if (positive > std::numeric_limits<uint64_t>::max() - referenceSync0Ns) {
-    return false;
-  }
-  *eventTimeNs = referenceSync0Ns + positive;
-  return true;
-}
 
 /* Resolve a cycle-only input/output event against the exact receive or
  * application time captured by ecmc for that cycle. */
@@ -272,15 +372,16 @@ inline uint64_t ecmcEcExtendDcTimestamp32(uint32_t timestamp,
   return nearbyDcTimeNs - static_cast<int64_t>(age);
 }
 
-/* Calculate the signed interval between two endpoint events expressed against
- * the same DC cycle. No cycle association is guessed: both endpoints must have
- * a known cycle offset, either discovered by an authoritative mechanism or
- * supplied explicitly by the hardware configuration. */
+/* Calculate the interval between endpoint events associated with one exact
+ * application time. No phase is rounded or inferred from ecmc execution time. */
 inline ecmcEcDelayEstimate ecmcEcCalculateEndpointDelayNs(
+  uint64_t applicationTimeNs,
   const ecmcEcEndpointTiming& earlier,
-  uint32_t earlierSync1OffsetNs,
+  const ecmcEcDcConfig& earlierDc,
+  const ecmcEcDcSchedule& earlierSchedule,
   const ecmcEcEndpointTiming& later,
-  uint32_t laterSync1OffsetNs,
+  const ecmcEcDcConfig& laterDc,
+  const ecmcEcDcSchedule& laterSchedule,
   uint32_t cycleTimeNs) {
   ecmcEcDelayEstimate result;
   if (!earlier.valid || !later.valid || !earlier.cycleOffsetKnown ||
@@ -292,16 +393,18 @@ inline ecmcEcDelayEstimate ecmcEcCalculateEndpointDelayNs(
       later.source == ecmcEcTimingSource::HARDWARE_TIMESTAMP) {
     return result;
   }
-  result.delayNs =
-    (static_cast<int64_t>(later.cycleOffset) -
-     static_cast<int64_t>(earlier.cycleOffset)) * cycleTimeNs +
-    static_cast<int64_t>(later.eventOffsetNs) -
-    static_cast<int64_t>(earlier.eventOffsetNs);
-  if (earlier.source == ecmcEcTimingSource::SYNC1_DERIVED) {
-    result.delayNs -= earlierSync1OffsetNs;
-  }
-  if (later.source == ecmcEcTimingSource::SYNC1_DERIVED) {
-    result.delayNs += laterSync1OffsetNs;
+
+  uint64_t earlierEventNs = 0;
+  uint64_t laterEventNs = 0;
+  if (!ecmcEcResolveScheduledEventNs(applicationTimeNs, earlier, earlierDc,
+                                     earlierSchedule, cycleTimeNs,
+                                     &earlierEventNs) ||
+      !ecmcEcResolveScheduledEventNs(applicationTimeNs, later, laterDc,
+                                     laterSchedule, cycleTimeNs,
+                                     &laterEventNs) ||
+      !ecmcEcSignedTimeDifferenceNs(laterEventNs, earlierEventNs,
+                                    &result.delayNs)) {
+    return result;
   }
   result.uncertaintyNs =
     static_cast<uint64_t>(earlier.uncertaintyNs) + later.uncertaintyNs;
@@ -329,6 +432,117 @@ inline ecmcEcDelayEstimate ecmcEcCalculateCycleDelayNs(
     static_cast<uint64_t>(input.uncertaintyNs) + output.uncertaintyNs;
   result.valid = true;
   return result;
+}
+
+/* Generic static/cyclic timing-path calculation used by encoder-to-drive and
+ * input-to-output consumers. Hardware timestamp paths use the overload below
+ * because their event times are dynamic rather than startup constants. */
+inline ecmcEcTimingPath ecmcEcCalculateTimingPathNs(
+  const ecmcEcCycleTiming& cycle,
+  const ecmcEcEndpointTiming& input,
+  const ecmcEcDcConfig& inputDc,
+  const ecmcEcDcSchedule& inputSchedule,
+  const ecmcEcEndpointTiming& output,
+  const ecmcEcDcConfig& outputDc,
+  const ecmcEcDcSchedule& outputSchedule) {
+  ecmcEcTimingPath path;
+  if (!input.valid) {
+    path.status = ecmcEcDelayStatus::INPUT_INVALID;
+    return path;
+  }
+  if (!output.valid) {
+    path.status = ecmcEcDelayStatus::OUTPUT_INVALID;
+    return path;
+  }
+  if (input.source == ecmcEcTimingSource::HARDWARE_TIMESTAMP ||
+      output.source == ecmcEcTimingSource::HARDWARE_TIMESTAMP) {
+    path.status = ecmcEcDelayStatus::TIMESTAMP_REQUIRED;
+    return path;
+  }
+  if (!input.cycleOffsetKnown || !output.cycleOffsetKnown ||
+      !input.eventOffsetKnown || !output.eventOffsetKnown) {
+    path.status = ecmcEcDelayStatus::OFFSET_UNKNOWN;
+    return path;
+  }
+
+  if (input.source == ecmcEcTimingSource::CYCLE_ONLY &&
+      output.source == ecmcEcTimingSource::CYCLE_ONLY) {
+    const ecmcEcDelayEstimate estimate =
+      ecmcEcCalculateCycleDelayNs(cycle, input, output);
+    if (!estimate.valid) {
+      path.status = cycle.nominalPeriodNs == 0 ?
+        ecmcEcDelayStatus::CYCLE_TIME_UNKNOWN :
+        ecmcEcDelayStatus::TIMING_DOMAIN_MISMATCH;
+      return path;
+    }
+    path.valid = true;
+    path.source = ecmcEcDelaySource::CYCLE;
+    path.status = ecmcEcDelayStatus::OK;
+    path.delayNs = estimate.delayNs;
+    path.uncertaintyNs = estimate.uncertaintyNs;
+    return path;
+  }
+
+  const bool inputSync =
+    input.source == ecmcEcTimingSource::SYNC0_DERIVED ||
+    input.source == ecmcEcTimingSource::SYNC1_DERIVED;
+  const bool outputSync =
+    output.source == ecmcEcTimingSource::SYNC0_DERIVED ||
+    output.source == ecmcEcTimingSource::SYNC1_DERIVED;
+  if (!inputSync || !outputSync) {
+    path.status = ecmcEcDelayStatus::TIMING_DOMAIN_MISMATCH;
+    return path;
+  }
+
+  if (!inputSchedule.discoveryComplete || !inputSchedule.startTimeNs ||
+      !inputSchedule.sync0CycleNs || !outputSchedule.discoveryComplete ||
+      !outputSchedule.startTimeNs || !outputSchedule.sync0CycleNs) {
+    path.status = ecmcEcDelayStatus::SCHEDULE_UNKNOWN;
+    return path;
+  }
+
+  const uint32_t inputCycleNs = inputSchedule.sync0CycleNs;
+  const uint32_t outputCycleNs = outputSchedule.sync0CycleNs;
+  if (inputCycleNs != outputCycleNs) {
+    path.status = ecmcEcDelayStatus::TIMING_DOMAIN_MISMATCH;
+    return path;
+  }
+
+  const ecmcEcDelayEstimate estimate = ecmcEcCalculateEndpointDelayNs(
+    cycle.applicationTimeNs, input, inputDc, inputSchedule, output, outputDc,
+    outputSchedule, inputCycleNs);
+  if (!estimate.valid) {
+    path.status = ecmcEcDelayStatus::TIMING_DOMAIN_MISMATCH;
+    return path;
+  }
+  path.valid = true;
+  path.source = ecmcEcDelaySource::DC_SYNC;
+  path.status = ecmcEcDelayStatus::OK;
+  path.delayNs = estimate.delayNs;
+  path.uncertaintyNs = estimate.uncertaintyNs;
+  return path;
+}
+
+/* Dynamic timestamp path. Both timestamps must already be extended/corrected
+ * to the same 64-bit DC time base by the endpoint owners. */
+inline ecmcEcTimingPath ecmcEcCalculateTimestampPathNs(
+  uint64_t inputEventTimeNs,
+  uint64_t outputEventTimeNs,
+  uint64_t inputUncertaintyNs,
+  uint64_t outputUncertaintyNs) {
+  ecmcEcTimingPath path;
+  if (!ecmcEcSignedTimeDifferenceNs(outputEventTimeNs, inputEventTimeNs,
+                                    &path.delayNs)) {
+    return path;
+  }
+  path.valid = true;
+  path.source = ecmcEcDelaySource::TIMESTAMP;
+  path.status = ecmcEcDelayStatus::OK;
+  path.uncertaintyNs = inputUncertaintyNs >
+      std::numeric_limits<uint64_t>::max() - outputUncertaintyNs ?
+    std::numeric_limits<uint64_t>::max() :
+    inputUncertaintyNs + outputUncertaintyNs;
+  return path;
 }
 
 #endif  /* ECMCECTIMING_H_ */

@@ -80,7 +80,6 @@ void ecmcEc::initVars() {
   clock_gettime(CLOCK_REALTIME, &timeAbs_);
   lastReceiveTimeNs_ = 0;
   lastSendTimeNs_    = 0;
-
   for (int i = 0; i < EC_MAX_SLAVES; i++) {
     slaveArray_[i] = NULL;
   }
@@ -625,6 +624,7 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
   }
 
   updateInputProcessImage();
+
 }
 
 void ecmcEc::send(timespec timeOffset) {
@@ -653,6 +653,7 @@ void ecmcEc::send(timespec timeOffset) {
   lastSendTimeNs_ = TIMESPEC2NS(timeAbs_);
   cycleTiming_.applicationTimeNs = lastSendTimeNs_;
   cycleTiming_.domainsValid = domainsOK_ != 0;
+
   ecrt_master_application_time(master_, TIMESPEC2NS(timeAbs_));
   ecrt_master_sync_reference_clock(master_);
   ecrt_master_sync_slave_clocks(master_);
