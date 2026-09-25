@@ -252,8 +252,6 @@ inline bool ecmcEcResolveScheduledEventNs(
   if (endpoint.source == ecmcEcTimingSource::SYNC1_DERIVED) {
     firstEventNs += dc.sync1OffsetNs;
   }
-  firstEventNs += endpoint.eventOffsetNs;
-
   const int64_t anchor = static_cast<int64_t>(applicationTimeNs);
   const int64_t period = static_cast<int64_t>(periodNs);
   int64_t latestEventNs = firstEventNs;
@@ -262,8 +260,12 @@ inline bool ecmcEcResolveScheduledEventNs(
   } else {
     latestEventNs -= ((latestEventNs - anchor + period - 1) / period) * period;
   }
+  // Select the base SYNC occurrence first. eventOffsetNs is a correction
+  // relative to that occurrence and must not select a different occurrence
+  // when it crosses a cycle boundary.
   const int64_t resolvedEventNs = latestEventNs +
-    static_cast<int64_t>(endpoint.cycleOffset) * period;
+    static_cast<int64_t>(endpoint.cycleOffset) * period +
+    static_cast<int64_t>(endpoint.eventOffsetNs);
   if (resolvedEventNs < 0) {
     return false;
   }

@@ -220,6 +220,8 @@ public:
   uint64_t getLastReceiveTimeNs();
   uint64_t getLastSendTimeNs();
   const ecmcEcCycleTiming& getCycleTiming() const;
+  bool timingStartupReady(bool reportPending = false) const;
+  void resetStartupCommunicationErrors();
   uint32_t getSlaveVendorId(uint16_t alias,       /**< Slave alias. */
                             uint16_t slavePos /**< Slave position. */);
   uint32_t getSlaveProductCode(uint16_t alias,       /**< Slave alias. */
@@ -261,6 +263,9 @@ private:
   int slaveCounter_;
   int entryCounter_;
   ecmcEcSlave *slaveArray_[EC_MAX_SLAVES];
+  // Non-owning, direct lookup populated by addSlave() during configuration.
+  // Keeping it with the master avoids stale per-encoder binding caches.
+  std::vector<ecmcEcSlave *> slavesByBusPosition_;
   ec_pdo_entry_reg_t slaveEntriesReg_[EC_MAX_ENTRIES];
   unsigned int pdoByteOffsetArray_[EC_MAX_ENTRIES];
   unsigned int pdoBitOffsetArray_[EC_MAX_ENTRIES];

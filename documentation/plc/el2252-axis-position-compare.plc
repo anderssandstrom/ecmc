@@ -1,0 +1,119 @@
+# Standalone PLC position-compare test for EL2252 timed output.
+#
+# Run as a GENERAL PLC every EtherCAT cycle after the axis. This snippet does
+# not use the ecmc positionCompare object or touch-probe logic. It predicts
+# when ax<AX_ID>.enc.actpos will cross TARGET, schedules EL2252 output with the
+# same activate/startTime sequence as el2252-toggle-100ms.plc, then optionally
+# schedules a reset pulse.
+#
+# PLC macros:
+#   AX_ID                   axis containing the encoder (default 1)
+#   MASTER_ID               EtherCAT master index (default 0)
+#   EL2252_SID              EL2252 slave index (default 25)
+#   CH                      EL2252 output channel, 01 or 02 (default 01)
+#   TARGET                  compare target position (default 5)
+#   DIRECTION               1 positive, -1 negative, 0 both (default 0)
+#   MIN_LEAD_NS             minimum schedule lead time [ns] (default 5 ms)
+#   MAX_LEAD_NS             maximum schedule lead time [ns] (default 500 ms)
+#   PULSE_WIDTH_NS          reset delay [ns], 0 leaves output high (default 100 ms)
+#   PRINT_RESULT            print scheduled events/debug state (default 1)
+#
+# EL2252 timed-output convention:
+#   activate = 0            schedule/load current output + startTime
+#   activate = 3            idle/no new schedule
+
+if(${SELF}.firstscan) {
+  static.state := 0;        # 0 armed, 1 output queued, 2 reset queued, 3 done
+  static.sequence := 0;
+  static.prevPos := ax${AX_ID=1}.enc.actpos;
+  static.prevTime := ec_get_slave_input_event_time(${EL2252_SID=25});
+  static.target := ${TARGET=5};
+  static.minLeadNs := ${MIN_LEAD_NS=5000000};
+  static.maxLeadNs := ${MAX_LEAD_NS=500000000};
+  static.pulseWidthNs := ${PULSE_WIDTH_NS=100000000};
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.triState${CH=01} := 0;
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.binaryOutput${CH=01} := 0;
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+};
+
+static.now := ec_get_time();
+static.sampleTime := ec_get_slave_input_event_time(${EL2252_SID=25});
+static.pos := ax${AX_ID=1}.enc.actpos;
+static.dt := static.sampleTime-static.prevTime;
+static.vel := 0;
+if(static.dt > 0) {
+  static.vel := (static.pos-static.prevPos)*1E9/static.dt;
+};
+static.distance := static.target-static.pos;
+
+ec${MASTER_ID=0}.s${EL2252_SID=25}.triState${CH=01} := 0;
+
+if(static.state == 1) {
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+  if(static.now >= static.scheduledTime) {
+    if(static.pulseWidthNs > 0) {
+      static.resetTime := static.scheduledTime + static.pulseWidthNs;
+      if(static.resetTime < static.now + static.minLeadNs) {
+        static.resetTime := static.now + static.minLeadNs;
+      };
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.startTime := static.resetTime;
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.binaryOutput${CH=01} := 0;
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 0;
+      static.state := 2;
+      if(${PRINT_RESULT=1}) {
+        println('PLC PC reset seq=', static.sequence,
+                ' resetTime=', static.resetTime,
+                ' lead_us=', (static.resetTime-static.now)/1000);
+      };
+    } else {
+      static.state := 3;
+    };
+  };
+} else if(static.state == 2) {
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+  if(static.now >= static.resetTime) {
+    static.state := 3;
+  };
+} else if(static.state == 0) {
+  static.directionOk := 0;
+  if(${DIRECTION=0} == 0) {
+    static.directionOk :=
+      (static.distance >= 0 and static.vel > 1E-12) or
+      (static.distance <= 0 and static.vel < -1E-12);
+  } else if(${DIRECTION=0} > 0) {
+    static.directionOk := static.distance >= 0 and static.vel > 1E-12;
+  } else {
+    static.directionOk := static.distance <= 0 and static.vel < -1E-12;
+  };
+
+  if(static.directionOk) {
+    static.crossDt := static.distance/static.vel*1E9;
+    static.eventTime := static.sampleTime + static.crossDt;
+    static.lead := static.eventTime-static.now;
+    if(static.lead >= static.minLeadNs and static.lead <= static.maxLeadNs) {
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.startTime := static.eventTime;
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.binaryOutput${CH=01} := 1;
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 0;
+      static.sequence := static.sequence + 1;
+      static.scheduledTime := static.eventTime;
+      static.state := 1;
+      if(${PRINT_RESULT=1}) {
+        println('PLC PC schedule seq=', static.sequence,
+                ' pos=', static.pos,
+                ' vel=', static.vel,
+                ' distance=', static.distance,
+                ' eventTime=', static.eventTime,
+                ' lead_us=', static.lead/1000);
+      };
+    } else {
+      ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+    };
+  } else {
+    ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+  };
+} else {
+  ec${MASTER_ID=0}.s${EL2252_SID=25}.activate := 3;
+};
+
+static.prevPos := static.pos;
+static.prevTime := static.sampleTime;

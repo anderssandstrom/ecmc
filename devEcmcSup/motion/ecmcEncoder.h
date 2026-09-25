@@ -32,6 +32,7 @@
 #include "ecmcAxisData.h"
 #include "ecmcMotionUtils.h"
 #include "ecmcLookupTable.h"
+#include "ecmcEcTiming.h"
 
 #define ECMC_FILTER_VELO_DEF_SIZE 100
 #define ECMC_FILTER_POS_DEF_SIZE 10
@@ -74,11 +75,13 @@ public:
   double                getScaleDenom();
   double                getScale();
   double                getActPos();
+  double                getActPosUncompensated();
   double                getAbsRangeEng();
   int64_t               getAbsRangeRaw();
   void                  setActPos(double pos);
   double                getSampleTime();
   double                getActVel();
+  int                   getActPosSlaveId();
   void                  setHomed(bool homed);
   bool                  getHomed();
   encoderType           getType();
@@ -93,12 +96,37 @@ public:
   uint64_t              getRawMask();
   bool                  getLatchFuncEnabled();
   int                   setHomeLatchArmControlWord(uint64_t control, int bits);
+  int                   setTouchProbeArmControlWord(uint64_t control, int bits);
   void                  setLatchControlEnabled(bool enable);
   bool                  getLatchControlEnabled();
   void                  setArmLatch(bool arm);
+  bool                  getTouchProbeFuncEnabled();
+  void                  setTouchProbeControlEnabled(bool enable);
+  void                  setArmTouchProbe(bool arm);
+  void                  setTouchProbeAutoRearm(bool enable);
+  bool                  getArmTouchProbe();
   bool                  getArmLatch();
   bool                  getNewValueLatched();
   double                getLatchPosEng();
+  double                getTouchProbePosEng() const;
+  ecmcEcTimedValue<double> getLatchTimedValue(uint64_t nearbyDcTimeNs) const;
+  ecmcEcTimedValue<double> getTouchProbeTimedValue(
+    uint64_t nearbyDcTimeNs) const;
+  int                   createTouchProbeAsynParams();
+  bool                  hasTouchProbeAsynParams() const {
+    return touchProbeAsynParamsCreated_;
+  }
+  void                  refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs,
+                                              bool force);
+  asynStatus            touchProbeAsynWriteArmCmd(void *data,
+                                                  size_t bytes,
+                                                  asynParamType asynParType);
+  uint64_t              getTouchProbeSequence() const;
+  uint64_t              getTouchProbeTimestampRaw() const;
+  int                   getTouchProbeTimestampBits() const;
+  uint64_t              getLatchSequence() const;
+  uint64_t              getLatchTimestampRaw() const;
+  int                   getLatchTimestampBits() const;
   ecmcOverUnderFlowType getOverUnderflow();
   int                   setVeloFilterSize(size_t size);
   int                   getVeloFilterSize();
@@ -170,6 +198,7 @@ public:
   int                   setAllowOverUnderFlow(bool allow);
 protected:
   void                  initVars();
+  void                  refreshDelayCompensationConstants();
   bool                  entryTypeIsFloat(ecmcEcDataType type) const;
   static int64_t        clampDoubleToInt64(double value);
   static uint64_t       clampDoubleToUInt64(double value);
@@ -185,10 +214,17 @@ protected:
   uint8_t* getActPosPtr();
   uint8_t* getActVelPtr();
   int      initAsyn();
+  int      createTouchProbeAsynParam(const char *name,
+                                     asynParamType asynType,
+                                     ecmcEcDataType ecmcType,
+                                     uint8_t *data,
+                                     size_t bytes,
+                                     ecmcAsynDataItem **asynParamOut);
   int      readHwActPos(bool masterOK,
                         bool domainOK);
   int      readHwWarningError(bool domainOK);
   int      readHwLatch(bool domainOK);
+  int      readHwTouchProbe(bool domainOK);
   int      readHwReady(bool domainOK);
   
   encoderType encType_;
@@ -221,6 +257,7 @@ protected:
   double engOffset_;
   double actPos_;
   double actPosLocal_;
+  double actPosUncompensated_;
   double actPosOld_;
   double actPosDelayBaseOld_;
   double sampleTimeMs_;
@@ -241,7 +278,31 @@ protected:
   bool     encLatchControlEnabled_;
   bool     encLatchControlDisablePending_;
   bool     encLatchArm_;
+  bool     latchIdleReadPending_ = false;
+  bool     touchProbeAutoRearm_;
+  int      touchProbeRearmState_;
   double actEncLatchPos_;
+  uint64_t encLatchSequence_;
+  uint64_t encLatchTimestampRaw_;
+  int encLatchTimestampBits_;
+  bool encLatchTimestampValid_;
+  bool     touchProbeFunctEnabled_;
+  bool     touchProbeStatus_;
+  bool     touchProbeStatusOld_;
+  double   rawTouchProbePos_;
+  double   rawTouchProbePosMultiTurn_;
+  uint64_t touchProbeControlWordArm_;
+  uint64_t touchProbeControlWordIdle_;
+  int      touchProbeControlBits_;
+  bool     touchProbeControlEnabled_;
+  bool     touchProbeControlDisablePending_;
+  bool     touchProbeArm_;
+  bool     touchProbeIdleReadPending_ = false;
+  double   actTouchProbePos_;
+  uint64_t touchProbeSequence_;
+  uint64_t touchProbeTimestampRaw_;
+  int      touchProbeTimestampBits_;
+  bool     touchProbeTimestampValid_;
   bool enablePositionFilter_;
   bool enableVelocityFilter_;
   uint64_t hwReset_;
@@ -279,6 +340,23 @@ protected:
   ecmcAsynDataItem *encPosAct_;
   ecmcAsynDataItem *encVelAct_;
   ecmcAsynDataItem *encErrId_;
+  bool touchProbeAsynParamsCreated_;
+  int32_t touchProbeAsynValid_;
+  uint64_t touchProbeAsynSequence_;
+  double touchProbeAsynPosition_;
+  int32_t touchProbeAsynTimestampValid_;
+  uint64_t touchProbeAsynTimestampRaw_;
+  uint64_t touchProbeAsynEventTimeNs_;
+  int32_t touchProbeAsynArmed_;
+  int32_t touchProbeAsynArmCmd_;
+  ecmcAsynDataItem *touchProbeAsynValidParam_;
+  ecmcAsynDataItem *touchProbeAsynSequenceParam_;
+  ecmcAsynDataItem *touchProbeAsynPositionParam_;
+  ecmcAsynDataItem *touchProbeAsynTimestampValidParam_;
+  ecmcAsynDataItem *touchProbeAsynTimestampRawParam_;
+  ecmcAsynDataItem *touchProbeAsynEventTimeParam_;
+  ecmcAsynDataItem *touchProbeAsynArmedParam_;
+  ecmcAsynDataItem *touchProbeAsynArmCmdParam_;
 
   int hwReadyInvert_;
   int index_; // Index of this encoder (im axis object)
@@ -302,6 +380,9 @@ protected:
   double delayTimeS_; // Compensate for delay between setpoint and actual value (should default to 2 cycles)
   bool enableDelayTime_;
   bool delayCompStateValid_;
+  double delayCompAbsScale_;
+  double delayCompMinTrustedVel_;
+  double delayCompMaxDistance_;
   bool allowOverUnderFlow_;
 };
 

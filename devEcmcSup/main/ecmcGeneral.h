@@ -31,6 +31,11 @@ extern "C" {
  */
 int         getControllerError();
 
+// Internal RT lifecycle hooks. Call on the RT thread before cyclic execution
+// and after leaving the loop; rebuild on every runtime entry.
+void        prepareControllerErrorObjectsRT();
+void        clearControllerErrorObjectsRT();
+
 /** \brief Resets the controller error code.\n
  *
  * \return 0

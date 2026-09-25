@@ -71,6 +71,8 @@ void ecmcPLCTask::initVars() {
   compiled_            = false;
   globalVariableCount_ = 0;
   localVariableCount_  = 0;
+  readVariableCount_ = 0;
+  globalWriteVariableCount_ = 0;
   inStartup_           = 1;
   skipCycles_          = 0;
   skipCyclesCounter_   = 0;
@@ -155,6 +157,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
   }
 
   localVariableCount_++;
+  rebuildVariableAccessLists();
   return 0;
 }
 
@@ -180,6 +183,7 @@ int ecmcPLCTask::compile() {
                       ERROR_PLC_COMPILE_ERROR);
   }
 
+  rebuildVariableAccessLists();
   compiled_   = true;
   newExpr_    = false;
   exprStrRaw_ = "";
@@ -188,6 +192,25 @@ int ecmcPLCTask::compile() {
 
 bool ecmcPLCTask::getCompiled() {
   return compiled_;
+}
+
+void ecmcPLCTask::rebuildVariableAccessLists() {
+  readVariableCount_ = 0;
+  globalWriteVariableCount_ = 0;
+  // Preserve local-before-global read order. Only immutable source type is
+  // used for membership; read-only status is checked live during execution.
+  for (int i = 0; i < localVariableCount_; ++i) {
+    if (localArray_[i] && localArray_[i]->needsRead()) {
+      readArray_[readVariableCount_++] = localArray_[i];
+    }
+  }
+  for (int i = 0; i < globalVariableCount_; ++i) {
+    auto *const variable = globalArray_[i];
+    if (variable && variable->needsRead()) {
+      readArray_[readVariableCount_++] = variable;
+      globalWriteArray_[globalWriteVariableCount_++] = variable;
+    }
+  }
 }
 
 int ecmcPLCTask::execute(bool ecOK) {
@@ -210,36 +233,29 @@ int ecmcPLCTask::execute(bool ecOK) {
     return 0;
   }
 
-  const int localCount = localVariableCount_;
-  for (int i = 0; i < localCount; i++) {
-    ecmcPLCDataIF * const localData = localArray_[i];
-    if (localData) {
-      localData->read();
-    }
-  }
-
-  const int globalCount = globalVariableCount_;
-  for (int i = 0; i < globalCount; i++) {
-    ecmcPLCDataIF * const globalData = globalArray_[i];
-    if (globalData) {
-      globalData->read();
-    }
+  const int readCount = readVariableCount_;
+  for (int i = 0; i < readCount; i++) {
+    readArray_[i]->read();
   }
 
   // Run equation
   exprtk_->refresh();
 
+  const int localCount = localVariableCount_;
   for (int i = 0; i < localCount; i++) {
     ecmcPLCDataIF * const localData = localArray_[i];
     if (localData) {
-      localData->write();
+      if (localData->needsWrite()) {
+        localData->write();
+      }
       localData->updateAsyn(0);
     }
   }
 
-  for (int i = 0; i < globalCount; i++) {
-    ecmcPLCDataIF * const globalData = globalArray_[i];
-    if (globalData) {
+  const int globalWriteCount = globalWriteVariableCount_;
+  for (int i = 0; i < globalWriteCount; i++) {
+    ecmcPLCDataIF * const globalData = globalWriteArray_[i];
+    if (globalData->needsWrite()) {
       globalData->write();
 
       // Update globals "centrally2 in ecmcPLCMain
@@ -320,6 +336,7 @@ int ecmcPLCTask::clearExpr() {
     }
   }
   localVariableCount_ = 0;
+  rebuildVariableAccessLists();
   return 0;
 }
 
@@ -475,6 +492,7 @@ int ecmcPLCTask::addAndReisterGlobalVar(ecmcPLCDataIF *dataIF) {
 
     globalArray_[globalVariableCount_] = dataIF;
     globalVariableCount_++;
+    rebuildVariableAccessLists();
   }
   return 0;
 }
@@ -785,6 +803,12 @@ int ecmcPLCTask::loadEcLib() {
   ecmcPLCTaskAddFunction("ec_wrt_bits",     ec_wrt_bits);
   ecmcPLCTaskAddFunction("ec_chk_bits",     ec_chk_bits);
   ecmcPLCTaskAddFunction("ec_get_time",     ec_get_time);
+  ecmcPLCTaskAddFunction("ec_get_last_receive_time",
+                         ec_get_last_receive_time);
+  ecmcPLCTaskAddFunction("ec_get_last_send_time",
+                         ec_get_last_send_time);
+  ecmcPLCTaskAddFunction("ec_get_slave_input_event_time",
+                         ec_get_slave_input_event_time);
   ecmcPLCTaskAddFunction("ec_get_mm_type",  ec_get_mm_type);
   ecmcPLCTaskAddFunction("ec_get_mm_data",  ec_get_mm_data);
   ecmcPLCTaskAddFunction("ec_set_mm_data",  ec_set_mm_data);
@@ -843,6 +867,38 @@ int ecmcPLCTask::loadMcLib() {
   ecmcPLCTaskAddFunction("mc_move_ext_pos", mc_move_ext_pos);
   ecmcPLCTaskAddFunction("mc_home_pos",     mc_home_pos);
   ecmcPLCTaskAddFunction("mc_get_act_pos",  mc_get_act_pos);
+  ecmcPLCTaskAddFunction("mc_touch_probe_arm",
+                         mc_touch_probe_arm);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_valid",
+                         mc_touch_probe_get_valid);
+  ecmcPLCTaskAddFunction("mc_get_touch_probe_pos",
+                         mc_get_touch_probe_pos);
+  ecmcPLCTaskAddFunction("mc_get_touch_probe_sequence",
+                         mc_get_touch_probe_sequence);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_time",
+                         mc_touch_probe_get_time);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_timestamp_raw",
+                         mc_touch_probe_get_timestamp_raw);
+  ecmcPLCTaskAddFunction("mc_touch_probe_get_timestamp_bits",
+                         mc_touch_probe_get_timestamp_bits);
+  ecmcPLCTaskAddFunction("mc_pos_compare_arm",
+                         mc_pos_compare_arm);
+  ecmcPLCTaskAddFunction("mc_pos_compare_cancel",
+                         mc_pos_compare_cancel);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_state",
+                         mc_pos_compare_get_state);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_sequence",
+                         mc_pos_compare_get_sequence);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_scheduled_time",
+                         mc_pos_compare_get_scheduled_time);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_lead_time",
+                         mc_pos_compare_get_lead_time);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_sample_age",
+                         mc_pos_compare_get_sample_age);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_position",
+                         mc_pos_compare_get_position);
+  ecmcPLCTaskAddFunction("mc_pos_compare_get_velocity",
+                         mc_pos_compare_get_velocity);
   ecmcPLCTaskAddFunction("mc_set_prim_enc", mc_set_prim_enc);
   ecmcPLCTaskAddFunction("mc_get_prim_enc", mc_get_prim_enc);
   ecmcPLCTaskAddFunction("mc_set_axis_error", mc_set_axis_error);

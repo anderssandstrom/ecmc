@@ -94,6 +94,8 @@ struct atomicEcTimingDiag {
 };
 
 atomicEcTimingDiag ecTiming_[EC_MAX_SLAVES][ECMC_EC_TIMING_DIRECTIONS];
+std::atomic<unsigned int> ecTimingPublished_[EC_MAX_SLAVES]
+                                            [ECMC_EC_TIMING_DIRECTIONS];
 
 std::atomic<unsigned int> axisCmdRequestCounts_[ECMC_MAX_AXES];
 std::atomic<unsigned int> axisCmdExecuteCounts_[ECMC_MAX_AXES];
@@ -797,6 +799,8 @@ private:
         }
         ecTimingVersionPublished_[slave][direction] = versionEnd;
         callParamCallbacks(slave);
+        ecTimingPublished_[slave][direction].store(versionEnd,
+                                                   std::memory_order_release);
       }
     }
   }
@@ -1384,6 +1388,22 @@ void ecmcRtLoggerPortDriverService() {
   }
 
   portDriver_->service();
+}
+
+bool ecmcRtLoggerPortDriverEcTimingPublished(int slavePosition) {
+  if (slavePosition < 0 || slavePosition >= EC_MAX_SLAVES) {
+    return false;
+  }
+  for (int direction = 0; direction < ECMC_EC_TIMING_DIRECTIONS; ++direction) {
+    const unsigned int version =
+      ecTiming_[slavePosition][direction].version.load(std::memory_order_acquire);
+    if (!version || (version & 1u) ||
+        ecTimingPublished_[slavePosition][direction].load(
+          std::memory_order_acquire) != version) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const char *ecmcRtLoggerPortDriverGetPortName() {

@@ -19,6 +19,10 @@
 #include <iostream>
 #include "ecmcMotion.h"
 #include "ecmcErrorsList.h"
+#include "ecmcEc.h"
+#include "ecmcEcSlave.h"
+#include "ecmcGlobalsExtern.h"
+#include "ecmcMainThread.h"
 
 #define ecmcRtLoggerLogInfo(...) \
   ECMC_RT_LOG_AXIS_BASE_INFO(data_.status_.axisId, __VA_ARGS__)
@@ -28,6 +32,37 @@
   ECMC_RT_LOG_AXIS_BASE_DEBUG(data_.status_.axisId, __VA_ARGS__)
 
 namespace {
+bool resolveAxisEncoderSampleTimeNs(ecmcEncoder *encoder,
+                                    uint64_t *eventTimeNs) {
+  if (!ec || !encoder || !eventTimeNs) {
+    return false;
+  }
+  const int slaveId = encoder->getActPosSlaveId();
+  ecmcEcSlave *slave = ec->findSlave(slaveId);
+  if (!slave) {
+    const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
+    if (!cycle.applicationTimeNs) {
+      return false;
+    }
+    *eventTimeNs = cycle.applicationTimeNs;
+    return true;
+  }
+  const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
+  const ecmcEcEndpointTiming& timing = slave->getInputTiming();
+  if (timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||
+      timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
+    return ecmcEcResolveScheduledEventNs(cycle.applicationTimeNs, timing,
+                                         slave->getDcConfig(),
+                                         slave->getDcSchedule(),
+                                         cycle.nominalPeriodNs,
+                                         eventTimeNs);
+  }
+  if (timing.source == ecmcEcTimingSource::CYCLE_ONLY) {
+    return ecmcEcResolveCycleEventNs(cycle, timing, eventTimeNs);
+  }
+  return false;
+}
+
 const char *axisCommandToString(motionCommandTypes command) {
   switch (command) {
   case ECMC_CMD_NOCMD:
@@ -379,6 +414,11 @@ void ecmcAxisBase::initVars() {
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
+  if (ecmcStartupMotionHeld()) {
+    axisState_ = ECMC_AXIS_STATE_STARTUP;
+    setInStartupPhase(true);
+    setEnable(false);
+  }
   auto &status = data_.status_;
   auto &statusWord = status.statusWord_;
   auto &interlocks = data_.interlocks_;
@@ -420,7 +460,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
     statusWord.busy = true;
     status.distToStop = 0;
 
-    if (masterOK) {
+    if (masterOK && !ecmcStartupMotionHeld()) {
       
       if (!hwReady_) {
         setErrorID(ERROR_AXIS_HW_NOT_READY);
@@ -431,7 +471,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
       }
     }
 
-    if (masterOK && hwReady_ && hwReadyOld_) {
+    if (!ecmcStartupMotionHeld() && masterOK && hwReady_ && hwReadyOld_) {
       // Auto reset hardware error if starting up
       if ((getErrorID() == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) &&
           data_.status_.statusWord_.instartup) {
@@ -568,6 +608,49 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   for (int i = 0; i < encoderCount; i++) {
     encArray_[i]->writeEntries();
   }
+
+  for (int i = 0; i < encoderCount; i++) {
+    auto *const encoder = encArray_[i];
+    // Avoid the slave lookup and timing calculation when there is nothing
+    // to publish. Use the same condition as refreshTouchProbeAsyn().
+    if (!encoder->hasTouchProbeAsynParams()) {
+      continue;
+    }
+    uint64_t encoderSampleTimeNs = 0;
+    const bool sampleTimeValid =
+      resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
+    encoder->refreshTouchProbeAsyn(sampleTimeValid ?
+                                        encoderSampleTimeNs : 0,
+                                        false);
+  }
+
+  if (!ecmcStartupMotionHeld() && positionCompare_.isActive()) {
+    uint64_t encoderSampleTimeNs = 0;
+    ecmcEncoder *encoder = getPrimEnc();
+    const bool sampleTimeValid =
+      resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
+    const uint64_t controllerTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+    const double compareVelocity = status.currentVelocitySetpoint;
+    double compareAcceleration = 0;
+    ecmcAxisPVTSequence *pvt = seq_.getPVTObject();
+    if (status.statusWord_.trajsource == ECMC_DATA_SOURCE_INTERNAL) {
+      compareAcceleration =
+        status.command == ECMC_CMD_MOVEPVTABS && pvt ?
+          pvt->getCurrAcceleration() : traj_->getCurrentAcc();
+    } else if (status.sampleTime > 0) {
+      compareAcceleration =
+        (status.currentVelocitySetpoint -
+         data_.statusOld_.currentVelocitySetpoint) / status.sampleTime;
+    }
+    positionCompare_.execute(masterOK,
+                             encoder->getActPosUncompensated(),
+                             compareVelocity,
+                             compareAcceleration,
+                             encoderSampleTimeNs,
+                             sampleTimeValid,
+                             controllerTimeNs);
+  }
+  positionCompare_.refreshAsyn(false);
   
   status.cycleCounter++;
 
@@ -983,6 +1066,83 @@ ecmcEncoder * ecmcAxisBase::getCSPEnc() {
     return encArray_[data_.control_.primaryEncIndex];
   }
   return encArray_[data_.control_.cspDrvEncIndex];
+}
+
+int ecmcAxisBase::setTouchProbeArm(int encoderIndex, bool arm) {
+  int error = 0;
+  ecmcEncoder *encoder = getEnc(encoderIndex, &error);
+  if (!encoder) {
+    return error;
+  }
+  // Configuration-time requests precede the normal runtime validation pass.
+  if (appModeStat == ECMC_MODE_CONFIG) {
+    error = encoder->validate();
+    if (error) return error;
+  }
+  if (!encoder->getTouchProbeFuncEnabled() && !encoder->getLatchFuncEnabled()) {
+    return ERROR_ENC_ENTRY_NULL;
+  }
+  if (arm) {
+    encoder->setTouchProbeAutoRearm(true);
+    if (encoder->getTouchProbeFuncEnabled()) {
+      encoder->setTouchProbeControlEnabled(true);
+      encoder->setArmTouchProbe(true);
+    } else {
+      encoder->setLatchControlEnabled(true);
+      encoder->setArmLatch(true);
+    }
+  } else {
+    encoder->setTouchProbeAutoRearm(false);
+    if (encoder->getTouchProbeFuncEnabled()) {
+      encoder->setTouchProbeControlEnabled(false);
+    } else {
+      encoder->setLatchControlEnabled(false);
+    }
+  }
+  return 0;
+}
+
+ecmcEcTimedValue<double> ecmcAxisBase::getTouchProbeResult(
+  int encoderIndex,
+  uint64_t nearbyDcTimeNs,
+  int *error) {
+  ecmcEcTimedValue<double> result;
+  if (!error) {
+    return result;
+  }
+  ecmcEncoder *encoder = getEnc(encoderIndex, error);
+  if (!encoder) {
+    return result;
+  }
+  uint64_t resolvedNearbyDcTimeNs = nearbyDcTimeNs;
+  uint64_t sampleTimeNs = 0;
+  if (resolveAxisEncoderSampleTimeNs(encoder, &sampleTimeNs)) {
+    resolvedNearbyDcTimeNs = sampleTimeNs;
+  }
+  return encoder->getTouchProbeTimedValue(resolvedNearbyDcTimeNs);
+}
+
+ecmcPositionCompare* ecmcAxisBase::getPositionCompare() {
+  return &positionCompare_;
+}
+
+int ecmcAxisBase::createPositionCompareAsynParams() {
+  return positionCompare_.createAsynParams(asynPortDriver_,
+                                           data_.status_.axisId);
+}
+
+int ecmcAxisBase::armPositionCompare(double target,
+                                     int direction,
+                                     uint64_t outputValue) {
+  return positionCompare_.arm(target, direction, outputValue);
+}
+
+int ecmcAxisBase::cancelPositionCompare() {
+  return positionCompare_.cancel();
+}
+
+ecmcPositionCompareStatus ecmcAxisBase::getPositionCompareStatus() {
+  return positionCompare_.getStatus();
 }
 
 ecmcTrajectoryBase * ecmcAxisBase::getTraj() {

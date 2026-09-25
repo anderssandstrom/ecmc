@@ -48,8 +48,8 @@ int ecmcError::setErrorID(const char *fileName,
                           int         errorID) {
 
   // Only printout if not already printout
-  if(!errorInBuffer(errorID)) {
-    if (errorID != errorId_) {
+  if (errorID != errorId_) {
+    if (!errorInBuffer(errorID)) {
       if (errorPathValid_) {
         LOGERR("%s/%s:%d: %s=%s;\n",
                fileName,
@@ -76,8 +76,8 @@ int ecmcError::setErrorID(const char       *fileName,
                           int               errorID,
                           ecmcAlarmSeverity severity) {
   // Only printout if not already printout
-  if(!errorInBuffer(errorID)) {
-    if ((errorID != errorId_) && (severity > currSeverity_)) {
+  if ((errorID != errorId_) && (severity > currSeverity_)) {
+    if (!errorInBuffer(errorID)) {
       LOGERR("%s/%s:%d: %s (0x%x).\n",
              fileName,
              functionName,
@@ -2359,6 +2359,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
     return "ERROR_MAIN_EC_SCAN_TIMEOUT";
 
     break;
+
+  case 0x20076:
+    return "ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT";
 
   case 0x20055:
     return "ERROR_MAIN_AXIS_ALREADY_CREATED";

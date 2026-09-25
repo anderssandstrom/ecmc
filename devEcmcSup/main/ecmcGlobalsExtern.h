@@ -52,7 +52,7 @@ extern ecmcMasterSlaveStateMachine *masterSlaveSMs[ECMC_MAX_MST_SLVS_SMS];
 // Mutex for motor record access
 extern epicsMutexId ecmcRTMutex;
 extern int axisDiagIndex;
-extern int axisDiagFreq;
+extern int diagnosticsUpdateFreqHz;
 extern int controllerError;
 extern int controllerErrorOld;
 extern int controllerReset;

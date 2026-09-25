@@ -15,6 +15,7 @@
 #define ECMCECSLAVE_H_
 
 #include <string>
+#include <atomic>
 #include <vector>
 #include "stdio.h"
 #include "ecrt.h"
@@ -159,6 +160,7 @@ public:
   const ecmcEcEndpointTiming& getInputTiming() const;
   const ecmcEcEndpointTiming& getOutputTiming() const;
   void refreshTimingAsyn();
+  bool timingStartupReady() const;
   void printDcTiming() const;
   ecmcEcEntry* findEntry(std::string id);
   int          findEntryIndex(std::string id);
@@ -312,6 +314,7 @@ private:
   smTimingRequest smTimingRequests_[20];
   uint8_t smTimingRequestCount_;
   bool smTimingDiscoveryComplete_;
+  bool smTimingReadLogged_ = false;
   ec_reg_request_t *dcScheduleRequest_;
   ecmcEcDcSchedule dcSchedule_;
   uint8_t dcScheduleStage_;
@@ -322,5 +325,6 @@ private:
   ecmcEcTimingDiag inputTimingAsynData_;
   ecmcEcTimingDiag outputTimingAsynData_;
   bool timingAsynDirty_;
+  std::atomic<bool> timingStartupReady_{false};
 };
 #endif  /* ECMCECSLAVE_H_ */

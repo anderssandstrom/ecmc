@@ -102,3 +102,80 @@ The findings should identify:
 - the PDO cycle association for each terminal;
 - a nominal encoder-acquisition-to-drive-application interval;
 - uncertainty and any remaining device-specific assumptions.
+
+## Generic touch-probe first step
+
+Touch-probe control is exposed on the axis, while the selected encoder owns
+the hardware links. The core is terminal-independent: a timestamp is optional,
+and any terminal can be used when it supplies control, new-value status, and a
+latched position.
+
+Load `HW_DESC=ED7062_TPDC`; the existing ED7062 and EL7062 hardware
+descriptors remain unchanged. For ED7062 channel 1, positive-edge touch probe
+1 can then be configured in the encoder YAML as follows (replace `ENC_SID` as
+usual):
+
+```yaml
+encoder:
+  position: ec0.s$(ENC_SID).positionActual01
+  control: ec0.s$(ENC_SID).touchProbeControl01
+  status: ec0.s$(ENC_SID).touchProbeStatus01
+  latch:
+    position: ec0.s$(ENC_SID).touchProbePositionPos01_1
+    timestamp: ec0.s$(ENC_SID).touchProbeTimestampPos01_1
+    control: 0
+    status: 1
+    armCmd: 17
+    armBits: 5
+```
+
+`positionActual01` is the terminal's primary feedback/open-loop position. The
+touch-probe position source is selected separately through the terminal's SDO
+setup and is deliberately kept outside both the generic ecmc core and the
+`ED7062_TPDC` hardware mapping.
+
+### ED7062 periodic-position timing result
+
+The touch-probe timestamp remains absolute DC time. Comparison with the
+hardware-latched open-loop counter showed that the normal position PDO is best
+modeled from its ecmc receive-cycle visibility:
+
+```text
+effective position sample = receive time - 1 cycle - 45 us + SYNC_0_SHIFT
+```
+
+With a 1 ms EtherCAT cycle and motion near +/-5 engineering units/s, 15
+positive-edge captures gave a mean reconstruction error of -1.18 us, a 4.02 us
+standard deviation, and a range of -10.37 us to +4.17 us. The terminal adapter
+therefore uses a cycle-only input reference with `cycleOffset=-1`, an
+`eventOffsetNs` of `-45000 + SYNC_0_SHIFT`, and retains the reported 31.25 us
+uncertainty bound. The metadata is installed by the shared EX7062 CSV and CSP
+scripts, covering both ED7062 and EL7062 wrappers; the TPDC script carries the
+same input metadata. CSP output timing remains separate and is not inferred
+from this input measurement. This relationship was confirmed by moving `SYNC_0_SHIFT`
+from 0 to -20 us: the uncorrected reconstruction moved by approximately the
+same amount. A +20 us test crossed the PDO update boundary and alternated
+between repeated samples and two-cycle position steps, so timing compensation
+does not make every DC phase operationally safe.
+
+Arm and inspect encoder 1 of axis 1 with:
+
+```text
+AxisTouchProbeArm(1,1,1)
+AxisPrintTouchProbe(1,1)
+AxisTouchProbeArm(1,1,0)
+```
+
+The printed result contains one sequence number, engineering-unit position,
+raw timestamp, extended 64-bit DC event time, quality, and uncertainty. A
+32-bit timestamp is extended around the current master DC time. If no timestamp
+entry is linked, position capture still works and uncertainty is one application
+cycle.
+
+For validation, run at constant positive and negative velocities and trigger
+with an ordinary digital output at varying phases. Compare the terminal's
+latched position with a later timestamp-based position estimate. Convert the
+position residual to timing error using `time error = position error / velocity`.
+This tests input timestamp/interpolation accuracy independently of output
+scheduling; EL2252 validation can follow when timestamped output hardware is
+available.

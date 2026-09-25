@@ -82,6 +82,7 @@ static void getEpicsState(initHookState state) {
   switch (state) {
   // case initHookAfterScanInit:
   case initHookAfterIocRunning:
+    ecmcNotifyIocRunning();
     allowCallbackEpicsState = 1;
     ecmcAsynPortObj->calcFastestUpdateRate();
 

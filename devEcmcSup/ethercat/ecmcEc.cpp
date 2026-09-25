@@ -225,6 +225,9 @@ int ecmcEc::addSlave(
     productCode);
 
   if (slaveCounter_ < EC_MAX_SLAVES - 1) {
+    if (slavesByBusPosition_.size() <= position) {
+      slavesByBusPosition_.resize(static_cast<size_t>(position) + 1, nullptr);
+    }
     slaveArray_[slaveCounter_] = new ecmcEcSlave(asynPortDriver_,
                                                  masterIndex_,
                                                  master_,
@@ -247,6 +250,10 @@ int ecmcEc::addSlave(
       delete slaveArray_[slaveCounter_];
       slaveArray_[slaveCounter_] = NULL;
       return -errorCode;
+    }
+    // Preserve findSlave's original first-match behavior for duplicate positions.
+    if (!slavesByBusPosition_[position]) {
+      slavesByBusPosition_[position] = slaveArray_[slaveCounter_];
     }
     slaveCounter_++;
 
@@ -625,6 +632,15 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
 
   updateInputProcessImage();
 
+  // Keep for later investigation in master->dc_ref_clock delay.
+  //uint32_t time32=0;
+  //uint32_t time32_2=0;
+  //uint32_t low = (uint32_t)(lastSendTimeNs_ & 0xFFFFFFFFULL);
+  //time32_2=ecrt_master_sync_monitor_process(master_);
+  //ecrt_master_reference_clock_time(master_,&time32);
+  //double diff =((double)low -(double)time32);
+  //printf("sendTimeNs_low %u,  ref clock %u, diff %lf, sync %u \n", low,time32, diff,  time32_2);
+
 }
 
 void ecmcEc::send(timespec timeOffset) {
@@ -658,6 +674,9 @@ void ecmcEc::send(timespec timeOffset) {
   ecrt_master_sync_reference_clock(master_);
   ecrt_master_sync_slave_clocks(master_);
 
+  // Keep for later investigation in master->dc_ref_clock delay.
+  //ecrt_master_sync_monitor_queue(master_);
+
   ecrt_master_send(master_);
 
   // Update asyn time
@@ -670,6 +689,7 @@ void ecmcEc::send(timespec timeOffset) {
       startupCounter_++;
     }
   }
+
 }
 
 int ecmcEc::addCyclicEntryWrite(ecmcEcEntry *toEntry,
@@ -1261,13 +1281,9 @@ ecmcEcSlave * ecmcEc::findSlave(int busPosition) {
     return simSlave_;
   }
 
-  for (int i = 0; i < slaveCounter_; i++) {
-    ecmcEcSlave * const slave = slaveArray_[i];
-    if (slave != NULL) {
-      if (slave->getSlaveBusPosition() == busPosition) {
-        return slave;
-      }
-    }
+  if (busPosition >= 0 &&
+      static_cast<size_t>(busPosition) < slavesByBusPosition_.size()) {
+    return slavesByBusPosition_[busPosition];
   }
   return NULL;
 }
@@ -1355,6 +1371,37 @@ void ecmcEc::slowExecute() {
     if (slaveArray_[i]) {
       slaveArray_[i]->refreshTimingAsyn();
     }
+  }
+}
+
+bool ecmcEc::timingStartupReady(bool reportPending) const {
+  bool ready = true;
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (slaveArray_[i] && !slaveArray_[i]->timingStartupReady()) {
+      ready = false;
+      if (reportPending) {
+        LOGERR("EtherCAT slave %d: timing discovery/publication still pending.\n",
+               slaveArray_[i]->getSlaveBusPosition());
+      }
+    }
+  }
+  return ready;
+}
+
+void ecmcEc::resetStartupCommunicationErrors() {
+  for (int i = 0; i < slaveCounter_; ++i) {
+    if (!slaveArray_[i]) {
+      continue;
+    }
+    const int error = slaveArray_[i]->getErrorID();
+    if (error == ERROR_EC_SLAVE_NOT_OPERATIONAL ||
+        error == ERROR_EC_SLAVE_NOT_ONLINE) {
+      slaveArray_[i]->errorReset();
+    }
+  }
+  if (getErrorID() == ERROR_EC_SLAVE_NOT_OPERATIONAL ||
+      getErrorID() == ERROR_EC_SLAVE_NOT_ONLINE) {
+    errorReset();
   }
 }
 
