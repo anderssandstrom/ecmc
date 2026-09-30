@@ -117,6 +117,41 @@ void logRuntimeAxisDoubleChange(ecmcAxisBase *axis,
                        name,
                        value);
 }
+
+bool axisUsesEcmcPositionController(ecmcAxisBase *axis) {
+  if (!axis) {
+    return false;
+  }
+
+  const int drvMode = axis->getDrvMode();
+  return drvMode == ECMC_DRV_MODE_CSV ||
+         (drvMode == ECMC_DRV_MODE_CSP &&
+          axis->getCSPDriveEncoderIndex() >= 0);
+}
+
+bool warnRuntimeControllerKpZero(ecmcAxisBase *axis,
+                                 const char   *name,
+                                 double        value) {
+  if (!axis || !axis->getRealTimeStarted() || value != 0 ||
+      !axisUsesEcmcPositionController(axis)) {
+    return false;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_WARNING,
+                     "Axis[%d]: runtime %s is 0.",
+                     axis->getAxisID(),
+                     name);
+
+  ECMC_RT_LOG_AXIS_BASE_WARNING(
+    axis->getAxisID(),
+    "%s/%s:%d: WARNING: Axis[%d]: runtime %s is 0.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    axis->getAxisID(),
+    name);
+  return true;
+}
 }
 
 /**
@@ -4167,7 +4202,9 @@ int ecmcAxisBase::setCntrlKp(double kp) {
     return ERROR_AXIS_CNTRL_OBJECT_NULL;
   }
   getCntrl()->setKp(kp);
-  logRuntimeAxisDoubleChange(this, "controller.kp", kp);
+  if (!warnRuntimeControllerKpZero(this, "controller.kp", kp)) {
+    logRuntimeAxisDoubleChange(this, "controller.kp", kp);
+  }
   return 0;
 }
 

@@ -82,6 +82,32 @@ public:
   int    validate();
 
 private:
+  static asynStatus asynWriteKp(void         *data,
+                                size_t        bytes,
+                                asynParamType asynParType,
+                                void         *userObj);
+  static asynStatus asynWriteKi(void         *data,
+                                size_t        bytes,
+                                asynParamType asynParType,
+                                void         *userObj);
+  static asynStatus asynWriteKd(void         *data,
+                                size_t        bytes,
+                                asynParamType asynParType,
+                                void         *userObj);
+  static asynStatus asynWriteKff(void         *data,
+                                 size_t        bytes,
+                                 asynParamType asynParType,
+                                 void         *userObj);
+  asynStatus writeGainFromAsyn(void         *data,
+                               size_t        bytes,
+                               asynParamType asynParType,
+                               const char   *name,
+                               void (ecmcPIDController::*setter)(double));
+  void       logRuntimeGainChange(const char *name,
+                                  double      value);
+  bool       warnRuntimeKpZero(const char *name,
+                               double      value);
+  bool       axisUsesEcmcPositionController() const;
   int    initAsyn();
   double kp_, ki_, kd_, kff_;
 

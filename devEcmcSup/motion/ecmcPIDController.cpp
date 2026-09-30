@@ -15,6 +15,7 @@
 #include "ecmcRtLogger.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define ecmcRtLoggerLogInfo(...) \
   ECMC_RT_LOG_AXIS_PID_INFO((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
@@ -159,6 +160,116 @@ void ecmcPIDController::setKff(double kff) {
   if (kff != 0)settingMade_ = true;
   kff_ = kff;
   asynKff_->refreshParam(1);
+}
+
+bool ecmcPIDController::axisUsesEcmcPositionController() const {
+  if (!data_) {
+    return false;
+  }
+
+  return data_->control_.drvMode == ECMC_DRV_MODE_CSV ||
+         (data_->control_.drvMode == ECMC_DRV_MODE_CSP &&
+          data_->control_.cspDrvEncIndex >= 0);
+}
+
+void ecmcPIDController::logRuntimeGainChange(const char *name,
+                                             double      value) {
+  if (!data_ || !data_->status_.statusWord_.inrealtime) {
+    return;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                     "Axis[%d]: runtime set %s=%.12g.",
+                     data_->status_.axisId,
+                     name,
+                     value);
+}
+
+bool ecmcPIDController::warnRuntimeKpZero(const char *name,
+                                          double      value) {
+  if (!data_ || !data_->status_.statusWord_.inrealtime ||
+      value != 0 || !axisUsesEcmcPositionController()) {
+    return false;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_WARNING,
+                     "Axis[%d]: runtime %s is 0.",
+                     data_->status_.axisId,
+                     name);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: runtime %s is 0.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data_->status_.axisId,
+    name);
+  return true;
+}
+
+asynStatus ecmcPIDController::writeGainFromAsyn(
+  void         *data,
+  size_t        bytes,
+  asynParamType asynParType,
+  const char   *name,
+  void (ecmcPIDController::*setter)(double)) {
+  if (!data || bytes != sizeof(epicsFloat64) ||
+      asynParType != asynParamFloat64) {
+    return asynError;
+  }
+
+  epicsFloat64 value = 0;
+  memcpy(&value, data, sizeof(value));
+  (this->*setter)(value);
+  if (strcmp(name, "controller.kp") != 0 ||
+      !warnRuntimeKpZero(name, value)) {
+    logRuntimeGainChange(name, value);
+  }
+  return asynSuccess;
+}
+
+asynStatus ecmcPIDController::asynWriteKp(void         *data,
+                                          size_t        bytes,
+                                          asynParamType asynParType,
+                                          void         *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPIDController *>(userObj)->writeGainFromAsyn(
+    data, bytes, asynParType, "controller.kp", &ecmcPIDController::setKp);
+}
+
+asynStatus ecmcPIDController::asynWriteKi(void         *data,
+                                          size_t        bytes,
+                                          asynParamType asynParType,
+                                          void         *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPIDController *>(userObj)->writeGainFromAsyn(
+    data, bytes, asynParType, "controller.ki", &ecmcPIDController::setKi);
+}
+
+asynStatus ecmcPIDController::asynWriteKd(void         *data,
+                                          size_t        bytes,
+                                          asynParamType asynParType,
+                                          void         *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPIDController *>(userObj)->writeGainFromAsyn(
+    data, bytes, asynParType, "controller.kd", &ecmcPIDController::setKd);
+}
+
+asynStatus ecmcPIDController::asynWriteKff(void         *data,
+                                           size_t        bytes,
+                                           asynParamType asynParType,
+                                           void         *userObj) {
+  if (!userObj) {
+    return asynError;
+  }
+  return static_cast<ecmcPIDController *>(userObj)->writeGainFromAsyn(
+    data, bytes, asynParType, "controller.kff", &ecmcPIDController::setKff);
 }
 
 void ecmcPIDController::setResetIAtTrajBusy(bool enable) {
@@ -389,6 +500,7 @@ int ecmcPIDController::initAsyn() {
     return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
   }
   paramTemp->setAllowWriteToEcmc(true);
+  paramTemp->setExeCmdFunctPtr(asynWriteKp, this);
   paramTemp->refreshParam(1);
   asynKp_ = paramTemp;
 
@@ -430,6 +542,7 @@ int ecmcPIDController::initAsyn() {
   }
 
   paramTemp->setAllowWriteToEcmc(true);
+  paramTemp->setExeCmdFunctPtr(asynWriteKi, this);
   paramTemp->refreshParam(1);
   asynKi_ = paramTemp;
 
@@ -471,6 +584,7 @@ int ecmcPIDController::initAsyn() {
   }
 
   paramTemp->setAllowWriteToEcmc(true);
+  paramTemp->setExeCmdFunctPtr(asynWriteKd, this);
   paramTemp->refreshParam(1);
   asynKd_ = paramTemp;
 
@@ -512,6 +626,7 @@ int ecmcPIDController::initAsyn() {
   }
 
   paramTemp->setAllowWriteToEcmc(true);
+  paramTemp->setExeCmdFunctPtr(asynWriteKff, this);
   paramTemp->refreshParam(1);
   asynKff_ = paramTemp;
 
