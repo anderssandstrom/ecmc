@@ -211,6 +211,22 @@ double ecmcDriveBase::getInvScale() {
   return invScale_;
 }
 
+bool ecmcDriveBase::getCsvSetpointUsesFloatingPoint() {
+  return csvUsesFloatingPoint();
+}
+
+int64_t ecmcDriveBase::getCsvMinRawVelocitySetpoint() {
+  return minVeloOutput_;
+}
+
+int64_t ecmcDriveBase::getCsvMaxRawVelocitySetpoint() {
+  return maxVeloOutput_;
+}
+
+double ecmcDriveBase::getCsvRawVelocityOffset() {
+  return veloRawOffset_;
+}
+
 double ecmcDriveBase::getVelSet() {
   return velSet_;
 }

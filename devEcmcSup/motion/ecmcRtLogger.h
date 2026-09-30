@@ -49,12 +49,36 @@ enum ecmcRtLoggerFilterMode {
   ECMC_RT_LOG_FILTER_SELECTED = 2,
 };
 
+enum ecmcRtLogLevel {
+  ECMC_RT_LOG_LEVEL_INFO    = 0,
+  ECMC_RT_LOG_LEVEL_WARNING = 1,
+  ECMC_RT_LOG_LEVEL_ERROR   = 2,
+  ECMC_RT_LOG_LEVEL_DEBUG   = 3,
+};
+
+enum ecmcLogBufferLevel {
+  ECMC_LOG_BUFFER_INFO    = ECMC_RT_LOG_LEVEL_INFO,
+  ECMC_LOG_BUFFER_WARNING = ECMC_RT_LOG_LEVEL_WARNING,
+  ECMC_LOG_BUFFER_ERROR   = ECMC_RT_LOG_LEVEL_ERROR,
+};
+
 int  ecmcRtLoggerStart();
 void ecmcRtLoggerSetEnabled(int enabled);
 int  ecmcRtLoggerIsEnabled();
 const char *ecmcRtLoggerGetAsynPortName();
 void ecmcRtLoggerSetControlWord(unsigned int controlWord);
 unsigned int ecmcRtLoggerGetControlWord();
+int  ecmcLogBufferWrite(int level, const char *fmt, ...);
+int  ecmcLogBufferWriteText(const char *level, const char *message);
+int  ecmcRtLogBufferWrite(int level, const char *fmt, ...);
+int  ecmcRtLogBufferWriteText(const char *level, const char *message);
+void ecmcLogBufferLogInfo(const char *fmt, ...);
+void ecmcLogBufferLogWarning(const char *fmt, ...);
+void ecmcLogBufferLogError(const char *fmt, ...);
+void ecmcLogBufferPrint();
+void ecmcLogBufferClear();
+void ecmcRtLogBufferPrint();
+void ecmcRtLogBufferClear();
 void ecmcRtLoggerLogInfoSource(int sourceType,
                                int sourceIndex,
                                const char *fmt,

@@ -63,6 +63,10 @@ public:
   int          setScaleDenom(double scaleDenom);
   double       getScale();
   double       getInvScale();
+  bool         getCsvSetpointUsesFloatingPoint();
+  int64_t      getCsvMinRawVelocitySetpoint();
+  int64_t      getCsvMaxRawVelocitySetpoint();
+  double       getCsvRawVelocityOffset();
   int          setVelSet(double vel);
   double       getVelSet();
   int          setVelSetRaw(int rawVel);

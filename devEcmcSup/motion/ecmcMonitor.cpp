@@ -652,6 +652,10 @@ int ecmcMonitor::setCntrlOutputHL(double outputHL) {
   return 0;
 }
 
+double ecmcMonitor::getCntrlOutputHL() {
+  return cntrlOutputHL_;
+}
+
 int ecmcMonitor::setEnableCntrlHLMon(bool enable) {
   enableCntrlHLMon_ = enable;
   return 0;

@@ -90,6 +90,7 @@ public:
   ecmcSwitchPolarity getHomePolarity();
   ecmcSwitchPolarity getHardwareInterlockPolarity();
   int                setCntrlOutputHL(double outputHL);
+  double             getCntrlOutputHL();
   int                setEnableCntrlHLMon(bool enable);
   bool               getEnableCntrlHLMon();
   int                setEnableVelocityDiffMon(bool enable);

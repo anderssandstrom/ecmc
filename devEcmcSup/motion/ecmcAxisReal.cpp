@@ -13,6 +13,328 @@
 #include "ecmcAxisReal.h"
 #include "ecmcRtLogger.h"
 
+#include <cmath>
+
+namespace {
+
+constexpr double ECMC_CSV_MIN_RAW_VELO_AT_TARGET_TOL = 0.5;
+
+void warnIfCsvControllerOutputRoundsToZero(ecmcAxisData  &data,
+                                           ecmcDriveBase *drv,
+                                           const char    *controllerName,
+                                           double         kp,
+                                           double         ki,
+                                           double         tol) {
+  if (!drv || data.control_.drvMode != ECMC_DRV_MODE_CSV ||
+      ki != 0 || tol <= 0) {
+    return;
+  }
+
+  const double driveScaleNum = drv->getScaleNum();
+  const double driveScaleDenom = drv->getScaleDenom();
+
+  if (driveScaleNum == 0) {
+    return;
+  }
+
+  const double rawVelocityAtTol = kp * driveScaleDenom / driveScaleNum * tol;
+  const double rawVelocityAtTolAbs = std::abs(rawVelocityAtTol);
+
+  if (rawVelocityAtTolAbs >= ECMC_CSV_MIN_RAW_VELO_AT_TARGET_TOL) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: CSV %s output %.6g raw < %.6g; velocity may round to 0 "
+    "(kp=%.6g, tol=%.6g, scale=%g/%g).",
+    data.status_.axisId,
+    controllerName,
+    rawVelocityAtTolAbs,
+    ECMC_CSV_MIN_RAW_VELO_AT_TARGET_TOL,
+    kp,
+    tol,
+    driveScaleNum,
+    driveScaleDenom);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: CSV %s output %.6g raw < %.6g; velocity may round to 0 "
+    "(kp=%.6g, tol=%.6g, scale=%g/%g).\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId,
+    controllerName,
+    rawVelocityAtTolAbs,
+    ECMC_CSV_MIN_RAW_VELO_AT_TARGET_TOL,
+    kp,
+    tol,
+    driveScaleNum,
+    driveScaleDenom);
+}
+
+void warnIfCsvControllerOutputsRoundToZero(ecmcAxisData     &data,
+                                           ecmcDriveBase    *drv,
+                                           ecmcPIDController *cntrl,
+                                           ecmcMonitor      *mon) {
+  if (!cntrl || !mon) {
+    return;
+  }
+
+  if (mon->getEnableAtTargetMon()) {
+    warnIfCsvControllerOutputRoundsToZero(data,
+                                          drv,
+                                          "at-target",
+                                          cntrl->getKp(),
+                                          cntrl->getKi(),
+                                          mon->getAtTargetTol());
+  }
+
+  warnIfCsvControllerOutputRoundsToZero(data,
+                                        drv,
+                                        "inner",
+                                        cntrl->getInnerKp(),
+                                        cntrl->getInnerKi(),
+                                        cntrl->getInnerTol());
+}
+
+void warnIfEnabledMonitorLimitIsZero(ecmcAxisData &data,
+                                     const char   *monitorName,
+                                     const char   *limitName,
+                                     double        value) {
+  if (value > 0) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: %s enabled with %s %.6g.",
+    data.status_.axisId,
+    monitorName,
+    limitName,
+    value);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: %s enabled with %s %.6g.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId,
+    monitorName,
+    limitName,
+    value);
+}
+
+void warnIfEnabledMonitorLimitsAreZero(ecmcAxisData &data,
+                                       ecmcMonitor  *mon) {
+  if (!mon) {
+    return;
+  }
+
+  if (mon->getEnableAtTargetMon()) {
+    warnIfEnabledMonitorLimitIsZero(data,
+                                    "at-target monitor",
+                                    "tolerance",
+                                    mon->getAtTargetTol());
+  }
+
+  if (mon->getEnableLagMon()) {
+    warnIfEnabledMonitorLimitIsZero(data,
+                                    "position-lag monitor",
+                                    "tolerance",
+                                    mon->getPosLagTol());
+  }
+
+  if (mon->getEnableMaxVelMon()) {
+    warnIfEnabledMonitorLimitIsZero(data,
+                                    "max-velocity monitor",
+                                    "limit",
+                                    mon->getMaxVel());
+  }
+
+  if (mon->getEnableVelocityDiffMon()) {
+    warnIfEnabledMonitorLimitIsZero(data,
+                                    "velocity-difference monitor",
+                                    "limit",
+                                    mon->getVelDiffMaxDifference());
+  }
+
+  if (mon->getEnableCntrlHLMon()) {
+    warnIfEnabledMonitorLimitIsZero(data,
+                                    "controller-output monitor",
+                                    "limit",
+                                    mon->getCntrlOutputHL());
+  }
+}
+
+void warnCsvVelocityOutsideScaledRange(ecmcAxisData &data,
+                                       const char   *velocityName,
+                                       double        velocity,
+                                       double        engMin,
+                                       double        engMax,
+                                       double        rawMin,
+                                       double        rawMax,
+                                       double        rawOffset,
+                                       double        driveScale) {
+  if ((velocity >= engMin) && (velocity <= engMax)) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: CSV %s %.6g outside scaled range [%.6g, %.6g]; setpoint will saturate "
+    "(raw %.0f..%.0f, offset=%.6g, scale=%.6g).",
+    data.status_.axisId,
+    velocityName,
+    velocity,
+    engMin,
+    engMax,
+    rawMin,
+    rawMax,
+    rawOffset,
+    driveScale);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: CSV %s %.6g outside scaled range [%.6g, %.6g]; setpoint will saturate "
+    "(raw %.0f..%.0f, offset=%.6g, scale=%.6g).\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId,
+    velocityName,
+    velocity,
+    engMin,
+    engMax,
+    rawMin,
+    rawMax,
+    rawOffset,
+    driveScale);
+}
+
+void warnCsvAbsVelocityExceedsDirectionalLimits(ecmcAxisData &data,
+                                                const char   *velocityName,
+                                                double        velocity,
+                                                double        positiveLimit,
+                                                double        negativeLimit,
+                                                double        rawMin,
+                                                double        rawMax,
+                                                double        rawOffset,
+                                                double        driveScale) {
+  const double absVelocity = std::abs(velocity);
+
+  if ((absVelocity <= positiveLimit) && (absVelocity <= negativeLimit)) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: CSV %s %.6g exceeds dir limits (+%.6g/-%.6g); setpoint may saturate "
+    "(raw %.0f..%.0f, offset=%.6g, scale=%.6g).",
+    data.status_.axisId,
+    velocityName,
+    absVelocity,
+    positiveLimit,
+    negativeLimit,
+    rawMin,
+    rawMax,
+    rawOffset,
+    driveScale);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: CSV %s %.6g exceeds dir limits (+%.6g/-%.6g); setpoint may saturate "
+    "(raw %.0f..%.0f, offset=%.6g, scale=%.6g).\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId,
+    velocityName,
+    absVelocity,
+    positiveLimit,
+    negativeLimit,
+    rawMin,
+    rawMax,
+    rawOffset,
+    driveScale);
+}
+
+void warnIfCsvVelocityExceedsRawRange(ecmcAxisData  &data,
+                                      ecmcDriveBase *drv,
+                                      ecmcMonitor   *mon,
+                                      ecmcEncoder  **encoders) {
+  if (!drv || !mon || data.control_.drvMode != ECMC_DRV_MODE_CSV ||
+      drv->getCsvSetpointUsesFloatingPoint()) {
+    return;
+  }
+
+  const double driveScale = drv->getScale();
+  if (driveScale == 0) {
+    return;
+  }
+
+  const double rawOffset = drv->getCsvRawVelocityOffset();
+  const double rawMin = static_cast<double>(drv->getCsvMinRawVelocitySetpoint());
+  const double rawMax = static_cast<double>(drv->getCsvMaxRawVelocitySetpoint());
+  const double engLimitA = (rawMin - rawOffset) * driveScale;
+  const double engLimitB = (rawMax - rawOffset) * driveScale;
+  const double engMin = engLimitA < engLimitB ? engLimitA : engLimitB;
+  const double engMax = engLimitA > engLimitB ? engLimitA : engLimitB;
+  const double positiveLimit = engMax > 0 ? engMax : 0;
+  const double negativeLimit = engMin < 0 ? -engMin : 0;
+
+  warnCsvVelocityOutsideScaledRange(data,
+                                    "target velocity",
+                                    data.control_.velocityTarget,
+                                    engMin,
+                                    engMax,
+                                    rawMin,
+                                    rawMax,
+                                    rawOffset,
+                                    driveScale);
+
+  if (mon->getEnableMaxVelMon()) {
+    warnCsvAbsVelocityExceedsDirectionalLimits(data,
+                                               "max velocity",
+                                               mon->getMaxVel(),
+                                               positiveLimit,
+                                               negativeLimit,
+                                               rawMin,
+                                               rawMax,
+                                               rawOffset,
+                                               driveScale);
+  }
+
+  for (int i = 0; encoders && i < data.status_.encoderCount; ++i) {
+    ecmcEncoder *encoder = encoders[i];
+    if (!encoder) {
+      continue;
+    }
+
+    const double homeVelTowardsCam = encoder->getHomeVelTowardsCam();
+    if (homeVelTowardsCam != 0) {
+      warnCsvAbsVelocityExceedsDirectionalLimits(data,
+                                                 "encoder homing velocity towards cam",
+                                                 homeVelTowardsCam,
+                                                 positiveLimit,
+                                                 negativeLimit,
+                                                 rawMin,
+                                                 rawMax,
+                                                 rawOffset,
+                                                 driveScale);
+    }
+
+    const double homeVelOffCam = encoder->getHomeVelOffCam();
+    if (homeVelOffCam != 0) {
+      warnCsvAbsVelocityExceedsDirectionalLimits(data,
+                                                 "encoder homing velocity off cam",
+                                                 homeVelOffCam,
+                                                 positiveLimit,
+                                                 negativeLimit,
+                                                 rawMin,
+                                                 rawMax,
+                                                 rawOffset,
+                                                 driveScale);
+    }
+  }
+}
+
+}  // namespace
+
 ecmcAxisReal::ecmcAxisReal(ecmcAsynPortDriver *asynPortDriver,
                            int                 axisID,
                            double              sampleTime,
@@ -347,6 +669,12 @@ int ecmcAxisReal::validate() {
 
   if (error) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, error);
+  }
+
+  if (!getRealTimeStarted()) {
+    warnIfEnabledMonitorLimitsAreZero(data_, mon_);
+    warnIfCsvControllerOutputsRoundToZero(data_, drv_, cntrl_, mon_);
+    warnIfCsvVelocityExceedsRawRange(data_, drv_, mon_, encArray_);
   }
 
   error = seq_.validate();
