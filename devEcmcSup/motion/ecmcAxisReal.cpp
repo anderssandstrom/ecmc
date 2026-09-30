@@ -19,6 +19,12 @@ namespace {
 
 constexpr double ECMC_CSV_MIN_RAW_VELO_AT_TARGET_TOL = 0.5;
 
+bool axisUsesEcmcPositionController(ecmcAxisData &data) {
+  return data.control_.drvMode == ECMC_DRV_MODE_CSV ||
+         (data.control_.drvMode == ECMC_DRV_MODE_CSP &&
+          data.control_.cspDrvEncIndex >= 0);
+}
+
 void warnIfCsvControllerOutputRoundsToZero(ecmcAxisData  &data,
                                            ecmcDriveBase *drv,
                                            const char    *controllerName,
@@ -95,6 +101,60 @@ void warnIfCsvControllerOutputsRoundToZero(ecmcAxisData     &data,
                                         cntrl->getInnerKp(),
                                         cntrl->getInnerKi(),
                                         cntrl->getInnerTol());
+}
+
+void warnIfControllerKpIsZero(ecmcAxisData     &data,
+                              ecmcPIDController *cntrl) {
+  if (!cntrl || !axisUsesEcmcPositionController(data)) {
+    return;
+  }
+
+  if (cntrl->getKp() == 0) {
+    ecmcLogBufferLogWarning(
+      "Axis[%d]: controller kp is 0.",
+      data.status_.axisId);
+
+    ecmcRtLoggerLogWarning(
+      "%s/%s:%d: WARNING: Axis[%d]: controller kp is 0.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      data.status_.axisId);
+  }
+
+  if ((cntrl->getInnerTol() > 0) && (cntrl->getInnerKp() == 0)) {
+    ecmcLogBufferLogWarning(
+      "Axis[%d]: inner controller kp is 0.",
+      data.status_.axisId);
+
+    ecmcRtLoggerLogWarning(
+      "%s/%s:%d: WARNING: Axis[%d]: inner controller kp is 0.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      data.status_.axisId);
+  }
+}
+
+void warnIfControllerParamsIgnoredInPureCsp(ecmcAxisData     &data,
+                                            ecmcPIDController *cntrl) {
+  if (!cntrl ||
+      data.control_.drvMode != ECMC_DRV_MODE_CSP ||
+      data.control_.cspDrvEncIndex >= 0 ||
+      !cntrl->getSettingMade()) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: controller params set but ignored in pure CSP.",
+    data.status_.axisId);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: controller params set but ignored in pure CSP.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId);
 }
 
 void warnIfEnabledMonitorLimitIsZero(ecmcAxisData &data,
@@ -673,6 +733,8 @@ int ecmcAxisReal::validate() {
 
   if (!getRealTimeStarted()) {
     warnIfEnabledMonitorLimitsAreZero(data_, mon_);
+    warnIfControllerKpIsZero(data_, cntrl_);
+    warnIfControllerParamsIgnoredInPureCsp(data_, cntrl_);
     warnIfCsvControllerOutputsRoundToZero(data_, drv_, cntrl_, mon_);
     warnIfCsvVelocityExceedsRawRange(data_, drv_, mon_, encArray_);
   }

@@ -268,16 +268,6 @@ int ecmcPIDController::validate() {
                       ERROR_CNTRL_INVALID_SAMPLE_TIME);
   }
 
-  // Output warning if CSP and any of the position control parameters have been set.
-  if ((data_->control_.drvMode == ECMC_DRV_MODE_CSP) && settingMade_ && data_->control_.cspDrvEncIndex < 0) {
-    ecmcRtLoggerLogWarning("%s/%s:%d: WARNING: Axis %d: ecmc position control disabled (no dedicated CSP encoder selected). Settings of ecmc position control loop params will be discarded."
-           " Position control loop params needs to be set directly in drive (where the position loop is executed).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           data_->status_.axisId);
-  }
-
   if ((asynKp_ == NULL) || (asynKi_ == NULL) || (asynKd_ == NULL) ||
       (asynKff_ == NULL)) {
     ecmcRtLoggerLogError("%s/%s:%d: ERROR: Axis[%d]: Kp, Ki, Kd, or Kff asyn parameter is NULL.\n",
@@ -339,6 +329,10 @@ double ecmcPIDController::getInnerKd() {
 
 double ecmcPIDController::getInnerTol() {
   return innerTol_;
+}
+
+bool ecmcPIDController::getSettingMade() {
+  return settingMade_;
 }
 
 int ecmcPIDController::initAsyn() {

@@ -74,6 +74,7 @@ public:
   double getInnerKi();
   double getInnerKd();
   double getInnerTol();
+  bool   getSettingMade();
   void   setOutMax(double outMax);
   void   setOutMin(double outMin);
   void   setIOutMax(double outMax);
