@@ -867,6 +867,7 @@ int setAppModeCfg(int mode) {
   appModeCmdOld = appModeCmd;
   appModeCmd    = (app_mode_type)mode;
   ecmcRtLoggerSetEnabled(0);
+  ecmcLogBufferSetRuntimeMode(0);
 
   if ((appModeCmd == ECMC_MODE_CONFIG) &&
       (appModeCmdOld == ECMC_MODE_RUNTIME)) {
@@ -1023,6 +1024,7 @@ int setAppModeRun(int mode) {
     return errorCode;
   }
   appModeStat = ECMC_MODE_RUNTIME;
+  ecmcLogBufferSetRuntimeMode(1);
 
   if (asynPort) {
     asynPort->setAllowRtThreadCom(true);  // Set by epics state hooks

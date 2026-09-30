@@ -3402,21 +3402,6 @@ static void logBufferWriteCallFunc(const iocshArgBuf *args) {
   ecmcLogBufferWriteText(args[0].sval, args[1].sval);
 }
 
-/** EPICS iocsh shell command: ecmcRtLogBufferWrite */
-static const iocshArg rtLogBufferWriteArg0 =
-{ "Level (INFO, WARNING, ERROR)", iocshArgString };
-static const iocshArg rtLogBufferWriteArg1 =
-{ "Message", iocshArgString };
-static const iocshArg *const rtLogBufferWriteArgs[] = {
-  &rtLogBufferWriteArg0,
-  &rtLogBufferWriteArg1
-};
-static const iocshFuncDef rtLogBufferWriteFuncDef =
-{ "ecmcRtLogBufferWrite", 2, rtLogBufferWriteArgs };
-static void rtLogBufferWriteCallFunc(const iocshArgBuf *args) {
-  ecmcRtLogBufferWriteText(args[0].sval, args[1].sval);
-}
-
 /** EPICS iocsh shell command: ecmcLogBufferPrint */
 static const iocshFuncDef logBufferPrintFuncDef =
 { "ecmcLogBufferPrint", 0, NULL };
@@ -3470,7 +3455,6 @@ void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&initFuncDef_18, initCallFunc_18);
   iocshRegister(&asyncStartFuncDef, asyncStartCallFunc);
   iocshRegister(&logBufferWriteFuncDef, logBufferWriteCallFunc);
-  iocshRegister(&rtLogBufferWriteFuncDef, rtLogBufferWriteCallFunc);
   iocshRegister(&logBufferPrintFuncDef, logBufferPrintCallFunc);
   iocshRegister(&logBufferClearFuncDef, logBufferClearCallFunc);
   iocshRegister(&rtLogBufferPrintFuncDef, rtLogBufferPrintCallFunc);

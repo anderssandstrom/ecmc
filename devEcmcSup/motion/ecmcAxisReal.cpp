@@ -183,6 +183,35 @@ void warnIfEnabledMonitorLimitIsZero(ecmcAxisData &data,
     value);
 }
 
+void warnIfCtrlDeadbandExceedsAtTargetTol(ecmcAxisData &data,
+                                          ecmcMonitor  *mon) {
+  if (!mon || !mon->getEnableAtTargetMon()) {
+    return;
+  }
+
+  const double atTargetTol = mon->getAtTargetTol();
+  const double ctrlDeadband = mon->getCtrlDeadband();
+
+  if (ctrlDeadband <= atTargetTol) {
+    return;
+  }
+
+  ecmcLogBufferLogWarning(
+    "Axis[%d]: controller deadband %.6g > at-target tolerance %.6g.",
+    data.status_.axisId,
+    ctrlDeadband,
+    atTargetTol);
+
+  ecmcRtLoggerLogWarning(
+    "%s/%s:%d: WARNING: Axis[%d]: controller deadband %.6g > at-target tolerance %.6g.\n",
+    __FILE__,
+    __FUNCTION__,
+    __LINE__,
+    data.status_.axisId,
+    ctrlDeadband,
+    atTargetTol);
+}
+
 void warnIfEnabledMonitorLimitsAreZero(ecmcAxisData &data,
                                        ecmcMonitor  *mon) {
   if (!mon) {
@@ -194,6 +223,7 @@ void warnIfEnabledMonitorLimitsAreZero(ecmcAxisData &data,
                                     "at-target monitor",
                                     "tolerance",
                                     mon->getAtTargetTol());
+    warnIfCtrlDeadbandExceedsAtTargetTol(data, mon);
   }
 
   if (mon->getEnableLagMon()) {

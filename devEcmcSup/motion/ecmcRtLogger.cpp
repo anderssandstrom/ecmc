@@ -62,6 +62,7 @@ std::atomic<size_t> readIndex_(0);
 std::atomic<unsigned int> droppedCount_(0);
 std::atomic<int> enabled_(0);
 std::atomic<int> started_(0);
+std::atomic<int> logBufferRuntimeMode_(0);
 std::atomic<unsigned int> controlWord_(ECMC_RT_LOGGER_CONTROL_DEFAULT);
 ecmcRtLogEvent queue_[ECMC_RT_LOGGER_QUEUE_SIZE] = {};
 ecmcLogBuffer configLogBuffer_ = {{}, 0, 0, 0, "ecmc configuration log buffer"};
@@ -212,6 +213,17 @@ void logBufferClear(ecmcLogBuffer &buffer, epicsMutexId mutex) {
   buffer.sequence = 0;
 
   epicsMutexUnlock(mutex);
+}
+
+int activeLogBufferWriteV(int level, const char *fmt, va_list args) {
+  if (logBufferRuntimeMode_.load(std::memory_order_acquire)) {
+    return logBufferWriteV(rtLogBuffer_, getRtLogBufferMutex(), level, fmt, args);
+  }
+  return logBufferWriteV(configLogBuffer_,
+                         getConfigLogBufferMutex(),
+                         level,
+                         fmt,
+                         args);
 }
 
 bool levelEnabled(int level) {
@@ -430,14 +442,18 @@ unsigned int ecmcRtLoggerGetControlWord() {
   return controlWord_.load(std::memory_order_acquire);
 }
 
+void ecmcLogBufferSetRuntimeMode(int runtime) {
+  logBufferRuntimeMode_.store(runtime ? 1 : 0, std::memory_order_release);
+}
+
+int ecmcLogBufferGetRuntimeMode() {
+  return logBufferRuntimeMode_.load(std::memory_order_acquire);
+}
+
 int ecmcLogBufferWrite(int level, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  const int result = logBufferWriteV(configLogBuffer_,
-                                     getConfigLogBufferMutex(),
-                                     level,
-                                     fmt,
-                                     args);
+  const int result = activeLogBufferWriteV(level, fmt, args);
   va_end(args);
   return result;
 }
@@ -449,55 +465,24 @@ int ecmcLogBufferWriteText(const char *level, const char *message) {
   return ecmcLogBufferWrite(logBufferLevelFromText(level), "%s", message);
 }
 
-int ecmcRtLogBufferWrite(int level, const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  const int result = logBufferWriteV(rtLogBuffer_,
-                                     getRtLogBufferMutex(),
-                                     level,
-                                     fmt,
-                                     args);
-  va_end(args);
-  return result;
-}
-
-int ecmcRtLogBufferWriteText(const char *level, const char *message) {
-  if (!message) {
-    return -1;
-  }
-  return ecmcRtLogBufferWrite(logBufferLevelFromText(level), "%s", message);
-}
-
 void ecmcLogBufferLogInfo(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  logBufferWriteV(configLogBuffer_,
-                  getConfigLogBufferMutex(),
-                  ECMC_LOG_BUFFER_INFO,
-                  fmt,
-                  args);
+  activeLogBufferWriteV(ECMC_LOG_BUFFER_INFO, fmt, args);
   va_end(args);
 }
 
 void ecmcLogBufferLogWarning(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  logBufferWriteV(configLogBuffer_,
-                  getConfigLogBufferMutex(),
-                  ECMC_LOG_BUFFER_WARNING,
-                  fmt,
-                  args);
+  activeLogBufferWriteV(ECMC_LOG_BUFFER_WARNING, fmt, args);
   va_end(args);
 }
 
 void ecmcLogBufferLogError(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  logBufferWriteV(configLogBuffer_,
-                  getConfigLogBufferMutex(),
-                  ECMC_LOG_BUFFER_ERROR,
-                  fmt,
-                  args);
+  activeLogBufferWriteV(ECMC_LOG_BUFFER_ERROR, fmt, args);
   va_end(args);
 }
 

@@ -103,6 +103,20 @@ void appendControlWordAction(char *message,
            messageLength ? ", " : "",
            action);
 }
+
+void logRuntimeAxisDoubleChange(ecmcAxisBase *axis,
+                                const char   *name,
+                                double        value) {
+  if (!axis || !axis->getRealTimeStarted()) {
+    return;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                       "Axis[%d]: runtime set %s=%.12g.",
+                       axis->getAxisID(),
+                       name,
+                       value);
+}
 }
 
 /**
@@ -4153,6 +4167,7 @@ int ecmcAxisBase::setCntrlKp(double kp) {
     return ERROR_AXIS_CNTRL_OBJECT_NULL;
   }
   getCntrl()->setKp(kp);
+  logRuntimeAxisDoubleChange(this, "controller.kp", kp);
   return 0;
 }
 
@@ -4162,6 +4177,7 @@ int ecmcAxisBase::setCntrlKi(double ki) {
     return ERROR_AXIS_CNTRL_OBJECT_NULL;
   }
   getCntrl()->setKi(ki);
+  logRuntimeAxisDoubleChange(this, "controller.ki", ki);
   return 0;
 }
 
@@ -4171,6 +4187,7 @@ int ecmcAxisBase::setCntrlKd(double kd) {
     return ERROR_AXIS_CNTRL_OBJECT_NULL;
   }
   getCntrl()->setKd(kd);
+  logRuntimeAxisDoubleChange(this, "controller.kd", kd);
   return 0;
 }
 
@@ -4180,6 +4197,7 @@ int ecmcAxisBase::setCntrlKff(double kff) {
     return ERROR_AXIS_CNTRL_OBJECT_NULL;
   }
   getCntrl()->setKff(kff);
+  logRuntimeAxisDoubleChange(this, "controller.kff", kff);
   return 0;
 }
 

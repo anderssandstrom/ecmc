@@ -33,13 +33,48 @@
 #include "ecmcPIDController.h"
 #include "ecmcEncoder.h"
 #include "ecmcMonitor.h"
+#include "ecmcRtLogger.h"
 #include "ecmcEc.h"
 #include "ecmcEcSlave.h"
 #include "ecmcEcEntry.h"
 #include "ecmcAsynPortDriverUtils.h"
+#include "ecmcGlobalsExtern.h"
+
+namespace {
+
+void logRuntimeAxisDoubleChange(int axisIndex,
+                                const char *name,
+                                double value) {
+  if (axisIndex < 0 || axisIndex >= ECMC_MAX_AXES ||
+      !axes[axisIndex] || !axes[axisIndex]->getRealTimeStarted()) {
+    return;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                       "Axis[%d]: runtime set %s=%.12g.",
+                       axisIndex,
+                       name,
+                       value);
+}
+
+void logRuntimeAxisIntChange(int axisIndex,
+                             const char *name,
+                             int value) {
+  if (axisIndex < 0 || axisIndex >= ECMC_MAX_AXES ||
+      !axes[axisIndex] || !axes[axisIndex]->getRealTimeStarted()) {
+    return;
+  }
+
+  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                       "Axis[%d]: runtime set %s=%d.",
+                       axisIndex,
+                       name,
+                       value);
+}
+
+}  // namespace
 
 // TODO: REMOVE GLOBALS
-#include "ecmcGlobalsExtern.h"
 
 
 int moveAbsolutePosition(int    axisIndex,
@@ -2270,6 +2305,7 @@ int setAxisCntrlResetIAtRmp(int axisIndex, int enable) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setResetIAtTrajBusy(enable != 0);
+  logRuntimeAxisIntChange(axisIndex, "controller.resetIAtTrajBusy", enable != 0);
   return 0;
 }
 
@@ -2285,6 +2321,7 @@ int setAxisCntrlFreezeIAtRmp(int axisIndex, int enable) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setFreezeIAtTrajBusy(enable != 0);
+  logRuntimeAxisIntChange(axisIndex, "controller.freezeIAtTrajBusy", enable != 0);
   return 0;
 }
 
@@ -2301,6 +2338,7 @@ int setAxisCntrlDeadband(int    axisIndex,
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setCtrlDeadband(value);
+  logRuntimeAxisDoubleChange(axisIndex, "monitor.ctrlDeadband", value);
   return 0;
 }
 
@@ -2317,6 +2355,7 @@ int setAxisCntrlDeadbandTime(int axisIndex,
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setCtrlDeadbandTime(value);
+  logRuntimeAxisIntChange(axisIndex, "monitor.ctrlDeadbandTime", value);
   return 0;
 }
 
@@ -2327,7 +2366,11 @@ int setAxisMonSlvCtrlDbTol(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setSlvCtrlDeadband(value);
+  int error = axes[axisIndex]->getMon()->setSlvCtrlDeadband(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.slvCtrlDeadband", value);
+  }
+  return error;
 }
 
 int setAxisMonSlvCtrlDbTime(int axisIndex, int value) {
@@ -2337,7 +2380,11 @@ int setAxisMonSlvCtrlDbTime(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setSlvCtrlDeadbandTime(value);
+  int error = axes[axisIndex]->getMon()->setSlvCtrlDeadbandTime(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.slvCtrlDeadbandTime", value);
+  }
+  return error;
 }
 
 int setAxisCntrlInnerParams(int    axisIndex,
@@ -2356,6 +2403,15 @@ int setAxisCntrlInnerParams(int    axisIndex,
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setInnerCtrlParams(kp, ki, kd, tol);
+  if (axes[axisIndex]->getRealTimeStarted()) {
+    ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                         "Axis[%d]: runtime set controller.inner(kp=%.12g, ki=%.12g, kd=%.12g, tol=%.12g).",
+                         axisIndex,
+                         kp,
+                         ki,
+                         kd,
+                         tol);
+  }
   return 0;
 }
 
@@ -2375,6 +2431,7 @@ int setAxisCntrlInnerKp(int axisIndex, double value) {
                             cntrl->getInnerKi(),
                             cntrl->getInnerKd(),
                             cntrl->getInnerTol());
+  logRuntimeAxisDoubleChange(axisIndex, "controller.innerKp", value);
   return 0;
 }
 
@@ -2394,6 +2451,7 @@ int setAxisCntrlInnerKi(int axisIndex, double value) {
                             value,
                             cntrl->getInnerKd(),
                             cntrl->getInnerTol());
+  logRuntimeAxisDoubleChange(axisIndex, "controller.innerKi", value);
   return 0;
 }
 
@@ -2413,6 +2471,7 @@ int setAxisCntrlInnerKd(int axisIndex, double value) {
                             cntrl->getInnerKi(),
                             value,
                             cntrl->getInnerTol());
+  logRuntimeAxisDoubleChange(axisIndex, "controller.innerKd", value);
   return 0;
 }
 
@@ -2432,6 +2491,7 @@ int setAxisCntrlInnerTol(int axisIndex, double value) {
                             cntrl->getInnerKi(),
                             cntrl->getInnerKd(),
                             value);
+  logRuntimeAxisDoubleChange(axisIndex, "controller.innerTol", value);
   return 0;
 }
 
@@ -2447,6 +2507,7 @@ int setAxisCntrlOutHL(int axisIndex, double value) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setOutMax(value);
+  logRuntimeAxisDoubleChange(axisIndex, "controller.outMax", value);
   return 0;
 }
 
@@ -2462,6 +2523,7 @@ int setAxisCntrlOutLL(int axisIndex, double value) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setOutMin(value);
+  logRuntimeAxisDoubleChange(axisIndex, "controller.outMin", value);
   return 0;
 }
 
@@ -2477,6 +2539,7 @@ int setAxisCntrlIpartHL(int axisIndex, double value) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setIOutMax(value);
+  logRuntimeAxisDoubleChange(axisIndex, "controller.iOutMax", value);
   return 0;
 }
 
@@ -2492,6 +2555,7 @@ int setAxisCntrlIpartLL(int axisIndex, double value) {
   CHECK_AXIS_CONTROLLER_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getCntrl()->setIOutMin(value);
+  logRuntimeAxisDoubleChange(axisIndex, "controller.iOutMin", value);
   return 0;
 }
 
@@ -3323,7 +3387,11 @@ int setAxisMonAtTargetTol(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setAtTargetTol(value);
+  int error = axes[axisIndex]->getMon()->setAtTargetTol(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.atTargetTol", value);
+  }
+  return error;
 }
 
 int setAxisEnableCheckEncsDiff(int axisIndex, int enable) {
@@ -3418,7 +3486,11 @@ int setAxisMonAtTargetTime(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setAtTargetTime(value);
+  int error = axes[axisIndex]->getMon()->setAtTargetTime(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.atTargetTime", value);
+  }
+  return error;
 }
 
 int getAxisMonEnableAtTargetMon(int axisIndex, int *value) {
@@ -3441,6 +3513,7 @@ int setAxisMonEnableAtTargetMon(int axisIndex, int value) {
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setEnableAtTargetMon(value);
+  logRuntimeAxisIntChange(axisIndex, "monitor.enableAtTarget", value != 0);
   return 0;
 }
 
@@ -3466,6 +3539,7 @@ int setAxisMonEnableStallMon(int axisIndex,
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setEnableStallMon(enable);
+  logRuntimeAxisIntChange(axisIndex, "monitor.enableStall", enable != 0);
   return 0;
 }
 
@@ -3509,6 +3583,7 @@ int setAxisMonStallMinTimeOut(int axisIndex,
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setStallMinTimeOut(timeCycles);
+  logRuntimeAxisDoubleChange(axisIndex, "monitor.stallMinTimeOut", timeCycles);
   return 0;
 }
 
@@ -3534,6 +3609,7 @@ int setAxisMonStallTimeFactor(int axisIndex,
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setStallTimeFactor(timeFactor);
+  logRuntimeAxisDoubleChange(axisIndex, "monitor.stallTimeFactor", timeFactor);
   return 0;
 }
 
@@ -3690,7 +3766,11 @@ int setAxisMonPosLagTol(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setPosLagTol(value);
+  int error = axes[axisIndex]->getMon()->setPosLagTol(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.posLagTol", value);
+  }
+  return error;
 }
 
 int getAxisMonPosLagTime(int axisIndex, int *value) {
@@ -3711,7 +3791,11 @@ int setAxisMonPosLagTime(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setPosLagTime(value);
+  int error = axes[axisIndex]->getMon()->setPosLagTime(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.posLagTime", value);
+  }
+  return error;
 }
 
 int getAxisMonEnableLagMon(int axisIndex, int *value) {
@@ -3732,6 +3816,7 @@ int setAxisMonEnableLagMon(int axisIndex, int value) {
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
   axes[axisIndex]->getMon()->setEnableLagMon(value);
+  logRuntimeAxisIntChange(axisIndex, "monitor.enablePosLag", value != 0);
   return 0;
 }
 
@@ -3746,7 +3831,11 @@ int setAxisMonMaxVel(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setMaxVel(value);
+  int error = axes[axisIndex]->getMon()->setMaxVel(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.maxVel", value);
+  }
+  return error;
 }
 
 int getAxisMonMaxVel(int axisIndex, double *value) {
@@ -3767,7 +3856,11 @@ int setAxisMonEnableMaxVel(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setEnableMaxVelMon(value);
+  int error = axes[axisIndex]->getMon()->setEnableMaxVelMon(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.enableMaxVel", value != 0);
+  }
+  return error;
 }
 
 int getAxisMonEnableMaxVel(int axisIndex, int *value) {
@@ -3810,7 +3903,11 @@ int setAxisMonMaxVelDriveILDelay(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setMaxVelDriveTime(value);
+  int error = axes[axisIndex]->getMon()->setMaxVelDriveTime(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.maxVelDriveTime", value);
+  }
+  return error;
 }
 
 int getAxisMonMaxVelTrajILDelay(int axisIndex, int *value) {
@@ -3830,7 +3927,11 @@ int setAxisMonMaxVelTrajILDelay(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setMaxVelTrajTime(value);
+  int error = axes[axisIndex]->getMon()->setMaxVelTrajTime(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.maxVelTrajTime", value);
+  }
+  return error;
 }
 
 int setAxisMonLatchLimit(int axisIndex,
@@ -3948,7 +4049,11 @@ int setAxisMonEnableCntrlOutHLMon(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setEnableCntrlHLMon(value);
+  int error = axes[axisIndex]->getMon()->setEnableCntrlHLMon(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.enableControllerOutputHL", value != 0);
+  }
+  return error;
 }
 
 int getAxisMonEnableVelocityDiff(int axisIndex, int *value) {
@@ -3968,7 +4073,11 @@ int setAxisMonEnableVelocityDiff(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setEnableVelocityDiffMon(value);
+  int error = axes[axisIndex]->getMon()->setEnableVelocityDiffMon(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.enableVelocityDiff", value != 0);
+  }
+  return error;
 }
 
 int getAxisMonVelDiffTol(int axisIndex, double *value) {
@@ -3988,7 +4097,11 @@ int setAxisMonVelDiffTol(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setVelDiffMaxDifference(value);
+  int error = axes[axisIndex]->getMon()->setVelDiffMaxDifference(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.velDiffMaxDifference", value);
+  }
+  return error;
 }
 
 int getAxisMonVelDiffTrajILDelay(int axisIndex, int *value) {
@@ -4008,7 +4121,11 @@ int setAxisMonVelDiffTrajILDelay(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setVelDiffTimeTraj(value);
+  int error = axes[axisIndex]->getMon()->setVelDiffTimeTraj(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.velDiffTrajTime", value);
+  }
+  return error;
 }
 
 int getAxisMonVelDiffDriveILDelay(int axisIndex, int *value) {
@@ -4028,7 +4145,11 @@ int setAxisMonVelDiffDriveILDelay(int axisIndex, int value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setVelDiffTimeDrive(value);
+  int error = axes[axisIndex]->getMon()->setVelDiffTimeDrive(value);
+  if (!error) {
+    logRuntimeAxisIntChange(axisIndex, "monitor.velDiffDriveTime", value);
+  }
+  return error;
 }
 
 int setAxisMonCntrlOutHL(int axisIndex, double value) {
@@ -4042,7 +4163,11 @@ int setAxisMonCntrlOutHL(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
 
-  return axes[axisIndex]->getMon()->setCntrlOutputHL(value);
+  int error = axes[axisIndex]->getMon()->setCntrlOutputHL(value);
+  if (!error) {
+    logRuntimeAxisDoubleChange(axisIndex, "monitor.controllerOutputHL", value);
+  }
+  return error;
 }
 
 // Mon GET

@@ -2768,6 +2768,13 @@ asynStatus ecmcMotorRecordAxis::setDoubleParam(int function, double value) {
 
     if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
 
+    if (!errorCode && drvlocal.ecmcAxis->getRealTimeStarted()) {
+      ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
+                           "Axis[%d]: runtime set monitor.maxVel=%.12g.",
+                           axisNo_,
+                           value);
+    }
+
     return errorCode == 0 ? asynSuccess : asynError;
   } // manual velo fast.. Just store here in "motor record" driver
   else if (function == pC_->ecmcMotorRecordCfgJVEL_) {
