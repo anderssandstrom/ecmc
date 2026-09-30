@@ -1503,7 +1503,7 @@ int ecmcEncoder::validate() {
 
 // Set encoder value to zero at startup if incremental
 int ecmcEncoder::setToZeroIfRelative() {
-  if (encType_ == ECMC_ENCODER_TYPE_INCREMENTAL) {
+  if ((encType_ == ECMC_ENCODER_TYPE_INCREMENTAL) && !homed_) {
     setActPos(0);
   }
   return 0;
