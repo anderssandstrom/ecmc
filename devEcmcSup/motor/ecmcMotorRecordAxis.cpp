@@ -299,12 +299,6 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
   // initialize
   memset(&drvlocal,       0,    sizeof(drvlocal));
   memset(&drvlocal.dirty, 0xFF, sizeof(drvlocal.dirty));
-  // A newly created axis has no active motion command. Publish a deterministic
-  // idle state until the first valid real-time status sample is available.
-  drvlocal.moveReady    = true;
-  drvlocal.moveReadyOld = true;
-  setIntegerParam(pC_->motorStatusMoving_, 0);
-  setIntegerParam(pC_->motorStatusDone_,   1);
   strcpy(profileMessage_, "");
   drvlocal.axisId       = axisNo;
 
@@ -2089,9 +2083,6 @@ asynStatus ecmcMotorRecordAxis::readEcmcAxisStatusData() {
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
   /* Driver not yet initialized, do nothing */
   if (!drvlocal.ecmcAxis->getRealTimeStarted()) {
-    // No valid status sample is available yet. Keep poll() in its startup path
-    // instead of evaluating the zero-initialized status as live axis data.
-    drvlocal.axisInStartup = true;
     if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
     return asynSuccess;
   }
@@ -2158,16 +2149,6 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
   if(drvlocal.axisInStartup) {
     interlockStopActive_ = false;
-    // Axes normally start disabled. Explicitly report that state as idle even
-    // before the first real-time status sample has arrived.
-    if (!drvlocal.ecmcBusy &&
-        !drvlocal.status_.statusWord_.enable &&
-        !drvlocal.status_.statusWord_.enabled) {
-      drvlocal.moveReady = true;
-    }
-    setIntegerParam(pC_->motorStatusMoving_, !drvlocal.moveReady);
-    setIntegerParam(pC_->motorStatusDone_,    drvlocal.moveReady);
-    *moving = !drvlocal.moveReady;
     drvlocal.nErrorIdMcu = 0;
     drvlocal.status_.errorCode = 0;
     updateError();
