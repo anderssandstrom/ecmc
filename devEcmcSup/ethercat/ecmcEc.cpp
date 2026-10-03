@@ -307,12 +307,98 @@ ecmcEcSlave * ecmcEc::getSlave(int slaveIndex) {
   return slaveArray_[slaveIndex];
 }
 
+// Startup-only diagnostics using the master's completed scan. Never issue
+// register writes, modify DC setup, or turn a wiring warning into an interlock.
+static void warnEcPortWiring(ec_master_t *master, int masterIndex) {
+  if (!master) {
+    return;
+  }
+
+  ec_master_info_t masterInfo = {};
+  if (ecrt_master(master, &masterInfo) || masterInfo.scan_busy) {
+    ecmcLogBufferLogWarning(
+      "ec%d: EtherCAT wiring check unavailable (master information unavailable "
+      "or bus scan in progress).", masterIndex);
+    ecmcRtLoggerLogWarning(
+      "WARNING: ec%d: EtherCAT wiring check unavailable (master information "
+      "unavailable or bus scan in progress).\n", masterIndex);
+    return;
+  }
+
+  for (unsigned int position = 0; position < masterInfo.slave_count; ++position) {
+    ec_slave_info_t info = {};
+    if (ecrt_master_get_slave(master, position, &info)) {
+      ecmcLogBufferLogWarning(
+        "ec%d.s%u: EtherCAT wiring check unavailable (slave information read failed).",
+        masterIndex, position);
+      ecmcRtLoggerLogWarning(
+        "WARNING: ec%d.s%u: EtherCAT wiring check unavailable "
+        "(slave information read failed).\n", masterIndex, position);
+      continue;
+    }
+
+    // External Ethernet input only: do not diagnose internal E-bus terminals
+    // or assume that an unimplemented/unconfigured port is an unplugged IN.
+    if (info.error_flag || info.ports[0].desc != EC_PORT_MII) {
+      continue;
+    }
+
+    for (unsigned int port = 1; port < EC_MAX_PORTS; ++port) {
+      const auto &input = info.ports[0];
+      const auto &other = info.ports[port];
+      if (other.desc != EC_PORT_MII || !other.link.link_up ||
+          other.link.loop_closed) {
+        continue;
+      }
+
+      char message[512];
+      if (!input.link.link_up) {
+        snprintf(message, sizeof(message),
+                 "ec%d.s%u (%.*s): Port 0/IN has no link while Ethernet port %u "
+                 "has an active link. Check for upstream cable connected to OUT. "
+                 "DC operation may be unstable; startup continues.",
+                 masterIndex, position, EC_MAX_STRING_LENGTH, info.name, port);
+      } else {
+        // ET1100-style receive timestamps can identify a nonzero ingress port
+        // even with both cables connected. Compare within this slave only.
+        // Zero/equal values are inconclusive. Unsigned subtraction handles
+        // 32-bit rollover; ordering assumes a traversal shorter than 2^31 ns.
+        // Older ESC latch modes may not expose the initial arrival at OUT, so
+        // absence of this warning is NOT proof of correct wiring.
+        const uint32_t earlierBy = input.receive_time - other.receive_time;
+        if (input.link.loop_closed || !input.receive_time ||
+            !other.receive_time || !earlierBy || earlierBy >= 0x80000000u) {
+          continue;
+        }
+        snprintf(message, sizeof(message),
+                 "ec%d.s%u (%.*s): Suspected swapped IN/OUT cables: Ethernet "
+                 "port %u receive timestamp precedes port 0/IN by %u ns "
+                 "(port0=%u, port%u=%u). Check upstream cable routing. "
+                 "DC operation may be unstable; startup continues.",
+                 masterIndex, position, EC_MAX_STRING_LENGTH, info.name, port,
+                 static_cast<unsigned int>(earlierBy),
+                 static_cast<unsigned int>(input.receive_time), port,
+                 static_cast<unsigned int>(other.receive_time));
+      }
+
+      // Explicitly retain the startup warning even when console warnings are
+      // disabled by the RT logger control word (the default is errors only).
+      ecmcLogBufferLogWarning("%s", message);
+      ecmcRtLoggerLogWarning("WARNING: %s\n", message);
+      break;  // One wiring warning per slave and activation.
+    }
+  }
+}
+
+
 int ecmcEc::activate() {
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Activating master...\n",
                              __FILE__,
                              __FUNCTION__,
                              __LINE__);
+
+  warnEcPortWiring(master_, masterIndex_);
 
   // DC configuration is immutable in runtime. Cache the master-level summary
   // once instead of inspecting every slave in the cyclic send path.
