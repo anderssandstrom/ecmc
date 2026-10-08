@@ -29,7 +29,10 @@ int ecmcMotorRecordCreateAxis(const char *ecmcMotorRecordName,
 double ecmcMotorRecordgetNowTimeSecs(void);
 }
 
+class ecmcMotionStateYamlWriter;
+
 class epicsShareClass ecmcMotorRecordAxis : public asynMotorAxis {
+  friend class ecmcMotionStateYamlWriter;
 public:
   /* These are the methods we override from the base class */
   ecmcMotorRecordAxis(class ecmcMotorRecordController *pC,

@@ -40,6 +40,7 @@
 using namespace ruckig;
 
 class ecmcTrajectoryS : public ecmcTrajectoryBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcTrajectoryS(ecmcAxisData &axisData,
                   double        sampleTime);

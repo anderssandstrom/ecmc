@@ -14,6 +14,7 @@
 
 void ecmcMotionDiagMakeDumpFileName(char *buffer, size_t bufferSize);
 int  ecmcMotionDiagWriteDumpFile(const char *fileName, int level);
+int  ecmcMotionStateWriteYaml(const char *fileName);
 void ecmcMotionDiagBuildAxisReport(int axisIndex, char *buffer, size_t bufferSize);
 
 #endif  /* ECMC_MOTION_DIAG_H_ */

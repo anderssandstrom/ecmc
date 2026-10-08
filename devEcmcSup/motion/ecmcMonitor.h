@@ -26,7 +26,10 @@ enum ecmcSwitchPolarity {
   ECMC_POLARITY_NO = 1
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcMonitor : public ecmcEcEntryLink {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcMonitor(ecmcAxisData &axisData,
                        ecmcEncoder **encArray);

@@ -94,7 +94,10 @@ enum masterSlaveStatusWordLayout : uint32_t {
   ECMC_MST_SLV_STATUS_WORD_HISTORICAL_FAULT      = 0x00400000u,
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcMasterSlaveStateMachine : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
   public:
     ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asynPortDriver,
                                 int index,

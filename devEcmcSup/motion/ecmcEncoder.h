@@ -49,7 +49,10 @@ enum ecmcOverUnderFlowType {
   ECMC_ENC_OVERFLOW  = 2,
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcEncoder : public ecmcEcEntryLink {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
               ecmcAxisData       &axisData,

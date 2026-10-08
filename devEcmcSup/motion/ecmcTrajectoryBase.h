@@ -51,7 +51,10 @@ enum ecmcTrajTypes {
  * Created on: 2015-11-01
  *
  */
+class ecmcMotionStateYamlWriter;
+
 class ecmcTrajectoryBase : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcTrajectoryBase(ecmcAxisData &axisData,
                               double        sampleTime);

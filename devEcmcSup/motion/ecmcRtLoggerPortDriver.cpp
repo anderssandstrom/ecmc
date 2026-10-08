@@ -672,8 +672,8 @@ public:
       return asynSuccess;
     }
     if (pasynUser->reason == diagLevelParam_) {
-      diagLevel_ = value;
-      setIntegerParam(diagLevelParam_, value);
+      diagLevel_ = std::max(0, std::min(2, static_cast<int>(value)));
+      setIntegerParam(diagLevelParam_, diagLevel_);
       callParamCallbacks();
       return asynSuccess;
     }
@@ -710,7 +710,6 @@ public:
       callParamCallbacks();
       return asynSuccess;
     }
-
     return asynPortDriver::writeInt32(pasynUser, value);
   }
 
@@ -749,22 +748,20 @@ public:
     publishEcTiming();
     publishAxisCommandCounters();
 
-    if (!diagDumpPending_.exchange(0, std::memory_order_acq_rel)) {
-      return;
+    if (diagDumpPending_.exchange(0, std::memory_order_acq_rel)) {
+      const int status = ecmcMotionDiagWriteDumpFile(diagFile_, diagLevel_);
+      diagStatus_ = status;
+      diagBusy_ = 0;
+      setIntegerParam(diagDumpParam_, 0);
+      setIntegerParam(diagBusyParam_, diagBusy_);
+      setIntegerParam(diagStatusParam_, diagStatus_);
+      setStringParam(diagFileParam_, diagFile_);
+      ecmcMotionDiagBuildAxisReport(diagAxis_,
+                                    diagAxisReport_,
+                                    sizeof(diagAxisReport_));
+      setStringParam(diagAxisReportParam_, diagAxisReport_);
+      callParamCallbacks();
     }
-
-    const int status = ecmcMotionDiagWriteDumpFile(diagFile_, diagLevel_);
-    diagStatus_ = status;
-    diagBusy_ = 0;
-    setIntegerParam(diagDumpParam_, 0);
-    setIntegerParam(diagBusyParam_, diagBusy_);
-    setIntegerParam(diagStatusParam_, diagStatus_);
-    setStringParam(diagFileParam_, diagFile_);
-    ecmcMotionDiagBuildAxisReport(diagAxis_,
-                                  diagAxisReport_,
-                                  sizeof(diagAxisReport_));
-    setStringParam(diagAxisReportParam_, diagAxisReport_);
-    callParamCallbacks();
   }
 
 private:

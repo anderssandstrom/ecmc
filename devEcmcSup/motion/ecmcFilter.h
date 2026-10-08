@@ -21,7 +21,10 @@
 #define FILTER_BUFFER_SIZE_DEF 100
 #define FILTER_POS_MODULO_OVER_UNDER_FLOW_LIMIT 0.7
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcFilter : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcFilter(double sampleTime);
   explicit ecmcFilter(double sampleTime,

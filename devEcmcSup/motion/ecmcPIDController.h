@@ -21,7 +21,10 @@
 #include "ecmcAsynPortDriver.h"
 #include "ecmcErrorsList.h"
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcPIDController : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcPIDController(ecmcAsynPortDriver *asynPortDriver,
                     ecmcAxisData       &axisData,

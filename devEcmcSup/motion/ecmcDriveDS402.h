@@ -67,6 +67,7 @@ enum stateMachine_DS402 {
 };
 
 class ecmcDriveDS402 : public ecmcDriveBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcDriveDS402(ecmcAsynPortDriver *asynPortDriver,
                           ecmcAxisData       &axisData);

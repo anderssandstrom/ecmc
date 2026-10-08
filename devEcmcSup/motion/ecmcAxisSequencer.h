@@ -28,7 +28,10 @@ enum localTrajDataSource {
   ECMC_TRAJ_SRC_PVT  = 2  
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcAxisSequencer : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcAxisSequencer();
   ~ecmcAxisSequencer();

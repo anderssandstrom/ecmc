@@ -40,7 +40,10 @@ enum ecmcBrakeStates {
   ECMC_BRAKE_CLOSING = 3
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcDriveBase : public ecmcEcEntryLink {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
                          ecmcAxisData       &axisData);

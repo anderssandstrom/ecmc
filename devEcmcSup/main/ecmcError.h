@@ -32,7 +32,10 @@ enum ecmcAlarmSeverity {
           setErrorID(__FILE__, __FUNCTION__, __LINE__, 0);\
         }
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcError();
 

@@ -23,7 +23,10 @@
 
 #include <cmath>
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcPvtPoint {
+  friend class ecmcMotionStateYamlWriter;
   public:
     double position_;
     double velocity_;    
@@ -47,6 +50,7 @@ class ecmcPvtPoint {
 
 // Third order polynom between 2 ecmcPvtPoints
 class ecmcPvtSegment {
+  friend class ecmcMotionStateYamlWriter;
   private:
     ecmcPvtPoint *startPnt_;
     ecmcPvtPoint *endPnt_;
@@ -159,6 +163,7 @@ enum trgMode{
 };
 
 class ecmcAxisPVTSequence {
+  friend class ecmcMotionStateYamlWriter;
   public:
     ecmcAxisPVTSequence(double sampleTime, size_t maxProfilePoints);
     ~ecmcAxisPVTSequence();

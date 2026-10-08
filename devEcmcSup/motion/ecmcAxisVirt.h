@@ -16,6 +16,7 @@
 #include "ecmcAxisBase.h"
 
 class ecmcAxisVirt : public ecmcAxisBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcAxisVirt(ecmcAsynPortDriver *asynPortDriver,
                int                 axisID,

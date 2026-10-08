@@ -49,6 +49,7 @@
 #include "ecmcGeneral.h"
 #include "ecmcCom.h"
 #include "ecmcRtLogger.h"
+#include "ecmcMotionDiag.h"
 
 #include "exprtkWrap.h"  // Other module
 
@@ -3434,6 +3435,21 @@ static void rtLogBufferClearCallFunc(const iocshArgBuf *args) {
   ecmcRtLogBufferClear();
 }
 
+/** EPICS iocsh shell command: ecmcDumpMotionState */
+static const iocshArg dumpMotionStateArg0 = { "fileName", iocshArgString };
+static const iocshArg * const dumpMotionStateArgs[] = { &dumpMotionStateArg0 };
+static const iocshFuncDef dumpMotionStateFuncDef =
+{ "ecmcDumpMotionState", 1, dumpMotionStateArgs };
+static void dumpMotionStateCallFunc(const iocshArgBuf *args) {
+  const char *fileName = args[0].sval;
+  if (ecmcMotionStateWriteYaml(fileName)) {
+    printf("ecmcDumpMotionState: failed to write '%s'\n",
+           fileName ? fileName : "");
+  } else {
+    printf("ecmcDumpMotionState: wrote '%s'\n", fileName);
+  }
+}
+
 void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&initFuncDef,    initCallFunc);
   iocshRegister(&initFuncDef_2,  initCallFunc_2);
@@ -3459,6 +3475,7 @@ void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&logBufferClearFuncDef, logBufferClearCallFunc);
   iocshRegister(&rtLogBufferPrintFuncDef, rtLogBufferPrintCallFunc);
   iocshRegister(&rtLogBufferClearFuncDef, rtLogBufferClearCallFunc);
+  iocshRegister(&dumpMotionStateFuncDef, dumpMotionStateCallFunc);
 }
 
 epicsExportRegistrar(ecmcAsynPortDriverRegister);

@@ -35,7 +35,10 @@ enum ecmcPVTSMType {
 #include "ecmcAxisBase.h"
 #include <vector>
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcPVTController: public ecmcEcEntryLink {
+  friend class ecmcMotionStateYamlWriter;
   public:
     ecmcPVTController(ecmcAsynPortDriver *asynPortDriver,double sampleTime);
     ~ecmcPVTController();

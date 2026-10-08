@@ -95,7 +95,10 @@ struct ecmcPositionCompareStatus {
     lastOutputValue(0) {}
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcPositionCompare : public ecmcEcEntryLink {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcPositionCompare();
   int configure(uint64_t minLeadTimeNs,

@@ -22,6 +22,7 @@
 #include "ecmcDriveBase.h"
 
 class ecmcDriveStepper : public ecmcDriveBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcDriveStepper(ecmcAsynPortDriver *asynPortDriver,
                             ecmcAxisData       &axisData);

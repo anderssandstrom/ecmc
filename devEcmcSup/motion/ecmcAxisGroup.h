@@ -37,7 +37,10 @@ struct ecmcAxisGroupStatusSummary {
   int firstErrorId;
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcAxisGroup : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
   public:
     ecmcAxisGroup(int index, const char *name);
     ~ecmcAxisGroup();

@@ -41,6 +41,7 @@
  *
  */
 class ecmcTrajectoryTrapetz : public ecmcTrajectoryBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcTrajectoryTrapetz(ecmcAxisData &axisData,
                         double        sampleTime);

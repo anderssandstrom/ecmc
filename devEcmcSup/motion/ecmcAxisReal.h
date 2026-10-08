@@ -19,6 +19,7 @@
 #include "ecmcEncoder.h"
 
 class ecmcAxisReal : public ecmcAxisBase {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcAxisReal(ecmcAsynPortDriver *asynPortDriver,
                int                 axisID,

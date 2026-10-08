@@ -95,6 +95,7 @@ const char* errStringFromErrId(int nErrorId);
 }
 
 class epicsShareClass ecmcMotorRecordController : public asynMotorController {
+  friend class ecmcMotionStateYamlWriter;
 public:
 #define FEATURE_BITS_V2               (1 << 1)
 #define FEATURE_BITS_ECMC             (1 << 5)

@@ -22,7 +22,10 @@ struct entryInfo {
   int          bitNumber;
 };
 
+class ecmcMotionStateYamlWriter;
+
 class ecmcEcEntryLink : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcEcEntryLink();
   ecmcEcEntryLink(int *errorPtr,

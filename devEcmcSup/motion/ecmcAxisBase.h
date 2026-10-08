@@ -32,6 +32,8 @@
 #include "ecmcMotionUtils.h"
 #include "ecmcPositionCompare.h"
 
+class ecmcMotionStateYamlWriter;
+
 enum axisState {
   ECMC_AXIS_STATE_STARTUP  = 0,
   ECMC_AXIS_STATE_DISABLED = 1,
@@ -49,6 +51,7 @@ typedef struct {
 } ecmcMRCmds;
 
 class ecmcAxisBase : public ecmcError {
+  friend class ecmcMotionStateYamlWriter;
 public:
   ecmcAxisBase(ecmcAsynPortDriver *asynPortDriver,
                int                 axisID,
