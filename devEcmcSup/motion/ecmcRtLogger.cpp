@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <vector>
 
 #include "epicsMutex.h"
 #include "epicsThread.h"
@@ -45,6 +46,8 @@ struct ecmcRtLogEvent {
 struct ecmcLogBufferEntry {
   unsigned int sequence;
   int          level;
+  int          sourceType;
+  int          sourceIndex;
   char         timestamp[ECMC_LOG_BUFFER_TIME_SIZE];
   char         message[ECMC_LOG_BUFFER_MSG_SIZE];
 };
@@ -133,12 +136,16 @@ void formatLogBufferTimestamp(char *buffer, size_t bufferSize) {
 int logBufferWriteEntry(ecmcLogBuffer &buffer,
                         epicsMutexId   mutex,
                         int            level,
-                        const char    *message) {
+                        const char    *message,
+                        int            sourceType = ECMC_RT_LOG_SOURCE_UNKNOWN,
+                        int            sourceIndex = -1) {
   if (!message) {
     return -1;
   }
   ecmcLogBufferEntry entry = {};
   entry.level = normalizeLogBufferLevel(level);
+  entry.sourceType = sourceType;
+  entry.sourceIndex = sourceIndex;
   formatLogBufferTimestamp(entry.timestamp, sizeof(entry.timestamp));
   snprintf(entry.message, sizeof(entry.message), "%s", message);
 
@@ -213,6 +220,80 @@ void logBufferClear(ecmcLogBuffer &buffer, epicsMutexId mutex) {
   buffer.sequence = 0;
 
   epicsMutexUnlock(mutex);
+}
+
+struct ecmcLogBufferSnapshot {
+  const char *name;
+  unsigned int sequence;
+  std::vector<ecmcLogBufferEntry> entries;
+};
+
+ecmcLogBufferSnapshot logBufferSnapshot(ecmcLogBuffer &buffer,
+                                        epicsMutexId mutex) {
+  ecmcLogBufferSnapshot snapshot;
+  epicsMutexLock(mutex);
+  snapshot.name = buffer.name;
+  snapshot.sequence = buffer.sequence;
+  snapshot.entries.reserve(buffer.count);
+  const size_t firstIndex =
+    (buffer.writeIndex + ECMC_LOG_BUFFER_MAX_ROWS - buffer.count) %
+    ECMC_LOG_BUFFER_MAX_ROWS;
+  for (size_t i = 0; i < buffer.count; ++i) {
+    snapshot.entries.push_back(
+      buffer.entries[(firstIndex + i) % ECMC_LOG_BUFFER_MAX_ROWS]);
+  }
+  epicsMutexUnlock(mutex);
+  return snapshot;
+}
+
+void writeJsonEscaped(FILE *fp, const char *text) {
+  fputc('"', fp);
+  if (text) {
+    for (const unsigned char *p =
+           reinterpret_cast<const unsigned char *>(text); *p; ++p) {
+      switch (*p) {
+      case '\\': fputs("\\\\", fp); break;
+      case '"':  fputs("\\\"", fp); break;
+      case '\n': fputs("\\n", fp); break;
+      case '\r': fputs("\\r", fp); break;
+      case '\t': fputs("\\t", fp); break;
+      default:
+        if (*p < 0x20) fprintf(fp, "\\u%04x", *p);
+        else fputc(*p, fp);
+      }
+    }
+  }
+  fputc('"', fp);
+}
+
+void writeLogBufferJson(FILE *fp,
+                        const char *key,
+                        const ecmcLogBufferSnapshot &snapshot,
+                        bool comma) {
+  fprintf(fp, "    \"%s\": {\n", key);
+  fputs("      \"name\": ", fp);
+  writeJsonEscaped(fp, snapshot.name);
+  fputs(",\n", fp);
+  fprintf(fp, "      \"capacity\": %zu,\n", ECMC_LOG_BUFFER_MAX_ROWS);
+  fprintf(fp, "      \"count\": %zu,\n", snapshot.entries.size());
+  fprintf(fp, "      \"last_sequence\": %u,\n", snapshot.sequence);
+  fputs("      \"entries\": [\n", fp);
+  for (size_t i = 0; i < snapshot.entries.size(); ++i) {
+    const ecmcLogBufferEntry &entry = snapshot.entries[i];
+    fputs("        {\"sequence\": ", fp);
+    fprintf(fp, "%u, \"timestamp\": ", entry.sequence);
+    writeJsonEscaped(fp, entry.timestamp);
+    fputs(", \"level\": ", fp);
+    writeJsonEscaped(fp, rtLogLevelText(entry.level));
+    fprintf(fp,
+            ", \"source_type\": %d, \"source_index\": %d, \"message\": ",
+            entry.sourceType,
+            entry.sourceIndex);
+    writeJsonEscaped(fp, entry.message);
+    fprintf(fp, "}%s\n", i + 1 < snapshot.entries.size() ? "," : "");
+  }
+  fputs("      ]\n", fp);
+  fprintf(fp, "    }%s\n", comma ? "," : "");
 }
 
 int activeLogBufferWriteV(int level, const char *fmt, va_list args) {
@@ -328,7 +409,9 @@ void drainQueue() {
     logBufferWriteEntry(rtLogBuffer_,
                         getRtLogBufferMutex(),
                         event.level,
-                        event.message);
+                        event.message,
+                        event.sourceType,
+                        event.sourceIndex);
     printMessage(event.level, event.message);
   }
 
@@ -339,8 +422,8 @@ void loggerTask(void *arg) {
   (void)arg;
 
   while (true) {
-    ecmcRtLoggerPortDriverService();
     drainQueue();
+    ecmcRtLoggerPortDriverService();
     epicsThreadSleep(ECMC_RT_LOGGER_SLEEP_S);
   }
 }
@@ -500,6 +583,20 @@ void ecmcRtLogBufferPrint() {
 
 void ecmcRtLogBufferClear() {
   logBufferClear(rtLogBuffer_, getRtLogBufferMutex());
+}
+
+void ecmcLogBuffersWriteJson(FILE *fp) {
+  if (!fp) {
+    return;
+  }
+  const ecmcLogBufferSnapshot config =
+    logBufferSnapshot(configLogBuffer_, getConfigLogBufferMutex());
+  const ecmcLogBufferSnapshot runtime =
+    logBufferSnapshot(rtLogBuffer_, getRtLogBufferMutex());
+  fputs("  \"log_buffers\": {\n", fp);
+  writeLogBufferJson(fp, "configuration", config, true);
+  writeLogBufferJson(fp, "runtime", runtime, false);
+  fputs("  }\n", fp);
 }
 
 void ecmcRtLoggerLogInfoSource(int sourceType,

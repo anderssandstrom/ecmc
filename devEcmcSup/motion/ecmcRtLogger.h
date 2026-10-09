@@ -12,6 +12,8 @@
 #ifndef ECMC_RT_LOGGER_H_
 #define ECMC_RT_LOGGER_H_
 
+#include <stdio.h>
+
 #include "ecmcOctetIF.h"
 
 #define ECMC_RT_LOGGER_CONTROL_INFO_ENABLE  0x1
@@ -79,6 +81,7 @@ void ecmcLogBufferPrint();
 void ecmcLogBufferClear();
 void ecmcRtLogBufferPrint();
 void ecmcRtLogBufferClear();
+void ecmcLogBuffersWriteJson(FILE *fp);
 void ecmcRtLoggerLogInfoSource(int sourceType,
                                int sourceIndex,
                                const char *fmt,

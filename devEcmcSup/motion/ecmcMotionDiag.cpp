@@ -10,6 +10,7 @@
 #include "ecmcMotionDiag.h"
 #include "ecmcGeneral.h"
 #include "ecmcGlobalsExtern.h"
+#include "ecmcRtLogger.h"
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -763,7 +764,7 @@ void writeMasterSlaveSMs(FILE *fp) {
     ++written;
     writeMasterSlaveSM(fp, i, masterSlaveSMs[i], written < total);
   }
-  fputs("  ]\n", fp);
+  fputs("  ],\n", fp);
 }
 
 void writeFinding(FILE *fp,
@@ -939,7 +940,7 @@ int writeDumpFile(const DiagRequest &request) {
   }
 
   fputs("{\n", fp);
-  writeJsonInt(fp, 2, "ecmc_motion_diag_version", 3);
+  writeJsonInt(fp, 2, "ecmc_motion_diag_version", 4);
   writeTimestamp(fp);
   writeJsonInt(fp, 2, "level", request.level);
   writeJsonInt(fp, 2, "axis_count", countAxes());
@@ -959,6 +960,7 @@ int writeDumpFile(const DiagRequest &request) {
     writeAxes(fp);
     writeAxisGroups(fp);
     writeMasterSlaveSMs(fp);
+    ecmcLogBuffersWriteJson(fp);
   }
   fputs("}\n", fp);
 

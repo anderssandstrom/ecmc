@@ -22,6 +22,11 @@ The PV-triggered filename is generated automatically under `/tmp` as
 `0` after a successful write, `-1` after failure, and `2` when a second
 request is rejected because a dump is already active.
 
+Diagnostic levels 1 and 2 also include snapshots of both the configuration
+log buffer and the runtime/debug log buffer. Entries retain their sequence,
+timestamp, severity and message. Runtime entries additionally contain source
+type and source index. Taking a dump does not clear or consume either buffer.
+
 The dump contains all configured axes, their axis data, encoders, monitor,
 trajectory, sequencer, controller and drive state.  It also contains all axis
 groups and all master/slave state machines, including private runtime members,
