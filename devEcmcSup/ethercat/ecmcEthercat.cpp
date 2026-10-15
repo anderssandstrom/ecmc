@@ -706,6 +706,19 @@ int ecAddSdoAsync(
                          id);
 }
 
+int ecAddSdoAsyncArray(int slaveBusPosition, int index, int subIndex,
+                       int byteSize, const char *idString) {
+  if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  if (slaveBusPosition < 0 || slaveBusPosition > 0xffff ||
+      index < 0 || index > 0xffff || subIndex < 0 || subIndex > 0xff ||
+      byteSize <= 0 || byteSize > ECMC_SDO_ASYNC_MAX_BYTES ||
+      !idString || !idString[0]) {
+    return ERROR_EC_SDO_ASYNC_SIZE;
+  }
+  return ec->addSDOAsync(slaveBusPosition, index, subIndex, ECMC_EC_U8,
+                         idString, static_cast<size_t>(byteSize));
+}
+
 // Legacy syntax support
 int ecAddMemMap(
   uint16_t startEntryBusPosition,

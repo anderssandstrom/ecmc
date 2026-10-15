@@ -1578,6 +1578,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
   case 0x23503: // ECSDOASYNC
     return "ERROR_EC_SDO_ASYNC_ASYN_OBJ_FAIL";
 
+  case 0x23504: // ECSDOASYNC
+    return "ERROR_EC_SDO_ASYNC_SIZE";
+
     break;
 
   case 0x24000:  // ECSLAVE

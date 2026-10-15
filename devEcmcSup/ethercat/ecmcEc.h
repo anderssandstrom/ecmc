@@ -133,7 +133,8 @@ public:
                   uint16_t       index,
                   uint8_t        subIndex,
                   ecmcEcDataType dt,
-                  std::string    idString);
+                  std::string    idString,
+                  size_t         arrayBytes = 0);
   int readSoE(uint16_t slavePosition,  /**< Slave position. */
               uint8_t  driveNo,  /**< Drive number. */
               uint16_t idn,  /**< SoE IDN (see ecrt_slave_config_idn()). */

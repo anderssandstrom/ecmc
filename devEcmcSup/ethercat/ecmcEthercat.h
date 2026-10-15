@@ -367,6 +367,13 @@ int ecAddSdoAsync(
   char    *datatype,
   char    *idString);
 
+/** Configure a runtime byte-array SDO at one index/subindex before activation.
+ * byteSize is the maximum upload and exact download size (1..1048576).
+ * Exposes value, writevalue, bytes, readcmd, writecmd, busy and error parameters.
+ */
+int ecAddSdoAsyncArray(int slaveBusPosition, int index, int subIndex,
+                       int byteSize, const char *idString);
+
 /** \brief Adds a memory map object to access data directly from EtherCAT
  *   domain. This is the preferred syntax.\n
  *

@@ -1820,7 +1820,8 @@ int ecmcEcSlave::addSDOWriteBuffer(uint16_t    sdoIndex,
 int ecmcEcSlave::addSDOAsync(uint16_t       sdoIndex, /**< SDO index. */
                              uint8_t        sdoSubIndex, /**< SDO subindex. */
                              ecmcEcDataType dt,
-                             std::string    alias) {
+                             std::string    alias,
+                             size_t         arrayBytes) {
   if ((dt == ECMC_EC_NONE) ||
       (dt == ECMC_EC_B1) ||
       (dt == ECMC_EC_B2) ||
@@ -1849,7 +1850,7 @@ int ecmcEcSlave::addSDOAsync(uint16_t       sdoIndex, /**< SDO index. */
                                               sdoIndex,
                                               sdoSubIndex,
                                               dt,
-                                              alias);
+                                              alias, arrayBytes);
     asyncSDOvector_.push_back(temp);
   }
   catch (std::exception& e) {

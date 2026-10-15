@@ -2335,6 +2335,15 @@ static int handleCfgCommand(const char *myarg_1) {
                                u64Value);
   }
 
+  // A byte payload at one index/subindex, not a subindex traversal.
+  cIdBuffer[0] = '\0';
+  nvals = sscanf(myarg_1, "EcAddSdoAsyncArray(%d,0x%x,0x%x,%d,%255[^)])",
+                 &iValue, &iValue2, &iValue3, &iValue4, cIdBuffer);
+  if (nvals == 5) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcAddSdoAsyncArray");
+    return ecAddSdoAsyncArray(iValue, iValue2, iValue3, iValue4, cIdBuffer);
+  }
+
   /*Cfg.EcAddSdoAsync(
     uint16_t position,
     uint16_t nIndex,

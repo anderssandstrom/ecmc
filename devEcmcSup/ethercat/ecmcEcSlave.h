@@ -203,7 +203,8 @@ public:
   int addSDOAsync(uint16_t       sdoIndex, /**< SDO index. */
                   uint8_t        sdoSubIndex, /**< SDO subindex. */
                   ecmcEcDataType dt,
-                  std::string    alias);
+                  std::string    alias,
+                  size_t         arrayBytes = 0);
   int getAllowOffline();
 
 /* 

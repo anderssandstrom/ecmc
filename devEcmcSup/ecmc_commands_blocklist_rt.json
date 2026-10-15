@@ -81,6 +81,7 @@
     "Cfg.EcAddPdo(<int>,<int>,0x<hex>)",
     "Cfg.EcAddSdo(<slaveBusPosition>,0x<sdoIndex>,0x<sdoSubIndex>,0x<value>,<byteSize>)",
     "Cfg.EcAddSdo(<slaveBusPosition>,0x<sdoIndex>,0x<sdoSubIndex>,<value>,<byteSize>)",
+    "Cfg.EcAddSdoAsyncArray(<slaveBusPosition>,0x<index>,0x<subIndex>,<byteSize>,<idString>)",
     "Cfg.EcAddSdoAsync(<slaveBusPosition>,0x<index>,0x<subIndex>,<dataType>,<idString>)",
     "Cfg.EcAddSdoBuffer(<slaveBusPosition>,0x<sdoIndex>,0x<sdoSubIndex>,<valueBuffer>,<byteSize>)",
     "Cfg.EcAddSdoComplete(<slaveBusPosition>,0x<sdoIndex>,<valueBuffer>,<byteSize>)",

@@ -18,6 +18,9 @@ ECMC = $(TOP)/devEcmcSup
 
 LIBRARY_IOC += ecmc
 
+SRC_DIRS += ${ECMC}/ethercat/db
+DB += ecmcSDOAsyncArray.template
+
 # Ubuntu needs the following ldflags
 USR_LDFLAGS += -Wl,--no-as-needed
 USR_LDFLAGS += -lstdc++

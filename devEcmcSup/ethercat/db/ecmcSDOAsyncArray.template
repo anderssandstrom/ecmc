@@ -1,0 +1,53 @@
+# Byte payload at one SDO index/subindex. NELM must match configured byteSize.
+record(waveform, "$(P)SDO-$(NAME)-Data-RB") {
+  field(DTYP, "asynInt8ArrayIn")
+  field(FTVL, "UCHAR")
+  field(NELM, "$(NELM)")
+  field(INP, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt8ArrayIn/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).value?")
+  field(SCAN, "I/O Intr")
+  field(TSE, "$(TSE=0)")
+}
+
+record(waveform, "$(P)SDO-$(NAME)-Data") {
+  field(DTYP, "asynInt8ArrayOut")
+  field(FTVL, "UCHAR")
+  field(NELM, "$(NELM)")
+  field(INP, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt8ArrayOut/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).writevalue=")
+  field(SCAN, "Passive")
+}
+
+record(bo, "$(P)SDO-$(NAME)-RdCmd") {
+  field(DESC, "Upload SDO")
+  field(DTYP, "asynInt32")
+  field(OUT, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt32/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).readcmd=")
+  field(HIGH, "0.001")
+}
+
+record(bo, "$(P)SDO-$(NAME)-WrtCmd") {
+  field(DESC, "Download staged SDO")
+  field(DTYP, "asynInt32")
+  field(OUT, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt32/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).writecmd=")
+  field(HIGH, "0.001")
+}
+
+record(bi, "$(P)SDO-$(NAME)-Bsy") {
+  field(DTYP, "asynInt32")
+  field(INP, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt32/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).busy?")
+  field(SCAN, "I/O Intr")
+  field(TSE, "$(TSE=0)")
+}
+
+record(longin, "$(P)SDO-$(NAME)-ErrId") {
+  field(DTYP, "asynInt32")
+  field(INP, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt32/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).error?")
+  field(SCAN, "I/O Intr")
+  field(TSE, "$(TSE=0)")
+}
+
+record(longin, "$(P)SDO-$(NAME)-Bytes-RB") {
+  field(DTYP, "asynInt32")
+  field(INP, "@asyn($(PORT),$(ADDR=0),$(TIMEOUT=1))T_SMP_MS=$(T_SMP_MS=0)/TYPE=asynInt32/ec$(MASTER_ID=0).s$(SLAVE_POS).sdo.$(NAME).bytes?")
+  field(SCAN, "I/O Intr")
+  field(TSE, "$(TSE=0)")
+}
+

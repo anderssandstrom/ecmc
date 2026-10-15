@@ -2805,7 +2805,8 @@ int ecmcEc::addSDOAsync(uint16_t       slaveBusPosition,
                         uint16_t       index,
                         uint8_t        subIndex,
                         ecmcEcDataType dt,
-                        std::string    idString) {
+                        std::string    idString,
+                        size_t         arrayBytes) {
   ecmcEcSlave *slave = findSlave(slaveBusPosition);
 
   if (!slave) {
@@ -2823,7 +2824,7 @@ int ecmcEc::addSDOAsync(uint16_t       slaveBusPosition,
   return slave->addSDOAsync(index, /**< SDO index. */
                             subIndex, /**< SDO subindex. */
                             dt,
-                            idString);
+                            idString, arrayBytes);
 }
 
 int ecmcEc::addDomain(int exeCycles, int offsetCycles) {

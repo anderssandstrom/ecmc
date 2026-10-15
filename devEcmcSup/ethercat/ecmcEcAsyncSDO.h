@@ -13,6 +13,7 @@
 #ifndef ECMCECASYNCSDO_H_
 #define ECMCECASYNCSDO_H_
 #include <string.h>
+#include <vector>
 #include "stdio.h"
 #include "ecrt.h"
 #include "ecmcDefinitions.h"
@@ -25,6 +26,9 @@
 #define ERROR_EC_SDO_ASYNC_OBJ_NULL 0x23502
 #define ERROR_EC_SDO_ASYNC_ASYN_OBJ_FAIL 0x23503
 
+#define ERROR_EC_SDO_ASYNC_SIZE 0x23504
+#define ECMC_SDO_ASYNC_MAX_BYTES (1024 * 1024)
+
 #define DEFAULT_SDO_ASYNC_TIMOUT_MS 2000
 
 class ecmcEcAsyncSDO : public ecmcError {
@@ -36,7 +40,8 @@ public:
                  uint16_t            sdoIndex, /**< SDO index. */
                  uint8_t             sdoSubIndex, /**< SDO subindex. */
                  ecmcEcDataType      dt,
-                 std::string         alias);
+                 std::string         alias,
+                 size_t              arrayBytes = 0);
   ~ecmcEcAsyncSDO();
 
   asynStatus asynWriteSDO(void         *data,
@@ -46,6 +51,7 @@ public:
                          size_t        bytes,
                          asynParamType asynParType);
 
+  asynStatus asynWriteArray(void *data, size_t bytes, asynParamType type);
   int execute();
 
 private:
@@ -54,6 +60,13 @@ private:
   int readValue();
 
   ec_sdo_request_t *sdoreq_;
+  ec_sdo_request_t *readreq_;
+  std::vector<uint8_t> arrayReadBuffer_;
+  std::vector<uint8_t> arrayWriteBuffer_;
+  bool arrayWriteReady_;
+  int32_t arrayReadBytes_;
+  ecmcAsynDataItem *asynParamReadBytes_;
+  ecmcAsynDataItem *asynParamWriteValue_;
   ec_slave_config_t *sc_;  /**< Slave configuration. */
   uint16_t index_;            /**< SDO index. */
   uint8_t subindex_;             /**< SDO subindex. */

@@ -12,6 +12,7 @@
 
 #include <vector>
 #include <exception>
+#include <stdexcept>
 #include "ecmcEcAsyncSDO.h"
 #include "ecmcRtLogger.h"
 
@@ -41,6 +42,11 @@ asynStatus asynReadSDOCmd(void         *data,
   return ((ecmcEcAsyncSDO *)userObj)->asynReadSDO(data, bytes, asynParType);
 }
 
+static asynStatus asynWriteSDOArray(void *data, size_t bytes,
+                                    asynParamType type, void *userObj) {
+  return static_cast<ecmcEcAsyncSDO *>(userObj)->asynWriteArray(data, bytes, type);
+}
+
 ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
                                int                 masterId,
                                int                 slaveId,
@@ -48,7 +54,17 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
                                uint16_t            sdoIndex, /**< SDO index. */
                                uint8_t             sdoSubindex, /**< SDO subindex. */
                                ecmcEcDataType      dt,
-                               std::string         alias) {
+                               std::string         alias,
+                               size_t              arrayBytes) {
+  if (arrayBytes > ECMC_SDO_ASYNC_MAX_BYTES) {
+    throw std::invalid_argument("Async SDO array exceeds maximum size");
+  }
+  arrayReadBuffer_.resize(arrayBytes, 0);
+  arrayWriteBuffer_.resize(arrayBytes, 0);
+  arrayWriteReady_ = false;
+  arrayReadBytes_ = 0;
+  asynParamReadBytes_ = NULL;
+  asynParamWriteValue_ = NULL;
   masterId_          = masterId;
   slaveId_           = slaveId;
   asynPortDriver_    = asynDriver;
@@ -69,7 +85,7 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
   readTrigg_         = 0;
   writeTrigg_        = 0;
   bitLength_         = getEcDataTypeBits(dt);
-  size_              = getEcDataTypeByteSize(dt);
+  size_              = arrayBytes ? arrayBytes : getEcDataTypeByteSize(dt);
   busy_              = 0;
   writeCmdInProcess_ = 0;
   readCmdInProcess_  = 0;
@@ -105,6 +121,14 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
     throw std::bad_alloc();
   }
 
+  // Uploads change the request data size. Keep a separate, fixed-size
+  // download request for arrays so short uploads cannot shorten downloads.
+  readreq_ = arrayBytes ? ecrt_slave_config_create_sdo_request(
+    sc_, index_, subindex_, size_) : sdoreq_;
+  if (!readreq_) {
+    throw std::bad_alloc();
+  }
+  ecrt_sdo_request_timeout(readreq_, DEFAULT_SDO_ASYNC_TIMOUT_MS);
   ecrt_sdo_request_timeout(sdoreq_, DEFAULT_SDO_ASYNC_TIMOUT_MS);
 
   if (initAsyn() != 0) {
@@ -120,6 +144,21 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
 
 ecmcEcAsyncSDO::~ecmcEcAsyncSDO() {
   free(idStringChar_);
+}
+
+asynStatus ecmcEcAsyncSDO::asynWriteArray(void *data, size_t bytes,
+                                         asynParamType type) {
+  // Reject partial/oversized writes rather than downloading stale tail bytes.
+  if (!data || arrayWriteBuffer_.empty() || type != asynParamInt8Array ||
+      bytes != size_ || busy_) {
+    sdoError_ = busy_ ? ERROR_EC_SDO_ASYNC_BUSY : ERROR_EC_SDO_ASYNC_SIZE;
+    asynParamError_->refreshParam(1);
+    return asynError;
+  }
+  memcpy(arrayWriteBuffer_.data(), data, size_);
+  arrayWriteReady_ = true;
+  asynParamWriteValue_->refreshParam(1);
+  return asynSuccess;
 }
 
 asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
@@ -159,7 +198,7 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
 
   ec_request_state_t state = ecrt_sdo_request_state(sdoreq_);
 
-  if (state == EC_REQUEST_BUSY) {
+  if (busy_ || state == EC_REQUEST_BUSY) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: SDO write failed. SDO object is busy (0x%x).\n",
       __FILE__,
@@ -171,6 +210,13 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
     return asynError;
   }
 
+  if (!arrayWriteBuffer_.empty() && !arrayWriteReady_) {
+    sdoError_ = ERROR_EC_SDO_ASYNC_SIZE;
+    asynParamError_->refreshParam(1);
+    return asynError;
+  }
+  sdoError_ = 0;
+  asynParamError_->refreshParam(1);
   busy_ = 1;
   asynParamBusy_->refreshParam(1);
   writeCmdInProcess_ = true;
@@ -207,7 +253,7 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
 
   readTrigg_ = trigg;
 
-  if (!sdoreq_) {
+  if (!readreq_) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: SDO read failed. SDO async object is NULL (0x%x).\n",
       __FILE__,
@@ -218,9 +264,9 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
     return asynError;
   }
 
-  ec_request_state_t state = ecrt_sdo_request_state(sdoreq_);
+  ec_request_state_t state = ecrt_sdo_request_state(readreq_);
 
-  if (state == EC_REQUEST_BUSY) {
+  if (busy_ || state == EC_REQUEST_BUSY) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: SDO read failed. SDO object is busy (0x%x).\n",
       __FILE__,
@@ -232,10 +278,12 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
     return asynError;
   }
 
+  sdoError_ = 0;
+  asynParamError_->refreshParam(1);
   busy_ = 1;
   asynParamBusy_->refreshParam(1);
 
-  ecrt_sdo_request_read(sdoreq_);
+  ecrt_sdo_request_read(readreq_);
   readCmdInProcess_ = true;
   return asynSuccess;
 }
@@ -245,7 +293,7 @@ int ecmcEcAsyncSDO::execute() {
     return 0;
   }
 
-  ec_request_state_t state = ecrt_sdo_request_state(sdoreq_);
+  ec_request_state_t state = ecrt_sdo_request_state(readCmdInProcess_ ? readreq_ : sdoreq_);
 
   stateOld_ = state;
 
@@ -261,8 +309,16 @@ int ecmcEcAsyncSDO::execute() {
   case EC_REQUEST_SUCCESS:
 
     if (readCmdInProcess_) {
-      readValue();
-      asynParamValue_->refreshParamRT(1);
+      const int error = readValue();
+      if (error) {
+        sdoError_ = error;
+        asynParamError_->refreshParamRT(1);
+      } else {
+        asynParamValue_->refreshParamRT(1);
+      }
+      if (asynParamReadBytes_) {
+        asynParamReadBytes_->refreshParamRT(1);
+      }
     }
     readCmdInProcess_  = 0;
     writeCmdInProcess_ = 0;
@@ -308,9 +364,9 @@ int ecmcEcAsyncSDO::initAsyn() {
   }
   name            = buffer;
   asynParamValue_ = asynPortDriver_->addNewAvailParam(name,
-                                                      asynParamInt32, // default type
-                                                      (uint8_t *)&(buffer_),
-                                                      sizeof(buffer_),
+                                                      arrayReadBuffer_.empty() ? asynParamInt32 : asynParamInt8Array,
+                                                      arrayReadBuffer_.empty() ? (uint8_t *)&buffer_ : arrayReadBuffer_.data(),
+                                                      arrayReadBuffer_.empty() ? sizeof(buffer_) : size_,
                                                       dt_,
                                                       0);
 
@@ -327,158 +383,181 @@ int ecmcEcAsyncSDO::initAsyn() {
                       ERROR_MAIN_ASYN_CREATE_PARAM_FAIL);
   }
 
-  // Add supported types
-  switch (dt_) {
-  case ECMC_EC_NONE:
-    return 0;
+  if (!arrayReadBuffer_.empty()) {
+    asynParamValue_->setAllowWriteToEcmc(false);
+    asynParamValue_->refreshParam(1, size_t(0));
+    const std::string prefix = "ec" + std::to_string(masterId_) + ".s" +
+      std::to_string(slaveId_) + ".sdo." + idString_;
+    asynParamWriteValue_ = asynPortDriver_->addNewAvailParam(
+      (prefix + ".writevalue").c_str(), asynParamInt8Array,
+      arrayWriteBuffer_.data(), size_, ECMC_EC_U8, 0);
+    asynParamReadBytes_ = asynPortDriver_->addNewAvailParam(
+      (prefix + ".bytes").c_str(), asynParamInt32,
+      reinterpret_cast<uint8_t *>(&arrayReadBytes_), sizeof(arrayReadBytes_),
+      ECMC_EC_S32, 0);
+    if (!asynParamWriteValue_ || !asynParamReadBytes_) {
+      return ERROR_EC_SDO_ASYNC_ASYN_OBJ_FAIL;
+    }
+    asynParamWriteValue_->setAllowWriteToEcmc(true);
+    asynParamWriteValue_->setExeCmdFunctPtr(asynWriteSDOArray, this);
+    asynParamWriteValue_->refreshParam(1);
+    asynParamReadBytes_->setAllowWriteToEcmc(false);
+    asynParamReadBytes_->refreshParam(1);
+  } else {
+    // Add supported types
+    switch (dt_) {
+    case ECMC_EC_NONE:
+      return 0;
 
-    break;
+      break;
 
-  case ECMC_EC_B1:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_B1:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_B2:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_B2:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_B3:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_B3:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_B4:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_B4:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_U8:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_U8:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_S8:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_S8:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_S8_TO_U8:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 1;
-    break;
+    case ECMC_EC_S8_TO_U8:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 1;
+      break;
 
-  case ECMC_EC_U16:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
+    case ECMC_EC_U16:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 2;
+      break;
 
-  case ECMC_EC_S16:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
+    case ECMC_EC_S16:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 2;
+      break;
 
-  case ECMC_EC_S16_TO_U16:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 2;
-    break;
+    case ECMC_EC_S16_TO_U16:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 2;
+      break;
 
-  case ECMC_EC_U32:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
+    case ECMC_EC_U32:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 4;
+      break;
 
-  case ECMC_EC_S32:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
+    case ECMC_EC_S32:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 4;
+      break;
 
-  case ECMC_EC_S32_TO_U32:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
+    case ECMC_EC_S32_TO_U32:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 4;
+      break;
 
-  case ECMC_EC_U64:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    case ECMC_EC_U64:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
 
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    asynParamValue_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
+  #ifdef ECMC_ASYN_ASYNPARAMINT64
+      asynParamValue_->addSupportedAsynType(asynParamInt64);
+  #endif //ECMC_ASYN_ASYNPARAMINT64
 
-    usedSizeBytes_ = 8;
-    break;
+      usedSizeBytes_ = 8;
+      break;
 
-  case ECMC_EC_S64:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    case ECMC_EC_S64:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
 
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    asynParamValue_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
+  #ifdef ECMC_ASYN_ASYNPARAMINT64
+      asynParamValue_->addSupportedAsynType(asynParamInt64);
+  #endif //ECMC_ASYN_ASYNPARAMINT64
 
-    usedSizeBytes_ = 8;
-    break;
+      usedSizeBytes_ = 8;
+      break;
 
-  case ECMC_EC_S64_TO_U64:
-    asynParamValue_->addSupportedAsynType(asynParamInt32);
-    asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
+    case ECMC_EC_S64_TO_U64:
+      asynParamValue_->addSupportedAsynType(asynParamInt32);
+      asynParamValue_->addSupportedAsynType(asynParamUInt32Digital);
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
 
-#ifdef ECMC_ASYN_ASYNPARAMINT64
-    asynParamValue_->addSupportedAsynType(asynParamInt64);
-#endif //ECMC_ASYN_ASYNPARAMINT64
+  #ifdef ECMC_ASYN_ASYNPARAMINT64
+      asynParamValue_->addSupportedAsynType(asynParamInt64);
+  #endif //ECMC_ASYN_ASYNPARAMINT64
 
-    usedSizeBytes_ = 8;
-    break;
+      usedSizeBytes_ = 8;
+      break;
 
-  case ECMC_EC_F32:
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 4;
-    break;
+    case ECMC_EC_F32:
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 4;
+      break;
 
-  case ECMC_EC_F64:
-    asynParamValue_->addSupportedAsynType(asynParamFloat64);
-    usedSizeBytes_ = 8;
-    break;
-  }
-  asynParamValue_->setEcmcDataSize(usedSizeBytes_);
+    case ECMC_EC_F64:
+      asynParamValue_->addSupportedAsynType(asynParamFloat64);
+      usedSizeBytes_ = 8;
+      break;
+    }
+    asynParamValue_->setEcmcDataSize(usedSizeBytes_);
 
-  asynParamValue_->setAllowWriteToEcmc(true);
-  asynParamValue_->setEcmcBitCount(bitLength_);
-  asynParamValue_->setEcmcMinValueInt(getEcDataTypeMinVal(dt_));
-  asynParamValue_->setEcmcMaxValueInt(getEcDataTypeMaxVal(dt_));
+    asynParamValue_->setAllowWriteToEcmc(true);
+    asynParamValue_->setEcmcBitCount(bitLength_);
+    asynParamValue_->setEcmcMinValueInt(getEcDataTypeMinVal(dt_));
+    asynParamValue_->setEcmcMaxValueInt(getEcDataTypeMaxVal(dt_));
 
-  asynParamValue_->refreshParam(1);
+    asynParamValue_->refreshParam(1);
+
+  } // scalar value setup
 
   // "ec%d.s%d.sdo.error"
   charCount = snprintf(buffer,
@@ -662,6 +741,19 @@ int ecmcEcAsyncSDO::initAsyn() {
 }
 
 int ecmcEcAsyncSDO::readValue() {
+  const size_t bytes = ecrt_sdo_request_data_size(readreq_);
+  if (!arrayReadBuffer_.empty()) {
+    arrayReadBytes_ = static_cast<int32_t>(bytes <= INT32_MAX ? bytes : INT32_MAX);
+    if (bytes > size_) {
+      return ERROR_EC_SDO_ASYNC_SIZE; // Retain previous good waveform.
+    }
+    memcpy(arrayReadBuffer_.data(), ecrt_sdo_request_data(readreq_), bytes);
+    asynParamValue_->setEcmcDataSize(bytes);
+    return 0;
+  }
+  if (bytes != size_) {
+    return ERROR_EC_SDO_ASYNC_SIZE;
+  }
   switch (dt_) {
   case ECMC_EC_NONE:
     buffer_ = 0;
@@ -756,6 +848,10 @@ int ecmcEcAsyncSDO::readValue() {
 }
 
 int ecmcEcAsyncSDO::writeValue() {
+  if (!arrayWriteBuffer_.empty()) {
+    memcpy(ecrt_sdo_request_data(sdoreq_), arrayWriteBuffer_.data(), size_);
+    return 0;
+  }
   switch (dt_) {
   case ECMC_EC_NONE:
     buffer_ = 0;
