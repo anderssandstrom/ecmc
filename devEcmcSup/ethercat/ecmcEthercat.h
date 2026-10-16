@@ -18,6 +18,8 @@
 #ifndef ECMC_ETHERCAT_H_
 #define ECMC_ETHERCAT_H_
 
+#include "ecmcSdoApi.h"
+
 #include "ecmcDefinitions.h"
 
 # ifdef __cplusplus

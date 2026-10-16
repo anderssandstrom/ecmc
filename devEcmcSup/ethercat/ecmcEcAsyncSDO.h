@@ -27,6 +27,9 @@
 #define ERROR_EC_SDO_ASYNC_ASYN_OBJ_FAIL 0x23503
 
 #define ERROR_EC_SDO_ASYNC_SIZE 0x23504
+#define ERROR_EC_SDO_ASYNC_NOT_FOUND 0x23505
+#define ERROR_EC_SDO_ASYNC_VALUE 0x23506
+#define ERROR_EC_SDO_ASYNC_NAME_AMBIGUOUS 0x23507
 #define ECMC_SDO_ASYNC_MAX_BYTES (1024 * 1024)
 
 #define DEFAULT_SDO_ASYNC_TIMOUT_MS 2000
@@ -52,6 +55,16 @@ public:
                          asynParamType asynParType);
 
   asynStatus asynWriteArray(void *data, size_t bytes, asynParamType type);
+  // Call from the serialized PLC/C++ logic cycle or under the asyn port lock.
+  int requestRead();
+  int requestWrite();
+  const std::string& getName() const { return idString_; }
+  int getBusy() const { return busy_; }
+  int getSdoError() const { return sdoError_; }
+  int getSize() const { return arrayReadBuffer_.empty() ? 1 : arrayValidBytes_; }
+  int getCapacity() const { return arrayReadBuffer_.empty() ? 1 : size_; }
+  int getValue(int element, double *value) const;
+  int setValue(int element, double value);
   int execute();
 
 private:
@@ -64,6 +77,9 @@ private:
   std::vector<uint8_t> arrayReadBuffer_;
   std::vector<uint8_t> arrayWriteBuffer_;
   bool arrayWriteReady_;
+  std::vector<uint8_t> arrayWriteInitialized_;
+  size_t arrayInitializedCount_;
+  int arrayValidBytes_;
   int32_t arrayReadBytes_;
   ecmcAsynDataItem *asynParamReadBytes_;
   ecmcAsynDataItem *asynParamWriteValue_;

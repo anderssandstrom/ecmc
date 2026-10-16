@@ -1583,6 +1583,15 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x23505: // ECSDOASYNC
+    return "ERROR_EC_SDO_ASYNC_NOT_FOUND";
+
+  case 0x23506: // ECSDOASYNC
+    return "ERROR_EC_SDO_ASYNC_VALUE";
+
+  case 0x23507: // ECSDOASYNC
+    return "ERROR_EC_SDO_ASYNC_NAME_AMBIGUOUS";
+
   case 0x24000:  // ECSLAVE
     return "ERROR_EC_SLAVE_CONFIG_FAILED";
 

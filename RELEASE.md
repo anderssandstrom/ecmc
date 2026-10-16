@@ -1,6 +1,7 @@
 Release Notes
 ===
 # 11.1.0
+* Add PLC and C++ logic access to existing async SDO objects, including transfer requests, status, scalar values and individual array bytes. Resolve their RT object index by slave/name with `EcGetSdoRTObjectIndex` or `ecmcCpp::sdoFindRTObjectIndex`.
 * Add `Cfg.EcAddSdoAsyncArray(slave, index, subindex, byteSize, alias)` for runtime byte-payload uploads/downloads through the existing asynchronous SDO implementation, with waveform PVs, actual upload length, and separate fixed-size download staging. See [runtime SDO arrays](documentation/runtime-sdo-arrays.md).
 * Fix inclue path in ecmcPluginClient.h
 * Make `Cfg.WriteEcEntryEcPath(<ec_path>,<value>)` convert values according to the entry datatype. F32/F64 entries now accept floating-point values, signed entries accept negative values, and integer parsing retains full 64-bit precision.

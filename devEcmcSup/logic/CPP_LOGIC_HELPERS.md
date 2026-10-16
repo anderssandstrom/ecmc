@@ -12,6 +12,8 @@ C++ helper API itself.
   Core binding/export interface, host services, and registration macros.
 - [`ecmcCppMotion.hpp`](./ecmcCppMotion.hpp)
   `MC_*` style motion wrappers on top of the existing `ecmc` motion backend.
+- [`ecmcCppSdo.hpp`](./ecmcCppSdo.hpp)
+  Resolve RT SDO objects by slave/name and trigger transfers or access individual values.
 - [`ecmcCppControl.hpp`](./ecmcCppControl.hpp)
   Control-oriented helpers such as `ecmcCpp::Pid`.
 - [`ecmcCppUtils.hpp`](./ecmcCppUtils.hpp)
@@ -327,3 +329,21 @@ The array example is the best starting point for:
 - `outputArray(...)`
 - `epics.readOnlyArray(...)`
 - byte-buffer exports
+
+## ecmcCppSdo.hpp
+
+`ecmcCpp::sdoFind(slave, name, ref)` fills a `SdoRef` containing `slave` and
+`objectIndex`. `sdoFindRTObjectIndex(slave, name, index)` returns just the index.
+This is an RT SDO object index, not the EtherCAT SDO index/subindex.
+
+Use `sdoRead(ref)` / `sdoWrite(ref)` once per requested transfer;
+`sdoGetBusy`, `sdoGetError`, `sdoGetSize`, and `sdoGetCapacity` take an `int&`
+output. `sdoGetValue(ref, element, double&)` reads a cached value;
+`sdoSetValue(ref, element, double)` stages it. All return 0 or an error code.
+Scalars use element 0 for the whole decoded value; arrays use unsigned bytes
+at zero-based offsets. These numeric helpers use doubles, so scalar 64-bit
+integers beyond ±2^53 can lose precision.
+
+See [runtime SDO access](../../documentation/runtime-sdo-arrays.md) for staging,
+error handling, serialization, and initialization requirements. The helpers call
+`ecmcSdoApi.h` directly without changing the C++ logic host-service ABI.

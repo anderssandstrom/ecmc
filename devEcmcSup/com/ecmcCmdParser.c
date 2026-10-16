@@ -5259,6 +5259,11 @@ int motorHandleOneArg(const char *myarg_1, ecmcOutputBufferType *buffer) {
                                                              &u32Value));
   }
 
+  nvals = sscanf(myarg_1, "EcGetSdoRTObjectIndex(%d,%255[^)])", &iValue2, cIdBuffer);
+  if (nvals == 2) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_INT(ecGetSdoRTObjectIndex(iValue2, cIdBuffer, &iValue));
+  }
+
   /*EcGetMemMapId(char *strName)*/
   nvals = sscanf(myarg_1, "EcGetMemMapId(%[^)])", cIdBuffer);
 

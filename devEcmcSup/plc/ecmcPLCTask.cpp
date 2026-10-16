@@ -790,6 +790,14 @@ int ecmcPLCTask::loadEcLib() {
   int errorCode  = 0;
   int cmdCounter = 0;
 
+  ecmcPLCTaskAddFunction("ec_sdo_read", ec_sdo_read);
+  ecmcPLCTaskAddFunction("ec_sdo_write", ec_sdo_write);
+  ecmcPLCTaskAddFunction("ec_sdo_get_busy", ec_sdo_get_busy);
+  ecmcPLCTaskAddFunction("ec_sdo_get_error", ec_sdo_get_error);
+  ecmcPLCTaskAddFunction("ec_sdo_get_size", ec_sdo_get_size);
+  ecmcPLCTaskAddFunction("ec_sdo_get_capacity", ec_sdo_get_capacity);
+  ecmcPLCTaskAddFunction("ec_sdo_get_value", ec_sdo_get_value);
+  ecmcPLCTaskAddFunction("ec_sdo_set_value", ec_sdo_set_value);
   ecmcPLCTaskAddFunction("ec_set_bit",      ec_set_bit);
   ecmcPLCTaskAddFunction("ec_clr_bit",      ec_clr_bit);
   ecmcPLCTaskAddFunction("ec_flp_bit",      ec_flp_bit);

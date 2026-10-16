@@ -1870,6 +1870,26 @@ int ecmcEcSlave::addSDOAsync(uint16_t       sdoIndex, /**< SDO index. */
   return 0;
 }
 
+ecmcEcAsyncSDO *ecmcEcSlave::getSDOAsync(int index) {
+  return index >= 0 && index < asyncSDOCounter_ ? asyncSDOvector_[index] : nullptr;
+}
+
+int ecmcEcSlave::findSDOAsyncIndex(const char *name, int *index) {
+  if (!index) return ERROR_EC_SDO_ASYNC_VALUE;
+  *index = -1;
+  if (!name || !name[0]) return ERROR_EC_SDO_ASYNC_NOT_FOUND;
+  for (int i = 0; i < asyncSDOCounter_; ++i) {
+    if (asyncSDOvector_[i]->getName() == name) {
+      if (*index >= 0) {
+        *index = -1;
+        return ERROR_EC_SDO_ASYNC_NAME_AMBIGUOUS;
+      }
+      *index = i;
+    }
+  }
+  return *index >= 0 ? 0 : ERROR_EC_SDO_ASYNC_NOT_FOUND;
+}
+
 int ecmcEcSlave::activate() {
   int ret = 0;
 

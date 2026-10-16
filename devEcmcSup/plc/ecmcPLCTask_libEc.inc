@@ -13,6 +13,10 @@
 #ifndef ecmcPLC_libEc_inc_
 #define ecmcPLC_libEc_inc_
 
+#include "ecmcSdoApi.h"
+#include <cmath>
+#include <limits>
+
 #define ECMC_EC_LIB_MAX_BITS 64
 
 #define ERROR_PLC_EC_LIB_BITS_OUT_OF_RANGE 0x20800
@@ -61,10 +65,90 @@ const char* ecLibCmdList[] = { "ec_set_bit(",
                                "ec_get_dom_state(",
                                "ec_get_time_frm_src(",
                                "ec_get_time_offset_mono(",
+                               "ec_sdo_read(",
+                               "ec_sdo_write(",
+                               "ec_sdo_get_busy(",
+                               "ec_sdo_get_error(",
+                               "ec_sdo_get_size(",
+                               "ec_sdo_get_capacity(",
+                               "ec_sdo_get_value(",
+                               "ec_sdo_set_value(",
+
                               };
 
 static int ec_errorCode = 0;
-static int ec_cmd_count = 32;
+static const int ec_cmd_count = sizeof(ecLibCmdList) / sizeof(ecLibCmdList[0]);
+
+
+// PLC indices are doubles: validate before narrowing to C API integer indices.
+inline bool ec_sdo_valid_index(double value) {
+  return std::isfinite(value) && value >= 0 &&
+         value <= std::numeric_limits<int>::max() && std::trunc(value) == value;
+}
+inline bool ec_sdo_valid_ref(double slave, double index) {
+  ec_errorCode = 0;
+  if (!ec_sdo_valid_index(slave) || slave > 65535 || !ec_sdo_valid_index(index)) {
+    ec_errorCode = ERROR_EC_SDO_ASYNC_VALUE;
+    return false;
+  }
+  return true;
+}
+
+inline double ec_sdo_read(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return ec_errorCode;
+  ec_errorCode = ecSdoRead(static_cast<int>(slave), static_cast<int>(index));
+  return ec_errorCode;
+}
+
+inline double ec_sdo_write(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return ec_errorCode;
+  ec_errorCode = ecSdoWrite(static_cast<int>(slave), static_cast<int>(index));
+  return ec_errorCode;
+}
+
+inline double ec_sdo_get_busy(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return -ec_errorCode;
+  int value = 0;
+  ec_errorCode = ecSdoGetBusy(static_cast<int>(slave), static_cast<int>(index), &value);
+  return ec_errorCode ? -ec_errorCode : value;
+}
+
+inline double ec_sdo_get_error(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return -ec_errorCode;
+  int value = 0;
+  ec_errorCode = ecSdoGetError(static_cast<int>(slave), static_cast<int>(index), &value);
+  return ec_errorCode ? -ec_errorCode : value;
+}
+
+inline double ec_sdo_get_size(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return -ec_errorCode;
+  int value = 0;
+  ec_errorCode = ecSdoGetSize(static_cast<int>(slave), static_cast<int>(index), &value);
+  return ec_errorCode ? -ec_errorCode : value;
+}
+
+inline double ec_sdo_get_capacity(double slave, double index) {
+  if (!ec_sdo_valid_ref(slave, index)) return -ec_errorCode;
+  int value = 0;
+  ec_errorCode = ecSdoGetCapacity(static_cast<int>(slave), static_cast<int>(index), &value);
+  return ec_errorCode ? -ec_errorCode : value;
+}
+
+inline double ec_sdo_get_value(double slave, double index, double element) {
+  if (!ec_sdo_valid_ref(slave, index)) return 0;
+  if (!ec_sdo_valid_index(element)) { ec_errorCode = ERROR_EC_SDO_ASYNC_SIZE; return 0; }
+  double value = 0;
+  ec_errorCode = ecSdoGetValue(static_cast<int>(slave), static_cast<int>(index),
+                              static_cast<int>(element), &value);
+  return ec_errorCode ? 0 : value;
+}
+inline double ec_sdo_set_value(double slave, double index, double element, double value) {
+  if (!ec_sdo_valid_ref(slave, index)) return ec_errorCode;
+  if (!ec_sdo_valid_index(element)) return ec_errorCode = ERROR_EC_SDO_ASYNC_SIZE;
+  ec_errorCode = ecSdoSetValue(static_cast<int>(slave), static_cast<int>(index),
+                              static_cast<int>(element), value);
+  return ec_errorCode;
+}
 
 inline double ec_set_bit(double value, double bitIndex)
 {

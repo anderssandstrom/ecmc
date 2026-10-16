@@ -105,6 +105,34 @@ template<class T> void writeLE(uint8_t *p,T v) { memcpy(p,&v,sizeof v); }
 '''
 for suffix, typ in [('U8','uint8_t'),('S8','int8_t'),('U16','uint16_t'),('S16','int16_t'),('U32','uint32_t'),('S32','int32_t'),('U64','uint64_t'),('S64','int64_t'),('REAL','float'),('LREAL','double')]:
     stubs += f'\n#define EC_READ_{suffix}(p) readLE<{typ}>(p)\n#define EC_WRITE_{suffix}(p,v) writeLE<{typ}>(p,v)\n'
+# Compile the actual lookup, C API, PLC adapters and C++ wrappers as well.
+api_header = (root / 'devEcmcSup/ethercat/ecmcSdoApi.h').read_text()
+api_source = (root / 'devEcmcSup/ethercat/ecmcSdoApi.cpp').read_text()
+api_source = re.sub(r'^#include ".*"\n', '', api_source, flags=re.M)
+slave_source = (root / 'devEcmcSup/ethercat/ecmcEcSlave.cpp').read_text()
+lookup_source = slave_source[slave_source.index('ecmcEcAsyncSDO *ecmcEcSlave::getSDOAsync('):
+                            slave_source.index('int ecmcEcSlave::activate()')]
+plc_source = (root / 'devEcmcSup/plc/ecmcPLCTask_libEc.inc').read_text()
+plc_adapters = plc_source[plc_source.index('inline bool ec_sdo_valid_index('):
+                         plc_source.index('inline double ec_set_bit(')]
+cpp_wrappers = (root / 'devEcmcSup/logic/ecmcCppSdo.hpp').read_text()
+cpp_wrappers = re.sub(r'^#include ".*"\n', '', cpp_wrappers, flags=re.M)
+registry_stubs = r'''
+#define ERROR_MAIN_EC_MASTER_NULL 1001
+#define ERROR_MAIN_EC_SLAVE_NULL 1002
+struct ecmcEcSlave {
+  std::vector<ecmcEcAsyncSDO *> asyncSDOvector_;
+  int asyncSDOCounter_ = 0;
+  ecmcEcAsyncSDO *getSDOAsync(int index);
+  int findSDOAsyncIndex(const char *name, int *index);
+};
+struct ecmcEc {
+  ecmcEcSlave *slave = nullptr;
+  ecmcEcSlave *findSlave(int id) { return id == 3 ? slave : nullptr; }
+};
+ecmcEc *ec = nullptr;
+static int ec_errorCode = 0;
+'''
 checks = r'''
 int main() {
  ecmcAsynPortDriver port; ec_slave_config_t slave;
@@ -170,11 +198,70 @@ int main() {
    ecmcEcAsyncSDO invalid(&port,0,3,&slave,1,1,ECMC_EC_U8,"invalid",ECMC_SDO_ASYNC_MAX_BYTES+1);
    assert(false);
  } catch(const std::invalid_argument&) {}
- puts("async SDO scalar and array lifecycle tests passed");
+
+ // Lookup and runtime calls operate on exactly the existing objects.
+ ecmcEcSlave registry; ecmcEc master; master.slave=&registry;
+ int objectIndex=99;
+ assert(ecGetSdoRTObjectIndex(3,"payload",&objectIndex)==ERROR_MAIN_EC_MASTER_NULL && objectIndex==-1);
+ ec=&master;
+ registry.asyncSDOvector_={&sdo,&scalar}; registry.asyncSDOCounter_=2;
+ assert(ecGetSdoRTObjectIndex(3,"payload",&objectIndex)==ERROR_EC_SDO_ASYNC_NAME_AMBIGUOUS && objectIndex==-1);
+ registry.asyncSDOvector_={&sdo}; registry.asyncSDOCounter_=1;
+ assert(ecGetSdoRTObjectIndex(3,"missing",&objectIndex)==ERROR_EC_SDO_ASYNC_NOT_FOUND && objectIndex==-1);
+ assert(ecGetSdoRTObjectIndex(3,"payload",&objectIndex)==0 && objectIndex==0);
+ assert(ecGetSdoRTObjectIndex(-1,"payload",&objectIndex)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(ecSdoRead(3,-1)==ERROR_EC_SDO_ASYNC_NOT_FOUND);
+ assert(ecSdoRead(4,0)==ERROR_MAIN_EC_SLAVE_NULL);
+ ecmcCpp::SdoRef ref;
+ assert(ecmcCpp::sdoFind(3,"payload",ref)==0 && ref.objectIndex==0 && ref.slave==3);
+ assert(ecmcCpp::sdoFindRTObjectIndex(3,"payload",objectIndex)==0 && objectIndex==0);
+ int capacity=0;
+ assert(ecmcCpp::sdoGetCapacity(ref,capacity)==0 && capacity==4096);
+ assert(ecmcCpp::sdoRead(ref)==0);
+ assert(ec_sdo_read(3,0)==ERROR_EC_SDO_ASYNC_BUSY);
+ assert(ec_sdo_get_busy(3,0)==1);
+ upload.data={7,8}; upload.state=EC_REQUEST_SUCCESS; sdo.execute();
+ assert(ec_sdo_get_size(3,0)==2);
+ assert(ec_sdo_get_value(3,0,1)==8 && ec_errorCode==0);
+ assert(ec_sdo_get_value(3,0,2)==0 && ec_errorCode==ERROR_EC_SDO_ASYNC_SIZE);
+ assert(ec_sdo_read(3.5,0)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(ec_sdo_read(3,std::numeric_limits<double>::infinity())==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(ec_sdo_set_value(3,0,0,256)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(ec_sdo_set_value(3,0,-1,1)==ERROR_EC_SDO_ASYNC_SIZE);
+ assert(ec_sdo_set_value(3,0,0,1.5)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(ec_sdo_set_value(3,0,0,55)==0);
+ assert(ec_sdo_get_value(3,0,0)==7); // Staging never modifies readback.
+ assert(ec_sdo_write(3,0)==0 && download.data[0]==55 && download.data.size()==4096);
+ download.state=EC_REQUEST_SUCCESS; sdo.execute();
+ assert(ec_sdo_get_error(3,0)==0);
+ // All bytes must have been initialized once before an element-staged download.
+ ecmcAsynPortDriver smallPort; ec_slave_config_t smallSlave;
+ ecmcEcAsyncSDO small(&smallPort,0,3,&smallSlave,1,1,ECMC_EC_U8,"payload",4);
+ assert(small.setValue(0,255)==0 && small.setValue(0,255)==0);
+ assert(small.requestWrite()==ERROR_EC_SDO_ASYNC_SIZE);
+ for (int i=1;i<4;++i) assert(small.setValue(i,i)==0);
+ assert(small.setValue(4,0)==ERROR_EC_SDO_ASYNC_SIZE);
+ assert(small.requestWrite()==0);
+ assert(smallSlave.requests[0]->data==std::vector<uint8_t>({255,1,2,3}));
+ assert(small.setValue(0,0)==ERROR_EC_SDO_ASYNC_BUSY);
+ smallSlave.requests[0]->state=EC_REQUEST_SUCCESS; small.execute();
+ assert(smallPort.get("readcmd").trigger(1)==asynSuccess);
+ assert(small.requestRead()==ERROR_EC_SDO_ASYNC_BUSY);
+ // Scalar element 0 and integer validation (no narrowing of invalid doubles).
+ r.state=EC_REQUEST_SUCCESS; scalar.execute();
+ assert(scalar.setValue(0,42)==0);
+ double numeric=0;
+ assert(scalar.getValue(0,&numeric)==0 && numeric==42);
+ assert(scalar.setValue(1,42)==ERROR_EC_SDO_ASYNC_SIZE);
+ assert(scalar.setValue(0,-1)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(scalar.setValue(0,4294967296.0)==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(scalar.setValue(0,std::numeric_limits<double>::quiet_NaN())==ERROR_EC_SDO_ASYNC_VALUE);
+ assert(scalar.getValue(0,&numeric)==0 && numeric==42);
+ puts("async SDO scalar/array, lookup, PLC and C++ interface tests passed");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
-    cpp.write_text(stubs+header+source+checks)
+    cpp.write_text(stubs+header+source+api_header+registry_stubs+lookup_source+api_source+plc_adapters+cpp_wrappers+checks)
     subprocess.run(['c++','-std=c++17','-Wall','-Wextra','-fsanitize=address,undefined','-g',str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

@@ -13,6 +13,9 @@
 #include <vector>
 #include <exception>
 #include <stdexcept>
+#include <cmath>
+#include <limits>
+#include <algorithm>
 #include "ecmcEcAsyncSDO.h"
 #include "ecmcRtLogger.h"
 
@@ -62,6 +65,9 @@ ecmcEcAsyncSDO::ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
   arrayReadBuffer_.resize(arrayBytes, 0);
   arrayWriteBuffer_.resize(arrayBytes, 0);
   arrayWriteReady_ = false;
+  arrayWriteInitialized_.resize(arrayBytes, 0);
+  arrayInitializedCount_ = 0;
+  arrayValidBytes_ = 0;
   arrayReadBytes_ = 0;
   asynParamReadBytes_ = NULL;
   asynParamWriteValue_ = NULL;
@@ -183,6 +189,10 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
   }
 
   writeTrigg_ = trigg;
+  return requestWrite() ? asynError : asynSuccess;
+}
+
+int ecmcEcAsyncSDO::requestWrite() {
 
   if (!sdoreq_) {
     ecmcRtLoggerLogError(
@@ -192,7 +202,7 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
       __LINE__, ERROR_EC_SDO_ASYNC_OBJ_NULL);
     sdoError_ = ERROR_EC_SDO_ASYNC_OBJ_NULL;
     asynParamError_->refreshParam(1);
-    return asynError;
+    return sdoError_;
   }
 
 
@@ -207,13 +217,13 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
       ERROR_EC_SDO_ASYNC_BUSY);
     sdoError_ = ERROR_EC_SDO_ASYNC_BUSY;
     asynParamError_->refreshParam(1);
-    return asynError;
+    return sdoError_;
   }
 
   if (!arrayWriteBuffer_.empty() && !arrayWriteReady_) {
     sdoError_ = ERROR_EC_SDO_ASYNC_SIZE;
     asynParamError_->refreshParam(1);
-    return asynError;
+    return sdoError_;
   }
   sdoError_ = 0;
   asynParamError_->refreshParam(1);
@@ -224,10 +234,11 @@ asynStatus ecmcEcAsyncSDO::asynWriteSDO(void         *data,
   // write data to sdo req obj (buffer_ data should already be updated by asyn)
   writeValue();
 
+  if (asynParamWriteValue_) asynParamWriteValue_->refreshParamRT(1);
   // request/initiate write
   ecrt_sdo_request_write(sdoreq_);
 
-  return asynSuccess;
+  return 0;
 }
 
 asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
@@ -252,6 +263,10 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
   }
 
   readTrigg_ = trigg;
+  return requestRead() ? asynError : asynSuccess;
+}
+
+int ecmcEcAsyncSDO::requestRead() {
 
   if (!readreq_) {
     ecmcRtLoggerLogError(
@@ -261,7 +276,7 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
       __LINE__, ERROR_EC_SDO_ASYNC_OBJ_NULL);
     sdoError_ = ERROR_EC_SDO_ASYNC_OBJ_NULL;
     asynParamError_->refreshParam(1);
-    return asynError;
+    return sdoError_;
   }
 
   ec_request_state_t state = ecrt_sdo_request_state(readreq_);
@@ -275,7 +290,7 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
       ERROR_EC_SDO_ASYNC_BUSY);
     sdoError_ = ERROR_EC_SDO_ASYNC_BUSY;
     asynParamError_->refreshParam(1);
-    return asynError;
+    return sdoError_;
   }
 
   sdoError_ = 0;
@@ -285,7 +300,7 @@ asynStatus ecmcEcAsyncSDO::asynReadSDO(void         *data,
 
   ecrt_sdo_request_read(readreq_);
   readCmdInProcess_ = true;
-  return asynSuccess;
+  return 0;
 }
 
 int ecmcEcAsyncSDO::execute() {
@@ -748,6 +763,7 @@ int ecmcEcAsyncSDO::readValue() {
       return ERROR_EC_SDO_ASYNC_SIZE; // Retain previous good waveform.
     }
     memcpy(arrayReadBuffer_.data(), ecrt_sdo_request_data(readreq_), bytes);
+    arrayValidBytes_ = static_cast<int>(bytes);
     asynParamValue_->setEcmcDataSize(bytes);
     return 0;
   }
@@ -943,4 +959,85 @@ int ecmcEcAsyncSDO::writeValue() {
   }
 
   return 0;
+}
+
+namespace {
+template<typename T>
+int sdoAssignValue(double value, T *target) {
+  if (!std::isfinite(value)) return ERROR_EC_SDO_ASYNC_VALUE;
+  if (std::numeric_limits<T>::is_integer) {
+    const double upper = std::ldexp(1.0, std::numeric_limits<T>::digits);
+    const double lower = std::numeric_limits<T>::is_signed ? -upper : 0.0;
+    if (std::trunc(value) != value || value < lower || value >= upper) {
+      return ERROR_EC_SDO_ASYNC_VALUE;
+    }
+  } else if (std::fabs(value) > std::numeric_limits<T>::max()) {
+    return ERROR_EC_SDO_ASYNC_VALUE;
+  }
+  *target = static_cast<T>(value);
+  return 0;
+}
+}
+
+int ecmcEcAsyncSDO::getValue(int element, double *value) const {
+  if (!value || element < 0 || element >= getSize()) {
+    return ERROR_EC_SDO_ASYNC_SIZE;
+  }
+  if (!arrayReadBuffer_.empty()) {
+    *value = arrayReadBuffer_[element];
+    return 0;
+  }
+  switch (dt_) {
+  case ECMC_EC_U8: *value = static_cast<double>(*uint8Ptr_); return 0;
+  case ECMC_EC_S8: *value = static_cast<double>(*int8Ptr_); return 0;
+  case ECMC_EC_S8_TO_U8: *value = static_cast<double>(*uint8Ptr_); return 0;
+  case ECMC_EC_U16: *value = static_cast<double>(*uint16Ptr_); return 0;
+  case ECMC_EC_S16: *value = static_cast<double>(*int16Ptr_); return 0;
+  case ECMC_EC_S16_TO_U16: *value = static_cast<double>(*uint16Ptr_); return 0;
+  case ECMC_EC_U32: *value = static_cast<double>(*uint32Ptr_); return 0;
+  case ECMC_EC_S32: *value = static_cast<double>(*int32Ptr_); return 0;
+  case ECMC_EC_S32_TO_U32: *value = static_cast<double>(*uint32Ptr_); return 0;
+  case ECMC_EC_U64: *value = static_cast<double>(*uint64Ptr_); return 0;
+  case ECMC_EC_S64: *value = static_cast<double>(*int64Ptr_); return 0;
+  case ECMC_EC_S64_TO_U64: *value = static_cast<double>(*uint64Ptr_); return 0;
+  case ECMC_EC_F32: *value = static_cast<double>(*float32Ptr_); return 0;
+  case ECMC_EC_F64: *value = static_cast<double>(*float64Ptr_); return 0;
+  default: return ERROR_EC_SDO_ASYNC_VALUE;
+  }
+}
+
+int ecmcEcAsyncSDO::setValue(int element, double value) {
+  if (busy_) return ERROR_EC_SDO_ASYNC_BUSY;
+  if (element < 0 || element >= getCapacity()) return ERROR_EC_SDO_ASYNC_SIZE;
+  if (!arrayWriteBuffer_.empty()) {
+    const int error = sdoAssignValue(value, &arrayWriteBuffer_[element]);
+    if (error) return error;
+    if (!arrayWriteInitialized_[element]) {
+      arrayWriteInitialized_[element] = 1;
+      ++arrayInitializedCount_;
+    }
+    if (arrayInitializedCount_ == size_) arrayWriteReady_ = true;
+    // Publish staged bytes when a download is requested, not once per byte.
+    return 0;
+  }
+  int error = 0;
+  switch (dt_) {
+  case ECMC_EC_U8: error = sdoAssignValue(value, uint8Ptr_); break;
+  case ECMC_EC_S8: error = sdoAssignValue(value, int8Ptr_); break;
+  case ECMC_EC_S8_TO_U8: error = sdoAssignValue(value, uint8Ptr_); break;
+  case ECMC_EC_U16: error = sdoAssignValue(value, uint16Ptr_); break;
+  case ECMC_EC_S16: error = sdoAssignValue(value, int16Ptr_); break;
+  case ECMC_EC_S16_TO_U16: error = sdoAssignValue(value, uint16Ptr_); break;
+  case ECMC_EC_U32: error = sdoAssignValue(value, uint32Ptr_); break;
+  case ECMC_EC_S32: error = sdoAssignValue(value, int32Ptr_); break;
+  case ECMC_EC_S32_TO_U32: error = sdoAssignValue(value, uint32Ptr_); break;
+  case ECMC_EC_U64: error = sdoAssignValue(value, uint64Ptr_); break;
+  case ECMC_EC_S64: error = sdoAssignValue(value, int64Ptr_); break;
+  case ECMC_EC_S64_TO_U64: error = sdoAssignValue(value, uint64Ptr_); break;
+  case ECMC_EC_F32: error = sdoAssignValue(value, float32Ptr_); break;
+  case ECMC_EC_F64: error = sdoAssignValue(value, float64Ptr_); break;
+  default: return ERROR_EC_SDO_ASYNC_VALUE;
+  }
+  if (!error) asynParamValue_->refreshParamRT(1);
+  return error;
 }

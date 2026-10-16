@@ -205,6 +205,8 @@ public:
                   ecmcEcDataType dt,
                   std::string    alias,
                   size_t         arrayBytes = 0);
+  ecmcEcAsyncSDO *getSDOAsync(int index);
+  int findSDOAsyncIndex(const char *name, int *index);
   int getAllowOffline();
 
 /* 
