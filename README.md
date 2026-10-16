@@ -212,6 +212,13 @@ Each loaded `cpp_logic` instance gets its own dedicated asyn port. Both the
 built-in runtime PVs and all user-defined `epics.*` exports are published on
 that port.
 
+Load C++ logic before `iocInit`; loading or replacing it after IOC startup
+requires an IOC restart. Live data access shares the main ECMC lock, and the
+existing callback worker publishes stable snapshots. RT defers publication if
+the callback queue is busy and retries retained updates on subsequent cycles. See
+[C++ logic locking](documentation/cpp-logic-locking.md) for the lock order,
+realtime constraints, and validation procedure.
+
 `cpp_logic` also supports an optional free-form `MACROS` text string from the
 IOC startup path. That text is available to user code through
 `ecmcCpp::getMacrosString()` and is intended for small logic-specific

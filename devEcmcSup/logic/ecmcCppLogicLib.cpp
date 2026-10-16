@@ -31,6 +31,8 @@
 #include <exception>
 #include <limits>
 #include <mutex>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <sys/resource.h>
@@ -103,6 +105,8 @@ struct ResolvedItemBinding {
   ecmcDataItemInfo info {};
 };
 
+struct CallbackSnapshot;
+
 struct ExportedParamBinding {
   std::string name;
   int paramId {-1};
@@ -114,8 +118,52 @@ struct ExportedParamBinding {
   asynParamType asynType {asynParamNotDefined};
   int float64AliasParamId {-1};
   std::string float64AliasName;
-  std::vector<uint8_t> lastValue;
+  CallbackSnapshot* snapshot {nullptr};
   bool initialized {false};
+};
+
+// Lock order: CPP port -> main ECMC port -> callback queue.
+// RT holds the main port and only tries the queue lock. The callback worker never
+// acquires the main port, and releases the queue before taking the CPP lock.
+class MainPortGuard {
+ public:
+  MainPortGuard() : port_(::asynPort), locked_(port_ && port_->lock() == asynSuccess) {}
+  ~MainPortGuard() { if (locked_) port_->unlock(); }
+  explicit operator bool() const { return locked_; }
+  MainPortGuard(const MainPortGuard&) = delete;
+  MainPortGuard& operator=(const MainPortGuard&) = delete;
+ private:
+  ecmcAsynPortDriver* port_;
+  bool locked_;
+};
+
+// Only exeRTFunc (including user host-service calls) uses nonblocking flushes.
+// Non-RT writes/lifecycle calls flush synchronously so the final update also
+// reaches the worker when no more RT cycles will run.
+thread_local bool cppLogicRtPublication = false;
+class RtPublicationScope {
+ public:
+  RtPublicationScope() : previous_(cppLogicRtPublication) { cppLogicRtPublication = true; }
+  ~RtPublicationScope() { cppLogicRtPublication = previous_; }
+ private:
+  bool previous_;
+};
+
+// All buffers are allocated at registration. Producers own stagedData and the
+// dirty list under the main lock. The queue mutex protects pendingData; only
+// the worker uses deliveryData after swapping buffers.
+struct CallbackSnapshot {
+  ExportedParamBinding binding;
+  std::unique_ptr<uint8_t[]> stagedData;
+  int stagedAlias {-1};
+  bool dirty {false};
+  CallbackSnapshot* dirtyNext {nullptr};
+  std::unique_ptr<uint8_t[]> pendingData;
+  std::unique_ptr<uint8_t[]> deliveryData;
+  int pendingAlias {-1};
+  bool queued {false};
+  CallbackSnapshot* next {nullptr};
+  CallbackSnapshot* deliveryNext {nullptr};
 };
 
 class CppLogicAsynPort;
@@ -437,6 +485,8 @@ class CppLogicAsynPort : public asynPortDriver {
   explicit CppLogicAsynPort(ecmcCppLogicLib::Impl* impl);
   ~CppLogicAsynPort() override;
 
+  void registerSnapshot(ExportedParamBinding& binding);
+  void flushSnapshots();
   bool syncExportedParams(std::vector<ExportedParamBinding>* bindings, bool force, bool deferCallbacks);
   bool syncOctetParam(int paramId,
                       const std::string& value,
@@ -445,9 +495,14 @@ class CppLogicAsynPort : public asynPortDriver {
                       bool force,
                       bool deferCallbacks);
 
+  asynStatus readInt32(asynUser* pasynUser, epicsInt32* value) override;
+  asynStatus readFloat64(asynUser* pasynUser, epicsFloat64* value) override;
+  asynStatus readOctet(asynUser* pasynUser, char* value, size_t maxChars,
+                       size_t* nActual, int* eomReason) override;
   asynStatus writeInt32(asynUser* pasynUser, epicsInt32 value) override;
   asynStatus writeFloat64(asynUser* pasynUser, epicsFloat64 value) override;
 #ifdef ECMC_NATIVE_ASYN_PARAM_INT64
+  asynStatus readInt64(asynUser* pasynUser, epicsInt64* value) override;
   asynStatus writeInt64(asynUser* pasynUser, epicsInt64 value) override;
 #endif
   asynStatus writeInt8Array(asynUser* pasynUser, epicsInt8* value, size_t nElements) override;
@@ -476,7 +531,9 @@ class CppLogicAsynPort : public asynPortDriver {
   ExportedParamBinding* paramBindingForReason(int reason);
   bool syncFloat64AliasParam(ExportedParamBinding* binding, const uint8_t* current);
   bool syncOneParam(ExportedParamBinding* binding, bool force);
-  bool pushArrayCallback(const ExportedParamBinding* binding);
+  void queueSnapshot(const ExportedParamBinding& binding, const void* data);
+  bool publishScalar(ExportedParamBinding* binding);
+  bool prepareStartupRead(asynUser* pasynUser);
   bool writeScalarFromInt32(ExportedParamBinding* binding, epicsInt32 value);
 #ifdef ECMC_NATIVE_ASYN_PARAM_INT64
   bool writeScalarFromInt64(ExportedParamBinding* binding, epicsInt64 value);
@@ -484,7 +541,7 @@ class CppLogicAsynPort : public asynPortDriver {
   bool writeScalarFromFloat64(ExportedParamBinding* binding, epicsFloat64 value);
   void scheduleCallbacks(bool withScalarCallbacks);
   void callbackWorker();
-  void fireArrayCallbacks(const std::vector<int>& paramIds);
+  void fireArrayCallback(ExportedParamBinding* binding);
   template <typename SrcT, typename DstT>
   asynStatus writeTypedArray(asynUser* pasynUser, SrcT* value, size_t nElements);
   template <typename SrcT, typename DstT>
@@ -505,9 +562,14 @@ class CppLogicAsynPort : public asynPortDriver {
   std::condition_variable callbackCv_;
   std::thread callbackThread_;
   bool callbackPending_ {false};
-  bool scalarCallbackPending_ {false};
+
   bool stopCallbackThread_ {false};
-  std::vector<int> pendingArrayParamIds_;
+  std::map<int, std::unique_ptr<CallbackSnapshot>> snapshots_;
+  CallbackSnapshot* dirtyHead_ {nullptr};
+  CallbackSnapshot* dirtyTail_ {nullptr};
+  bool wakePending_ {false};
+  CallbackSnapshot* pendingHead_ {nullptr};
+  CallbackSnapshot* pendingTail_ {nullptr};
 };
 
 }  // namespace
@@ -797,6 +859,7 @@ bool addBoundParam(CppLogicAsynPort* port,
     return false;
   }
 
+  port->registerSnapshot(binding);
   out->push_back(binding);
   return true;
 }
@@ -849,6 +912,7 @@ CppLogicAsynPort::~CppLogicAsynPort() {
   {
     std::lock_guard<std::mutex> lock(callbackMutex_);
     stopCallbackThread_ = true;
+    if (!pendingHead_) return;
     callbackPending_ = true;
   }
   callbackCv_.notify_one();
@@ -935,117 +999,146 @@ bool CppLogicAsynPort::syncOctetParam(int paramId,
     return true;
   }
 
-  setStringParam(paramId, value.c_str());
+  (void)deferCallbacks; // All callbacks are delivered by the worker.
   *lastValue = value;
   *initialized = true;
-
-  if (deferCallbacks) {
-    scheduleCallbacks(true);
-  } else if (isEpicsStarted()) {
-    callParamCallbacks();
-  }
-
+  char text[kBuiltinDebugTextMaxChars + 1u] = {};
+  std::memcpy(text, value.data(), std::min(value.size(), sizeof(text) - 1u));
+  ExportedParamBinding binding;
+  binding.paramId = paramId;
+  queueSnapshot(binding, text);
+  scheduleCallbacks(true);
   return true;
 }
 
-bool CppLogicAsynPort::pushArrayCallback(const ExportedParamBinding* binding) {
-  if (!binding || !binding->isArray) {
-    return false;
-  }
+void CppLogicAsynPort::registerSnapshot(ExportedParamBinding& binding) {
+  auto snapshot = std::unique_ptr<CallbackSnapshot>(new CallbackSnapshot);
+  snapshot->binding.paramId = binding.paramId;
+  snapshot->binding.type = binding.type;
+  snapshot->binding.bytes = binding.bytes;
+  snapshot->binding.isArray = binding.isArray;
+  snapshot->binding.asynType = binding.asynType;
+  snapshot->stagedData.reset(new uint8_t[binding.bytes]());
+  snapshot->pendingData.reset(new uint8_t[binding.bytes]());
+  snapshot->deliveryData.reset(new uint8_t[binding.bytes]());
   std::lock_guard<std::mutex> lock(callbackMutex_);
-  if (std::find(pendingArrayParamIds_.begin(), pendingArrayParamIds_.end(), binding->paramId) ==
-      pendingArrayParamIds_.end()) {
-    pendingArrayParamIds_.push_back(binding->paramId);
+  binding.snapshot = snapshot.get();
+  snapshots_.emplace(binding.paramId, std::move(snapshot));
+}
+
+void CppLogicAsynPort::queueSnapshot(const ExportedParamBinding& binding, const void* data) {
+  // Main-lock protected, with no queue lock or worker-owned memory access.
+  auto found = snapshots_.find(binding.paramId);
+  if (found == snapshots_.end()) return;
+  auto* snapshot = found->second.get();
+  std::memcpy(snapshot->stagedData.get(), data, snapshot->binding.bytes);
+  snapshot->stagedAlias = binding.float64AliasParamId;
+  if (!snapshot->dirty) {
+    snapshot->dirty = true;
+    snapshot->dirtyNext = nullptr;
+    if (dirtyTail_) dirtyTail_->dirtyNext = snapshot;
+    else dirtyHead_ = snapshot;
+    dirtyTail_ = snapshot;
   }
-  return true;
+  wakePending_ = true;
+}
+
+void CppLogicAsynPort::flushSnapshots() {
+  // O(1) when idle: do not scan all exports or contend with idle workers.
+  if (!dirtyHead_ && (!wakePending_ || !isEpicsStarted())) return;
+  std::unique_lock<std::mutex> lock(callbackMutex_, std::defer_lock);
+  if (cppLogicRtPublication) {
+    if (!lock.try_lock()) return; // Retain dirty data and the wakeup for retry.
+  } else {
+    lock.lock();
+  }
+  for (auto* snapshot = dirtyHead_; snapshot; snapshot = snapshot->dirtyNext) {
+    std::memcpy(snapshot->pendingData.get(), snapshot->stagedData.get(), snapshot->binding.bytes);
+    snapshot->pendingAlias = snapshot->stagedAlias;
+    snapshot->dirty = false;
+    if (!snapshot->queued) {
+      snapshot->queued = true;
+      snapshot->next = nullptr;
+      if (pendingTail_) pendingTail_->next = snapshot;
+      else pendingHead_ = snapshot;
+      pendingTail_ = snapshot;
+    }
+  }
+  dirtyHead_ = dirtyTail_ = nullptr;
+  const bool notify = isEpicsStarted() && pendingHead_;
+  if (isEpicsStarted()) wakePending_ = false;
+  if (notify) callbackPending_ = true;
+  lock.unlock();
+  if (notify) callbackCv_.notify_one();
 }
 
 void CppLogicAsynPort::scheduleCallbacks(bool withScalarCallbacks) {
-  if (!isEpicsStarted()) {
-    return;
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(callbackMutex_);
-    callbackPending_ = true;
-    scalarCallbackPending_ = scalarCallbackPending_ || withScalarCallbacks;
-  }
-  callbackCv_.notify_one();
+  (void)withScalarCallbacks;
+  flushSnapshots();
 }
 
-void CppLogicAsynPort::fireArrayCallbacks(const std::vector<int>& paramIds) {
-  if (!impl_) {
-    return;
+void CppLogicAsynPort::fireArrayCallback(ExportedParamBinding* binding) {
+  const size_t elementSize = std::max<size_t>(1u, cppLogicTypeSize(binding->type));
+  const size_t elementCount = binding->bytes / elementSize;
+
+  switch (binding->type) {
+  case ECMC_CPP_TYPE_BOOL:
+  case ECMC_CPP_TYPE_S8:
+  case ECMC_CPP_TYPE_U8:
+    doCallbacksInt8Array(static_cast<epicsInt8*>(binding->data), elementCount, binding->paramId, 0);
+    break;
+  case ECMC_CPP_TYPE_S16:
+  case ECMC_CPP_TYPE_U16:
+    doCallbacksInt16Array(static_cast<epicsInt16*>(binding->data), elementCount, binding->paramId, 0);
+    break;
+  case ECMC_CPP_TYPE_S32:
+  case ECMC_CPP_TYPE_U32:
+    doCallbacksInt32Array(static_cast<epicsInt32*>(binding->data), elementCount, binding->paramId, 0);
+    break;
+  case ECMC_CPP_TYPE_F32:
+    doCallbacksFloat32Array(static_cast<epicsFloat32*>(binding->data), elementCount, binding->paramId, 0);
+    break;
+  case ECMC_CPP_TYPE_F64:
+    doCallbacksFloat64Array(static_cast<epicsFloat64*>(binding->data), elementCount, binding->paramId, 0);
+    break;
+  case ECMC_CPP_TYPE_S64: {
+#ifdef ECMC_NATIVE_ASYN_PARAM_INT64
+    std::vector<epicsInt64> values(elementCount);
+    const auto* source = static_cast<const int64_t*>(binding->data);
+    for (size_t i = 0; i < elementCount; ++i) {
+      values[i] = static_cast<epicsInt64>(source[i]);
+    }
+    doCallbacksInt64Array(values.data(), elementCount, binding->paramId, 0);
+#else
+    std::vector<epicsFloat64> values(elementCount);
+    const auto* source = static_cast<const int64_t*>(binding->data);
+    for (size_t i = 0; i < elementCount; ++i) {
+      values[i] = static_cast<epicsFloat64>(source[i]);
+    }
+    doCallbacksFloat64Array(values.data(), elementCount, binding->paramId, 0);
+#endif
+    break;
   }
-
-  for (int paramId : paramIds) {
-    ExportedParamBinding* binding = paramBindingForReason(paramId);
-    if (!binding || !binding->data || !binding->isArray) {
-      continue;
-    }
-
-    const size_t elementSize = std::max<size_t>(1u, cppLogicTypeSize(binding->type));
-    const size_t elementCount = binding->bytes / elementSize;
-
-    switch (binding->type) {
-    case ECMC_CPP_TYPE_BOOL:
-    case ECMC_CPP_TYPE_S8:
-    case ECMC_CPP_TYPE_U8:
-      doCallbacksInt8Array(static_cast<epicsInt8*>(binding->data), elementCount, binding->paramId, 0);
-      break;
-    case ECMC_CPP_TYPE_S16:
-    case ECMC_CPP_TYPE_U16:
-      doCallbacksInt16Array(static_cast<epicsInt16*>(binding->data), elementCount, binding->paramId, 0);
-      break;
-    case ECMC_CPP_TYPE_S32:
-    case ECMC_CPP_TYPE_U32:
-      doCallbacksInt32Array(static_cast<epicsInt32*>(binding->data), elementCount, binding->paramId, 0);
-      break;
-    case ECMC_CPP_TYPE_F32:
-      doCallbacksFloat32Array(static_cast<epicsFloat32*>(binding->data), elementCount, binding->paramId, 0);
-      break;
-    case ECMC_CPP_TYPE_F64:
-      doCallbacksFloat64Array(static_cast<epicsFloat64*>(binding->data), elementCount, binding->paramId, 0);
-      break;
-    case ECMC_CPP_TYPE_S64: {
+  case ECMC_CPP_TYPE_U64: {
 #ifdef ECMC_NATIVE_ASYN_PARAM_INT64
-      std::vector<epicsInt64> values(elementCount);
-      const auto* source = static_cast<const int64_t*>(binding->data);
-      for (size_t i = 0; i < elementCount; ++i) {
-        values[i] = static_cast<epicsInt64>(source[i]);
-      }
-      doCallbacksInt64Array(values.data(), elementCount, binding->paramId, 0);
+    std::vector<epicsInt64> values(elementCount);
+    const auto* source = static_cast<const uint64_t*>(binding->data);
+    for (size_t i = 0; i < elementCount; ++i) {
+      values[i] = static_cast<epicsInt64>(source[i]);
+    }
+    doCallbacksInt64Array(values.data(), elementCount, binding->paramId, 0);
 #else
-      std::vector<epicsFloat64> values(elementCount);
-      const auto* source = static_cast<const int64_t*>(binding->data);
-      for (size_t i = 0; i < elementCount; ++i) {
-        values[i] = static_cast<epicsFloat64>(source[i]);
-      }
-      doCallbacksFloat64Array(values.data(), elementCount, binding->paramId, 0);
+    std::vector<epicsFloat64> values(elementCount);
+    const auto* source = static_cast<const uint64_t*>(binding->data);
+    for (size_t i = 0; i < elementCount; ++i) {
+      values[i] = static_cast<epicsFloat64>(source[i]);
+    }
+    doCallbacksFloat64Array(values.data(), elementCount, binding->paramId, 0);
 #endif
-      break;
-    }
-    case ECMC_CPP_TYPE_U64: {
-#ifdef ECMC_NATIVE_ASYN_PARAM_INT64
-      std::vector<epicsInt64> values(elementCount);
-      const auto* source = static_cast<const uint64_t*>(binding->data);
-      for (size_t i = 0; i < elementCount; ++i) {
-        values[i] = static_cast<epicsInt64>(source[i]);
-      }
-      doCallbacksInt64Array(values.data(), elementCount, binding->paramId, 0);
-#else
-      std::vector<epicsFloat64> values(elementCount);
-      const auto* source = static_cast<const uint64_t*>(binding->data);
-      for (size_t i = 0; i < elementCount; ++i) {
-        values[i] = static_cast<epicsFloat64>(source[i]);
-      }
-      doCallbacksFloat64Array(values.data(), elementCount, binding->paramId, 0);
-#endif
-      break;
-    }
-    default:
-      break;
-    }
+    break;
+  }
+  default:
+    break;
   }
 }
 
@@ -1058,18 +1151,37 @@ void CppLogicAsynPort::callbackWorker() {
       return;
     }
 
-    const bool doScalarCallbacks = scalarCallbackPending_;
-    std::vector<int> paramIds;
-    paramIds.swap(pendingArrayParamIds_);
+    CallbackSnapshot* batch = pendingHead_;
+    pendingHead_ = pendingTail_ = nullptr;
     callbackPending_ = false;
-    scalarCallbackPending_ = false;
+    for (auto* item = batch; item; item = item->deliveryNext) {
+      item->deliveryNext = item->next;
+      item->pendingData.swap(item->deliveryData);
+      item->binding.data = item->deliveryData.get();
+      item->binding.float64AliasParamId = item->pendingAlias;
+      item->queued = false;
+    }
 
     lock.unlock();
-    if (doScalarCallbacks) {
-      callParamCallbacks();
-    }
-    if (!paramIds.empty()) {
-      fireArrayCallbacks(paramIds);
+    // No main/queue lock is held across parameter-cache access or callbacks.
+    // All cache access is serialized by the CPP port lock, including base
+    // asyn scalar read methods. RT never takes this lock.
+    if (this->lock() == asynSuccess) {
+      bool scalarChanged = false;
+      for (auto* item = batch; item; item = item->deliveryNext) {
+        auto* binding = &item->binding;
+        if (binding->asynType == asynParamOctet) {
+          setStringParam(binding->paramId, static_cast<const char*>(binding->data));
+          scalarChanged = true;
+        } else if (!binding->isArray) {
+          scalarChanged = publishScalar(binding) || scalarChanged;
+        }
+      }
+      if (scalarChanged) callParamCallbacks();
+      for (auto* item = batch; item; item = item->deliveryNext) {
+        if (item->binding.isArray) fireArrayCallback(&item->binding);
+      }
+      this->unlock();
     }
     lock.lock();
   }
@@ -1085,19 +1197,18 @@ bool CppLogicAsynPort::syncOneParam(ExportedParamBinding* binding, bool force) {
   }
 
   const auto* current = static_cast<const uint8_t*>(binding->data);
-  if (!force && binding->initialized && binding->lastValue.size() == binding->bytes &&
-      std::memcmp(binding->lastValue.data(), current, binding->bytes) == 0) {
+  if (!force && binding->initialized && binding->snapshot &&
+      std::memcmp(binding->snapshot->stagedData.get(), current, binding->bytes) == 0) {
     return false;
   }
 
-  binding->lastValue.assign(current, current + binding->bytes);
+  queueSnapshot(*binding, current);
   binding->initialized = true;
+  return true;
+}
 
-  if (binding->isArray) {
-    pushArrayCallback(binding);
-    return true;
-  }
-
+bool CppLogicAsynPort::publishScalar(ExportedParamBinding* binding) {
+  const auto* current = static_cast<const uint8_t*>(binding->data);
   switch (binding->type) {
   case ECMC_CPP_TYPE_BOOL:
     setIntegerParam(binding->paramId, current[0] != 0u ? 1 : 0);
@@ -1195,23 +1306,9 @@ bool CppLogicAsynPort::syncExportedParams(std::vector<ExportedParamBinding>* bin
     }
   }
 
+  (void)deferCallbacks;
   if (anyScalarChange || anyArrayChange) {
-    if (deferCallbacks) {
-      scheduleCallbacks(anyScalarChange);
-    } else if (isEpicsStarted()) {
-      if (anyScalarChange) {
-        callParamCallbacks();
-      }
-      if (anyArrayChange) {
-        std::vector<int> paramIds;
-        for (const auto& binding : *bindings) {
-          if (binding.isArray) {
-            paramIds.push_back(binding.paramId);
-          }
-        }
-        fireArrayCallbacks(paramIds);
-      }
-    }
+    scheduleCallbacks(anyScalarChange);
   }
 
   return true;
@@ -1336,7 +1433,47 @@ bool CppLogicAsynPort::writeScalarFromFloat64(ExportedParamBinding* binding, epi
   return true;
 }
 
+// Before IOC startup there is no worker publication yet. Populate the cache
+// under the caller's CPP lock and main lock so record initialization/autosave
+// reads observe the configured value. No callbacks are issued here.
+bool CppLogicAsynPort::prepareStartupRead(asynUser* pasynUser) {
+  if (isEpicsStarted()) return true;
+  MainPortGuard mainLock;
+  if (!mainLock) return false;
+  if (pasynUser && pasynUser->reason == impl_->debugTextParamId) {
+    setStringParam(impl_->debugTextParamId, impl_->debugTextLastValue.c_str());
+    return true;
+  }
+  auto* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
+  return binding && !binding->isArray && publishScalar(binding);
+}
+
+asynStatus CppLogicAsynPort::readInt32(asynUser* user, epicsInt32* value) {
+  if (!prepareStartupRead(user)) return asynError;
+  return asynPortDriver::readInt32(user, value);
+}
+
+asynStatus CppLogicAsynPort::readFloat64(asynUser* user, epicsFloat64* value) {
+  if (!prepareStartupRead(user)) return asynError;
+  return asynPortDriver::readFloat64(user, value);
+}
+
+#ifdef ECMC_NATIVE_ASYN_PARAM_INT64
+asynStatus CppLogicAsynPort::readInt64(asynUser* user, epicsInt64* value) {
+  if (!prepareStartupRead(user)) return asynError;
+  return asynPortDriver::readInt64(user, value);
+}
+#endif
+
+asynStatus CppLogicAsynPort::readOctet(asynUser* user, char* value, size_t maxChars,
+                                      size_t* nActual, int* eomReason) {
+  if (!prepareStartupRead(user)) return asynError;
+  return asynPortDriver::readOctet(user, value, maxChars, nActual, eomReason);
+}
+
 asynStatus CppLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u) {
     return asynError;
@@ -1368,11 +1505,13 @@ asynStatus CppLogicAsynPort::writeInt32(asynUser* pasynUser, epicsInt32 value) {
   if (!writeScalarFromInt32(binding, value)) {
     return asynError;
   }
-  syncExportedParams(&impl_->exportedParams, false, false);
+  if (syncOneParam(binding, false)) scheduleCallbacks(!binding->isArray);
   return asynSuccess;
 }
 
 asynStatus CppLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 value) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u) {
     return asynError;
@@ -1411,12 +1550,14 @@ asynStatus CppLogicAsynPort::writeFloat64(asynUser* pasynUser, epicsFloat64 valu
   if (!writeScalarFromFloat64(binding, value)) {
     return asynError;
   }
-  syncExportedParams(&impl_->exportedParams, false, false);
+  if (syncOneParam(binding, false)) scheduleCallbacks(!binding->isArray);
   return asynSuccess;
 }
 
 #ifdef ECMC_NATIVE_ASYN_PARAM_INT64
 asynStatus CppLogicAsynPort::writeInt64(asynUser* pasynUser, epicsInt64 value) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u) {
     return asynError;
@@ -1425,13 +1566,15 @@ asynStatus CppLogicAsynPort::writeInt64(asynUser* pasynUser, epicsInt64 value) {
   if (!writeScalarFromInt64(binding, value)) {
     return asynError;
   }
-  syncExportedParams(&impl_->exportedParams, false, false);
+  if (syncOneParam(binding, false)) scheduleCallbacks(!binding->isArray);
   return asynSuccess;
 }
 #endif
 
 template <typename SrcT, typename DstT>
 asynStatus CppLogicAsynPort::writeTypedArray(asynUser* pasynUser, SrcT* value, size_t nElements) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u || !binding->data || !binding->isArray) {
     return asynError;
@@ -1444,7 +1587,7 @@ asynStatus CppLogicAsynPort::writeTypedArray(asynUser* pasynUser, SrcT* value, s
     dest[i] = static_cast<DstT>(value[i]);
   }
   binding->initialized = false;
-  syncExportedParams(&impl_->exportedParams, false, false);
+  if (syncOneParam(binding, false)) scheduleCallbacks(!binding->isArray);
   return asynSuccess;
 }
 
@@ -1453,6 +1596,8 @@ asynStatus CppLogicAsynPort::readTypedArray(asynUser* pasynUser,
                                                SrcT* value,
                                                size_t nElements,
                                                size_t* nIn) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || !binding->data || !binding->isArray) {
     return asynError;
@@ -1475,6 +1620,8 @@ asynStatus CppLogicAsynPort::readInt64BackedAsFloat64Array(asynUser* pasynUser,
                                                               epicsFloat64* value,
                                                               size_t nElements,
                                                               size_t* nIn) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || !binding->data || !binding->isArray) {
     return asynError;
@@ -1496,6 +1643,8 @@ template <typename IntT>
 asynStatus CppLogicAsynPort::writeFloat64AsInt64BackedArray(asynUser* pasynUser,
                                                                epicsFloat64* value,
                                                                size_t nElements) {
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = paramBindingForReason(pasynUser ? pasynUser->reason : -1);
   if (!binding || binding->writable == 0u || !binding->data || !binding->isArray) {
     return asynError;
@@ -1508,7 +1657,7 @@ asynStatus CppLogicAsynPort::writeFloat64AsInt64BackedArray(asynUser* pasynUser,
     dest[i] = static_cast<IntT>(value[i]);
   }
   binding->initialized = false;
-  syncExportedParams(&impl_->exportedParams, false, false);
+  if (syncOneParam(binding, false)) scheduleCallbacks(!binding->isArray);
   return asynSuccess;
 }
 
@@ -1690,6 +1839,8 @@ asynStatus CppLogicAsynPort::drvUserCreate(asynUser* pasynUser,
   }
 
   const std::string paramName = drvInfoParamName(drvInfo);
+  MainPortGuard mainLock;
+  if (!mainLock) return asynError;
   ExportedParamBinding* binding = nullptr;
   if (impl_) {
     for (auto& exported : impl_->exportedParams) {
@@ -1726,6 +1877,7 @@ asynStatus CppLogicAsynPort::drvUserCreate(asynUser* pasynUser,
       return asynError;
     }
     syncOneParam(binding, true);
+    scheduleCallbacks(true);
   }
 
   return asynPortDriver::drvUserCreate(pasynUser,
@@ -2075,6 +2227,12 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
     return setErrorID(ERROR_MAIN_CPP_LOGIC_ASYN_CREATE_FAIL);
   }
 
+  ExportedParamBinding debugBinding;
+  debugBinding.paramId = impl_->debugTextParamId;
+  debugBinding.asynType = asynParamOctet;
+  debugBinding.bytes = kBuiltinDebugTextMaxChars + 1u;
+  impl_->asynPort->registerSnapshot(debugBinding);
+
   const ecmcCppLogicExportedVar* exportedVars =
     impl_->api->getExportedVars ? impl_->api->getExportedVars(impl_->instance) : nullptr;
   const uint32_t exportedVarCount =
@@ -2102,6 +2260,7 @@ int ecmcCppLogicLib::load(const char* libFilenameWP, const char* configStr) {
   // Avoid allocation when publishDebugText() is called from the RT thread.
   impl_->debugText.reserve(kBuiltinDebugTextMaxChars);
   impl_->debugText.clear();
+  impl_->debugTextLastValue.reserve(kBuiltinDebugTextMaxChars);
   impl_->debugTextLastValue.clear();
   impl_->debugTextInitialized = false;
   updateStatusWord(impl_);
@@ -2243,15 +2402,21 @@ int ecmcCppLogicLib::exeExitRTFunc() {
     g_hostServiceCppLogic = nullptr;
   }
   impl_->asynPort->syncExportedParams(&impl_->builtinParams, false, false);
+  impl_->asynPort->flushSnapshots(); // Drain retained exports when RT stops.
   return 0;
 }
 
 int ecmcCppLogicLib::exeRTFunc(int controllerErrorCode) {
+  RtPublicationScope publicationScope;
   (void)controllerErrorCode;
 
   if (!impl_ || !impl_->loaded || !impl_->enteredRt) {
     return 0;
   }
+
+  // Retry even if execution is disabled, decimated, or about to return early.
+  // Staged values survive unchanged inputs and callback queue contention.
+  impl_->asynPort->flushSnapshots();
 
   if (!isEpicsStarted()) {
     if (impl_->lastExecTimeMs != 0.0 || impl_->lastInputTimeMs != 0.0 ||

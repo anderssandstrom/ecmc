@@ -41,6 +41,15 @@ int loadCppLogic(int logicId, const char* filenameWP, const char* configStr) {
     return ERROR_MAIN_CPP_LOGIC_INDEX_OUT_OF_RANGE;
   }
 
+  // Port creation/replacement is startup-only. After iocInit, record handlers
+  // and the callback worker can hold the CPP port lock. Deleting/joining them
+  // here under the main command lock would invert the CPP -> main lock order.
+  if (allowCallbackEpicsState) {
+    g_lastCppLogicErrorMessage = "LoadCppLogic must be called before iocInit; restart the IOC to reload C++ logic.";
+    LOGERR("%s\n", g_lastCppLogicErrorMessage.c_str());
+    return ERROR_MAIN_CPP_LOGIC_CONFIG_INVALID;
+  }
+
   if (cppLogics[logicId]) {
     delete cppLogics[logicId];
     cppLogics[logicId] = NULL;
