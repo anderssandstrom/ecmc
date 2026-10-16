@@ -171,8 +171,9 @@ int CMDwriteIt(const char *inbuf, size_t inlen) {
 
   int copyLength = inlen + 1;
 
-  // Work with local input buffer
-  memcpy(inputBuffer, inbuf, copyLength);
+  // The caller supplies inlen bytes, not necessarily a terminating NUL.
+  memcpy(inputBuffer, inbuf, inlen);
+  inputBuffer[inlen] = '\0';
 
   // Check LF and or CR
   if ((inlen > 1) && (inputBuffer[inlen - 1] == '\n')) {

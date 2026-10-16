@@ -237,6 +237,10 @@ int ecmcDataStorage::setDataElement(double data) {
 }
 
 int ecmcDataStorage::setData(double *data, int size) {
+  if (size < 0) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                      ERROR_MAIN_DATA_STORAGE_INVALID_SIZE);
+  }
   currentBufferIndex_ = 0;  // Start from beginning
   return appendData(data, size);
 }
@@ -350,6 +354,10 @@ int ecmcDataStorage::appendData(double *data, int size) {
 }
 
 int ecmcDataStorage::appendData(double *data, int size, bool refreshAsyn) {
+  if (size < 0) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                      ERROR_MAIN_DATA_STORAGE_INVALID_SIZE);
+  }
   if (buffer_ == NULL) {
     LOGINFO9(
       "%s/%s:%d: ERROR: Data storage %d. Append data failed. Buffer NULL (0x%x).\n",

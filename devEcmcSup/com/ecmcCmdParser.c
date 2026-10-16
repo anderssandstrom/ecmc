@@ -6706,6 +6706,14 @@ int ecmcCmdParser(const char           *cmdline,
 
   while (!done) {
     if (nextEnd) {
+      if ((size_t)(nextEnd - nextStart) >= sizeof(cOneCommand)) {
+        RETURN_ERROR_OR_DIE(buffer,
+                            ERROR_MAIN_PARSER_CMD_TO_LONG,
+                            "%s/%s:%d command segment too long.\n",
+                            __FILE__,
+                            __FUNCTION__,
+                            __LINE__);
+      }
       memcpy(cOneCommand, nextStart, nextEnd - nextStart);
       cOneCommand[nextEnd - nextStart] = '\0';
       nextCmd                          = cOneCommand; // Use local buffer
