@@ -1,5 +1,8 @@
 Release Notes
 ===
+# 11.1.1
+* Fix overflow issue in motor interface
+
 # 11.1.0
 * Add PLC and C++ logic access to existing async SDO objects, including transfer requests, status, scalar values and individual array bytes. Resolve their RT object index by slave/name with `EcGetSdoRTObjectIndex` or `ecmcCpp::sdoFindRTObjectIndex`.
 * Add `Cfg.EcAddSdoAsyncArray(slave, index, subindex, byteSize, alias)` for runtime byte-payload uploads/downloads through the existing asynchronous SDO implementation, with waveform PVs, actual upload length, and separate fixed-size download staging. See [runtime SDO arrays](documentation/runtime-sdo-arrays.md).
