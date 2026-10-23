@@ -4,6 +4,7 @@
 Exercises byte payloads and request lifecycle without EPICS or hardware.
 """
 from pathlib import Path
+import os
 import re
 import subprocess
 import tempfile
@@ -263,5 +264,5 @@ int main() {
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
     cpp.write_text(stubs+header+source+api_header+registry_stubs+lookup_source+api_source+plc_adapters+cpp_wrappers+checks)
-    subprocess.run(['c++','-std=c++17','-Wall','-Wextra','-fsanitize=address,undefined','-g',str(cpp),'-o',str(binary)],check=True)
+    subprocess.run([os.environ.get('CXX', 'c++'),'-std=c++17','-Wall','-Wextra','-fsanitize=address,undefined','-g',str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

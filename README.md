@@ -104,6 +104,9 @@ This builds the support library, example IOC application, and boot files through
 
 ## Quick start
 
+Hardware-free regression tests can be run with `python3 tests/run_tests.py`.
+See [tests/README.md](tests/README.md) for requirements and coverage.
+
 For a real system, start with `ecmccfg` examples rather than building a full configuration manually.
 
 Typical workflow:
