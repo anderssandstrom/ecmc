@@ -50,8 +50,11 @@ Python, and does not initialize submodules or build the full IOC.
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |
 | `test_controller_error_scan.py` | Error priority, cached/live scanning, thread isolation and cache rebuilding |
+| `test_cpp_logic_loading.py` | Configuration, shared-library/ABI checks, instance creation errors/exceptions and cleanup; stops before item binding/asyn registration |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |
 | `test_motor_record_dmov.py` | Completion/abort behavior, fresh samples, counter wraparound and command rearming |
+| `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |
+| `test_plugin_loading.py` | Legacy plugin ABI, real shared-library loading/unloading, optional callbacks, failures and reload |
 | `test_startup_gate.py` | IOC/bus/axis readiness, timeouts, task dispatch, masterless operation and opt-outs |
 
 Each script reads the current local production source, compiles the relevant
