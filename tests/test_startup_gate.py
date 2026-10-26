@@ -33,6 +33,7 @@ stubs = r'''
 #include <cstring>
 #include <initializer_list>
 std::atomic<bool> startupGateConfigured{true}, startupMotionHeld{true};
+std::atomic<bool> startupCommandsHeld{true};
 std::atomic<bool> iocRunning{false}, iocExitRequested{false};
 const char *waitSetting = nullptr;
 // Keep the test independent of the invoking shell's environment.
@@ -47,10 +48,12 @@ unsigned commands = 0;
 unsigned ecmcTakeGlobalMotionCommands() { unsigned value = commands; commands = 0; return value; }
 struct Axis {
   bool startup = true;
+  bool motorReady = true; // No loaded motor record unless a scenario registers one.
   int error = 0, resets = 0, cycles = 0, stops = 0;
   int getErrorID() { return error; }
   void errorReset() { error = 0; ++resets; }
   bool getInStartupPhase() { return startup; }
+  bool getMotorRecordStartupReady() { return motorReady; }
   void execute(int) { ++cycles; }
   void stopMotion(bool) { ++stops; }
 };
@@ -136,8 +139,14 @@ body = initialization + r'''
       tick();
       expectDispatch(0); // Last axis still initializing.
       axes[2].startup = false;
+      axes[1].motorReady = false;
+      ticks(3);
+      expectDispatch(0); // Native startup alone cannot release a pending restore.
+      assert(startupCommandsHeld);
+      axes[1].motorReady = true;
       tick();
       expectDispatch(1);
+      assert(!startupCommandsHeld);
       tick();
       expectDispatch(2);
       assert(ethercat.resets == 1 && axes[0].resets == 1);
@@ -181,6 +190,7 @@ body = initialization + r'''
     } else if (scenario == 4) {
       // Gate disabled retains immediate legacy dispatch.
       assert(!startupMotionHeld);
+      assert(!startupCommandsHeld);
       tick();
       expectDispatch(1);
       assert(!iocRunning && startupWaitSeconds == 0);

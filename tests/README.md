@@ -53,9 +53,12 @@ Python, and does not initialize submodules or build the full IOC.
 | `test_cpp_logic_loading.py` | Configuration, shared-library/ABI checks, instance creation errors/exceptions and cleanup; stops before item binding/asyn registration |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |
 | `test_motor_record_dmov.py` | Completion/abort behavior, fresh samples, counter wraparound and command rearming |
+| `test_motor_softlimit_restore.py` | IOC restore hooks, limit precedence, MRES, retries and position-load sample acknowledgement |
+| `test_motor_startup_comm_recovery.py` | Stale startup COMM recovery, position-load completion, preserved alarms and runtime faults |
+| `test_motor_startup_execution_gate.py` | Motion producer hold, rejected commands, deferred enable and absent motor records |
 | `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |
 | `test_plugin_loading.py` | Legacy plugin ABI, real shared-library loading/unloading, optional callbacks, failures and reload |
-| `test_startup_gate.py` | IOC/bus/axis readiness, timeouts, task dispatch, masterless operation and opt-outs |
+| `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, task dispatch, masterless operation and opt-outs |
 
 Each script reads the current local production source, compiles the relevant
 code with lightweight stand-ins, and executes C/C++ assertions. Save source
