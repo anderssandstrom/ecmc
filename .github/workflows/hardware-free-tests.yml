@@ -1,0 +1,45 @@
+name: Hardware-free regression tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardware-free-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Regression tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: GCC
+            cc: gcc
+            cxx: g++
+          - compiler: Clang
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Show toolchain versions
+        run: |
+          python3 --version
+          "$CC" --version
+          "$CXX" --version
+      - name: Run hardware-free tests
+        run: python3 tests/run_tests.py --verbose

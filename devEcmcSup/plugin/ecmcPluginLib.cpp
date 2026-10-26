@@ -57,8 +57,6 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
     return setErrorID(ERROR_PLUGIN_FLIE_NOT_FOUND);
   }
 
-  dlHandle_ = dlopen(libFilenameWP, RTLD_LAZY);
-
   if ((dlHandle_ = dlopen(libFilenameWP, RTLD_NOW)) == NULL) {
     LOGERR("%s/%s:%d: Error: Plugin %s: Open failed with error: %s (0x%x).\n",
            __FILE__, __FUNCTION__, __LINE__, libFilenameWP, dlerror(),
@@ -94,6 +92,7 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
       dlerror(),
       ERROR_PLUGIN_GET_DATA_FUNC_FAIL);
     dlclose(dlHandle_);
+    dlHandle_ = NULL;
     return setErrorID(ERROR_PLUGIN_GET_DATA_FUNC_FAIL);
   }
 
@@ -102,6 +101,8 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
            __FILE__, __FUNCTION__, __LINE__, libFilenameWP,
            ERROR_PLUGIN_GET_DATA_FAIL);
     dlclose(dlHandle_);
+    dlHandle_ = NULL;
+    getDataFunc_ = NULL;
     return setErrorID(ERROR_PLUGIN_GET_DATA_FAIL);
   }
 
@@ -116,6 +117,9 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
       data_->ifVersion,
       ERROR_PLUGIN_VERSION_MISSMATCH);
     dlclose(dlHandle_);
+    dlHandle_ = NULL;
+    getDataFunc_ = NULL;
+    data_ = NULL;
     return setErrorID(ERROR_PLUGIN_VERSION_MISSMATCH);
   }
 
@@ -124,6 +128,9 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
            __FILE__, __FUNCTION__, __LINE__, libFilenameWP,
            ERROR_PLUGIN_LIB_NAME_UNDEFINED);
     dlclose(dlHandle_);
+    dlHandle_ = NULL;
+    getDataFunc_ = NULL;
+    data_ = NULL;
     return setErrorID(ERROR_PLUGIN_LIB_NAME_UNDEFINED);
   }
 
@@ -135,7 +142,7 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
            __FILE__, __FUNCTION__, __LINE__, libFilenameWP_);
 
   // Call constructor
-  int errorCode = data_->constructFnc(libConfigStr_);
+  int errorCode = data_->constructFnc ? data_->constructFnc(libConfigStr_) : 0;
 
   if (errorCode) {
     LOGERR("%s/%s:%d: Error: Plugin %s returned error @ constructFnc() (0x%x)."
@@ -151,7 +158,7 @@ int ecmcPluginLib::load(const char *libFilenameWP, const char *libConfigStr) {
 
 void ecmcPluginLib::unload() {
   // Call destruct function if defined
-  if (data_->destructFnc) {
+  if (loaded_ && data_ && data_->destructFnc) {
     data_->destructFnc();
   }
 
@@ -164,6 +171,7 @@ void ecmcPluginLib::unload() {
 
   // Cleanup
   libFilenameWP_ = NULL;
+  libConfigStr_  = NULL;
   dlHandle_      = NULL;
   getDataFunc_   = NULL;
   data_          = NULL;
