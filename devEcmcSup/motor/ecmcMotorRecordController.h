@@ -11,6 +11,7 @@ FILENAME...   ecmcMotorRecordController.h
 #include "ecmcPVTController.h"
 
 extern ecmcAsynPortDriver *asynPort;
+struct motorRecord;
 
 #ifndef motorRecResolutionString
 #define CREATE_MOTOR_REC_RESOLUTION
@@ -118,6 +119,8 @@ public:
   asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value);
   asynStatus writeFloat64(asynUser *pasynUser, epicsFloat64 value);
   asynStatus writeFloat64Array(asynUser *pasynUser, epicsFloat64 *value,size_t nElements);
+  void bindStartupMotorRecord(int axisNo, motorRecord *record);
+  asynStatus doCallbacksGenericPointer(void *pointer, int reason, int addr);
   // Have to override the profile* since basecalse does not include error and status handling
   asynStatus initializeProfile(size_t maxProfilePoints);
   asynStatus buildProfile();
@@ -128,6 +131,8 @@ public:
   int features_;
 
 protected:
+  motorRecord *startupMotorRecords_[ECMC_MAX_AXES];
+  bool startupCommRecoveryDone_[ECMC_MAX_AXES];
   ecmcMotorRecordAxis **pAxes_;       /**< Array of pointers to axis objects */
   //void udateMotorLimitsRO(int axisNo);
   //void udateMotorLimitsRO(int    axisNo,

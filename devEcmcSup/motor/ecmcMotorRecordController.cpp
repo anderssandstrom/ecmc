@@ -12,12 +12,23 @@ FILENAME... ecmcMotorRecordController.cpp
 #include <iocsh.h>
 #include <epicsExit.h>
 #include <epicsThread.h>
+#include <initHooks.h>
+#include <dbAccess.h>
+#include <dbStaticLib.h>
+#include <dbLock.h>
+#include <dbEvent.h>
+#include <recGbl.h>
+#include "motor.h"
+#include <motorRecord.h>
+#include <motorDevSup.h>
+#include <asynEpicsUtils.h>
 
 #include <epicsExport.h>
 #include "ecmcMotorRecordAxis.h"
 #include "ecmcMotorRecordController.h"
 #include "ecmcGeneral.h"
 #include "ecmcGlobalsExtern.h"
+#include "ecmcMainThread.h"
 #include "ecmcPVTController.h"
 #include "ecmcPluginClient.h"
 #include "ecmcRtLogger.h"
@@ -49,6 +60,76 @@ const static unsigned reportedFeatureBits =
   FEATURE_BITS_V2;
 
 namespace {
+// Called with the motor record locked, immediately before delivering its first
+// healthy status. Preserve other alarms; only discard stale startup COMM state.
+void clearStartupCommunicationAlarm(motorRecord *record) {
+  if (record->stat != COMM_ALARM && record->nsta != COMM_ALARM) {
+    return;
+  }
+  if (record->nsta == COMM_ALARM) {
+    record->nsta = record->stat == COMM_ALARM ? NO_ALARM : record->stat;
+    record->nsev = record->stat == COMM_ALARM ? NO_ALARM : record->sevr;
+  }
+  const unsigned short events = recGblResetAlarms(record);
+  if (events) {
+    db_post_events(record, &record->val, events);
+    db_post_events(record, &record->stat, DBE_VALUE | DBE_LOG | DBE_ALARM);
+    db_post_events(record, &record->sevr, DBE_VALUE | DBE_LOG | DBE_ALARM);
+  }
+}
+
+void motorRecordInitHook(initHookState state) {
+  if (state != initHookAfterInitDevSup && state != initHookAfterIocBuilt) {
+    return;
+  }
+  DBENTRY entry;
+  dbInitEntry(pdbbase, &entry);
+  if (!dbFindRecordType(&entry, "motor")) {
+    for (long result = dbFirstRecord(&entry); !result;
+         result = dbNextRecord(&entry)) {
+      DBADDR address;
+      if (dbNameToAddr(dbGetRecordName(&entry), &address)) {
+        continue;
+      }
+      auto *record = reinterpret_cast<motorRecord *>(address.precord);
+      if (record->out.type != INST_IO) {
+        continue;
+      }
+      asynUser *user = pasynManager->createAsynUser(NULL, NULL);
+      char *port = NULL, *parameters = NULL;
+      int axisNo = -1;
+      if (pasynEpicsUtils->parseLink(user, &record->out, &port,
+                                    &axisNo, &parameters) == asynSuccess) {
+        auto *controller = findDerivedAsynPortDriver<ecmcMotorRecordController>(port);
+        if (controller) {
+          if (state == initHookAfterInitDevSup) {
+            // Device support cannot obtain driver flags until position status
+            // exists. Set EGU before init_record/autosave writes can divide by
+            // MRES. This applies only to records linked to an ECMC motor port.
+            record->mflg |= MF_DRIVER_USES_EGU;
+          } else {
+            // Both autosave passes have finished. Snapshot under record then
+            // port lock (the normal device-support lock order), never from poll.
+            dbScanLock(address.precord);
+            controller->lock();
+            auto *axis = controller->getAxis(axisNo);
+            if (axis) {
+              controller->bindStartupMotorRecord(axisNo, record);
+              axis->captureRestoredSoftLimits(record->dllm, record->dhlm,
+                                              record->mres);
+            }
+            controller->unlock();
+            dbScanUnlock(address.precord);
+          }
+        }
+      }
+      pasynEpicsUtils->parseLinkFree(user, &port, &parameters);
+      pasynManager->freeAsynUser(user);
+    }
+  }
+  dbFinishEntry(&entry);
+}
+
 void setProfileMessage(char *buffer, size_t bufferSize, const char *format, ...) {
   va_list args;
   va_start(args, format);
@@ -175,6 +256,10 @@ ecmcMotorRecordController::ecmcMotorRecordController(const char *portName,
                          0, 0) { // Default priority and stack size
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
+  memset(startupMotorRecords_, 0, sizeof(startupMotorRecords_));
+  memset(startupCommRecoveryDone_, 0, sizeof(startupCommRecoveryDone_));
+  static const int hookRegistered = initHookRegister(motorRecordInitHook);
+  (void)hookRegistered;
   profileMessage_[0] = '\0';
   pAxes_ = (ecmcMotorRecordAxis **)(asynMotorController::pAxes_);
   ctrlLocal.movingPollPeriod = movingPollPeriod;
@@ -574,6 +659,74 @@ void ecmcMotorRecordController::handleStatusChange(asynStatus status) {
     }
     ctrlLocal.oldStatus = status;
   }
+}
+
+void ecmcMotorRecordController::bindStartupMotorRecord(int axisNo,
+                                                     motorRecord *record) {
+  if (axisNo >= 0 && axisNo < ECMC_MAX_AXES) {
+    startupMotorRecords_[axisNo] = record;
+    auto *axis = getAxis(axisNo);
+    if (record && axis) {
+      axis->drvlocal.ecmcAxis->setMotorRecordStartupReady(false);
+    }
+  }
+}
+
+asynStatus ecmcMotorRecordController::doCallbacksGenericPointer(void *pointer,
+                                                              int reason,
+                                                              int addr) {
+  if (reason != motorStatus_ || addr < 0 || addr >= ECMC_MAX_AXES ||
+      !startupMotorRecords_[addr] ||
+      !ecmcIocRunning() || !pointer) {
+    return asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
+  }
+
+  const auto *sample = static_cast<const MotorStatus *>(pointer);
+  msta_field status;
+  status.All = sample->status;
+  asynStatus paramStatus = asynError;
+  auto *axis = getAxis(addr);
+  if (axis && startupCommRecoveryDone_[addr] &&
+      axis->drvlocal.ecmcAxis->getMotorRecordStartupReady()) {
+    return asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
+  }
+  if (!axis || !sample->positionWritten || !isfinite(sample->position) ||
+      status.Bits.CNTRL_COMM_ERR || status.Bits.RA_PROBLEM ||
+      getParamStatus(addr, reason, &paramStatus) != asynSuccess ||
+      paramStatus != asynSuccess) {
+    return asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
+  }
+
+  // The base generic-pointer dispatcher synchronously calls devMotorAsyn,
+  // which takes this same record lock. Hold it across alarm recovery and that
+  // callback so record processing cannot intervene before the restore request.
+  auto *record = startupMotorRecords_[addr];
+  dbScanLock(reinterpret_cast<dbCommon *>(record));
+  // Recheck after acquiring the record lock: a hardware/communication fault
+  // may have arrived while that lock was held by another thread.
+  if (ecmcRTMutex) epicsMutexLock(ecmcRTMutex);
+  auto *nativeAxis = axis->drvlocal.ecmcAxis;
+  const bool healthy = nativeAxis->getRealTimeStarted() &&
+                       !nativeAxis->getInStartupPhase() &&
+                       !nativeAxis->getBlockCom() && !nativeAxis->getErrorID();
+  if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+  if (healthy && !record->pact && !startupCommRecoveryDone_[addr]) {
+    startupCommRecoveryDone_[addr] = true;
+    clearStartupCommunicationAlarm(record);
+  }
+  const asynStatus result =
+    asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
+  // The motor callback may only have queued LOAD_POS. Wait for its completion,
+  // normal record processing and a post-command RT sample before releasing RT
+  // motion producers. Never inspect motor's private save/restore structures.
+  if (healthy && result == asynSuccess && startupCommRecoveryDone_[addr] &&
+      !record->pact && record->mip == MIP_DONE && record->dmov && !record->movn &&
+      record->stat != COMM_ALARM && record->nsta != COMM_ALARM &&
+      axis->updateFirstPollDone_ && !axis->waitingForStatusAfterCommand_) {
+    nativeAxis->setMotorRecordStartupReady(true);
+  }
+  dbScanUnlock(reinterpret_cast<dbCommon *>(record));
+  return result;
 }
 
 asynStatus ecmcMotorRecordController::poll(void) {

@@ -1,9 +1,9 @@
 # IOC startup gate
 
 `ecmccfg/scripts/setAppMode.cmd` passes `ECMC_STARTUP_GATE` to the configuration
-command before starting runtime, defaulting to `0` (legacy startup). Set the
-variable to `1` before that script runs to enable the gate. `startup.cmd` only
-initializes the variable's default.
+command before starting runtime. Set the variable explicitly to `1` before
+that script runs to require the complete startup sequence described here;
+defaults differ between ecmccfg versions.
 
 Without that script, the C++ default is enabled. To select legacy startup
 directly, use this before `Cfg.SetAppMode(1)`:
@@ -33,10 +33,26 @@ compare execution held.
 
 Once the bus is stable, a single reset attempt clears latched slave-not-online/
 not-operational errors and axis hardware-not-ready/hardware-status-not-OK errors.
-Other errors are not automatically cleared. Axis initialization then proceeds,
-including any configured enable-at-startup behavior. Once all axes have left
-startup, axis/general PLCs, motion sequences, PVT, master/slave state machines,
-ordinary plugins and C++ logic begin executing.
+Other errors are not automatically cleared. Axis initialization then proceeds
+with drives disabled and motion/enable requests held. Native axes must leave
+startup, and every **loaded motor record** linked to ECMC must finish its startup
+handshake: soft-limit initialization, first healthy status delivery, any requested
+position load, record processing, and a subsequent RT sample acknowledging that
+load. An axis with no loaded motor record has no motor handshake to wait for;
+creating an asyn motor axis object alone does not add this wait.
+
+Only after these conditions are met, with the bus and timing still ready, are
+axis/general PLCs, motion sequences, PVT, master/slave state machines, ordinary
+plugin cyclic callbacks and C++ logic released. Configured enable-at-startup is
+deferred until that release. Position compare is also held until this point.
+Execute/enable requests during the hold return `ERROR_AXIS_BUSY` without latching
+a new axis error or queuing the request for later. STOP, disable, position loading
+and status polling remain available. Plugin/logic enter-RT initialization hooks
+still run during runtime setup; their supported axis motion/enable requests are
+subject to the same hold. The dedicated safety plugin continues to run.
+
+See [Motor-record startup restoration](motor-record-startup-restore.md) for the
+ESS motor communication-alarm compatibility workaround and its completion checks.
 
 This is a startup gate, not a runtime fault-recovery mechanism. After release,
 normal fault handling remains active; the gate does not repeatedly reset errors.
@@ -62,10 +78,14 @@ epicsEnvSet("ECMC_WAIT_FOR_IOC_RUNNING", "0")
 ```
 
 This skips only the IOC-hook requirement, not bus stabilization or axis startup.
+If motor records are loaded, they still require IOC initialization and their
+startup handshake; this option is intended for applications without motor records.
 Startup PLCs or plugins that are themselves required to make an axis ready will
 need their initialization moved to configuration; otherwise they remain held.
 
 For a hardware test, check the logs in order: bus/timing startup complete, IOC
-running, bus stable/axis initialization released, then PLC execution released.
+running, bus stable/axis initialization released, motor-record position restoration
+complete, then PLC/motion command producer execution released. Also test a native
+axis with no loaded motor record: it must not wait for a nonexistent motor record.
 Verify outputs stay disabled before release and that a later bus fault is still
 reported without automatic clearing. The behavior has not yet been hardware tested.

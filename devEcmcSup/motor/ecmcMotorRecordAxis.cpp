@@ -319,6 +319,9 @@ ecmcMotorRecordAxis::ecmcMotorRecordAxis(ecmcMotorRecordController *pC,
 
   updateFirstPollDone_ = false;
   softLimitRestoreErrorLogged_ = false;
+  restoredSoftLimitsReady_ = false;
+  restoredSoftLimitLow_ = 0.0;
+  restoredSoftLimitHigh_ = 0.0;
   interlockStopActive_ = false;
   drvlocal.restoreMotorSoftlimits = false;
   if (!drvlocal.ecmcAxis) {
@@ -842,19 +845,29 @@ asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool force, bool updateParam
   return asynSuccess;
 }
 
-asynStatus ecmcMotorRecordAxis::syncRestoredMotorSoftLimitsToEcmc() {
-  double lowLimit = 0.0;
-  double highLimit = 0.0;
-  int errorCode = 0;
+void ecmcMotorRecordAxis::captureRestoredSoftLimits(double dialLow,
+                                                  double dialHigh,
+                                                  double resolution) {
+  if (!drvlocal.restoreMotorSoftlimits || updateFirstPollDone_) {
+    return;
+  }
+  // ECMC uses engineering units. MRES magnitude must never scale dial limits.
+  // A negative MRES reverses the raw direction and swaps the two endpoints.
+  restoredSoftLimitLow_ = resolution < 0.0 ? -dialHigh : dialLow;
+  restoredSoftLimitHigh_ = resolution < 0.0 ? -dialLow : dialHigh;
+  restoredSoftLimitsReady_ = isfinite(resolution) && resolution != 0.0 &&
+                            isfinite(dialLow) && isfinite(dialHigh) &&
+                            ((dialLow == 0.0 && dialHigh == 0.0) ||
+                             dialLow < dialHigh);
+}
 
-  asynStatus status = pC_->getDoubleParam(axisNo_, pC_->motorLowLimit_, &lowLimit);
-  if (status) {
-    return status;
+asynStatus ecmcMotorRecordAxis::syncRestoredMotorSoftLimitsToEcmc() {
+  if (!restoredSoftLimitsReady_) {
+    return asynError;
   }
-  status = pC_->getDoubleParam(axisNo_, pC_->motorHighLimit_, &highLimit);
-  if (status) {
-    return status;
-  }
+  const double lowLimit = restoredSoftLimitLow_;
+  const double highLimit = restoredSoftLimitHigh_;
+  int errorCode = 0;
 
   errorCode = applyMotorSoftLimitChange(false, lowLimit);
   if (!errorCode) {
@@ -879,14 +892,14 @@ asynStatus ecmcMotorRecordAxis::initializeSoftLimits() {
   if (drvlocal.restoreMotorSoftlimits) {
     // The RT startup gate does not hold the asyn motor poller. Wait explicitly
     // for the IOC hook, even when that gate is disabled. Keep restoration pending
-    // if sync is disabled or either motor limit has not reached the driver yet.
+    // if sync is disabled or the post-autosave motor snapshot is not ready yet.
     if (!ecmcIocRunning() || !isSoftLimitSyncEnabled()) {
       return asynError;
     }
     status = syncRestoredMotorSoftLimitsToEcmc();
     if (status != asynSuccess && !softLimitRestoreErrorLogged_) {
       LOGERR("%s/%s:%d: ERROR: Axis[%d]: Motor soft-limit restore failed; "
-             "waiting for motor limit values and retrying.\n",
+             "waiting for a valid motor-record snapshot or limit transfer and retrying.\n",
              __FILE__, __FUNCTION__, __LINE__, axisNo_);
       softLimitRestoreErrorLogged_ = true;
     }
@@ -1741,7 +1754,19 @@ asynStatus ecmcMotorRecordAxis::setPosition(double value) {
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
   int errorCode =  drvlocal.ecmcAxis->setPosition(value);
 
+  if (!errorCode) {
+    // Startup may only complete after a subsequent RT sample acknowledges the
+    // loaded coordinate, rather than the immediate command-cache callback.
+    ecmcCycleCounterAtNewCmd_ = drvlocal.ecmcAxis->getCycleCounter();
+    waitingForStatusAfterCommand_ = true;
+    drvlocal.moveReady = false;
+  }
+
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
+
+  if (!errorCode) {
+    setIntegerParam(pC_->motorStatusDone_, 0);
+  }
 
   return errorCode == 0 ? asynSuccess : asynError;
 }
@@ -2229,10 +2254,10 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
   //#endif // ifdef POWERAUTOONOFFMODE2
 
-  status = initializeSoftLimits();
-  if (status != asynSuccess) {
-    return status;
-  }
+  // A pending restore must not block position/status callbacks: the motor
+  // record needs those callbacks to initialize and receive its driver flags.
+  // syncMotorSoftLimits() continues to hold limit readback until restore succeeds.
+  initializeSoftLimits();
 
   // Wait once for an RT sample after accepting a command.
   if (dataIsSampledAfterNewCmd()) {

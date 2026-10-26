@@ -60,6 +60,7 @@ static std::atomic<int> iocExitRequested {0};
 static std::atomic<int> iocExitCode {0};
 static std::atomic<bool> iocRunning {false};
 static std::atomic<bool> startupMotionHeld {true};
+static std::atomic<bool> startupCommandsHeld {true};
 static std::atomic<bool> startupGateConfigured {true};
 
 void ecmcNotifyIocRunning(void) {
@@ -72,6 +73,10 @@ int ecmcIocRunning(void) {
 
 int ecmcStartupMotionHeld(void) {
   return startupMotionHeld.load(std::memory_order_acquire);
+}
+
+int ecmcStartupCommandsHeld(void) {
+  return startupCommandsHeld.load(std::memory_order_acquire);
 }
 
 /*****************************************************************************/
@@ -401,6 +406,7 @@ void cyclic_task(void *usr) {
   double startupWaitSeconds = 0;
   double startupStableSeconds = 0;
   startupMotionHeld.store(startupGateEnabled, std::memory_order_release);
+  startupCommandsHeld.store(startupGateEnabled, std::memory_order_release);
   if (startupGateEnabled) {
     ecmcRtLoggerLogInfo("Startup gate enabled: holding axes and PLCs until IOC readiness and EtherCAT stabilization.\n");
   } else {
@@ -547,13 +553,15 @@ void cyclic_task(void *usr) {
     }
 
     if (startupReleased && !startupExecutionReady) {
-      bool axesReady = true;
+      bool axesReady = ecStat && (!ecInitDone || ec->timingStartupReady());
       for (i = 0; i < activeAxisCount; ++i) {
-        axesReady &= !activeAxes[i]->getInStartupPhase();
+        axesReady &= !activeAxes[i]->getInStartupPhase() &&
+                     activeAxes[i]->getMotorRecordStartupReady();
       }
       if (axesReady) {
         startupExecutionReady = true;
-        ecmcRtLoggerLogInfo("Startup: axes initialized; releasing PLCs and motion command producers.\n");
+        startupCommandsHeld.store(false, std::memory_order_release);
+        ecmcRtLoggerLogInfo("Startup: axes and motor-record restoration complete; releasing PLCs and motion command producers.\n");
       }
     }
 
@@ -930,6 +938,11 @@ int setAppModeRun(int mode) {
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
   }
 
+  // Also cover plugin/logic enter-RT initialization and runtime re-entry, before
+  // the cyclic thread has started and established its own gate snapshot.
+  startupCommandsHeld.store(startupGateConfigured.load(std::memory_order_acquire),
+                            std::memory_order_release);
+
   // wait for ethercat scan (if rescan is just done)
   int errorCode = waitForEcMasterScan(
     ecTimeoutSeconds > 0 ? ecTimeoutSeconds : EC_START_TIMEOUT_S);
@@ -1086,6 +1099,7 @@ int setStartupGate(int enable) {
     return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
   }
   startupGateConfigured.store(enable != 0, std::memory_order_release);
+  startupCommandsHeld.store(enable != 0, std::memory_order_release);
   return 0;
 }
 

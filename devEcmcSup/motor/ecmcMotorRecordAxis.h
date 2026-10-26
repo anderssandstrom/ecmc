@@ -43,6 +43,8 @@ public:
 
   void       report(FILE *fp,
                     int   level);
+  void       captureRestoredSoftLimits(double dialLow, double dialHigh,
+                                      double resolution);
   void       callParamCallbacksUpdateError();
   asynStatus moveVelocity(double min_velocity,
                           double max_velocity,
@@ -227,6 +229,9 @@ private:
   size_t profileMaxPoints_;  
   bool updateFirstPollDone_;
   bool softLimitRestoreErrorLogged_;
+  bool restoredSoftLimitsReady_;
+  double restoredSoftLimitLow_;
+  double restoredSoftLimitHigh_;
   bool interlockStopActive_;
   friend class ecmcMotorRecordController;
   uint32_t ecmcCycleCounterAtNewCmd_;
