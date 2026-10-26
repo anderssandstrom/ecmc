@@ -463,6 +463,17 @@ void ecmcAxisBase::initVars() {
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
+  if (ecmcStartupCommandsHeld()) {
+    // Keep drives disabled (including external trajectory mode) while motor
+    // startup callbacks and position restoration run. Do not re-enter axis
+    // startup here: the motor poller needs initialized axes to finish its work.
+    setExecute(false, true);
+    setEnable(false);
+  } else if (startupEnablePending_) {
+    startupEnablePending_ = false;
+    setEnable(data_.control_.enableAtStartup);
+    setMRCnen(data_.control_.enableAtStartup);
+  }
   if (ecmcStartupMotionHeld()) {
     axisState_ = ECMC_AXIS_STATE_STARTUP;
     setInStartupPhase(true);
@@ -544,8 +555,12 @@ void ecmcAxisBase::preExecute(bool masterOK) {
       refreshAsynTargetValue();
 
       // start enable if needed
-      setEnable(data_.control_.enableAtStartup);
-      setMRCnen(data_.control_.enableAtStartup);
+      if (ecmcStartupCommandsHeld()) {
+        startupEnablePending_ = true;
+      } else {
+        setEnable(data_.control_.enableAtStartup);
+        setMRCnen(data_.control_.enableAtStartup);
+      }
       axisState_ = ECMC_AXIS_STATE_DISABLED;
     }
     break;
@@ -673,7 +688,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
                                         false);
   }
 
-  if (!ecmcStartupMotionHeld() && positionCompare_.isActive()) {
+  if (!ecmcStartupCommandsHeld() && positionCompare_.isActive()) {
     uint64_t encoderSampleTimeNs = 0;
     ecmcEncoder *encoder = getPrimEnc();
     const bool sampleTimeValid =
@@ -1353,6 +1368,10 @@ void ecmcAxisBase::printAxisStatus() {
 
 // Ignore busy so that PVT can run (PVT controller will check that traj is not busy)
 int ecmcAxisBase::setExecute(bool execute) {
+  // Reject before auto-enable can queue a move for later execution.
+  if (execute && ecmcStartupCommandsHeld()) {
+    return ERROR_AXIS_BUSY;
+  }
   // Auto enable if needed  (except for homing seq 15)
   //printf("ecmcAxisBase::setExecute(): 1 global busy %d, local busy %d\n", data_.status_.statusWord_.globalBusy, data_.status_.statusWord_.localBusy);
   if(!getEnable() && execute && autoEnableTimoutS_ > 0 && !((data_.control_.cmdData == ECMC_SEQ_HOME_SET_POS) &&
@@ -1369,6 +1388,9 @@ int ecmcAxisBase::setExecute(bool execute) {
 }
 
 int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
+  if (execute && ecmcStartupCommandsHeld()) {
+    return ERROR_AXIS_BUSY;
+  }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
     bumpMotionCommandExecuteCounter();
   }
@@ -1968,6 +1990,9 @@ void ecmcAxisBase::refreshStatusWd() {
     (unsigned char)data_.interlocks_.lastActiveInterlock;
 }
 int ecmcAxisBase::setEnable(bool enable) {
+  if (enable && ecmcStartupCommandsHeld()) {
+    return ERROR_AXIS_BUSY;
+  }
   if (data_.status_.statusWord_.enable == enable) return 0;
 
   if (ecmcRtLoggerPortDriverGetCountEnableCommands(data_.status_.axisId)) {

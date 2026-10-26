@@ -14,6 +14,7 @@
 #define ECMCAXISBASE_H_
 
 #define __STDC_FORMAT_MACROS  // To "reinclude" inttypes
+#include <atomic>
 #include "ecmcDefinitions.h"
 #include "ecmcError.h"
 #include "ecmcAsynPortDriver.h"
@@ -142,6 +143,12 @@ public:
   bool                       getAllowCmdFromPLC();
   void                       setInStartupPhase(bool startup);
   bool                       getInStartupPhase();
+  bool getMotorRecordStartupReady() const {
+    return motorRecordStartupReady_.load(std::memory_order_acquire);
+  }
+  void setMotorRecordStartupReady(bool ready) {
+    motorRecordStartupReady_.store(ready, std::memory_order_release);
+  }
   int                        setEncDataSourceType(dataSource refSource);
   dataSource                 getTrajDataSourceType();
   dataSource                 getEncDataSourceType();
@@ -313,6 +320,8 @@ public:
   bool       getHwReady();
 
 protected:
+  std::atomic<bool> motorRecordStartupReady_ {true};
+  bool startupEnablePending_ {false};
   void       initVars();
   void       refreshDebugInfoStruct();
 

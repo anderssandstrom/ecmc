@@ -45,7 +45,9 @@ enum { ECMC_ENCODER_TYPE_INCREMENTAL, ECMC_ENCODER_TYPE_ABSOLUTE };
 enum { ECMC_AXIS_STATE_STARTUP, ECMC_AXIS_STATE_DISABLED };
 enum { ERROR_AXIS_HW_NOT_READY = 1, ERROR_AXIS_HARDWARE_STATUS_NOT_OK = 2 };
 bool startupHeld = false;
+bool commandsHeld = false;
 bool ecmcStartupMotionHeld() { return startupHeld; }
+bool ecmcStartupCommandsHeld() { return commandsHeld; }
 struct Filter {
   int calls = 0;
   double position = 0;
@@ -96,6 +98,7 @@ public:
   Sequence seq_;
   int axisState_ = ECMC_AXIS_STATE_STARTUP, error = 0;
   bool hwReady_ = false, hwReadyOld_ = false, mrEnable = false;
+  bool startupEnablePending_ = false;
   int syncs = 0, targetRefreshes = 0;
   ecmcEncoder *getPrimEnc() { return encArray_[data_.control_.primaryEncIndex]; }
   void setEnable(bool value) { data_.status_.statusWord_.enable = value; }
@@ -222,10 +225,26 @@ void testStartupReferences() {
   }
 }
 
+void testDeferredStartupEnable() {
+  ecmcAxisBase axis;
+  axis.setPosition(5);
+  axis.data_.control_.enableAtStartup = true;
+  commandsHeld = true;
+  axis.startupStep(true, true, true);
+  assert(axis.data_.status_.startupFinsished);
+  assert(!axis.data_.status_.statusWord_.instartup);
+  assert(axis.startupEnablePending_);
+  assert(!axis.data_.status_.statusWord_.enable && !axis.mrEnable);
+  assert(axis.primary.getActPos() == 5 && axis.primary.getHomed());
+  assert(axis.data_.status_.currentTargetPosition == 5);
+  commandsHeld = false;
+}
+
 int main() {
   testEncoderInitialization();
   testRestoredStartup();
   testStartupReferences();
+  testDeferredStartupEnable();
   puts("Axis startup/restore: position and homed state, readiness gating, "
        "initial targets, one-time initialization, and encoder references passed.");
 }
