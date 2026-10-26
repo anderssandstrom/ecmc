@@ -165,6 +165,7 @@ private:
   asynStatus syncMotorSoftLimits();
   asynStatus syncMotorSoftLimits(bool force, bool updateParams);
   asynStatus syncRestoredMotorSoftLimitsToEcmc();
+  asynStatus initializeSoftLimits();
   asynStatus syncSoftLimitInterfaces(bool updateParams);
   asynStatus syncSoftLimitInterfaces(bool updateParams,
                                      bool seedWritableMotorLimits);
@@ -225,6 +226,7 @@ private:
   bool pvtEnabled_;
   size_t profileMaxPoints_;  
   bool updateFirstPollDone_;
+  bool softLimitRestoreErrorLogged_;
   bool interlockStopActive_;
   friend class ecmcMotorRecordController;
   uint32_t ecmcCycleCounterAtNewCmd_;

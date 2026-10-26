@@ -35,6 +35,7 @@
 extern "C" {
 
 void ecmcNotifyIocRunning(void);
+int ecmcIocRunning(void);
 int ecmcStartupMotionHeld(void);
 #endif  // ifdef __cplusplus
 

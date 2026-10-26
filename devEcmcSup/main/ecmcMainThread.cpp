@@ -66,6 +66,10 @@ void ecmcNotifyIocRunning(void) {
   iocRunning.store(true, std::memory_order_release);
 }
 
+int ecmcIocRunning(void) {
+  return iocRunning.load(std::memory_order_acquire);
+}
+
 int ecmcStartupMotionHeld(void) {
   return startupMotionHeld.load(std::memory_order_acquire);
 }
