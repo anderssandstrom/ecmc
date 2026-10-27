@@ -18,6 +18,10 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <cmath>
+#include <limits>
 #include "ecmcError.h"
 
 #define ERROR_LOOKUP_TABLE_ERROR 0x1441A
@@ -63,6 +67,10 @@ public:
 
   // Function to perform linear interpolation
   T2 getValue(T1 inputIndex) {
+    // Preserve an invalid floating-point input without indexing before the table.
+    if (std::isnan(inputIndex)) {
+      return std::numeric_limits<T2>::quiet_NaN();
+    }
    
     // Handle cases where inputIndex is out of bounds (no interpolation)
     if (inputIndex <= indexTable_.front()) {

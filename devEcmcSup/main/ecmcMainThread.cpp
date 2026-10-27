@@ -23,7 +23,6 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <assert.h>
 #include <sched.h>
 #include <pthread.h>
 #include <exception>
@@ -250,29 +249,40 @@ rtThreadId rtThreadCreate(
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   struct sched_param sched = { 0 };
   rtThreadId thread        = (rtThreadId)calloc(1, sizeof(struct rtThreadOSD));
-  assert(thread != NULL);
-  sched.sched_priority = priority;
-  assert(pthread_attr_init(&thread->attr) == 0);
-
-  if (priority) {
-    assert(pthread_attr_setinheritsched(&thread->attr,
-                                        PTHREAD_EXPLICIT_SCHED) == 0);
-    assert(pthread_attr_setschedpolicy(&thread->attr,
-                                       SCHED_FIFO) == 0);
-    assert(pthread_attr_setschedparam(&thread->attr,
-                                      &sched) == 0);
+  if (!thread) {
+    LOGERR("rtThreadCreate: allocation failed\n");
+    return NULL;
   }
-
-  assert(pthread_attr_setstacksize(&thread->attr,
-                                   PTHREAD_STACK_MIN + stackSize) == 0);
+  int result = pthread_attr_init(&thread->attr);
+  if (result) {
+    LOGERR("rtThreadCreate: attribute initialization failed (%d)\n", result);
+    free(thread);
+    return NULL;
+  }
+  sched.sched_priority = priority;
+  if (priority) {
+    result = pthread_attr_setinheritsched(&thread->attr, PTHREAD_EXPLICIT_SCHED);
+    if (!result) result = pthread_attr_setschedpolicy(&thread->attr, SCHED_FIFO);
+    if (!result) result = pthread_attr_setschedparam(&thread->attr, &sched);
+  }
+  if (!result) {
+    result = pthread_attr_setstacksize(&thread->attr, PTHREAD_STACK_MIN + stackSize);
+  }
+  if (result) {
+    LOGERR("rtThreadCreate: attribute setup failed (%d)\n", result);
+    pthread_attr_destroy(&thread->attr);
+    free(thread);
+    return NULL;
+  }
 
   thread->start = funptr;
   thread->usr   = parm;
-  int result = pthread_create(&thread->thread,
-                              &thread->attr,
-                              start_routine,
-                              thread);
+  result = pthread_create(&thread->thread,
+                          &thread->attr,
+                          start_routine,
+                          thread);
 
+  pthread_attr_destroy(&thread->attr);
   if (result == 0) {
     pthread_setname_np(thread->thread, name);
     return thread;
@@ -291,6 +301,7 @@ rtThreadId rtThreadCreate(
       LOGERR("rtThreadCreate: other error %d\n", result);
       break;
     }
+    free(thread);
     return NULL;
   }
 }
@@ -886,8 +897,12 @@ int startRTthread() {
     prio              = ECMC_PRIO_LOW;
     threadDiag.status = 0;
     mainAsynParams[ECMC_ASYN_MAIN_PAR_STATUS_ID]->refreshParamRT(1);
-    assert(epicsThreadCreate(ECMC_RT_THREAD_NAME, prio, ECMC_STACK_SIZE,
-                             cyclic_task, NULL) != NULL);
+    if (epicsThreadCreate(ECMC_RT_THREAD_NAME, prio, ECMC_STACK_SIZE,
+                          cyclic_task, NULL) == NULL) {
+      LOGERR("ERROR: Failed to create cyclic task thread (0x%x).\n",
+             ERROR_MAIN_RT_THREAD_CREATE_FAILED);
+      return ERROR_MAIN_RT_THREAD_CREATE_FAILED;
+    }
   } else {
     threadDiag.status = 1;
     mainAsynParams[ECMC_ASYN_MAIN_PAR_STATUS_ID]->refreshParamRT(1);

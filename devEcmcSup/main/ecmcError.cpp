@@ -2372,6 +2372,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20077:
+    return "ERROR_MAIN_RT_THREAD_CREATE_FAILED";
+
   case 0x20076:
     return "ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT";
 

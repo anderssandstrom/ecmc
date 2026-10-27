@@ -81,6 +81,7 @@ int           windowsToEpicsTimeStamp(uint64_t        plcTime,
  *  <alias> (global simulation slave entry)
  *  <alias>.<bit> (only one bit of global simulation slave entry)
 */
+// alias must provide at least EC_MAX_OBJECT_PATH_CHAR_LENGTH bytes.
 int parseEcPath(char *ecPath,
                 int  *master,
                 int  *slave,

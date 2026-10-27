@@ -15,6 +15,8 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 #include <initHooks.h>
 #include "epicsTime.h"
 
@@ -267,67 +269,54 @@ int parseEcPath(char *ecPath,
                 int  *slave,
                 char *alias,
                 int  *bit) {
+  if (!ecPath || !master || !slave || !alias || !bit || !*ecPath ||
+      strlen(ecPath) >= EC_MAX_OBJECT_PATH_CHAR_LENGTH) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
+  // Parse integers without scanf overflow or accepting trailing characters.
+  const auto parseInteger = [](const char *start, char **end, int *value) {
+    errno = 0;
+    long parsed = strtol(start, end, 10);
+    if (*end == start || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX) {
+      return false;
+    }
+    *value = static_cast<int>(parsed);
+    return true;
+  };
+
   int masterId = 0;
-  int slaveId  = 0;
-  int bitId    = 0;
-  int nvals    = 0;
+  int slaveId = -1;
+  int bitId = -1;
+  const char *entry = ecPath;
+  if (strncmp(ecPath, "ec", 2) == 0 && strstr(ecPath, ".s") != NULL) {
+    char *end = NULL;
+    if (!parseInteger(ecPath + 2, &end, &masterId) ||
+        strncmp(end, ".s", 2) != 0 ||
+        !parseInteger(end + 2, &end, &slaveId) || *end != '.') {
+      return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    }
+    entry = end + 1;
+  }
 
-  if ((ecPath == NULL) || (strlen(ecPath) == 0)) {
+  const char *separator = strchr(entry, '.');
+  size_t aliasLen = separator ? static_cast<size_t>(separator - entry) : strlen(entry);
+  if (aliasLen == 0) {
     return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
   }
-
-  nvals = sscanf(ecPath,
-                 "ec%d.s%d.%[^.].%d",
-                 &masterId,
-                 &slaveId,
-                 alias,
-                 &bitId);
-
-  if (nvals == 4) {
-    *master = masterId;
-    *slave  = slaveId;
-    *bit    = bitId;
-    return 0;
-  }
-  nvals = sscanf(ecPath, "ec%d.s%d.%s", &masterId, &slaveId, alias);
-
-  if (nvals == 3) {
-    *master = masterId;
-    *slave  = slaveId;
-    *bit    = -1;
-    return 0;
-  }
-
-  if ((strncmp(ecPath, "ec", 2) == 0) && (strstr(ecPath, ".s") != NULL)) {
-    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
-  }
-
-  if (strlen(ecPath) >= EC_MAX_OBJECT_PATH_CHAR_LENGTH) {
-    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
-  }
-
-  char *bitSep = strrchr(ecPath, '.');
-  if (bitSep != NULL) {
-    char *endPtr = NULL;
-    long parsedBit = strtol(bitSep + 1, &endPtr, 10);
-    if ((endPtr != bitSep + 1) && (*endPtr == '\0') && (parsedBit >= 0)) {
-      size_t aliasLen = bitSep - ecPath;
-      if ((aliasLen == 0) || (aliasLen >= EC_MAX_OBJECT_PATH_CHAR_LENGTH)) {
-        return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
-      }
-      memcpy(alias, ecPath, aliasLen);
-      alias[aliasLen] = '\0';
-      *master = 0;
-      *slave  = -1;
-      *bit    = parsedBit;
-      return 0;
+  if (separator) {
+    char *end = NULL;
+    if (!parseInteger(separator + 1, &end, &bitId) || *end != '\0' || bitId < 0) {
+      return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
     }
   }
 
-  strcpy(alias, ecPath);
-  *master = 0;
-  *slave  = -1;
-  *bit    = -1;
+  // Publish outputs only after the complete path has passed validation.
+  memcpy(alias, entry, aliasLen);
+  alias[aliasLen] = '\0';
+  *master = masterId;
+  *slave = slaveId;
+  *bit = bitId;
   return 0;
 }
 
