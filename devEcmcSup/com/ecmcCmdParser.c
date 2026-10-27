@@ -225,7 +225,7 @@ static int parseEcVerifyProductList(
             cmd_buf_printf(buffer, "Error: %d", iRet);\
             return 0;\
           }\
-          cmd_buf_printf(buffer, "%u", u64Value);\
+          cmd_buf_printf(buffer, "%" PRIu64, u64Value);\
           return 0;\
         }\
         while (0)
@@ -2735,6 +2735,9 @@ static int handleCfgCommand(const char *myarg_1) {
 
   if (nvals == 5) {
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcWriteSoE");
+    if (iValue5 <= 0 || (size_t)iValue5 > sizeof(uint64Value)) {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
     return ecWriteSoE(iValue2, iValue3, iValue4, iValue5,
                       (uint8_t *)(&uint64Value));
   }
@@ -5222,6 +5225,9 @@ int motorHandleOneArg(const char *myarg_1, ecmcOutputBufferType *buffer) {
                  &iValue5);
 
   if (nvals == 4) {
+    if (iValue5 <= 0 || (size_t)iValue5 > sizeof(u64Value)) {
+      return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    }
     SEND_RESULT_OR_ERROR_AND_RETURN_UINT64(ecReadSoE(iValue2, iValue3, iValue4,
                                                      iValue5,
                                                      (uint8_t *)(&u64Value)));

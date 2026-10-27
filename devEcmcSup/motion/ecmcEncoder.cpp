@@ -2323,12 +2323,12 @@ int ecmcEncoder::getHomeExtTriggEnabled() {
 
 int ecmcEncoder::loadLookupTable(const std::string& filename) {
   try {
-    // First cleanup
-    if(lookupTable_) {
-      lookupTableEnable_ = 0;
-      delete lookupTable_;
-    }
-    lookupTable_  = new ecmcLookupTable<double, double>(filename);
+    // Keep the old table owned until the replacement has loaded successfully.
+    ecmcLookupTable<double, double> *replacement =
+      new ecmcLookupTable<double, double>(filename);
+    lookupTableEnable_ = 0;
+    delete lookupTable_;
+    lookupTable_ = replacement;
   }
   catch (int error) {
     lookupTableEnable_ = 0;

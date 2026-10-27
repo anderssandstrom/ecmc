@@ -263,10 +263,11 @@ int loadLUT(int index, char *fileName) {
   CHECK_LUT_RETURN_IF_ERROR(index);
 
   try {
-    if( luts[index] ) {
-      delete luts[index];
-    }
-    luts[index] = new ecmcLookupTable<double,double>(fileName);
+    // Keep the existing table valid if construction or validation fails.
+    ecmcLookupTable<double, double> *replacement =
+      new ecmcLookupTable<double, double>(fileName);
+    delete luts[index];
+    luts[index] = replacement;
   }
   catch(...) {
     return ERROR_LUT_LOAD_ERROR;

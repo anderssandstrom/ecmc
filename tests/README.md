@@ -24,7 +24,7 @@ python3 tests/test_motor_record_dmov.py
 - Python 3.6 or newer; no third-party Python packages.
 - C and C++ compilers supporting C99 and C++17, respectively.
 - AddressSanitizer and UndefinedBehaviorSanitizer support and runtime libraries
-  for the async SDO, buffer-boundary and path/thread/lookup tests.
+  for the async SDO, buffer-boundary, path/thread/lookup and LUT/SoE tests.
 
 Compilers default to `cc` and `c++`. Override them using executable names or
 paths in `CC` and `CXX` (not shell command strings):
@@ -60,6 +60,7 @@ Python, and does not initialize submodules or build the full IOC.
 | `test_motor_startup_comm_recovery.py` | Stale startup COMM recovery, position-load completion, preserved alarms and runtime faults |
 | `test_motor_startup_execution_gate.py` | Motion producer hold, rejected commands, deferred enable and absent motor records |
 | `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |
+| `test_lut_reload_soe.py` | Failed LUT reload ownership, retry/destruction, scalar SoE size bounds and full-width output |
 | `test_path_thread_lookup.py` | EtherCAT path bounds and malformed inputs, thread startup and cleanup with/without NDEBUG, lookup NaN and endpoint handling |
 | `test_plugin_loading.py` | Legacy plugin ABI, real shared-library loading/unloading, optional callbacks, failures and reload |
 | `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, task dispatch, masterless operation and opt-outs |
