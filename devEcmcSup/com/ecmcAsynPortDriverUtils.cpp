@@ -320,8 +320,19 @@ int parseEcPath(char *ecPath,
   return 0;
 }
 
+// Every token copied below is shorter than the complete path. Validate before
+// sscanf so all EC_MAX_OBJECT_PATH_CHAR_LENGTH destinations include room for NUL.
+static bool validObjectPath(const char *path) {
+  return path && *path &&
+    strnlen(path, EC_MAX_OBJECT_PATH_CHAR_LENGTH) < EC_MAX_OBJECT_PATH_CHAR_LENGTH;
+}
+
 int getEcMainFuncType(char *objPath,
                       int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   int  nvals    = 0;
   int  masterId = 0;
@@ -342,6 +353,10 @@ int getEcMainFuncType(char *objPath,
 
 int getPVTCtrlFuncType(char *objPath,
                        int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   int  nvals    = 0;
   
@@ -361,6 +376,10 @@ int getPVTCtrlFuncType(char *objPath,
 
 int getAxMainFuncType(char *objPath,
                       int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   int  axisId = 0;
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   int  nvals = 0;
@@ -403,6 +422,10 @@ int getAxMainFuncType(char *objPath,
 
 int getAxDriveFuncType(char *objPath,
                        int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   int  axisId = 0;
   char objectTypeStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
@@ -514,6 +537,10 @@ int getAxDriveFuncType(char *objPath,
 
 int getAxEncFuncType(char *objPath,
                      int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   int  axisId = 0;
   char objectTypeStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
@@ -674,6 +701,10 @@ int getAxEncFuncType(char *objPath,
 
 int getAxMonFuncType(char *objPath,
                      int  *objectFunction) {
+  if (!validObjectPath(objPath) || !objectFunction) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   int  axisId = 0;
   char objectTypeStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
@@ -737,6 +768,10 @@ int getAxMonFuncType(char *objPath,
 
 int getAxSubObjectType(char              *objPath,
                        axisSubObjectType *objectType) {
+  if (!validObjectPath(objPath) || !objectType) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   *objectType = ECMC_AX_SUB_OBJ_INVALID;
   int  axisId = 0;
   char objectTypeStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
@@ -790,6 +825,10 @@ int getAxSubObjectType(char              *objPath,
 int getMainObjectType(char           *objPath,
                       int            *objIndex,
                       mainObjectType *objectType) {
+  if (!validObjectPath(objPath) || !objIndex || !objectType) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+
   char objectFunctionStr[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   int  nvals       = 0;
   int  objectIndex = 0;

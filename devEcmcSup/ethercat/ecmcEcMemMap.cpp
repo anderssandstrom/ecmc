@@ -33,7 +33,7 @@ ecmcEcMemMap::ecmcEcMemMap(ecmcAsynPortDriver *asynPortDriver,
   direction_       = nDirection;
   idString_        = id;
   idStringChar_    = strdup(idString_.c_str());
-  buffer_          = new uint8_t[byteSize_];
+  buffer_          = new uint8_t[byteSize_]();
   slaveId_         = slaveId;
   dataType_        = dt;
   bytesPerElement_ = getEcDataTypeByteSize(dataType_);

@@ -1786,13 +1786,11 @@ int ecmcEncoder::getVeloFilterSize() {
   if resolution is poor compared to sample rate)
 */
 int ecmcEncoder::setPosFilterSize(size_t size) {
-  if (size <= 1) {
-    enablePositionFilter_ = false;
-  } else {
-    enablePositionFilter_ = true;
+  const int errorCode = positionFilter_->setFilterSize(size);
+  if (!errorCode) {
+    enablePositionFilter_ = size > 1;
   }
-
-  return positionFilter_->setFilterSize(size);
+  return errorCode;
 }
 
 int ecmcEncoder::getPosFilterSize() {
@@ -1804,6 +1802,9 @@ int ecmcEncoder::getPosFilterSize() {
   if resolution is poor compared to sample rate)
 */
 int ecmcEncoder::setPosFilterEnable(bool enable) {
+  if (enable && positionFilter_->getFilterSize() == 0) {
+    return ERROR_MAIN_FILTER_INVALID_SIZE;
+  }
   enablePositionFilter_ = enable;
   return 0;
 }

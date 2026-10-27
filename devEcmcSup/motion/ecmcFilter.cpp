@@ -30,7 +30,7 @@ ecmcFilter::ecmcFilter(double sampleTime) {
 ecmcFilter::ecmcFilter(double sampleTime, size_t size) {
   initVars();
   sampleTime_ = sampleTime;
-  filterSize_ = size;
+  filterSize_ = size > 0 ? size : 1;
   bufferVel_  = new double[filterSize_];
 
   for (int i = 0; i < (int)filterSize_; i++) {
@@ -169,6 +169,10 @@ void ecmcFilter::setSampleTime(double sampleTime) {
 }
 
 int ecmcFilter::setFilterSize(size_t size) {
+  // A one-sample filter is a safe pass-through, including after re-enabling.
+  if (size == 0) {
+    size = 1;
+  }
   double *tempBuffer = NULL;
 
   try {
