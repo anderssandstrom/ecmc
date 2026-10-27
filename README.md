@@ -117,7 +117,9 @@ Typical workflow:
 4. Load EtherCAT, axis, and PLC configuration through `ecmcConfigOrDie` or `ecmcConfig`.
 5. Start the IOC and verify axis and EtherCAT status from EPICS.
 
-Example IOC files are included under [ecmcExampleTop/](ecmcExampleTop/).
+For a classic IOC without PSI `require`, see the
+[masterless PLC example](ecmcExampleTop/README.md). It includes build/startup
+instructions and local counter/hold PVs and needs no EtherCAT hardware.
 
 ## Configuration model
 

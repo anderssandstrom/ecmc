@@ -35,8 +35,6 @@ MOTOR = $(SUPPORT)/motor
 EXPRTK = $(TOP)/exprtkSupport
 RUCKIG = $(SUPPORT)/ruckig
 ETHERLAB = $(SUPPORT)/etherlab
-ECMCCFG = $(SUPPORT)/ecmccfg
-ECMCCOMP = $(SUPPORT)/ecmccomp
 
 # Set RULES here if you want to use build rules from somewhere
 # other than EPICS_BASE:

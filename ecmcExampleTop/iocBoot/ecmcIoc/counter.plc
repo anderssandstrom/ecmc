@@ -1,0 +1,6 @@
+# A 10 Hz counter. Static variables start at zero and persist between scans.
+# Hold is written by EPICS; do not overwrite it during the first scan.
+if(not(static.hold)) {
+  static.counter += 1;
+};
+static.seconds := static.counter / 10;

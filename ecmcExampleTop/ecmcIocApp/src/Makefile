@@ -36,7 +36,7 @@ USR_LDFLAGS += -Wl,-rpath,'$(RUCKIG)/build'
 # ecmcioc.dbd will be created and installed
 DBD += ecmcIoc.dbd
 
-# opcuaIoc.dbd will be made up from these files:
+# ecmcIoc.dbd will be made up from these files:
 ecmcIoc_DBD += base.dbd
 ecmcIoc_DBD += ecmcController.dbd
 ecmcIoc_DBD += ecmcMotorRecordSupport.dbd
@@ -44,9 +44,9 @@ ecmcIoc_DBD += asyn.dbd
 ecmcIoc_DBD += motorSupport.dbd
 
 # Add all the support libraries needed by this IOC
-ecmcIoc_LIBS += asyn
 ecmcIoc_LIBS += ecmc
 ecmcIoc_LIBS += motor
+ecmcIoc_LIBS += asyn
 ecmcIoc_LIBS += exprtkSupport
 
 ecmcIoc_SRCS += ecmcIoc_registerRecordDeviceDriver.cpp

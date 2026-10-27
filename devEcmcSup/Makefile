@@ -26,6 +26,10 @@ USR_LDFLAGS += -Wl,--no-as-needed
 USR_LDFLAGS += -lstdc++
 USR_CXXFLAGS += -std=c++17
 
+# ESS motor releases may not install motorDevSup.h, used by the startup
+# handshake. Keep the normal installed include path and allow the source header.
+USR_INCLUDES += -I$(MOTOR)/motorApp/MotorSrc
+
 ifneq ($(filter linux-%,$(T_A)),)
 ETHERLAB ?= /opt/etherlab
 USR_INCLUDES += -I$(ETHERLAB)/include

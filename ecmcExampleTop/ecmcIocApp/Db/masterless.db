@@ -1,0 +1,28 @@
+record(ao, "$(P)Hold") {
+  field(DESC, "0 counts, 1 holds")
+  field(DTYP, "asynFloat64")
+  field(OUT, "@asyn($(PORT),0,1)T_SMP_MS=100/TYPE=asynFloat64/plcs.plc0.static.hold?")
+  field(PINI, "YES")
+  field(VAL, "0")
+  field(DRVL, "0")
+  field(DRVH, "1")
+  field(PREC, "0")
+}
+
+record(ai, "$(P)Counter") {
+  field(DESC, "PLC scan count while running")
+  field(DTYP, "asynFloat64")
+  field(INP, "@asyn($(PORT),0,1)T_SMP_MS=100/TYPE=asynFloat64/plcs.plc0.static.counter?")
+  field(SCAN, "I/O Intr")
+  field(PREC, "0")
+  field(EGU, "counts")
+}
+
+record(ai, "$(P)Seconds") {
+  field(DESC, "Accumulated counting time")
+  field(DTYP, "asynFloat64")
+  field(INP, "@asyn($(PORT),0,1)T_SMP_MS=100/TYPE=asynFloat64/plcs.plc0.static.seconds?")
+  field(SCAN, "I/O Intr")
+  field(PREC, "1")
+  field(EGU, "s")
+}
