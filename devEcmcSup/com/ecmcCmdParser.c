@@ -285,30 +285,35 @@ void       init_axis(int axis_no) {
 
 static int appendAsciiDataToStorageBuffer(int         storageIndex,
                                           const char *asciiData) {
-  char *currentStringPos = strchr(asciiData, '=');
-
-  if (currentStringPos) {
-    double data = 0;
-
-    while (currentStringPos) {
-      currentStringPos++;
-      int nvals = sscanf(currentStringPos, "%lf", &data);
-
-      if (nvals) {
-        int error = appendStorageBuffer(storageIndex, &data, 1);
-
-        if (error) {
-          return error;
-        }
-        currentStringPos = strchr(currentStringPos + 1, ',');
-      } else {
-        return ECMC_COMMAND_FORMAT_ERROR;
-      }
-    }
-  } else {
+  const char *current = asciiData ? strchr(asciiData, '=') : NULL;
+  if (!current) {
     return ECMC_COMMAND_FORMAT_ERROR;
   }
-  return 0;
+  ++current;
+
+  while (1) {
+    char *end = NULL;
+    double data = strtod(current, &end);
+    if (end == current) {
+      return ECMC_COMMAND_FORMAT_ERROR;
+    }
+    while (isspace((unsigned char)*end)) {
+      ++end;
+    }
+    if (*end != '\0' && *end != ',') {
+      return ECMC_COMMAND_FORMAT_ERROR;
+    }
+
+    int error = appendStorageBuffer(storageIndex, &data, 1);
+    if (error) {
+      return error;
+    }
+    if (*end == '\0') {
+      return 0;
+    }
+    // A comma must be followed by another value, checked on the next pass.
+    current = end + 1;
+  }
 }
 
 static const char *const sFeaturesQ_str     = ".THIS.sFeatures?";

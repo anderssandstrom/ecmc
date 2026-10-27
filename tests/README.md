@@ -25,7 +25,8 @@ python3 tests/test_motor_record_dmov.py
 - C and C++ compilers supporting C99 and C++17, respectively.
 - AddressSanitizer and UndefinedBehaviorSanitizer support and runtime libraries
   for the async SDO, buffer-boundary, path/thread/lookup, LUT/SoE and
-  filter/memory-map/object-path and storage-creation/diagnostic-I/O tests.
+  filter/memory-map/object-path, storage-creation/diagnostic-I/O and
+  timing/storage-list tests.
 
 Compilers default to `cc` and `c++`. Override them using executable names or
 paths in `CC` and `CXX` (not shell command strings):
@@ -66,6 +67,7 @@ Python, and does not initialize submodules or build the full IOC.
 | `test_path_thread_lookup.py` | EtherCAT path bounds and malformed inputs, thread startup and cleanup with/without NDEBUG, lookup NaN and endpoint handling |
 | `test_plugin_loading.py` | Legacy plugin ABI, real shared-library loading/unloading, optional callbacks, failures and reload |
 | `test_storage_creation_diag_io.py` | Invalid storage-mode rejection preserving existing objects, diagnostic write/close/open failure handling |
+| `test_timing_storage_list.py` | Sample-period units, finite timing values and boundaries, storage-list empty tokens and delimiters |
 | `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, task dispatch, masterless operation and opt-outs |
 
 Each script reads the current local production source, compiles the relevant

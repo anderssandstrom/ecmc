@@ -1169,7 +1169,8 @@ int setSampleRate(double sampleRate) {
     return ERROR_MAIN_SAMPLE_RATE_CHANGE_NOT_ALLOWED;
   }
 
-  if ((sampleRate < MCU_MIN_FREQUENCY) || (sampleRate > MCU_MAX_FREQUENCY)) {
+  if (!isfinite(sampleRate) || (sampleRate < MCU_MIN_FREQUENCY) ||
+      (sampleRate > MCU_MAX_FREQUENCY)) {
     LOGERR(
       "%s/%s:%d: Sample rate out of range. Allowed range  %lf.. %lfhz. Sample rate = %lfhz (0x%x).\n",
       __FILE__,
@@ -1177,7 +1178,7 @@ int setSampleRate(double sampleRate) {
       __LINE__,
       MCU_MIN_FREQUENCY,
       MCU_MAX_FREQUENCY,
-      mcuFrequency,
+      sampleRate,
       ERROR_MAIN_SAMPLE_RATE_OUT_OF_RANGE);
     return ERROR_MAIN_SAMPLE_RATE_OUT_OF_RANGE;
   }
@@ -1205,8 +1206,9 @@ int setSamplePeriodMs(double samplePeriodMs) {
     return ERROR_MAIN_SAMPLE_RATE_CHANGE_NOT_ALLOWED;
   }
 
-  if ((samplePeriodMs < MCU_MIN_PERIOD_NS) ||
-      (samplePeriodMs > MCU_MAX_PERIOD_NS)) {
+  if (!isfinite(samplePeriodMs) ||
+      (samplePeriodMs < MCU_MIN_PERIOD_NS / 1e6) ||
+      (samplePeriodMs > MCU_MAX_PERIOD_NS / 1e6)) {
     LOGERR(
       "%s/%s:%d: Sample period out of range. Allowed range  %lf.. %lfms. Sample period = %lfms (0x%x).\n",
       __FILE__,
@@ -1214,7 +1216,7 @@ int setSamplePeriodMs(double samplePeriodMs) {
       __LINE__,
       MCU_MIN_PERIOD_NS / 1e6,
       MCU_MAX_PERIOD_NS / 1e6,
-      mcuPeriod,
+      samplePeriodMs,
       ERROR_MAIN_SAMPLE_RATE_OUT_OF_RANGE);
     return ERROR_MAIN_SAMPLE_RATE_OUT_OF_RANGE;
   }
