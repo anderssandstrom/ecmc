@@ -224,6 +224,10 @@ protected:
   int ecmcMotorRecordTRIGG_SYNC_;
 
   int ecmcMotorRecordErrId_;
+  int startupCommandsHeld_;
+  int startupMotorReady_;
+  int startupLimitsReady_;
+  int startupRestoreStatus_;
   
   // Custom profile 
 
@@ -233,7 +237,7 @@ protected:
   /* Last parameter */
 
   #define FIRST_VIRTUAL_PARAM ecmcMotorRecordErr_
-  #define LAST_VIRTUAL_PARAM ecmcMotorRecordErrId_
+  #define LAST_VIRTUAL_PARAM startupRestoreStatus_
   #define NUM_VIRTUAL_MOTOR_PARAMS ((int)(&LAST_VIRTUAL_PARAM -\
                                           &FIRST_VIRTUAL_PARAM + 1))
   

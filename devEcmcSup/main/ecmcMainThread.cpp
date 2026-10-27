@@ -405,6 +405,7 @@ void cyclic_task(void *usr) {
   bool startupTimedOut = false;
   double startupWaitSeconds = 0;
   double startupStableSeconds = 0;
+  double motorStartupWaitSeconds = 0;
   startupMotionHeld.store(startupGateEnabled, std::memory_order_release);
   startupCommandsHeld.store(startupGateEnabled, std::memory_order_release);
   if (startupGateEnabled) {
@@ -553,6 +554,20 @@ void cyclic_task(void *usr) {
     }
 
     if (startupReleased && !startupExecutionReady) {
+      motorStartupWaitSeconds += mcuPeriod / 1.0e9;
+      if (motorStartupWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
+        ecmcRtLoggerLogError("Startup: motor/axis handshake still pending; motion remains held. Check motor-controller report for soft-limit restore status.\n");
+        for (int axisIndex = 0; axisIndex < activeAxisCount; ++axisIndex) {
+          if (activeAxes[axisIndex]->getInStartupPhase() ||
+              !activeAxes[axisIndex]->getMotorRecordStartupReady()) {
+            ecmcRtLoggerLogError("Startup: active axis slot %d waiting: axis initialization=%d, motor record=%d.\n",
+              axisIndex, activeAxes[axisIndex]->getInStartupPhase(),
+              !activeAxes[axisIndex]->getMotorRecordStartupReady());
+          }
+        }
+        motorStartupWaitSeconds = 0;
+      }
+
       bool axesReady = ecStat && (!ecInitDone || ec->timingStartupReady());
       for (i = 0; i < activeAxisCount; ++i) {
         axesReady &= !activeAxes[i]->getInStartupPhase() &&

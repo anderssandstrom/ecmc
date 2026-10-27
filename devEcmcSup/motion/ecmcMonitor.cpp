@@ -12,6 +12,7 @@
 
 #include "ecmcMonitor.h"
 #include <stdio.h>
+#include <cmath>
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 
@@ -735,6 +736,31 @@ int ecmcMonitor::disableSoftLimitsForZeroRange() {
   data_->control_.controlWord_.enableSoftLimitFwd = false;
   data_->status_.statusWord_.softlimbwdena = false;
   data_->status_.statusWord_.softlimfwdena = false;
+  softLimitReenablePending_ = false;
+  return 0;
+}
+
+int ecmcMonitor::restoreSoftLimitPair(double low, double high) {
+  // Caller holds the RT mutex. Validate before changing either endpoint.
+  const bool zero = low == 0.0 && high == 0.0;
+  if (!std::isfinite(low) || !std::isfinite(high) || (!zero && low >= high)) {
+    return ERROR_MON_TOL_OUT_OF_RANGE;
+  }
+  const bool wasZero = data_->control_.softLimitBwd == 0.0 &&
+                       data_->control_.softLimitFwd == 0.0;
+  data_->control_.softLimitBwd = low;
+  data_->control_.softLimitFwd = high;
+  if (zero) {
+    return disableSoftLimitsForZeroRange();
+  }
+  // Restore a range from the disabled zero sentinel; otherwise retain each
+  // configured enable flag, including intentionally one-sided limits.
+  if (wasZero) {
+    data_->control_.controlWord_.enableSoftLimitBwd = true;
+    data_->control_.controlWord_.enableSoftLimitFwd = true;
+    data_->status_.statusWord_.softlimbwdena = true;
+    data_->status_.statusWord_.softlimfwdena = true;
+  }
   softLimitReenablePending_ = false;
   return 0;
 }

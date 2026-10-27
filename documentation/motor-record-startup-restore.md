@@ -38,6 +38,19 @@ restores through the `-CfgDLLM`/`-CfgDHLM` output records. Independent soft-limi
 enable flags require their own ordering and are not encoded by the two dial
 limit fields.
 
+The restored pair is validated and transferred under one RT lock. `(0, 0)`
+disables both limits. A nonzero valid pair restored from `(0, 0)` enables both;
+otherwise the existing per-direction enable flags are preserved. Invalid
+input changes neither endpoint nor enable state.
+
+The motor-controller `asynReport` axis report includes `Startup soft limits`:
+waiting for IOC running, waiting for the snapshot, invalid snapshot, waiting for
+sync enable, waiting for transfer, or complete. The snapshot is taken once by
+the IOC initialization hook. An invalid snapshot is not repaired by editing
+live motor fields: correct the saved DLLM/DHLM/MRES and restart the IOC. Merely
+restarting ECMC runtime does not rerun that hook. A transient transfer failure
+is retried against the original valid snapshot.
+
 ECMC snapshots the dial limits after autosave/record initialization and before
 IOC running. Limits stay in engineering units; MRES magnitude must not scale
 them. Negative MRES reverses direction and swaps the raw EGU endpoints. An EGU
@@ -99,6 +112,13 @@ applied only after release. Early execute/enable requests are rejected with busy
 they are not replayed after startup. STOP/disable and coordinate restoration remain
 available.
 
+While the motor/axis handshake remains pending, the RT logger reports the hold
+and blocking active-axis slots at the configured EtherCAT startup timeout
+interval (30 seconds if no positive timeout is configured). This diagnostic
+does not release motion or latch a new axis error. Consult the motor-controller
+report for the soft-limit reason; if restoration is complete, inspect motor
+record processing, position-load acknowledgement and bus/axis readiness.
+
 This holds axis/general PLC execution, motion sequences, PVT, master/slave state
 machines, ordinary plugin cyclic execution, C++ logic and position compare.
 Configuration and plugin/logic enter-RT initialization hooks still run to prepare
@@ -106,6 +126,30 @@ runtime; supported axis motion/enable commands from those hooks are held too.
 The dedicated safety plugin and bus/disabled-axis I/O continue operating.
 
 ## Verification
+
+### Diagnostic PVs
+
+The records are included in `ecmccfg/db/core/ecmcMotorRecord.template` and
+load automatically with each motor record. No separate diagnostic template is
+installed by ecmc. They use the existing `PREFIX`, `MOTOR_NAME`, `MOTOR_PORT`
+and `AXIS_NO` macros and require a driver providing the startup parameters.
+
+| Suffix appended to the motor PV name | Meaning |
+| --- | --- |
+| `-StartupHeld` | Global startup command gate; 1 means motion producers remain held |
+| `-StartupMotorReady` | This axis's motor-record startup handshake is complete |
+| `-StartupLimitsReady` | This axis's initial soft-limit synchronization is complete |
+| `-StartupRestoreStatus` | Full soft-limit restore reason as a 256-byte CHAR waveform |
+
+These are independent: soft limits can be complete while position restoration
+still holds the motor handshake. Global hold can remain asserted because of
+another axis. Gate opt-out can release the hold while restoration is incomplete.
+The parameters are published on every motor poll, including early-return paths;
+changes within a poll are reflected on the next poll. They do not require the
+RT logger and do not control startup. Before network access becomes available,
+use console diagnostics and the motor-controller `asynReport` instead.
+
+### Tests
 
 The standalone regression checks are:
 

@@ -45,6 +45,8 @@ public:
                     int   level);
   void       captureRestoredSoftLimits(double dialLow, double dialHigh,
                                       double resolution);
+  const char *getSoftLimitRestoreStatus();
+  void publishStartupDiagnostics();
   void       callParamCallbacksUpdateError();
   asynStatus moveVelocity(double min_velocity,
                           double max_velocity,
@@ -230,6 +232,7 @@ private:
   bool updateFirstPollDone_;
   bool softLimitRestoreErrorLogged_;
   bool restoredSoftLimitsReady_;
+  bool restoredSoftLimitsCaptured_ = false;
   double restoredSoftLimitLow_;
   double restoredSoftLimitHigh_;
   bool interlockStopActive_;

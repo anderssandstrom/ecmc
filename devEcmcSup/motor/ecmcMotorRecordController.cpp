@@ -256,6 +256,10 @@ ecmcMotorRecordController::ecmcMotorRecordController(const char *portName,
                          0, 0) { // Default priority and stack size
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
+  createParam("STARTUP_COMMANDS_HELD", asynParamInt32, &startupCommandsHeld_);
+  createParam("STARTUP_MOTOR_READY", asynParamInt32, &startupMotorReady_);
+  createParam("STARTUP_LIMITS_READY", asynParamInt32, &startupLimitsReady_);
+  createParam("STARTUP_RESTORE_STATUS", asynParamOctet, &startupRestoreStatus_);
   memset(startupMotorRecords_, 0, sizeof(startupMotorRecords_));
   memset(startupCommRecoveryDone_, 0, sizeof(startupCommRecoveryDone_));
   static const int hookRegistered = initHookRegister(motorRecordInitHook);

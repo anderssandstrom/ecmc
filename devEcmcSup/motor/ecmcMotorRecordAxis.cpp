@@ -845,12 +845,33 @@ asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool force, bool updateParam
   return asynSuccess;
 }
 
+const char *ecmcMotorRecordAxis::getSoftLimitRestoreStatus() {
+  if (updateFirstPollDone_) return "complete";
+  if (!drvlocal.restoreMotorSoftlimits) return "waiting for initial readback";
+  if (!ecmcIocRunning()) return "waiting for IOC running";
+  if (!restoredSoftLimitsCaptured_) return "waiting for post-autosave snapshot";
+  if (!restoredSoftLimitsReady_) return "invalid snapshot: correct DLLM/DHLM/MRES and restart IOC";
+  if (!isSoftLimitSyncEnabled()) return "waiting for soft-limit synchronization to be enabled";
+  return "waiting for limit-pair transfer";
+}
+
+void ecmcMotorRecordAxis::publishStartupDiagnostics() {
+  setIntegerParam(pC_->startupCommandsHeld_, ecmcStartupCommandsHeld());
+  setIntegerParam(pC_->startupMotorReady_,
+                  drvlocal.ecmcAxis->getMotorRecordStartupReady());
+  setIntegerParam(pC_->startupLimitsReady_, updateFirstPollDone_);
+  setStringParam(pC_->startupRestoreStatus_, getSoftLimitRestoreStatus());
+  // Parameter callbacks only: do not dispatch another MotorStatus callback.
+  pC_->callParamCallbacks(axisNo_);
+}
+
 void ecmcMotorRecordAxis::captureRestoredSoftLimits(double dialLow,
                                                   double dialHigh,
                                                   double resolution) {
   if (!drvlocal.restoreMotorSoftlimits || updateFirstPollDone_) {
     return;
   }
+  restoredSoftLimitsCaptured_ = true;
   // ECMC uses engineering units. MRES magnitude must never scale dial limits.
   // A negative MRES reverses the raw direction and swaps the two endpoints.
   restoredSoftLimitLow_ = resolution < 0.0 ? -dialHigh : dialLow;
@@ -869,10 +890,9 @@ asynStatus ecmcMotorRecordAxis::syncRestoredMotorSoftLimitsToEcmc() {
   const double highLimit = restoredSoftLimitHigh_;
   int errorCode = 0;
 
-  errorCode = applyMotorSoftLimitChange(false, lowLimit);
-  if (!errorCode) {
-    errorCode = applyMotorSoftLimitChange(true, highLimit);
-  }
+  if (ecmcRTMutex) epicsMutexLock(ecmcRTMutex);
+  errorCode = drvlocal.ecmcAxis->getMon()->restoreSoftLimitPair(lowLimit, highLimit);
+  if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
   if (errorCode) {
     return asynError;
   }
@@ -899,8 +919,8 @@ asynStatus ecmcMotorRecordAxis::initializeSoftLimits() {
     status = syncRestoredMotorSoftLimitsToEcmc();
     if (status != asynSuccess && !softLimitRestoreErrorLogged_) {
       LOGERR("%s/%s:%d: ERROR: Axis[%d]: Motor soft-limit restore failed; "
-             "waiting for a valid motor-record snapshot or limit transfer and retrying.\n",
-             __FILE__, __FUNCTION__, __LINE__, axisNo_);
+             "%s.\n",
+             __FILE__, __FUNCTION__, __LINE__, axisNo_, getSoftLimitRestoreStatus());
       softLimitRestoreErrorLogged_ = true;
     }
   } else {
@@ -1184,6 +1204,7 @@ asynStatus ecmcMotorRecordAxis::initialPollInternal(void) {
  */
 void ecmcMotorRecordAxis::report(FILE *fp, int level) {
   fprintf(fp, "  axis %d\n", axisNo_);
+  fprintf(fp, "  Startup soft limits: %s\n", getSoftLimitRestoreStatus());
 
   // Call the base class method
   asynMotorAxis::report(fp, level);
@@ -2209,6 +2230,9 @@ asynStatus ecmcMotorRecordAxis::readEcmcAxisStatusData() {
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
   double timeBefore = ecmcMotorRecordgetNowTimeSecs();  
+  // Publish even when status acquisition or restoration returns early. Changes
+  // made during this poll appear on the following poll (including readiness).
+  publishStartupDiagnostics();
 
   if (drvlocal.axisPrintDbg) {
     LOGINFO(

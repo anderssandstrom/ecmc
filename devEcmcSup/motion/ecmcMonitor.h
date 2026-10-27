@@ -109,6 +109,7 @@ public:
   int                setEnableHardLimitBWDAlarm(bool enable);
   int                setEnableHardLimitFWDAlarm(bool enable);
   int                setSoftLimitBwd(double limit);
+  int                restoreSoftLimitPair(double low, double high);
   int                setSoftLimitFwd(double limit);
   int                getEnableAlarmAtHardLimit();
   double             getSoftLimitBwd();

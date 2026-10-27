@@ -22,6 +22,7 @@ def method(signature, text=source):
 
 
 implementation = '\n'.join(method(signature) for signature in (
+    'const char *ecmcMotorRecordAxis::getSoftLimitRestoreStatus()',
     'void ecmcMotorRecordAxis::captureRestoredSoftLimits(',
     'asynStatus ecmcMotorRecordAxis::syncEcmcSoftLimits(bool',
     'asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool',
@@ -61,6 +62,12 @@ double ecmcMotorRecordgetNowTimeSecs() { return 0; }
 struct ecmcAxisDataStatus { int errorCode = 0; uint32_t cycleCounter = 0; };
 constexpr int eeAxisWarningNoWarning = 0;
 struct Monitor {
+  int *writes = nullptr; bool *fail = nullptr, *failForward = nullptr;
+  int restoreSoftLimitPair(double l, double h) {
+    ++*writes;
+    if (*fail || *failForward) return 1;
+    low = l; high = h; return 0;
+  }
   double low = -100, high = 100;
   bool lowEnabled = true, highEnabled = true;
   double getSoftLimitBwd() { return low; }
@@ -119,6 +126,8 @@ struct ecmcMotorRecordAxis : asynMotorAxis {
   bool updateFirstPollDone_ = false, softLimitRestoreErrorLogged_ = false;
   uint32_t ecmcCycleCounterAtNewCmd_ = 0;
   bool waitingForStatusAfterCommand_ = false;
+  bool restoredSoftLimitsCaptured_ = false;
+  const char *getSoftLimitRestoreStatus();
   bool restoredSoftLimitsReady_ = false;
   double restoredSoftLimitLow_ = 0, restoredSoftLimitHigh_ = 0;
   bool interlockStopActive_ = false, sync = true, failWrite = false;
@@ -136,7 +145,9 @@ struct ecmcMotorRecordAxis : asynMotorAxis {
   } drvlocal;
   ecmcMotorRecordAxis(Controller &c, Axis &a) : pC_(&c) {
     controller = &c; drvlocal.ecmcAxis = &a;
+    a.monitor.writes = &writes; a.monitor.fail = &failWrite; a.monitor.failForward = &failForwardWrite;
   }
+  void publishStartupDiagnostics() {} // Publication is tested separately.
   bool isSoftLimitSyncEnabled() { return sync; }
   bool interlockStopRisingEdge(bool) { return false; }
   void updateError() {}
@@ -228,6 +239,13 @@ int main() {
   Controller c;
   Axis a;
   ecmcMotorRecordAxis m(c, a);
+  assert(std::string(m.getSoftLimitRestoreStatus()) == "waiting for IOC running");
+  iocReady = true;
+  assert(std::string(m.getSoftLimitRestoreStatus()) == "waiting for post-autosave snapshot");
+  m.captureRestoredSoftLimits(20, 10, 1);
+  assert(std::string(m.getSoftLimitRestoreStatus()).find("invalid snapshot") == 0);
+  m.restoredSoftLimitsCaptured_ = false;
+  iocReady = false;
   bool moving = false;
   // Constructor readback may refresh ECMC PVs, but must not seed motor limits.
   assert(m.syncSoftLimitInterfaces(true, true) == asynSuccess);
@@ -289,6 +307,7 @@ int main() {
   m.failForwardWrite = false;
   assert(m.poll(&moving) == asynSuccess);
   assert(m.updateFirstPollDone_);
+  assert(std::string(m.getSoftLimitRestoreStatus()) == "complete");
   assert(a.monitor.low == -100 && a.monitor.high == 150);
   assert(c.values[Controller::motorHighLimitRO_] == 150);
   int writes = m.writes;

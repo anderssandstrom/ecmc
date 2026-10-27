@@ -63,6 +63,8 @@ constexpr int ERROR_AXIS_BUSY = 1, ECMC_MODE_CONFIG = 0;
 std::atomic<bool> startupCommandsHeld {true};
 bool ecmcStartupCommandsHeld() { return startupCommandsHeld.load(); }
 void ecmcRtLoggerLogInfo(const char *) {}
+int waitWarnings = 0;
+void ecmcRtLoggerLogError(const char *, ...) { ++waitWarnings; }
 struct ecmcAxisBase {
   std::atomic<bool> motorRecordStartupReady_ {true};
   bool inStartup = false, startupEnablePending_ = false, enabled = false;
@@ -94,6 +96,7 @@ bool ecInitDone = true, ecStat = true;
 bool startupReleased = true, startupExecutionReady = false;
 int activeAxisCount = 2, i = 0, appModeCmd = 1;
 double mcuPeriod = 1000000;
+double motorStartupWaitSeconds = 0, ecTimeoutSeconds = 30;
 std::atomic<bool> iocExitRequested {false};
 ecmcAxisBase withRecord, withoutRecord;
 ecmcAxisBase *activeAxes[] = {&withRecord, &withoutRecord};
@@ -119,6 +122,7 @@ int main() {
   withRecord.setMotorRecordStartupReady(false);
   withoutRecord.enabled = true; // A prior command cannot survive the hold.
   withRecord.startupEnablePending_ = true;
+  ecTimeoutSeconds = .002;
   for (int n = 0; n < 3; ++n) {
     assert(withRecord.setEnable(true) == ERROR_AXIS_BUSY);
     assert(withRecord.setExecute(true) == ERROR_AXIS_BUSY);
@@ -129,6 +133,7 @@ int main() {
     assert(!startupExecutionReady && totalProducerCalls() == 0);
     assert(!withRecord.enabled && !withoutRecord.enabled);
   }
+  assert(waitWarnings >= 2); // Timeout reports hold and blocking slot without release.
   assert(withRecord.samples == 3 && withRecord.motionRequests == 0);
   assert(withRecord.startupEnablePending_); // Preserve configured startup enable.
   withRecord.setMotorRecordStartupReady(true); // Full motor handshake finished.
