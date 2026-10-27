@@ -241,6 +241,20 @@ int ecmcDataStorage::setData(double *data, int size) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
                       ERROR_MAIN_DATA_STORAGE_INVALID_SIZE);
   }
+  // Reject invalid requests before resetting the next write position.
+  if (size > bufferSize_) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                      ERROR_DATA_STORAGE_SIZE_TO_SMALL);
+  }
+  if (!buffer_) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_DATA_STORAGE_NULL);
+  }
+  if (bufferType_ != ECMC_STORAGE_NORMAL_BUFFER &&
+      bufferType_ != ECMC_STORAGE_RING_BUFFER &&
+      bufferType_ != ECMC_STORAGE_FIFO_BUFFER) {
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                      ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE);
+  }
   currentBufferIndex_ = 0;  // Start from beginning
   return appendData(data, size);
 }
@@ -397,6 +411,10 @@ int ecmcDataStorage::appendData(double *data, int size, bool refreshAsyn) {
   case ECMC_STORAGE_FIFO_BUFFER:
     errorCode = appendDataFifo(data, size);
     break;
+
+  default:
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                      ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE);
   }
 
   if (errorCode) {

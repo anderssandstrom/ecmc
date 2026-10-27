@@ -965,7 +965,10 @@ int writeDumpFile(const DiagRequest &request) {
   }
   fputs("}\n", fp);
 
-  return fclose(fp);
+  // A previous write can fail even when the final flush/close succeeds.
+  const bool writeFailed = ferror(fp) != 0;
+  const int closeResult = fclose(fp);
+  return writeFailed ? -1 : closeResult;
 }
 
 }  // namespace

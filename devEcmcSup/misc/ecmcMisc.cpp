@@ -43,6 +43,12 @@ int createDataStorage(int index, int elements, int bufferType) {
     return ERROR_MAIN_DATA_STORAGE_INVALID_SIZE;
   }
 
+  if (bufferType != ECMC_STORAGE_NORMAL_BUFFER &&
+      bufferType != ECMC_STORAGE_RING_BUFFER &&
+      bufferType != ECMC_STORAGE_FIFO_BUFFER) {
+    return ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE;
+  }
+
   // Sample rate fixed
   sampleRateChangeAllowed = 0;
 

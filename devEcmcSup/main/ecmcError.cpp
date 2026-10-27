@@ -2599,6 +2599,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20205:
+    return "ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE";
+
   case 0x20203:
     return "ERROR_DATA_STORAGE_POSITION_OUT_OF_RANGE";
 

@@ -171,6 +171,10 @@ int main() {
       assert(store.notifications == 0 && !store.isFull_);
       assert(memcmp(original, store.values, sizeof(original)) == 0);
     }
+    assert(store.setData(data, 5) == ERROR_DATA_STORAGE_SIZE_TO_SMALL);
+    assert(store.currentBufferIndex_ == 2 && store.dataCountInBuffer_ == 2);
+    assert(store.notifications == 0 && !store.isFull_);
+    assert(memcmp(original, store.values, sizeof(original)) == 0);
     assert(store.appendData(data, 5) == ERROR_DATA_STORAGE_SIZE_TO_SMALL);
     assert(store.currentBufferIndex_ == 2 && store.notifications == 0);
     assert(store.appendData(data, 0, false) == 0);
@@ -200,6 +204,20 @@ int main() {
       assert(store.getDataElementPtr(index, &pointer) == 0 && pointer == &store.values[index]);
     }
   }
+  for (int invalidType : {-1, 3, 99, INT_MAX}) {
+    ecmcDataStorage store;
+    store.bufferType_ = invalidType;
+    const double original[] = {10, 20, 30, 40};
+    assert(store.appendData(data, 1) == ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE);
+    assert(store.setData(data, 1) == ERROR_DATA_STORAGE_INVALID_BUFFER_TYPE);
+    assert(store.currentBufferIndex_ == 2 && store.dataCountInBuffer_ == 2);
+    assert(store.notifications == 0 && !store.isFull_);
+    assert(memcmp(original, store.values, sizeof(original)) == 0);
+  }
+  ecmcDataStorage missing;
+  missing.buffer_ = nullptr;
+  assert(missing.setData(data, 1) == ERROR_DATA_STORAGE_NULL);
+  assert(missing.currentBufferIndex_ == 2 && missing.notifications == 0);
   puts("Storage buffers: invalid sizes/indices, unchanged state on negative sizes, exact capacity, normal/ring/FIFO passed.");
 }
 '''
