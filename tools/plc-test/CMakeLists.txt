@@ -4,6 +4,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ECMC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(SUP "${ECMC_ROOT}/devEcmcSup")
+foreach(source exprtkIF.cpp exprtkWrap.cpp exprtkImp.cpp exprtk/exprtk.hpp)
+  if(NOT EXISTS "${ECMC_ROOT}/exprtkSupport/${source}")
+    message(FATAL_ERROR
+      "Missing exprtkSupport/${source}. From the ECMC repository root, run: "
+      "git submodule update --init -- exprtkSupport")
+  endif()
+endforeach()
 add_executable(ecmcPlcTest
   main.cpp
   "${ECMC_ROOT}/exprtkSupport/exprtkIF.cpp"
@@ -20,10 +27,10 @@ include(CTest)
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
-    add_test(NAME plc-runner COMMAND "${Python3_EXECUTABLE}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/test_runner.py" $<TARGET_FILE:ecmcPlcTest>)
-    add_test(NAME plc-libraries COMMAND "${Python3_EXECUTABLE}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/test_libraries.py" $<TARGET_FILE:ecmcPlcTest>)
-    set_tests_properties(plc-runner plc-libraries PROPERTIES TIMEOUT 60)
+    foreach(group runner storage ethercat lut)
+      add_test(NAME plc-${group} COMMAND "${Python3_EXECUTABLE}"
+        "${ECMC_ROOT}/tests/plc/${group}_checks.py" $<TARGET_FILE:ecmcPlcTest>)
+      set_tests_properties(plc-${group} PROPERTIES TIMEOUT 60)
+    endforeach()
   endif()
 endif()

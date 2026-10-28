@@ -36,9 +36,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
+      - name: Initialize PLC expression engine
+        run: git submodule update --init -- exprtkSupport
       - name: Show toolchain versions
         run: |
           python3 --version
+          cmake --version
           "$CC" --version
           "$CXX" --version
       - name: Run hardware-free tests

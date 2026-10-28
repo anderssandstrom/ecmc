@@ -12,6 +12,7 @@ Python 3 is optional and is used only for integration tests.
 From the repository root containing `devEcmcSup`:
 
 ```sh
+git submodule update --init -- exprtkSupport
 cmake -S tools/plc-test -B /tmp/ecmc-plc-test -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/ecmc-plc-test -j2
 /tmp/ecmc-plc-test/ecmcPlcTest --suite tools/plc-test/examples/smoke.suite
@@ -20,7 +21,7 @@ ctest --test-dir /tmp/ecmc-plc-test --output-on-failure
 ```
 
 The normal regression command also builds this executable in a temporary
-directory and runs both the runner checks and library cases automatically:
+directory and runs the runner, storage, EtherCAT and LUT checks automatically:
 
 ```sh
 python3 tests/run_tests.py
@@ -132,11 +133,28 @@ tests cover the production SDO implementation separately.
 `ec_mm_push_asyn` and `ec_get_time_frm_src` remain unavailable (publication and
 live host-clock access). Calling unavailable functions fails compilation.
 
-`test_libraries.py` runs named cases for all 14 supported storage functions,
-all three buffer modes, cursor/bounds, statistics, clearing, copy/truncation,
-missing objects, invalid numeric indices and error recovery, plus LUT and
-EtherCAT-wrapper cases. `test_runner.py` covers suite validation, sequencing,
-assertion failures, clean state and timeouts.
+Automated checks live under [`tests/plc/`](../../tests/plc/):
+
+- `storage_checks.py`: all 14 supported storage functions, all three buffer
+  modes, cursor/bounds, statistics, clearing, copy/truncation, missing objects,
+  invalid numeric indices and error recovery.
+- `ethercat_checks.py`: bit operations, memory maps, configured time, domain
+  state and SDO argument/missing-object paths.
+- `lut_checks.py`: interpolation, endpoints, invalid IDs, reload and isolation.
+- `runner_checks.py`: examples, suite validation, sequencing, assertion
+  failures, clean state and timeouts.
+- `suite.py`: shared temporary fixture generation and result checking.
+
+`tests/test_plc_libraries.py` builds the executable once and invokes these
+checks. CTest invokes the same four scripts against its existing build. To run
+one group without rebuilding:
+
+```sh
+python3 tests/plc/storage_checks.py /tmp/ecmc-plc-test/ecmcPlcTest
+```
+
+The executable, offline adapters and user-facing examples stay under
+`tools/plc-test/`; automated test code stays under `tests/`.
 
 This runner evaluates expressions directly through `exprtkWrap`; it does not
 yet execute `ecmcPLCMain`/`ecmcPLCTask` scheduling, first-scan handling, axis

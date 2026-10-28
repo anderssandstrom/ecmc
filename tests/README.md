@@ -4,12 +4,20 @@ For standalone tests that execute real PLC expressions and storage library
 functions through ExprTk, see [the PLC test executable](../tools/plc-test/README.md).
 `test_plc_libraries.py` builds it and runs its integration checks automatically
 with this runner; it needs no EtherLab or EPICS.
+The actual PLC checks are grouped under [`plc/`](plc/) as
+`runner_checks.py`, `storage_checks.py`, `ethercat_checks.py` and `lut_checks.py`.
+They share fixture generation in `plc/suite.py`. Examples remain with the tool.
 
 From the repository root, run:
 
 ```sh
+git submodule update --init -- exprtkSupport
 python3 tests/run_tests.py
 ```
+
+The PLC executable requires the pinned `exprtkSupport` submodule. Initialize it
+once after cloning (and update it when its recorded revision changes). No
+other submodules are needed for this test suite.
 
 The runner discovers `test_*.py`, runs each in a separate Python process, and
 prints a summary. Failed tests include their compiler/assertion/sanitizer output.
@@ -63,7 +71,7 @@ compile against an installed `ecrt.h` instead of its substitute declarations.
 The [GitHub Actions workflow](../.github/workflows/hardware-free-tests.yml)
 runs the suite on Ubuntu 24.04 with GCC and Clang for pushes and pull requests.
 It also supports manual runs. It uses the runner's installed compilers and
-Python, and does not initialize submodules or build the full IOC.
+Python, initializes only `exprtkSupport`, and does not build the full IOC.
 
 | Script | Main checks |
 | --- | --- |

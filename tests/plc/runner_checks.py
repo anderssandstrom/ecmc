@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Integration tests of the built runner, real ExprTk and storage library."""
+"""Standalone PLC runner: examples, validation, sequencing, isolation and timeout."""
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 
 binary = str(Path(sys.argv[1]).resolve())
-examples = Path(__file__).resolve().parent / 'examples'
+examples = Path(__file__).resolve().parents[2] / 'tools' / 'plc-test' / 'examples'
 result = subprocess.run([binary, '--suite', str(examples / 'smoke.suite')],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         universal_newlines=True, timeout=30)
@@ -39,33 +39,6 @@ with tempfile.TemporaryDirectory() as directory:
     assert result.returncode == 1, result
     assert 'expected 2, actual 1' in result.stdout, result.stdout
     assert '[PASS] fresh' in result.stdout, result.stdout
-
-    # Full storage library paths, including error reporting and recovery.
-    storage_code = '''
-global.x := ds_append_data(-1, 1);
-global.err := ds_get_err();
-global.reset := ds_err_rst();
-global.clean := ds_get_err();
-global.ok := ds_set_data(0, 0, 7);
-global.read := ds_get_data(0, 0);
-global.size := ds_get_size(0);
-global.copy := ds_append_to_ds(0, 0, 1, 1);
-global.copied := ds_get_data(1, 0);
-global.clear := ds_clear_data(1);
-global.average := ds_get_avg(1);
-'''
-    names = ('x', 'err', 'reset', 'clean', 'ok', 'read', 'size',
-             'copy', 'copied', 'clear', 'average')
-    body = 'storage 0 4 0\nstorage 1 4 0\n'
-    body += ''.join('var global.' + name + ' 0\n' for name in names)
-    body += 'plc logic.plc\nrun 1\n'
-    body += 'expect global.x 132361\nexpect global.err 132361\n'
-    body += 'expect global.reset 0\nexpect global.clean 0\n'
-    body += 'expect global.ok 0\nexpect global.read 7\nexpect global.size 4\n'
-    body += 'expect global.copy 0\nexpect global.copied 7\n'
-    body += 'expect global.clear 0\nexpect global.average 0'
-    result = run(case(body), storage_code)
-    assert result.returncode == 0, result.stdout + result.stderr
 
     for code in ('global.x := ;', 'global.x := mc_move_abs(1, 2, 3, 4, 5);',
                  'global.x := ds_push_asyn(0);', 'global.x := global.typo;'):
