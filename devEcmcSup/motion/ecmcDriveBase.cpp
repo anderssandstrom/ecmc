@@ -49,7 +49,8 @@ ecmcDriveBase::ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
 }
 
 void ecmcDriveBase::initVars() {
-  errorReset();
+  // Hardware reset flags/entries are not initialized during construction yet.
+  ecmcError::errorReset();
   scale_                     = 0;
   invScale_                  = 0;
   scaleNum_                  = 0;
@@ -306,6 +307,24 @@ void ecmcDriveBase::writeEntries() {
     //           ECMC_SEVERITY_EMERGENCY);
   }
 
+  // A drive fault cannot be treated as an orderly torque-holding shutdown.
+  // In particular, do not resume opening when status I/O recovers while the
+  // error is still latched, or when errorReset is called without a new enable.
+  if (enableBrake_ && getError()) {
+    data_->status_.statusWord_.enable = false;
+    data_->control_.controlWord_.enableCmd = false;
+    brakeState_ = ECMC_BRAKE_CLOSED;
+    brakeOutputCmd_ = false;
+    brakeCounter_ = 0;
+    enableAmpCmd_ = false;
+    enableCmdOld_ = false;
+  }
+
+  // The brake state machine may clear enable while handling this loss. Capture
+  // it first so opening-state losses are reported just like open-state losses.
+  const bool enabledLost = !localEnabled && localEnabledOld_ &&
+                           data_->status_.statusWord_.enable;
+
   // Update enable command
   if (enableBrake_) {
     // also wait for brakeOutputCmd_
@@ -454,6 +473,11 @@ void ecmcDriveBase::writeEntries() {
       cycleCounterBase_      = 0;
       data_->status_.statusWord_.enable = false;
       enableAmpCmd_          = false;
+      // Abandon opening as well as the enable request. Otherwise a late
+      // enabled response can resume opening with enable already cleared.
+      brakeState_            = ECMC_BRAKE_CLOSED;
+      brakeOutputCmd_        = false;
+      brakeCounter_          = 0;
       setErrorID(__FILE__,
                  __FUNCTION__,
                  __LINE__,
@@ -464,7 +488,7 @@ void ecmcDriveBase::writeEntries() {
   }
 
   // Enabled lost?
-  if (!localEnabledNow && localEnabledOld_ && data_->status_.statusWord_.enable) {
+  if (enabledLost) {
     data_->status_.statusWord_.enable = false;
     enableAmpCmd_          = false;
     ecmcRtLoggerLogError(

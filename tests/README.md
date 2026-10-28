@@ -6,8 +6,12 @@ functions through ExprTk, see [the PLC test executable](../tools/plc-test/README
 with this runner; it needs no EtherLab or EPICS.
 The actual PLC checks are grouped under [`plc/`](plc/) as
 `runner_checks.py`, `storage_checks.py`, `ethercat_checks.py`, `lut_checks.py`
-and `motion_checks.py`.
+and `motion_checks.py`, with limit/rejection/recovery cases in
+`motion_safety_checks.py`.
 They share fixture generation in `plc/suite.py`. Examples remain with the tool.
+
+The [drive brake tests](drive/README.md) separately compile and step the real
+Stepper/DS402 brake logic, including timing, feedback loss, interlocks and faults.
 
 From the repository root, run:
 
@@ -80,6 +84,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |
 | `test_controller_error_scan.py` | Error priority, cached/live scanning, thread isolation and cache rebuilding |
+| `test_drive_brake.py` | Real drive brake opening/closing timing, feedback loss in all states, bounded signal traces, faults, timeouts, Stepper/DS402 output handling and recovery |
 | `test_cpp_logic_loading.py` | Configuration, shared-library/ABI checks, instance creation errors/exceptions and cleanup; stops before item binding/asyn registration |
 | `test_cpp_logic_bindings.py` | Missing/invalid items, size/type and direction mismatches, auto-size preparation and cleanup requests; fake data-item endpoints |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |

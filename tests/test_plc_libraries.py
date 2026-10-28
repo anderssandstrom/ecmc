@@ -17,5 +17,6 @@ with tempfile.TemporaryDirectory(prefix='ecmc-plc-build-') as directory:
     binary = str(Path(directory) / 'ecmcPlcTest')
     checks = Path(__file__).resolve().parent / 'plc'
     for script in ('runner_checks.py', 'storage_checks.py',
-                   'ethercat_checks.py', 'lut_checks.py', 'motion_checks.py'):
+                   'ethercat_checks.py', 'lut_checks.py', 'motion_checks.py',
+                   'motion_safety_checks.py'):
         subprocess.run([sys.executable, str(checks / script), binary], check=True)

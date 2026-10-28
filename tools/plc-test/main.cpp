@@ -252,6 +252,31 @@ class Context {
           axes[index] = axis.get();
           motion_[index] = std::move(axis);
           followSetpoint_[index] = true;
+        } else if (command == "axis_commands" || command == "limit_switches") {
+          count(a, 4);
+          int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
+          if (!motion_.count(index)) fail(command + " requires an existing axis");
+          int first = integer(a[2], 0, 1);
+          int second = integer(a[3], 0, 1);
+          auto &axis = *motion_.at(index);
+          if (command == "axis_commands") {
+            axis.setAllowCmdFromPLC(first != 0);
+            axis.setBlockCom(second);
+          } else {
+            axis.getMon()->setLimitSwitchBwdPLCOverrideValue(first != 0);
+            axis.getMon()->setLimitSwitchFwdPLCOverrideValue(second != 0);
+          }
+        } else if (command == "soft_limits") {
+          count(a, 4);
+          int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
+          if (!motion_.count(index)) fail("soft_limits requires an existing axis");
+          double low = number(a[2]), high = number(a[3]);
+          if (low >= high) fail("soft_limits requires low < high");
+          auto &monitor = *motion_.at(index)->getMon();
+          int error = monitor.restoreSoftLimitPair(low, high);
+          if (!error) error = monitor.setEnableSoftLimitBwd(true);
+          if (!error) error = monitor.setEnableSoftLimitFwd(true);
+          if (error) fail("soft limit configuration failed: " + std::to_string(error));
         } else if (command == "feedback") {
           count(a, 3);
           int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
@@ -368,6 +393,8 @@ class Context {
             else if (a[2] == "busy") actual = axis.getBusy();
             else if (a[2] == "execute") actual = axis.getExecute();
             else if (a[2] == "error") actual = axis.getErrorID();
+            else if (a[2] == "warning") actual = axis.getAxisStatusStruct()->warningCode;
+            else if (a[2] == "target") actual = axis.getAxisStatusStruct()->currentTargetPosition;
             else if (a[2] == "setpoint") actual = axis.getCurrentPositionSetpoint();
             else if (a[2] == "position") axis.getPosAct(&actual);
             else if (a[2] == "velocity") actual = axis.getTraj()->getNextVel();

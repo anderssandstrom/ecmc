@@ -41,7 +41,7 @@ include(CTest)
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
-    foreach(group runner storage ethercat lut motion)
+    foreach(group runner storage ethercat lut motion motion_safety)
       add_test(NAME plc-${group} COMMAND "${Python3_EXECUTABLE}"
         "${ECMC_ROOT}/tests/plc/${group}_checks.py" $<TARGET_FILE:ecmcPlcTest>)
       set_tests_properties(plc-${group} PROPERTIES TIMEOUT 60)

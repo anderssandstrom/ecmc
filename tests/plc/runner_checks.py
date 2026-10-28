@@ -63,7 +63,13 @@ with tempfile.TemporaryDirectory() as directory:
                  'period 0', 'period nan', 'axis 1 virtual\nperiod 0.002',
                  'feedback 1 follow', 'axis 1 virtual\nfeedback 1 nan',
                  setup + 'step 1', setup + 'expect_axis 1 busy 0',
-                 'axis 1 virtual\n' + setup + 'expect_axis 1 typo 0'):
+                 'axis 1 virtual\n' + setup + 'expect_axis 1 typo 0',
+                 'axis_commands 1 1 0', 'limit_switches 1 1 1', 'soft_limits 1 -1 1',
+                 'axis 1 virtual\naxis_commands 1 2 0',
+                 'axis 1 virtual\nlimit_switches 1 1 0.5',
+                 'axis 1 virtual\nsoft_limits 1 1 -1',
+                 'axis 1 virtual\nsoft_limits 1 0 0',
+                 'axis 1 virtual\nsoft_limits 1 -1 nan'):
         result = run(case(body))
         assert result.returncode == 1, (body, result.stdout, result.stderr)
 

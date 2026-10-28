@@ -1414,6 +1414,12 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
     }
 
     const int warningCodeOld = data_.status_.warningCode;
+    // PLC wrappers enter here directly, bypassing the motor-record command
+    // update path. Clear only an obsolete soft-limit interlock for a valid
+    // target before the sequencer checks whether its warning can be cleared.
+    if (execute) {
+      clearStaleSoftLimitInterlockForValidTarget();
+    }
     int error = seq_.setExecute(execute);
     if (data_.status_.warningCode != warningCodeOld) {
       data_.axAsynParams_[ECMC_ASYN_AX_WARNING_ID]->refreshParamRT(1);

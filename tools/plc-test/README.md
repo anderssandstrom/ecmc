@@ -74,6 +74,9 @@ end
 | `ec_slave POSITION CYCLE_OFFSET EVENT_OFFSET_NS` | Configure a cycle-only input event relative to receive time |
 | `period SECONDS` | Set the motion sample period before creating axes; default 0.001 |
 | `axis INDEX virtual` | Create a real virtual axis with a trapezoidal trajectory |
+| `axis_commands INDEX PLC_ALLOWED BLOCK_EXTERNAL` | Set command permissions; both flags are 0 or 1 |
+| `soft_limits INDEX LOW HIGH` | Set and enable both soft limits; requires finite LOW < HIGH |
+| `limit_switches INDEX BWD_OK FWD_OK` | Set real monitor override inputs; 0 trips a limit, 1 releases it |
 | `feedback INDEX follow` | Supply the preceding position setpoint as ideal encoder feedback (default) |
 | `feedback INDEX POSITION` | Hold the external encoder feedback at a specified position |
 | `plc FILE` | Compile one expression file per case |
@@ -81,7 +84,7 @@ end
 | `run COUNT` | Evaluate the expression COUNT times, preserving case state |
 | `step COUNT` | Execute each virtual axis, then evaluate the PLC, COUNT times |
 | `expect NAME VALUE [ABS_TOL]` | Check a scalar; default tolerance is zero |
-| `expect_axis INDEX PROPERTY VALUE [ABS_TOL]` | Check enabled, busy, execute, error, position, setpoint or velocity |
+| `expect_axis INDEX PROPERTY VALUE [ABS_TOL]` | Check enabled, busy, execute, error, warning, target, position, setpoint or velocity |
 
 Each case must evaluate its PLC and make at least one assertion. All declared
 numeric inputs and tolerances must be finite. Non-finite actual results fail
@@ -153,12 +156,16 @@ Automated checks live under [`tests/plc/`](../../tests/plc/):
 - `lut_checks.py`: interpolation, endpoints, invalid IDs, reload and isolation.
 - `motion_checks.py`: real virtual-axis power, absolute/relative/velocity moves,
   halt, reset, status, execute edges, feedback and missing/invalid axes.
+- `motion_safety_checks.py`: disabled/blocked command rejection, invalid motion
+  parameters, reset during motion, soft-limit boundaries, hard-limit stops and
+  subsequent recovery. Checks that blocked commands preserve targets/edges and
+  valid targets clear obsolete soft-limit warnings.
 - `runner_checks.py`: examples, suite validation, sequencing, assertion
   failures, clean state and timeouts.
 - `suite.py`: shared temporary fixture generation and result checking.
 
 `tests/test_plc_libraries.py` builds the executable once and invokes these
-checks. CTest invokes the same five scripts against its existing build. To run
+checks. CTest invokes the same six scripts against its existing build. To run
 one group without rebuilding:
 
 ```sh
@@ -203,9 +210,9 @@ CMake executable. They are under `tools/plc-test/offline/`, outside the IOC
 source directories. No test hooks, test compiler settings or dependencies are
 added to the IOC build or startup path. Hardware entry access, physical-drive
 operations and S-curve construction are rejected explicitly by these adapters.
-The only production-source correction is explicit initialization of three
-sequencer switch-history booleans; the sanitized motion tests exposed their
-previous uninitialized reads.
+Production corrections exposed by these tests initialize three sequencer
+switch-history booleans and clear an obsolete soft-limit interlock before
+starting a valid PLC move, using the existing motor-record recovery logic.
 
 Real EtherCAT transport, plugins, file I/O functions, full startup files,
 multiple interacting PLCs, and automatic variable discovery are not yet
