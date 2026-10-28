@@ -852,13 +852,15 @@ int waitForThreadToStart(int timeoutSeconds) {
     LOGINFO("Starting up Realtime thread without EtherCAT support.\n");
   }
 
+  // Startup progress is always visible, independent of the asyn trace mask.
+  // This wait runs on the calling configuration thread, outside the RT loop.
   for (int i = 0; i < timeoutSeconds; i++) {
     if (ec->getInitDone()) {
-      LOGINFO("Waiting for EtherCAT bus startup (%d/%d s).\n",
+      printf("Waiting for EtherCAT bus startup (%d/%d s).\n",
               i + 1,
               timeoutSeconds);
     } else {
-      LOGINFO("Waiting for realtime thread startup (%d/%d s).\n",
+      printf("Waiting for realtime thread startup (%d/%d s).\n",
               i + 1,
               timeoutSeconds);
     }

@@ -24,6 +24,11 @@ Normal axis startup and PLC execution wait for `initHookAfterIocRunning`.
 `Cfg.SetAppMode(1)` still starts the RT thread and EtherCAT communication before
 IOC initialization, and waits for bus readiness and timing discovery/publication.
 It does not wait for the IOC hook, so startup scripts can proceed to `iocInit`.
+During this configuration-thread wait, the console always shows the startup
+counter (`Waiting for EtherCAT bus startup (N/timeout s).`) once per second,
+independent of the asyn trace mask. With `MASTER_ID=-1`, the message instead
+identifies realtime-thread startup. These progress messages run outside the
+cyclic RT thread and do not change the timeout or readiness checks.
 
 After the hook, the RT thread requires two continuous seconds of bus readiness
 and completed timing publication. Input reads and disabled-axis output handling
