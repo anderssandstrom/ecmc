@@ -1,5 +1,6 @@
-// Drive contracts are checked through public APIs and captured output entries.
+// Expectations are checked through public APIs and captured output entries.
 // The brake state machine itself is compiled directly from production source.
+// DOC/INFERRED/COMPAT labels and open decisions: ../EXPECTATIONS.md (B1/B2).
 #include "ecmcDriveStepper.h"
 #include "ecmcDriveDS402.h"
 #include "ecmcAxisData.h"
@@ -69,6 +70,8 @@ struct Bench {
 };
 
 static void timing() {
+  // DOC: ecmcMotion.h::setAxisDrvBrakeOpenDelayTime/CloseAheadTime specifies
+  // sequencing and cycle units. Exact sample/pipeline offsets are COMPAT B1.
   for (double period : {0.0005, 0.001, 0.01}) {
     for (int open : {0, 1, 3, 10}) for (int close : {0, 1, 3, 10}) {
       context = "timing open=" + std::to_string(open) + " close=" + std::to_string(close);
@@ -81,7 +84,7 @@ static void timing() {
         b.tick(false);
         CHECK(b.drive->getEnable() && b.brake.value == 0 && !b.drive->getEnabled());
       }
-      // Current contract uses counter > delay: release on enabled sample N+2.
+      // COMPAT/REVIEW B1: counter > delay releases on enabled sample N+2.
       for (int i = 0; i <= open; ++i) {
         b.tick(true);
         CHECK(b.brake.value == 0 && !b.drive->getEnabled());
@@ -105,6 +108,8 @@ static void timing() {
 }
 
 static void feedbackLoss() {
+  // INFERRED: feedback loss demands brake application in every phase.
+  // INFERRED/REVIEW B2: restart requires a fresh enable, not feedback alone.
   for (int open : {0, 1, 3}) for (int close : {0, 1, 3}) {
     // Lose feedback at every enabled sample before and after brake release.
     for (int sample = 1; sample <= open + 4; ++sample) {
@@ -144,6 +149,7 @@ static void feedbackLoss() {
 }
 
 static void cancellationAndReenable() {
+  // COMPAT/REVIEW B2: rapid reversal and cancelled-opening restart policy.
   for (int sample = 0; sample < 7; ++sample) {
     context = "cancel opening at sample=" + std::to_string(sample);
     Bench<> b(4, 3);
@@ -171,6 +177,8 @@ static void cancellationAndReenable() {
 }
 
 static void interlocksAndTimeout() {
+  // INFERRED: interlock/timeout cannot release the brake or revive a request.
+  // COMPAT: exact timeout sample/error. REVIEW B2: fresh-enable/reset policy.
   for (int phase = 0; phase < 4; ++phase) for (bool bus : {false, true}) {
     context = "interlock phase=" + std::to_string(phase);
     Bench<> b;
@@ -212,6 +220,8 @@ static void interlocksAndTimeout() {
 }
 
 static void configurationAndFaults() {
+  // INFERRED: reject unusable configuration and report I/O failures.
+  // COMPAT: exact error codes, bypass and captured-write behavior.
   context = "negative delays preserve configured values";
   Bench<> b(3, 4);
   CHECK(b.drive->setBrakeOpenDelayTime(-1) == ERROR_DRV_BRAKE_OPEN_DELAY_TIME_INVALID);
@@ -305,7 +315,8 @@ static void configurationAndFaults() {
 
 static void boundedSignalTraces() {
   // All enable-request/feedback sequences of length six, at three timings.
-  // Check safety contracts, not a duplicate implementation of the state machine.
+  // INFERRED: no unauthorized release; REVIEW B2: authorization/restart policy.
+  // COMPAT/REVIEW B1: enabledSamples >= delay+2 preserves the current offset.
   for (int delay : {0, 1, 3}) for (unsigned int trace = 0; trace < 4096; ++trace) {
     context = "signal trace delay=" + std::to_string(delay) + " trace=" + std::to_string(trace);
     Bench<> b(delay, delay);
@@ -341,6 +352,8 @@ static void ds402PlantTick(Bench<ecmcDriveDS402> &b) {
 }
 
 static void ds402Integration() {
+  // COMPAT: production handshake/control-word sequencing against this plant;
+  // this is not an independent DS402 conformance test.
   for (int phase = 0; phase < 7; ++phase) for (bool fault : {false, true}) {
     context = "DS402 feedback/fault loss enabled sample=" + std::to_string(phase);
     Bench<ecmcDriveDS402> b(3, 3);

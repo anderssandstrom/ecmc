@@ -6,6 +6,8 @@ Extracts current local methods and the STARTUP state on every run. Stand-ins
 provide hardware readiness, filters and notifications; this does not exercise
 autosave file loading, EPICS record processing, or the complete realtime loop.
 """
+# Expectation basis: INFERRED: restore consistency; COMPAT: encoder/startup defaults.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

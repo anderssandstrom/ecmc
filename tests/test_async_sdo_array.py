@@ -3,6 +3,8 @@
 
 Exercises byte payloads and request lifecycle without EPICS or hardware.
 """
+# Expectation basis: DOC: SDO feature contract; COMPAT: exact codes/call counts.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import re

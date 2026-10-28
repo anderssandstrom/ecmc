@@ -5,6 +5,8 @@ Extracts the production load prefix, configuration parser and unload method.
 Stops before item binding/asyn registration: success means instance creation,
 not a fully registered or runnable IOC module. Host motion services are stubs.
 """
+# Expectation basis: INFERRED: ABI validation/cleanup; DOC: bridge/ABI; COMPAT: loader policy.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Production motion PLC wrappers driving real virtual axes and trajectories."""
+# Expectation basis: INFERRED: motion/edge semantics; COMPAT: virtual-axis defaults and timing.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from suite import run_cases
 
 
@@ -22,6 +24,8 @@ global.homed := mc_get_homed(1);
 global.power := mc_power(1, global.enable);
 global.move := mc_move_abs(1, global.execute, global.target, 2, 10, 10);
 ''' + status
+    # COMPAT: ready/homed values belong to this virtual-axis fixture; they do
+    # not verify encoder initialization or a homing sequence.
     done = dict(power=0, move=0, busy=0, position=1, error=0, ready=1, homed=1)
     # A held execute must not retrigger when the target changes; a falling and
     # rising edge must start a new move. Reuse an axis ID in the next case too.

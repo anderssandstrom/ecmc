@@ -1349,7 +1349,7 @@ int ecmcMonitor::checkVelocityDiff() {
 }
 
 int ecmcMonitor::checkMaxVelocity() {
-  if (!data_->control_.controlWord_.enableCmd || !data_->status_.statusWord_.enabled ||
+  if (!enableMaxVelMon_ || !data_->control_.controlWord_.enableCmd || !data_->status_.statusWord_.enabled ||
       !data_->statusOld_.statusWord_.enabled) {
     data_->interlocks_.maxVelocityTrajInterlock  = false;
     data_->interlocks_.maxVelocityDriveInterlock = false;
@@ -1373,13 +1373,16 @@ int ecmcMonitor::checkMaxVelocity() {
   }
 
   if (!data_->interlocks_.maxVelocityTrajInterlock) {
-    data_->interlocks_.maxVelocityTrajInterlock = maxVelCounterTraj_ >=
+    data_->interlocks_.maxVelocityTrajInterlock = maxVelCounterTraj_ > 0 &&
+                                                  maxVelCounterTraj_ >=
                                                   maxVelTrajILDelay_;
   }
 
-  if (data_->interlocks_.maxVelocityTrajInterlock &&
-      (maxVelCounterDrive_ <= maxVelDriveILDelay_)) {
-    maxVelCounterDrive_++;
+  if (data_->interlocks_.maxVelocityTrajInterlock) {
+    // Keep the elapsed delay saturated until the trajectory latch is cleared.
+    if (maxVelCounterDrive_ <= maxVelDriveILDelay_) {
+      maxVelCounterDrive_++;
+    }
   } else {
     maxVelCounterDrive_ = 0;
   }

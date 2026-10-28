@@ -31,7 +31,14 @@ sources and sanitizer options are separate from the IOC build.
 The unavailable CSP encoder adapter supplies out-of-line virtual definitions
 for RTTI/vtable sanitizer linkage; its operational methods reject access.
 
-## Checked contracts
+## Checked expectations
+
+See [the expectation inventory](../EXPECTATIONS.md#drive-brake) for source
+references and open questions B1/B2. The API documents sequencing and cycle
+units (DOC). No unauthorized release and fault handling are inferred software
+invariants (INFERRED), not an independently approved drive safety specification.
+Exact timing, output pipeline offsets and error encodings preserve implementation
+behavior (COMPAT). Fresh-enable/reset policy still needs confirmation (REVIEW).
 
 Brake output **0 means applied**, **1 means released**.
 
@@ -61,13 +68,17 @@ Brake output **0 means applied**, **1 means released**.
   status read failure and brake write failure.
 - Every enable-request/enabled-feedback trace of length six (4^6 traces), at
   three timing configurations: 12,288 bounded traces, checking independent
-  safety invariants rather than duplicating the implementation.
+  inferred safety invariants rather than duplicating the implementation. Their
+  authorization model assumes the restart policy under review in B2, and the
+  minimum release-time assertion preserves the offset under review in B1.
 - Real Stepper and DS402 output handling. The controlled DS402 plant responds
   to control words 0/6/7/15/128; it does not model a physical drive.
 
 ## Timing convention
 
-Tests preserve the existing strict `counter > configured_delay` behavior.
+**COMPAT / REVIEW B1:** tests preserve the existing strict
+`counter > configured_delay` behavior; the public API does not specify the
+extra samples or pipeline offsets as a requirement.
 The opening counter starts at zero on the first enabled-feedback sample, so
 brake release occurs on enabled sample **N+2** for configured open delay N.
 Closing retains the amplifier request for N+1 sampled invocations after disable
@@ -79,7 +90,7 @@ DS402 has its own handshake cycle ordering. Published drive-enabled status
 also uses the preceding brake command. These pipeline delays are checked, not
 silently removed from the fixture.
 
-These are controller/drive software contracts. Mechanical brake response,
+These are controller/drive software expectations. Mechanical brake response,
 electrical polarity/wiring and actual bus delivery are not simulated. In
 particular, a failed brake write or lost bus cannot prove that the physical
 brake applied; tests verify the software demand and error handling.

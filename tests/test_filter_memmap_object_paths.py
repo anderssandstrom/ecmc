@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Sanitizer checks for zero filters, initial memory maps and object-path bounds."""
+# Expectation basis: INFERRED: bounds/data safety; COMPAT/REVIEW: filter/map defaults.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import re
@@ -105,6 +107,8 @@ public:
 ''' + method(encoder, 'int ecmcEncoder::setPosFilterSize(') + method(encoder, 'int ecmcEncoder::setPosFilterEnable(') + r'''
 int main() {
   ecmcFilter filter(0.001, 0);
+  // COMPAT/REVIEW F1: size zero maps to one; this is not a documented
+  // requirement to accept invalid filter sizes rather than reject them.
   assert(filter.getFilterSize() == 1);
   assert(filter.getFiltPos(12, 0) == 12);
   assert(filter.getFiltPos(15, 0) == 15);
@@ -117,6 +121,7 @@ int main() {
   assert(filter.getFiltPos(25, 0) == 25);
   assert(encoder.setPosFilterSize(3) == 0 && encoder.enablePositionFilter_);
   assert(filter.reset() == 0);
+  // COMPAT/REVIEW F1: reset uses zero-filled history (not first-sample fill).
   assert(filter.getFiltPos(3, 0) == 1);
   assert(filter.getFiltPos(6, 0) == 3);
   assert(filter.getFiltPos(9, 0) == 6);
@@ -151,6 +156,7 @@ int main() {
     uint8_t domain[16]; memset(domain, 0x55, sizeof(domain)); map.adr_ = domain;
     uint8_t actual[16]; size_t bytes;
     assert(map.read(actual, sizeof(actual), &bytes) == 0 && bytes == 16);
+    // INFERRED: deterministic initialized data. COMPAT: the chosen value is 0.
     for (auto value : actual) assert(value == 0);
     if (direction == EC_DIR_OUTPUT) {
       map.updateOutProcessImage();

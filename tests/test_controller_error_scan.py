@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Compile the production error scan with lightweight stand-ins (no EPICS needed)."""
+# Expectation basis: INFERRED: scan equivalence; COMPAT: priority/cache policy.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import re

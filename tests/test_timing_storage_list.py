@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Timing units/finite values and storage-list token boundaries, without hardware."""
+# Expectation basis: DOC: timing units; INFERRED: validation; COMPAT/REVIEW: list policy.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess
@@ -92,6 +94,8 @@ int main(void) {
     assert(count == 0 && calls == 0);
   }
   assert(appendAsciiDataToStorageBuffer(7, NULL) == ECMC_COMMAND_FORMAT_ERROR);
+  // COMPAT/REVIEW F4: a malformed later token leaves the valid prefix committed.
+  // Rejection/memory safety does not establish whether writes should be atomic.
   assert(parse("AppendDataStorage(7)=5,") == ECMC_COMMAND_FORMAT_ERROR);
   assert(count == 1 && calls == 1 && values[0] == 5);
   assert(parse("AppendDataStorage(7)=5, \t") == ECMC_COMMAND_FORMAT_ERROR);
@@ -104,6 +108,7 @@ int main(void) {
   assert(parse("WriteDataStorage(7)= -2.5 , +3e2, .125 \t") == 0);
   assert(count == 3 && values[0] == -2.5 && values[1] == 300 && values[2] == .125);
   // Storage values retain existing IEEE special-value support.
+  // COMPAT/REVIEW F4: acceptance of nonfinite samples needs a storage policy.
   assert(parse("AppendDataStorage(7)=nan,inf,-inf") == 0 && count == 3);
   assert(isnan(values[0]) && isinf(values[1]) && values[1] > 0);
   assert(isinf(values[2]) && values[2] < 0);

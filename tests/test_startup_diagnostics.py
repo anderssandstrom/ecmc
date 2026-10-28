@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Exercise startup diagnostic publication without EPICS/asyn dependencies."""
+# Expectation basis: DOC: diagnostic publication contract; COMPAT: callback shape.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -6,6 +6,8 @@ Tests the command latch and completion portion of poll(), not the full IOC,
 motor record processing, command acceptance, or real mutex contention.
 Source markers deliberately fail if the extracted regions are reorganized.
 """
+# Expectation basis: INFERRED: fresh completion; DOC: sample acknowledgement; COMPAT: callbacks.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Test real LUT reloads and scalar SoE parser branches without EtherCAT hardware."""
+# Expectation basis: INFERRED: ownership/scalar safety; COMPAT/REVIEW: reload/SoE policy.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess
@@ -61,7 +63,8 @@ int main(int argc, char **argv) {
     assert(enc.loadLookupTable(bad) == (i % 2 ? ERROR_LOOKUP_TABLE_FILE_FORMAT_INVALID
                                              : ERROR_LOOKUP_TABLE_OPEN_FILE_FAILED));
     assert(enc.lookupTable_ == oldEncoder && enc.lookupTable_->getValue(5) == 5);
-    // Preserve the encoder's existing policy: disable correction after a failed load.
+    // COMPAT/REVIEW F2: disable correction after a failed load. Retaining
+    // ownership safely does not independently justify this operational policy.
     assert(!enc.lookupTableEnable_);
   }
   assert(loadLUT(0, argv[2]) == 0 && luts[0]->getValue(5) == 10);

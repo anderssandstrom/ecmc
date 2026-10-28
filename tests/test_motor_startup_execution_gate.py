@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Exercise production gate/producer dispatch and axis command guards without EPICS."""
+# Expectation basis: DOC: startup hold/release contract; COMPAT: internal ordering.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

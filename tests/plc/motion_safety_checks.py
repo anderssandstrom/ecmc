@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Command rejection, limits and recovery through real motion PLC functions."""
+# Expectation basis: INFERRED: rejection/recovery; COMPAT/REVIEW: endpoints and edge policy.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from suite import run_cases
 
 
 def add_cases(suite):
+    # INFERRED: rejection must not launch an unauthorized move.
+    # COMPAT/REVIEW L2: exact error, endpoint and execute-edge/reset policies.
     setup = '''axis 1 virtual
 var global.enable 1
 var global.execute 0

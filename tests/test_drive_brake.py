@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Compile and step production drive brake logic with controlled I/O and feedback."""
+# Expectation basis: DOC: sequence/units; INFERRED: safety; COMPAT/REVIEW: timing/restart.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import subprocess
 import tempfile

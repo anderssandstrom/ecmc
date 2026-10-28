@@ -4,6 +4,8 @@
 No EPICS needed. Uses the real plugin ABI and dlopen/dlsym/dlclose; only error
 reporting/logging is substituted. This does not cover the cpp_logic loader.
 """
+# Expectation basis: INFERRED: ABI validation/cleanup; COMPAT: lifecycle and legacy lookup.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

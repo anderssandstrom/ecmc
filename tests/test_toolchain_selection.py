@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Check fallback policy without hiding explicit compiler or sanitizer choices."""
+# Expectation basis: DOC: runner fallback policy; INFERRED: respect explicit toolchains.
+# Rationale, sources and open questions: EXPECTATIONS.md
 import contextlib
 import io
 import unittest

@@ -4,6 +4,8 @@
 Covers validation decisions, not real asyn registration or runtime data copies.
 Type helpers are stand-ins for a single F64 item; the real binding ABI is used.
 """
+# Expectation basis: INFERRED: binding validation; DOC: ABI fields; COMPAT: preparation order.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Exercise path bounds, release-build thread startup and lookup NaN handling."""
+# Expectation basis: INFERRED: bounds/cleanup; DOC: LUT interpolation; COMPAT/REVIEW: edge policies.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess
@@ -164,6 +166,7 @@ lookup_code = common + lookup + r'''
 int main(int argc, char **argv) {
   CHECK(argc == 2);
   ecmcLookupTable<double, double> table(argv[1]);
+  // DOC: ecmcLookupTable.h class comment specifies interpolation and clamping.
   CHECK(table.getValidatedOK());
   CHECK(table.getValue(-20) == -2);
   CHECK(table.getValue(-10) == -2);
@@ -172,6 +175,8 @@ int main(int argc, char **argv) {
   CHECK(table.getValue(5) == 2);
   CHECK(table.getValue(10) == 4);
   CHECK(table.getValue(20) == 4);
+  // COMPAT/REVIEW F3: nonfinite-input results are a separate policy; safe
+  // indexing alone does not specify propagation versus rejection/clamping.
   CHECK(table.getValue(-std::numeric_limits<double>::infinity()) == -2);
   CHECK(table.getValue(std::numeric_limits<double>::infinity()) == 4);
   CHECK(std::isnan(table.getValue(std::numeric_limits<double>::quiet_NaN())));

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build and run real ExprTk/library/virtual-axis tests without hardware."""
+# Expectation basis: Mixed DOC/INFERRED/COMPAT/REVIEW: see the PLC group inventory.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import subprocess
 import sys

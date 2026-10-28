@@ -3,6 +3,8 @@
 
 Set ETHERCAT_INCLUDE to additionally compile against an installed ecrt.h.
 """
+# Expectation basis: DOC: wiring heuristic; COMPAT: messages and hook placement.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """EtherCAT PLC wrappers against explicit offline fixtures."""
+# Expectation basis: INFERRED: bit arithmetic; DOC: SDO semantics; COMPAT: offline wrapper values.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from suite import run_cases
 
 

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Storage buffer modes, functions, bounds and errors."""
+# Expectation basis: DOC: retention modes; INFERRED: math/bounds; COMPAT/REVIEW: cursor/sentinels.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from suite import run_cases
 
 
 def add_cases(suite):
     names, case = suite.names, suite.case
+    # DOC: ecmcMisc.h::createDataStorage describes the retention modes.
+    # COMPAT/REVIEW L1: cursor/layout and empty aggregate/sentinel conventions.
     # Normal storage discards writes after full; ring replaces from the start;
     # FIFO retains the latest samples in chronological order.
     for mode, values, cursor in ((0, (1, 2, 3), 3), (1, (4, 2, 3), 1),
@@ -31,6 +35,7 @@ global.resetcursor := ds_get_buff_id(0); global.resetavg := ds_get_avg(0);
 global.zero := ds_get_data(0, 0);
 ''', expected, 'storage 0 3 ' + str(mode))
 
+    # COMPAT/REVIEW L1: cursor=size is accepted as an end sentinel.
     case('storage_cursor', '''
 global.set := ds_set_buff_id(0, 2); global.cursor := ds_get_buff_id(0);
 ds_append_data(0, 7); global.read := ds_get_data(0, 2);
@@ -41,6 +46,7 @@ global.write := ds_set_data(0, 1, 9); global.changed := ds_get_data(0, 1);
 ''', dict(set=0, cursor=2, read=7, boundary=0, invalid=0x20203,
           err=0x20203, preserved=3, write=0, changed=9), 'storage 0 3 0')
 
+    # INFERRED: reject invalid IDs safely. COMPAT: each wrapper's return sentinel.
     # Every supported wrapper's missing-object and invalid-object conventions.
     calls = {'ds_append_data': ('ID, 1', 0x20509, 0x2050A),
              'ds_clear_data': ('ID', 0x20509, 0x2050A),
@@ -75,6 +81,7 @@ global.write := ds_set_data(0, 1, 9); global.changed := ds_get_data(0, 1);
              'global.err := ds_get_err(); global.cursor := ds_get_buff_id(0);',
              dict(result=0x20203, err=0x20203, cursor=0), 'storage 0 2 0')
 
+    # COMPAT/REVIEW L1: oversized copy count clips to the available source data.
     for mode in (0, 1, 2):
         case('storage_copy_' + str(mode), '''
 ds_set_data(0, 0, 2); ds_set_data(0, 1, 4); ds_set_data(0, 2, 6);

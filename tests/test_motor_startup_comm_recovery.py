@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Compile ECMC startup alarm recovery and model the motor restore command guard."""
+# Expectation basis: DOC: narrow startup COMM recovery; COMPAT: callback sequence.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

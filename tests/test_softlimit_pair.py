@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Test production monitor pair restoration and its enable-state policy."""
+# Expectation basis: DOC: restore pair contract; COMPAT: numeric errors/internal state.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

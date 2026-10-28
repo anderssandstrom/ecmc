@@ -4,6 +4,8 @@
 Does not compile or execute expressions through exprtk. The file reader,
 index checks, alias parser, substitution and enable code are production code.
 """
+# Expectation basis: INFERRED: loading/substitution correctness; COMPAT: parser/reload policy.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

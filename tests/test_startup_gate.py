@@ -5,6 +5,8 @@ Run: python3 tests/test_startup_gate.py
 No EPICS, EtherCAT master or hardware required. This checks cycle-by-cycle
 decisions, including masterless operation, not actual scheduling or IOC hooks.
 """
+# Expectation basis: DOC: startup gate contract; COMPAT: internal cycle/call boundaries.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

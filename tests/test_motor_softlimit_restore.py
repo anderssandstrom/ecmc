@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Exercise production motor startup code with lightweight EPICS/asyn stand-ins."""
+# Expectation basis: DOC: restore/units/retry contract; COMPAT: legacy behavior and reporting.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

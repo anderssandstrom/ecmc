@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Storage creation validation and diagnostic stream failure propagation."""
+# Expectation basis: INFERRED: validation/I/O failure propagation; DOC: modes; COMPAT: cleanup.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

@@ -6,6 +6,8 @@ Requires C/C++ compilers with address/undefined sanitizer support, no EPICS.
 Command dispatch and asyn notifications are stand-ins; buffer operations and
 the command splitter are production code, read fresh on each invocation.
 """
+# Expectation basis: INFERRED: memory/state safety; DOC: storage modes; COMPAT: I/O details.
+# Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
 import subprocess

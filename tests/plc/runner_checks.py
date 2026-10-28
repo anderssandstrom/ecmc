@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Standalone PLC runner: examples, validation, sequencing, isolation and timeout."""
+# Expectation basis: DOC: runner syntax/isolation; INFERRED: validation; COMPAT: formatting.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from pathlib import Path
 import subprocess
 import sys

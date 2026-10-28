@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Lookup table interpolation, bounds, reload and isolation."""
+# Expectation basis: DOC: interpolation/clamping; INFERRED: replacement; COMPAT: error sentinels.
+# Rationale, sources and open questions: ../EXPECTATIONS.md
 from suite import run_cases
 
 

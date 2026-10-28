@@ -13,6 +13,9 @@ They share fixture generation in `plc/suite.py`. Examples remain with the tool.
 The [drive brake tests](drive/README.md) separately compile and step the real
 Stepper/DS402 brake logic, including timing, feedback loss, interlocks and faults.
 
+The [axis monitor tests](monitor/README.md) step the real monitor with controlled
+feedback to check following error, overspeed, at-target timing and limit latching.
+
 From the repository root, run:
 
 ```sh
@@ -41,7 +44,7 @@ python3 tests/test_motor_record_dmov.py
 
 - Python 3.6 or newer; no third-party Python packages.
 - C and C++ compilers supporting C99 and C++17, respectively.
-- CMake 3.16 or newer for the standalone PLC library tests (POSIX/Linux).
+- CMake 3.16 or newer for the standalone PLC, drive and monitor tests (POSIX/Linux).
 - AddressSanitizer and UndefinedBehaviorSanitizer support and runtime libraries
   for the async SDO, buffer-boundary, path/thread/lookup, LUT/SoE and
   filter/memory-map/object-path, storage-creation/diagnostic-I/O and
@@ -73,6 +76,12 @@ compile against an installed `ecrt.h` instead of its substitute declarations.
 
 ## Coverage
 
+See [the expectation inventory](EXPECTATIONS.md) for which checks have a
+documented basis, which use inferred intent, and which preserve current behavior.
+Unresolved timing, latching and input-policy questions are marked REVIEW there
+and beside the relevant motion assertions. Passing compatibility checks does
+not establish that the current behavior is the intended specification.
+
 The [GitHub Actions workflow](../.github/workflows/hardware-free-tests.yml)
 runs the suite on Ubuntu 24.04 with GCC and Clang for pushes and pull requests.
 It also supports manual runs. It uses the runner's installed compilers and
@@ -89,6 +98,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_cpp_logic_bindings.py` | Missing/invalid items, size/type and direction mismatches, auto-size preparation and cleanup requests; fake data-item endpoints |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |
 | `test_motor_record_dmov.py` | Completion/abort behavior, fresh samples, counter wraparound and command rearming |
+| `test_monitor.py` | Real monitor following-error/overspeed thresholds and delays, latching, reset, enable loss, at-target and directional limits |
 | `test_motor_softlimit_restore.py` | IOC restore hooks, limit precedence, MRES, retries and position-load sample acknowledgement |
 | `test_softlimit_pair.py` | Production monitor pair transfer, enable flags, positive/negative ranges, zero sentinel and invalid-input preservation |
 | `test_startup_diagnostics.py` | Startup diagnostic parameter values, independent readiness, full status text and axis-addressed callbacks |
@@ -118,7 +128,8 @@ sections can require a matching harness update.
 ## Adding a regression
 
 Add a `test_*.py` script or extend the relevant existing script. Exercise the
-production implementation, use explicit expected behavior, and verify the test
+production implementation, label the expectation basis using
+[EXPECTATIONS.md](EXPECTATIONS.md), cite its source or reasoning, and verify the test
 fails when the old bug is reintroduced. Keep fault injection temporary; do not
 leave modified production code in the checkout. The runner discovers new
 scripts automatically.
