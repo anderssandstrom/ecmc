@@ -1,0 +1,24 @@
+case virtual_axis_move
+period 0.001
+axis 1 virtual
+var global.enable 1
+var global.execute 0
+var global.target 1
+var global.power_result 0
+var global.move_result 0
+var global.busy 0
+var global.position 0
+var global.error 0
+plc motion.plc
+step 10
+expect global.power_result 0
+expect global.error 0
+set global.execute 1
+step 10
+expect global.move_result 0
+expect global.busy 1
+step 2000
+expect global.busy 0
+expect global.position 1 1e-6
+expect global.error 0
+end

@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "asynDriver.h"
 enum asynParamType {
-  asynParamFloat64Array, asynParamInt32, asynParamUInt32Digital
+  asynParamFloat64Array, asynParamInt32, asynParamUInt32Digital,
+  asynParamFloat64, asynParamInt64, asynParamInt8Array
 };
 class ecmcAsynDataItem {
  public:
@@ -14,6 +16,9 @@ class ecmcAsynDataItem {
   void addSupportedAsynType(asynParamType) {}
   void refreshParam(int) {}
   void refreshParamRT(int) {}
+  void refreshParam(int, uint8_t *, size_t) {}
+  void refreshParamRT(int, uint8_t *, size_t) {}
+  template<typename Callback> void setExeCmdFunctPtr(Callback, void *) {}
 };
 class ecmcAsynPortDriver {
  public:

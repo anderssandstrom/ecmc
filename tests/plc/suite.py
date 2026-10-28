@@ -13,14 +13,14 @@ class Suite:
         self.cases = []
         self.output_contains = []
 
-    def case(self, name, code, expected, setup=''):
+    def case(self, name, code, expected, setup='', steps='run 1\n'):
         if name in self.names:
             raise ValueError('duplicate case: ' + name)
         self.names.append(name)
         (self.root / (name + '.plc')).write_text(code)
         self.cases.append('case ' + name + '\n' + setup + '\n' + ''.join(
             'var global.' + key + ' 0\n' for key in expected) +
-            'plc ' + name + '.plc\nrun 1\n' + ''.join(
+            'plc ' + name + '.plc\n' + steps + '\n' + ''.join(
             'expect global.{} {} 1e-12\n'.format(key, value)
             for key, value in expected.items()) + 'end\n')
 

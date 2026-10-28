@@ -17,11 +17,12 @@ cmake -S tools/plc-test -B /tmp/ecmc-plc-test -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/ecmc-plc-test -j2
 /tmp/ecmc-plc-test/ecmcPlcTest --suite tools/plc-test/examples/smoke.suite
 /tmp/ecmc-plc-test/ecmcPlcTest --suite tools/plc-test/examples/libraries.suite
+/tmp/ecmc-plc-test/ecmcPlcTest --suite tools/plc-test/examples/motion.suite
 ctest --test-dir /tmp/ecmc-plc-test --output-on-failure
 ```
 
 The normal regression command also builds this executable in a temporary
-directory and runs the runner, storage, EtherCAT and LUT checks automatically:
+directory and runs the runner, storage, EtherCAT, LUT and motion checks automatically:
 
 ```sh
 python3 tests/run_tests.py
@@ -29,7 +30,10 @@ python3 tests/run_tests.py
 
 To run just that integration, use `python3 tests/test_plc_libraries.py`.
 It honors `CXX`, builds without optimization/debug symbols to reduce compile
-time, and removes its build directory afterwards. No prebuilt binary is used.
+time, enables ASan/UBSan, and removes its build directory afterwards. No prebuilt
+binary is used. For a separate sanitized build, configure with
+`-DECMC_PLC_TEST_SANITIZERS=ON`; the option defaults to OFF and affects only
+the standalone target.
 
 If working from the enclosing repository, use `ecmc/tools/plc-test` for the
 source and example paths. ExprTk is a large template library; the first build
@@ -68,10 +72,16 @@ end
 | `ec_time APP RECEIVE SEND PERIOD OFFSET` | Set nanosecond timestamps, period, and signed monotonic offset |
 | `ec_domain INDEX STATE` | Set a domain's state to 0 or 1 |
 | `ec_slave POSITION CYCLE_OFFSET EVENT_OFFSET_NS` | Configure a cycle-only input event relative to receive time |
+| `period SECONDS` | Set the motion sample period before creating axes; default 0.001 |
+| `axis INDEX virtual` | Create a real virtual axis with a trapezoidal trajectory |
+| `feedback INDEX follow` | Supply the preceding position setpoint as ideal encoder feedback (default) |
+| `feedback INDEX POSITION` | Hold the external encoder feedback at a specified position |
 | `plc FILE` | Compile one expression file per case |
 | `set NAME VALUE` | Change a declared scalar between evaluations |
 | `run COUNT` | Evaluate the expression COUNT times, preserving case state |
+| `step COUNT` | Execute each virtual axis, then evaluate the PLC, COUNT times |
 | `expect NAME VALUE [ABS_TOL]` | Check a scalar; default tolerance is zero |
+| `expect_axis INDEX PROPERTY VALUE [ABS_TOL]` | Check enabled, busy, execute, error, position, setpoint or velocity |
 
 Each case must evaluate its PLC and make at least one assertion. All declared
 numeric inputs and tolerances must be finite. Non-finite actual results fail
@@ -141,12 +151,14 @@ Automated checks live under [`tests/plc/`](../../tests/plc/):
 - `ethercat_checks.py`: bit operations, memory maps, configured time, domain
   state and SDO argument/missing-object paths.
 - `lut_checks.py`: interpolation, endpoints, invalid IDs, reload and isolation.
+- `motion_checks.py`: real virtual-axis power, absolute/relative/velocity moves,
+  halt, reset, status, execute edges, feedback and missing/invalid axes.
 - `runner_checks.py`: examples, suite validation, sequencing, assertion
   failures, clean state and timeouts.
 - `suite.py`: shared temporary fixture generation and result checking.
 
 `tests/test_plc_libraries.py` builds the executable once and invokes these
-checks. CTest invokes the same four scripts against its existing build. To run
+checks. CTest invokes the same five scripts against its existing build. To run
 one group without rebuilding:
 
 ```sh
@@ -157,13 +169,45 @@ The executable, offline adapters and user-facing examples stay under
 `tools/plc-test/`; automated test code stays under `tests/`.
 
 This runner evaluates expressions directly through `exprtkWrap`; it does not
-yet execute `ecmcPLCMain`/`ecmcPLCTask` scheduling, first-scan handling, axis
-cycles, or PLC object bindings. `run` counts expression evaluations, not elapsed
-controller cycles. No realtime thread is created and no time advances implicitly.
+execute `ecmcPLCMain`/`ecmcPLCTask` scheduling, first-scan handling or PLC object
+bindings. `run` counts expression evaluations and does not execute axes.
 
-Motion, real EtherCAT transport, plugins, file I/O functions, full startup files,
+## Virtual motion
+
+`step` executes the real `ecmcAxisVirt`, base axis, sequencer, encoder, monitor
+and trapezoidal trajectory sources with a fixed sample period. Axes execute
+before the standalone PLC, matching the normal standalone-PLC ordering. No
+realtime thread, IOC, motor records or physical drives are created.
+
+Registered motion functions are `mc_power`, `mc_move_abs`, `mc_move_rel`,
+`mc_move_vel`, `mc_halt`, `mc_reset`, `mc_get_busy`, `mc_get_act_pos`,
+`mc_get_axis_err`, `mc_get_err`, `mc_get_homed`, `mc_get_hw_ready`, and
+`mc_set_axis_error`. The production motion library is included unchanged.
+Its execute-edge memories are reset with each fresh test context.
+
+Each axis starts disabled with PLC commands allowed, external encoder feedback,
+untripped limit switches via the real monitor's PLC overrides, and an inactive
+home switch. Creation validates and settles the real startup state machine over
+four disabled initialization cycles. At-target monitoring is enabled with a
+1e-6 tolerance; following-error monitoring is disabled for this ideal fixture.
+The default feedback copies the previous setpoint into the external input and
+primary encoder. This tests controller behavior, not physical motor dynamics.
+`feedback INDEX POSITION` holds both feedback values for controlled tests.
+
+`step` advances trajectory calculations through the fixed period; the configured
+EtherCAT timestamp fixtures remain fixed until an `ec_time` command. Homing,
+S-curve/Ruckig, axis groups, PVT and motion sequence functions are not exposed.
+
+All infrastructure adapters and motion support sources are private to this
+CMake executable. They are under `tools/plc-test/offline/`, outside the IOC
+source directories. No test hooks, test compiler settings or dependencies are
+added to the IOC build or startup path. Hardware entry access, physical-drive
+operations and S-curve construction are rejected explicitly by these adapters.
+The only production-source correction is explicit initialization of three
+sequencer switch-history booleans; the sanitized motion tests exposed their
+previous uninitialized reads.
+
+Real EtherCAT transport, plugins, file I/O functions, full startup files,
 multiple interacting PLCs, and automatic variable discovery are not yet
 supported. No hardware or plugin backend is linked or loaded. Suite and PLC
 files are trusted test inputs, not sandboxed untrusted programs.
-
-The next extension is reusable manually stepped motion cycles.

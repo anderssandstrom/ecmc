@@ -1,0 +1,5 @@
+global.power_result := mc_power(1, global.enable);
+global.move_result := mc_move_abs(1, global.execute, global.target, 2, 10, 10);
+global.busy := mc_get_busy(1);
+global.position := mc_get_act_pos(1, 1);
+global.error := mc_get_axis_err(1);

@@ -5,6 +5,7 @@
 #include "ecmcErrorsList.h"
 #include "ecmcLookupTable.h"
 #include "ecmcEc.h"
+#include "ecmcAxisVirt.h"
 #include <cmath>
 #include <csignal>
 #include <filesystem>
@@ -32,6 +33,7 @@ void ecmcRtLoggerLogError(const char *format, ...) {
 #include "ecmcPLCTask_libDs.inc"
 #include "ecmcPLCTask_libLut.inc"
 #include "ecmcPLCTask_libEc.inc"
+#include "ecmcPLCTask_libMc.inc"
 
 ecmcLookupTable<double, double> *luts[ECMC_MAX_LUTS] = {};
 ecmcEc *ec = nullptr;
@@ -137,6 +139,9 @@ class Context {
   std::map<int, std::unique_ptr<ecmcDataStorage>> storage_;
   std::map<int, std::unique_ptr<ecmcLookupTable<double, double>>> tables_;
   std::unique_ptr<ecmcEc> backend_;
+  std::map<int, std::unique_ptr<ecmcAxisVirt>> motion_;
+  std::map<int, bool> followSetpoint_;
+  double period_ = 0.001;
   std::map<std::string, double> variables_;
   // Destroy expression before the variable references it holds.
   exprtkWrap expression_;
@@ -146,6 +151,14 @@ class Context {
     ds_errorCode = 0;
     ec_errorCode = 0;
     lut_errorCode = 0;
+    // These are the production PLC wrappers' edge memories, not axis state.
+    std::fill_n(statLastAxesExecuteAbs_, ECMC_MAX_AXES, 0);
+    std::fill_n(statLastAxesExecuteRel_, ECMC_MAX_AXES, 0);
+    std::fill_n(statLastAxesExecuteVel_, ECMC_MAX_AXES, 0);
+    std::fill_n(statLastAxesExecuteHalt_, ECMC_MAX_AXES, 0);
+    std::fill_n(statLastAxesExecuteHome_, ECMC_MAX_AXES, 0);
+    mc_errorCode = 0;
+    (void)mc_cmd_count;
     // All storage functions except EPICS publication are bound below.
     if (ds_cmd_count != 15) fail("storage library changed; update offline bindings");
 #define BIND(function) if (expression_.addFunction(#function, function)) \
@@ -170,11 +183,16 @@ class Context {
     BIND(ec_sdo_read); BIND(ec_sdo_write); BIND(ec_sdo_get_busy);
     BIND(ec_sdo_get_error); BIND(ec_sdo_get_size); BIND(ec_sdo_get_capacity);
     BIND(ec_sdo_get_value); BIND(ec_sdo_set_value);
+    BIND(mc_power); BIND(mc_move_abs); BIND(mc_move_rel); BIND(mc_move_vel);
+    BIND(mc_halt); BIND(mc_reset); BIND(mc_get_busy); BIND(mc_get_act_pos);
+    BIND(mc_get_axis_err); BIND(mc_get_err); BIND(mc_get_homed); BIND(mc_get_hw_ready);
+    BIND(mc_set_axis_error);
 #undef BIND
   }
   ~Context() {
     for (const auto &item : storage_) dataStorages[item.first] = nullptr;
     for (const auto &item : tables_) luts[item.first] = nullptr;
+    for (const auto &item : motion_) axes[item.first] = nullptr;
     ec = nullptr;
     ds_errorCode = 0;
     ec_errorCode = 0;
@@ -195,6 +213,55 @@ class Context {
             fail("duplicate variable: " + a[1]);
           if (expression_.addVariable(a[1], variables_.at(a[1])))
             fail("cannot register variable: " + a[1]);
+        } else if (command == "period") {
+          count(a, 2);
+          if (!motion_.empty()) fail("set period before creating axes");
+          period_ = number(a[1]);
+          if (period_ < 0.00005 || period_ > 1) fail("period must be 0.00005..1 seconds");
+        } else if (command == "axis") {
+          count(a, 3);
+          if (a[2] != "virtual") fail("only virtual axes are supported");
+          int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
+          if (motion_.count(index)) fail("duplicate axis");
+          auto axis = std::make_unique<ecmcAxisVirt>(&publication_, index, period_, ECMC_TRAPETZ);
+          if (axis->getErrorID()) fail("virtual axis construction failed");
+          axis->setEncDataSourceType(ECMC_DATA_SOURCE_EXTERNAL);
+          axis->setEnableExtEncVeloFilter(false);
+          axis->setAllowCmdFromPLC(true);
+          axis->setAllowMotionFunctions(true, true, true);
+          axis->getPrimEnc()->setScaleNum(1);
+          axis->getPrimEnc()->setScaleDenom(1);
+          axis->setAcc(10);
+          axis->setDec(10);
+          // Use the monitor's real PLC input overrides for untripped limits.
+          axis->getMon()->setLimitSwitchBwdPLCOverride(true);
+          axis->getMon()->setLimitSwitchFwdPLCOverride(true);
+          axis->getMon()->setLimitSwitchBwdPLCOverrideValue(true);
+          axis->getMon()->setLimitSwitchFwdPLCOverrideValue(true);
+          axis->getMon()->setHomeSwitchPLCOverride(true);
+          axis->getMon()->setHomeSwitchPLCOverrideValue(false);
+          axis->getMon()->setAtTargetTol(1e-6);
+          axis->getMon()->setAtTargetTime(1);
+          axis->getMon()->setEnableAtTargetMon(true);
+          axis->getMon()->setEnableLagMon(false);
+          int error = axis->validate();
+          if (error) fail("virtual axis validation failed: " + std::to_string(error));
+          // Settle the real startup state machine while disabled, before PLC code.
+          for (int i = 0; i < 4; ++i) axis->execute(true);
+          if (axis->getErrorID()) fail("virtual axis startup failed: " + std::to_string(axis->getErrorID()));
+          axes[index] = axis.get();
+          motion_[index] = std::move(axis);
+          followSetpoint_[index] = true;
+        } else if (command == "feedback") {
+          count(a, 3);
+          int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
+          if (!motion_.count(index)) fail("feedback requires an existing axis");
+          followSetpoint_[index] = a[2] == "follow";
+          if (!followSetpoint_[index]) {
+            double value = number(a[2]);
+            motion_.at(index)->setExtActPos(value);
+            motion_.at(index)->getPrimEnc()->setActPos(value);
+          }
         } else if (command == "storage") {
           count(a, 4);
           int index = integer(a[1], 0, ECMC_MAX_DATA_STORAGE_OBJECTS - 1);
@@ -262,23 +329,59 @@ class Context {
           count(a, 3);
           if (!variables_.count(a[1])) fail("unknown variable: " + a[1]);
           variables_.at(a[1]) = number(a[2]);
-        } else if (command == "run") {
+        } else if (command == "run" || command == "step") {
           count(a, 2);
           if (!compiled_) fail("run requires a compiled plc");
           int cycles = integer(a[1], 1, 1000000);
-          for (int i = 0; i < cycles; ++i) expression_.refresh();
+          if (command == "step" && motion_.empty()) fail("step requires an axis");
+          for (int i = 0; i < cycles; ++i) {
+            if (command == "step") {
+              // Normal standalone PLCs execute after the axes in cyclic_task.
+              // The ideal feedback fixture supplies the preceding setpoint.
+              for (auto &item : motion_) {
+                if (followSetpoint_.at(item.first)) {
+                  double value = item.second->getCurrentPositionSetpoint();
+                  item.second->setExtActPos(value);
+                  item.second->getPrimEnc()->setActPos(value);
+                }
+                item.second->execute(true);
+              }
+            }
+            expression_.refresh();
+          }
           runs += cycles;
-        } else if (command == "expect") {
-          if (a.size() != 3 && a.size() != 4) fail("expect variable value [absolute_tolerance]");
+        } else if (command == "expect" || command == "expect_axis") {
+          const bool axisCheck = command == "expect_axis";
+          size_t valueIndex = axisCheck ? 3 : 2;
+          if (a.size() != valueIndex + 1 && a.size() != valueIndex + 2)
+            fail(axisCheck ? "expect_axis index property value [absolute_tolerance]" :
+                             "expect variable value [absolute_tolerance]");
           if (!runs) fail("expect requires at least one evaluation");
-          if (!variables_.count(a[1])) fail("unknown variable: " + a[1]);
-          double expected = number(a[2]);
-          double tolerance = a.size() == 4 ? number(a[3]) : 0;
+          double actual;
+          std::string label = a[1];
+          if (axisCheck) {
+            int index = integer(a[1], 1, ECMC_MAX_AXES - 1);
+            if (!motion_.count(index)) fail("unknown axis");
+            auto &axis = *motion_.at(index);
+            label = "axis " + a[1] + " " + a[2];
+            if (a[2] == "enabled") actual = axis.getEnabled();
+            else if (a[2] == "busy") actual = axis.getBusy();
+            else if (a[2] == "execute") actual = axis.getExecute();
+            else if (a[2] == "error") actual = axis.getErrorID();
+            else if (a[2] == "setpoint") actual = axis.getCurrentPositionSetpoint();
+            else if (a[2] == "position") axis.getPosAct(&actual);
+            else if (a[2] == "velocity") actual = axis.getTraj()->getNextVel();
+            else fail("unknown axis property: " + a[2]);
+          } else {
+            if (!variables_.count(a[1])) fail("unknown variable: " + a[1]);
+            actual = variables_.at(a[1]);
+          }
+          double expected = number(a[valueIndex]);
+          double tolerance = a.size() == valueIndex + 2 ? number(a[valueIndex + 1]) : 0;
           if (tolerance < 0) fail("negative tolerance");
-          double actual = variables_.at(a[1]);
           if (!std::isfinite(actual) || std::abs(actual - expected) > tolerance) {
             std::ostringstream message;
-            message << std::setprecision(17) << a[1] << ": expected " << expected
+            message << std::setprecision(17) << label << ": expected " << expected
                     << ", actual " << actual << ", tolerance " << tolerance;
             fail(message.str());
           }

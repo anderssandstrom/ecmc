@@ -17,6 +17,11 @@ result = subprocess.run([binary, '--suite', str(examples / 'libraries.suite')],
                         universal_newlines=True, timeout=30)
 assert result.returncode == 0, result.stdout + result.stderr
 assert '2/2 passed' in result.stdout, result.stdout
+result = subprocess.run([binary, '--suite', str(examples / 'motion.suite')],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        universal_newlines=True, timeout=30)
+assert result.returncode == 0, result.stdout + result.stderr
+assert '1/1 passed' in result.stdout, result.stdout
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
@@ -40,7 +45,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert 'expected 2, actual 1' in result.stdout, result.stdout
     assert '[PASS] fresh' in result.stdout, result.stdout
 
-    for code in ('global.x := ;', 'global.x := mc_move_abs(1, 2, 3, 4, 5);',
+    for code in ('global.x := ;', 'global.x := mc_home(1, 1, 1, 1, 1, 1, 1);',
                  'global.x := ds_push_asyn(0);', 'global.x := global.typo;'):
         result = run(case(setup + 'expect global.x 1'), code)
         assert result.returncode == 1, result
@@ -53,7 +58,12 @@ with tempfile.TemporaryDirectory() as directory:
                  'plc logic.plc', 'ec_memmap 0 2', 'ec_time 0 0 0 1000 0',
                  'ec\nec_memmap -1 2', 'ec\nec_memmap 0 0', 'ec\nec',
                  'ec\nec_time -1 0 0 1000 0', 'ec\nec_time 0 0 0 0 0',
-                 'lut 16 absent.lut', 'lut 0 absent.lut'):
+                 'lut 16 absent.lut', 'lut 0 absent.lut', 'axis 0 virtual',
+                 'axis 1 real', 'axis 1 virtual\naxis 1 virtual',
+                 'period 0', 'period nan', 'axis 1 virtual\nperiod 0.002',
+                 'feedback 1 follow', 'axis 1 virtual\nfeedback 1 nan',
+                 setup + 'step 1', setup + 'expect_axis 1 busy 0',
+                 'axis 1 virtual\n' + setup + 'expect_axis 1 typo 0'):
         result = run(case(body))
         assert result.returncode == 1, (body, result.stdout, result.stderr)
 

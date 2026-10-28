@@ -3,6 +3,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 typedef struct asynUser { int unused; } asynUser;
+enum asynStatus { asynSuccess, asynError };
+typedef double epicsFloat64;
 #define ASYN_TRACE_ERROR 1
 #define ASYN_TRACE_INFO 64
 static inline int asynPrint(asynUser *, int, const char *format, ...) {

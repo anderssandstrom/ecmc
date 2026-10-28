@@ -5,7 +5,8 @@ functions through ExprTk, see [the PLC test executable](../tools/plc-test/README
 `test_plc_libraries.py` builds it and runs its integration checks automatically
 with this runner; it needs no EtherLab or EPICS.
 The actual PLC checks are grouped under [`plc/`](plc/) as
-`runner_checks.py`, `storage_checks.py`, `ethercat_checks.py` and `lut_checks.py`.
+`runner_checks.py`, `storage_checks.py`, `ethercat_checks.py`, `lut_checks.py`
+and `motion_checks.py`.
 They share fixture generation in `plc/suite.py`. Examples remain with the tool.
 
 From the repository root, run:
@@ -89,7 +90,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_motor_startup_comm_recovery.py` | Stale startup COMM recovery, position-load completion, preserved alarms and runtime faults |
 | `test_motor_startup_execution_gate.py` | Motion producer hold, rejected commands, deferred enable and absent motor records |
 | `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |
-| `test_plc_libraries.py` | Real ExprTk, storage modes/functions/errors, offline EtherCAT wrappers and LUTs; also runner validation, isolation and timeout |
+| `test_plc_libraries.py` | Real ExprTk, storage, offline EtherCAT wrappers, LUTs and real virtual-axis motion; also runner validation, isolation and timeout |
 | `test_filter_memmap_object_paths.py` | Zero-sized filter re-enable, memory-map initial contents and partial writes, object-path bounds and null arguments |
 | `test_lut_reload_soe.py` | Failed LUT reload ownership, retry/destruction, scalar SoE size bounds and full-width output |
 | `test_path_thread_lookup.py` | EtherCAT path bounds and malformed inputs, thread startup and cleanup with/without NDEBUG, lookup NaN and endpoint handling |

@@ -115,6 +115,7 @@ int ecmcAxisSequencer::setErrorID(const char       *fileName,
 }
 
 void ecmcAxisSequencer::initVars() {
+  homeSensor_            = false;
   homeSensorOld_         = false;
   executeOld_            = false;
   seqInProgress_         = false;
@@ -134,6 +135,8 @@ void ecmcAxisSequencer::initVars() {
   jogBwd_                = false;
   hwLimitSwitchBwdOld_   = false;
   hwLimitSwitchFwdOld_   = false;
+  hwLimitSwitchBwd_      = false;
+  hwLimitSwitchFwd_      = false;
   homePosLatch1_         = 0;
   homePosLatch2_         = 0;
   seqTimeout_            = 0;
