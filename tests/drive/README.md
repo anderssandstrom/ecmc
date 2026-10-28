@@ -14,7 +14,8 @@ CC=clang CXX=clang++ python3 tests/test_drive_brake.py
 ```
 
 The individual script builds in a temporary directory and removes it afterwards.
-It requires CMake 3.16+, C++17 and ASan/UBSan. To keep a build for inspection:
+It requires CMake 3.16+, C++17 and ASan/UBSan (including explicit vptr checks).
+To keep a build for inspection:
 
 ```sh
 cmake -S tests/drive -B /tmp/ecmc-drive-brake -DCMAKE_BUILD_TYPE=Debug
@@ -27,6 +28,8 @@ read/write failures and asyn publication. They reuse the publication adapter
 under `tools/plc-test/offline`. CSP encoder access is rejected explicitly; the
 fixture uses an S32 CSV setpoint. The test target and all its include paths,
 sources and sanitizer options are separate from the IOC build.
+The unavailable CSP encoder adapter supplies out-of-line virtual definitions
+for RTTI/vtable sanitizer linkage; its operational methods reject access.
 
 ## Checked contracts
 
