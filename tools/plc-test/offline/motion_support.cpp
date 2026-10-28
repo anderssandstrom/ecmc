@@ -25,8 +25,23 @@ extern "C" int setAxisPLCEnable(int, int) {
   throw std::logic_error("axis PLCs unavailable in standalone motion tests");
 }
 extern "C" int getAxisPLCEnable(int, int *enable) { *enable = 0; return 0; }
-void ecmcDriveBase::setCspRef(double, double, double) {
+
+// Sanitized calls through a drive pointer need the class RTTI even though a
+// virtual axis never constructs a drive. Define the out-of-line virtuals,
+// including the key destructor, so its vtable/typeinfo are emitted here.
+// All operational entry points reject accidental use of a physical drive.
+[[noreturn]] static void unavailableDrive() {
   throw std::logic_error("physical drives unavailable in virtual-axis tests");
+}
+ecmcDriveBase::~ecmcDriveBase() = default;
+void ecmcDriveBase::initVars() { unavailableDrive(); }
+int ecmcDriveBase::validate() { unavailableDrive(); }
+void ecmcDriveBase::readEntries(bool) { unavailableDrive(); }
+void ecmcDriveBase::writeEntries() { unavailableDrive(); }
+void ecmcDriveBase::errorReset() { unavailableDrive(); }
+int ecmcDriveBase::hwReady() { unavailableDrive(); }
+void ecmcDriveBase::setCspRef(double, double, double) {
+  unavailableDrive();
 }
 
 // AxisBase contains an S-curve construction branch. Reject it explicitly rather

@@ -33,9 +33,9 @@ target_include_directories(ecmcPlcTest PRIVATE
 target_compile_options(ecmcPlcTest PRIVATE -Wall -Wextra)
 option(ECMC_PLC_TEST_SANITIZERS "Check the standalone executable with ASan/UBSan" OFF)
 if(ECMC_PLC_TEST_SANITIZERS)
-  target_compile_options(ecmcPlcTest PRIVATE -fsanitize=address,undefined
+  target_compile_options(ecmcPlcTest PRIVATE -fsanitize=address,undefined,vptr
     -fno-sanitize-recover=all -fno-omit-frame-pointer)
-  target_link_options(ecmcPlcTest PRIVATE -fsanitize=address,undefined)
+  target_link_options(ecmcPlcTest PRIVATE -fsanitize=address,undefined,vptr)
 endif()
 include(CTest)
 if(BUILD_TESTING)

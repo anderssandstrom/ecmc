@@ -30,8 +30,8 @@ python3 tests/run_tests.py
 
 To run just that integration, use `python3 tests/test_plc_libraries.py`.
 It honors `CXX`, builds without optimization/debug symbols to reduce compile
-time, enables ASan/UBSan, and removes its build directory afterwards. No prebuilt
-binary is used. For a separate sanitized build, configure with
+time, enables ASan/UBSan (including explicit vptr checks), and removes its build
+directory afterwards. No prebuilt binary is used. For a separate sanitized build, configure with
 `-DECMC_PLC_TEST_SANITIZERS=ON`; the option defaults to OFF and affects only
 the standalone target.
 
@@ -213,6 +213,9 @@ operations and S-curve construction are rejected explicitly by these adapters.
 Production corrections exposed by these tests initialize three sequencer
 switch-history booleans and clear an obsolete soft-limit interlock before
 starting a valid PLC move, using the existing motor-record recovery logic.
+The unavailable-drive adapter defines the base class's out-of-line virtuals so
+RTTI/vtable checks link on sanitizer toolchains even though virtual axes never
+construct a physical drive. Operational calls to that adapter throw explicitly.
 
 Real EtherCAT transport, plugins, file I/O functions, full startup files,
 multiple interacting PLCs, and automatic variable discovery are not yet
