@@ -12,6 +12,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 header = (root / 'devEcmcSup/ethercat/ecmcEcAsyncSDO.h').read_text()
 source = (root / 'devEcmcSup/ethercat/ecmcEcAsyncSDO.cpp').read_text()
+header = (root / 'devEcmcSup/ethercat/ecmcSdoErrors.h').read_text() + header
 header = re.sub(r'^#include ".*"\n', '', header, flags=re.M)
 source = re.sub(r'^#include ".*"\n', '', source, flags=re.M)
 stubs = r'''
@@ -264,5 +265,6 @@ int main() {
 with tempfile.TemporaryDirectory() as tmp:
     cpp=Path(tmp)/'test.cpp'; binary=Path(tmp)/'test'
     cpp.write_text(stubs+header+source+api_header+registry_stubs+lookup_source+api_source+plc_adapters+cpp_wrappers+checks)
-    subprocess.run([os.environ.get('CXX', 'c++'),'-std=c++17','-Wall','-Wextra','-fsanitize=address,undefined','-g',str(cpp),'-o',str(binary)],check=True)
+    subprocess.run([os.environ.get('CXX', 'c++'),'-std=c++17','-Wall','-Wextra','-fsanitize=address,undefined','-g',
+                    '-I' + str(root / 'devEcmcSup/ethercat'), str(cpp),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

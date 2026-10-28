@@ -13,6 +13,9 @@
 #ifndef ecmcPLC_libDs_inc_
 #define ecmcPLC_libDs_inc_
 
+#include <cmath>
+#include <limits>
+
 #define CHECK_PLC_DATA_STORAGE_RETURN_IF_ERROR(dsIndex) {           \
     ds_errorCode = 0;                                               \
     if (dsIndex >= ECMC_MAX_DATA_STORAGE_OBJECTS || dsIndex < 0) {  \
@@ -76,8 +79,21 @@ extern ecmcDataStorage  *dataStorages[ECMC_MAX_DATA_STORAGE_OBJECTS];
 static int ds_errorCode = 0;
 static int ds_cmd_count = 15;
 
+// Validate PLC doubles before narrowing to indices; invalid object indices use
+// the existing out-of-range return/error conventions of each wrapper.
+inline int ds_object_index(double value) {
+  if (!std::isfinite(value) || value < 0 || value >= ECMC_MAX_DATA_STORAGE_OBJECTS ||
+      std::trunc(value) != value) return ECMC_MAX_DATA_STORAGE_OBJECTS;
+  return static_cast<int>(value);
+}
+inline int ds_element_index(double value) {
+  if (!std::isfinite(value) || value < 0 ||
+      value > std::numeric_limits<int>::max() || std::trunc(value) != value) return -1;
+  return static_cast<int>(value);
+}
+
 inline double ds_append_data(double dsIndex, double data) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_IF_ERROR(index);
   ds_errorCode = dataStorages[index]->appendData(data);
@@ -85,7 +101,7 @@ inline double ds_append_data(double dsIndex, double data) {
 }
 
 inline double ds_clear_data(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_IF_ERROR(index);
   ds_errorCode = dataStorages[index]->clearBuffer();
@@ -93,35 +109,35 @@ inline double ds_clear_data(double dsIndex) {
 }
 
 inline double ds_get_data(double dsIndex, double dataIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(index);
   double temp = 0;
   ds_errorCode =
-    dataStorages[index]->getDataElement(int(dataIndex), &temp);
+    dataStorages[index]->getDataElement(ds_element_index(dataIndex), &temp);
   return temp;
 }
 
 inline double ds_set_data(double dsIndex, double dataIndex, double data) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_IF_ERROR(index);
-  ds_errorCode = dataStorages[index]->setDataElement(int(dataIndex), data);
+  ds_errorCode = dataStorages[index]->setDataElement(ds_element_index(dataIndex), data);
   return (double)ds_errorCode;
 }
 
 inline double ds_get_buff_id(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_MINUS_ONE_IF_ERROR(index);
   return dataStorages[index]->getCurrentIndex();
 }
 
 inline double ds_set_buff_id(double dsIndex, double bufferIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_IF_ERROR(index);
-  ds_errorCode = dataStorages[index]->setCurrentPosition(bufferIndex);
+  ds_errorCode = dataStorages[index]->setCurrentPosition(ds_element_index(bufferIndex));
   return (double)ds_errorCode;
 }
 
@@ -130,7 +146,7 @@ inline double ds_get_err() {
 }
 
 inline double ds_is_full(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_MINUS_ONE_IF_ERROR(index);
   ds_errorCode = 0;
@@ -138,7 +154,7 @@ inline double ds_is_full(double dsIndex) {
 }
 
 inline double ds_get_size(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_MINUS_ONE_IF_ERROR(index);
   ds_errorCode = 0;
@@ -146,7 +162,7 @@ inline double ds_get_size(double dsIndex) {
 }
 
 inline double ds_push_asyn(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_MINUS_ONE_IF_ERROR(index);
   ds_errorCode = 0;  
@@ -154,7 +170,7 @@ inline double ds_push_asyn(double dsIndex) {
 }
 
 inline double ds_get_avg(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(index);
   ds_errorCode = 0;
@@ -162,7 +178,7 @@ inline double ds_get_avg(double dsIndex) {
 }
 
 inline double ds_get_min(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(index);
   ds_errorCode = 0;
@@ -170,7 +186,7 @@ inline double ds_get_min(double dsIndex) {
 }
 
 inline double ds_get_max(double dsIndex) {
-  int index = (int)dsIndex;
+  int index = ds_object_index(dsIndex);
 
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(index);
   ds_errorCode = 0;
@@ -178,13 +194,19 @@ inline double ds_get_max(double dsIndex) {
 }
 
 inline double ds_append_to_ds(double dsFromId, double dsFromDataIndex, double elements, double dsToId) {
-  int fromId = (int)dsFromId;
-  int toId = (int)dsToId;
+  int fromId = ds_object_index(dsFromId);
+  int toId = ds_object_index(dsToId);
   ds_errorCode = 0;
 
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(fromId);
   CHECK_PLC_DATA_STORAGE_RETURN_ZERO_IF_ERROR(toId);
   
+  if (ds_element_index(dsFromDataIndex) < 0) {
+    return ds_errorCode = ERROR_DATA_STORAGE_POSITION_OUT_OF_RANGE;
+  }
+  if (ds_element_index(elements) < 0) {
+    return ds_errorCode = ERROR_MAIN_DATA_STORAGE_INVALID_SIZE;
+  }
   int srcSize = dataStorages[fromId]->getSize();
   if(dsFromDataIndex>=srcSize) {
     ds_errorCode = ERROR_DATA_STORAGE_POSITION_OUT_OF_RANGE;;

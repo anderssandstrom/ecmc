@@ -1,0 +1,33 @@
+case offline_ethercat
+ec
+ec_memmap 0 1
+ec_time 1000000 999900 999800 1000 0
+ec_slave 3 -1 10
+storage 0 1 0
+var global.bit 0
+var global.write 0
+var global.copy 0
+var global.average 0
+var global.time 0
+var global.event 0
+plc offline_ec.plc
+run 1
+expect global.bit 1099511627776
+expect global.write 0
+expect global.copy 0
+expect global.average 7
+expect global.time 1000000
+expect global.event 998910
+end
+
+case lookup_sequence
+lut 0 lookup.lut
+var global.input 5
+var global.result 0
+plc lookup.plc
+run 1
+expect global.result 15
+set global.input -100
+run 1
+expect global.result -20
+end

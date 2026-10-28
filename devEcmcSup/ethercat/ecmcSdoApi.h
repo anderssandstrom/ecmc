@@ -1,6 +1,7 @@
 /* Runtime access to preconfigured async SDO objects. */
 #ifndef ECMC_SDO_API_H_
 #define ECMC_SDO_API_H_
+#include "ecmcSdoErrors.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

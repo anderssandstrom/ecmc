@@ -1,0 +1,5 @@
+global.result := ds_append_data(0, global.input);
+global.average := ds_get_avg(0);
+global.minimum := ds_get_min(0);
+global.maximum := ds_get_max(0);
+global.full := ds_is_full(0);

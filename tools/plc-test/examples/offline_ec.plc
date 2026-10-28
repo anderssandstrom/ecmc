@@ -1,0 +1,6 @@
+global.bit := ec_set_bit(0, 40);
+global.write := ec_set_mm_data(0, 0, 3);
+global.copy := ec_mm_append_to_ds_scale_offset(0, 0, 2, 1);
+global.average := ds_get_avg(0);
+global.time := ec_get_time();
+global.event := ec_get_slave_input_event_time(3);

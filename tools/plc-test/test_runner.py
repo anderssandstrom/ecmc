@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Integration tests of the built runner, real ExprTk and storage library."""
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+binary = str(Path(sys.argv[1]).resolve())
+examples = Path(__file__).resolve().parent / 'examples'
+result = subprocess.run([binary, '--suite', str(examples / 'smoke.suite')],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        universal_newlines=True, timeout=30)
+assert result.returncode == 0, result.stdout + result.stderr
+assert '3/3 passed' in result.stdout, result.stdout
+result = subprocess.run([binary, '--suite', str(examples / 'libraries.suite')],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        universal_newlines=True, timeout=30)
+assert result.returncode == 0, result.stdout + result.stderr
+assert '2/2 passed' in result.stdout, result.stdout
+
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+
+    def run(suite, code='global.x := global.x + 1;', timeout=5):
+        (root / 'logic.plc').write_text(code)
+        (root / 'test.suite').write_text(suite)
+        return subprocess.run([binary, '--suite', str(root / 'test.suite'),
+                               '--timeout', str(timeout)],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, timeout=timeout + 5)
+
+    def case(body, name='check'):
+        return 'case ' + name + '\n' + body + '\nend\n'
+
+    setup = 'var global.x 0\nplc logic.plc\nrun 1\n'
+    # An assertion failure must not stop subsequent cases or contaminate them.
+    result = run(case(setup + 'expect global.x 2', 'fails') +
+                 case(setup + 'expect global.x 1', 'fresh'))
+    assert result.returncode == 1, result
+    assert 'expected 2, actual 1' in result.stdout, result.stdout
+    assert '[PASS] fresh' in result.stdout, result.stdout
+
+    # Full storage library paths, including error reporting and recovery.
+    storage_code = '''
+global.x := ds_append_data(-1, 1);
+global.err := ds_get_err();
+global.reset := ds_err_rst();
+global.clean := ds_get_err();
+global.ok := ds_set_data(0, 0, 7);
+global.read := ds_get_data(0, 0);
+global.size := ds_get_size(0);
+global.copy := ds_append_to_ds(0, 0, 1, 1);
+global.copied := ds_get_data(1, 0);
+global.clear := ds_clear_data(1);
+global.average := ds_get_avg(1);
+'''
+    names = ('x', 'err', 'reset', 'clean', 'ok', 'read', 'size',
+             'copy', 'copied', 'clear', 'average')
+    body = 'storage 0 4 0\nstorage 1 4 0\n'
+    body += ''.join('var global.' + name + ' 0\n' for name in names)
+    body += 'plc logic.plc\nrun 1\n'
+    body += 'expect global.x 132361\nexpect global.err 132361\n'
+    body += 'expect global.reset 0\nexpect global.clean 0\n'
+    body += 'expect global.ok 0\nexpect global.read 7\nexpect global.size 4\n'
+    body += 'expect global.copy 0\nexpect global.copied 7\n'
+    body += 'expect global.clear 0\nexpect global.average 0'
+    result = run(case(body), storage_code)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    for code in ('global.x := ;', 'global.x := mc_move_abs(1, 2, 3, 4, 5);',
+                 'global.x := ds_push_asyn(0);', 'global.x := global.typo;'):
+        result = run(case(setup + 'expect global.x 1'), code)
+        assert result.returncode == 1, result
+        assert 'compile failed' in result.stdout, result.stdout
+
+    for body in ('var global.x 0\nrun 1', setup + 'expect global.typo 1',
+                 setup + 'expect global.x 1 -1', 'var global.x nan',
+                 'storage 0 -1 0', 'storage 0 4 3', 'run 0',
+                 'var global.x 0\nvar global.x 1', setup + 'bogus',
+                 'plc logic.plc', 'ec_memmap 0 2', 'ec_time 0 0 0 1000 0',
+                 'ec\nec_memmap -1 2', 'ec\nec_memmap 0 0', 'ec\nec',
+                 'ec\nec_time -1 0 0 1000 0', 'ec\nec_time 0 0 0 0 0',
+                 'lut 16 absent.lut', 'lut 0 absent.lut'):
+        result = run(case(body))
+        assert result.returncode == 1, (body, result.stdout, result.stderr)
+
+    (root / 'malformed.lut').write_text('bad table\n')
+    (root / 'unsorted.lut').write_text('0 0\n10 10\n5 5\n')
+    for filename in ('malformed.lut', 'unsorted.lut'):
+        result = run(case('lut 0 ' + filename + '\n' + setup + 'expect global.x 1'))
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert 'LUT load failed' in result.stdout, result.stdout
+
+    result = run(case(setup + 'expect global.x 0.3 1e-12'),
+                 'global.x := 0.1 + 0.2;')
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = run(case(setup + 'expect global.x 0'), 'global.x := sqrt(-1);')
+    assert result.returncode == 1, result.stdout + result.stderr
+
+    for suite in ('', 'case missing_end\n', 'run 1\n',
+                  'case same\nend\ncase same\nend\n'):
+        result = run(suite)
+        assert result.returncode == 2, result
+
+    result = run(case(setup + 'expect global.x 1'),
+                 'while (global.x >= 0) { global.x := global.x + 1; };', timeout=1)
+    assert result.returncode == 124, result.stdout + result.stderr
+    assert 'timeout' in result.stderr, result.stderr
+
+print('Standalone PLC runner: real expressions, library calls, isolation, '
+      'diagnostics, invalid inputs and timeout passed.')

@@ -1,0 +1,1 @@
+global.result := lut_get_value(0, global.input);

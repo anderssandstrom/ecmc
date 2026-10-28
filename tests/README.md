@@ -1,5 +1,10 @@
 # Hardware-free regression tests
 
+For standalone tests that execute real PLC expressions and storage library
+functions through ExprTk, see [the PLC test executable](../tools/plc-test/README.md).
+`test_plc_libraries.py` builds it and runs its integration checks automatically
+with this runner; it needs no EtherLab or EPICS.
+
 From the repository root, run:
 
 ```sh
@@ -23,17 +28,31 @@ python3 tests/test_motor_record_dmov.py
 
 - Python 3.6 or newer; no third-party Python packages.
 - C and C++ compilers supporting C99 and C++17, respectively.
+- CMake 3.16 or newer for the standalone PLC library tests (POSIX/Linux).
 - AddressSanitizer and UndefinedBehaviorSanitizer support and runtime libraries
   for the async SDO, buffer-boundary, path/thread/lookup, LUT/SoE and
   filter/memory-map/object-path, storage-creation/diagnostic-I/O and
   timing/storage-list tests.
 
-Compilers default to `cc` and `c++`. Override them using executable names or
-paths in `CC` and `CXX` (not shell command strings):
+The runner first compiles and runs small C99/C++17 programs with ASan/UBSan.
+Compilers default to `cc` and `c++`; if those fail and neither `CC` nor `CXX`
+was explicitly set, it tries `clang` and `clang++` and reports the switch.
+If no working pair is found, it stops before running the suite and prints the
+toolchain diagnostics. Explicit compiler choices are respected and never
+silently replaced. Override them using executable names or paths in `CC` and
+`CXX` (not shell command strings):
 
 ```sh
 CC=clang CXX=clang++ python3 tests/run_tests.py
 ```
+
+Errors such as `cannot find /usr/lib64/libasan.so...` indicate missing or
+mismatched compiler runtime libraries. Select a working toolchain or install
+its matching runtimes. Sanitizers are not automatically disabled. In a debugger
+or traced sandbox where LeakSanitizer reports that it cannot run under ptrace,
+set `ASAN_OPTIONS=detect_leaks=0`; address/undefined-behavior checks remain active.
+Individual scripts use `CC`/`CXX` directly; automatic selection applies only to
+`run_tests.py`.
 
 EPICS, an EtherCAT master, hardware and a built ecmc library are not required.
 The wiring test optionally accepts `ETHERCAT_INCLUDE=/path/to/include` to
@@ -62,12 +81,14 @@ Python, and does not initialize submodules or build the full IOC.
 | `test_motor_startup_comm_recovery.py` | Stale startup COMM recovery, position-load completion, preserved alarms and runtime faults |
 | `test_motor_startup_execution_gate.py` | Motion producer hold, rejected commands, deferred enable and absent motor records |
 | `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |
+| `test_plc_libraries.py` | Real ExprTk, storage modes/functions/errors, offline EtherCAT wrappers and LUTs; also runner validation, isolation and timeout |
 | `test_filter_memmap_object_paths.py` | Zero-sized filter re-enable, memory-map initial contents and partial writes, object-path bounds and null arguments |
 | `test_lut_reload_soe.py` | Failed LUT reload ownership, retry/destruction, scalar SoE size bounds and full-width output |
 | `test_path_thread_lookup.py` | EtherCAT path bounds and malformed inputs, thread startup and cleanup with/without NDEBUG, lookup NaN and endpoint handling |
 | `test_plugin_loading.py` | Legacy plugin ABI, real shared-library loading/unloading, optional callbacks, failures and reload |
 | `test_storage_creation_diag_io.py` | Invalid storage-mode rejection preserving existing objects, diagnostic write/close/open failure handling |
 | `test_timing_storage_list.py` | Sample-period units, finite timing values and boundaries, storage-list empty tokens and delimiters |
+| `test_toolchain_selection.py` | Compiler fallback, explicit compiler choices, retained sanitizer settings and preflight diagnostics |
 | `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, task dispatch, masterless operation and opt-outs |
 
 Each script reads the current local production source, compiles the relevant

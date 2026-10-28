@@ -1,0 +1,54 @@
+# Paths are relative to this suite. Each case creates fresh objects.
+case interlock_sequence
+var global.interlock 1
+var global.enable 1
+var global.error 0
+var static.cycles 0
+plc interlock.plc
+run 5
+expect global.error 0
+expect global.enable 1
+expect static.cycles 5
+set global.interlock 0
+run 1
+expect global.error 1
+expect global.enable 0
+expect static.cycles 6
+end
+
+case storage_statistics
+storage 0 4 0
+var global.input 2
+var global.result 0
+var global.average 0
+var global.minimum 0
+var global.maximum 0
+var global.full 0
+plc storage.plc
+run 1
+expect global.result 0
+expect global.average 2
+set global.input 4
+run 1
+expect global.average 3 1e-12
+expect global.minimum 2
+expect global.maximum 4
+expect global.full 0
+run 2
+expect global.full 1
+expect global.average 3.5
+end
+
+case fresh_storage
+storage 0 4 0
+var global.input 10
+var global.result 0
+var global.average 0
+var global.minimum 0
+var global.maximum 0
+var global.full 0
+plc storage.plc
+run 1
+expect global.average 10
+expect global.full 0
+end

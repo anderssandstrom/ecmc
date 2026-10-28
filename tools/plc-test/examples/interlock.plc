@@ -1,0 +1,7 @@
+static.cycles := static.cycles + 1;
+if (global.interlock == 0) {
+  global.error := 1;
+  global.enable := 0;
+} else {
+  global.error := 0;
+};
