@@ -113,7 +113,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_storage_creation_diag_io.py` | Invalid storage-mode rejection preserving existing objects, diagnostic write/close/open failure handling |
 | `test_timing_storage_list.py` | Sample-period units, finite timing values and boundaries, storage-list empty tokens and delimiters |
 | `test_toolchain_selection.py` | Compiler fallback, explicit compiler choices, retained sanitizer settings and preflight diagnostics |
-| `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, task dispatch, masterless operation and opt-outs |
+| `test_startup_gate.py` | IOC/bus/axis and motor-record readiness, timeouts, runtime membership snapshots and axis PLC mapping, cycle dispatch order, stop/disable enforcement, safety/publication/send order, explicit `MASTER_ID=-1` held/ready dispatch and timing-offset updates, and opt-outs |
 
 Each script reads the current local production source, compiles the relevant
 code with lightweight stand-ins, and executes C/C++ assertions. Save source

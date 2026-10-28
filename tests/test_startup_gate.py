@@ -4,11 +4,14 @@
 Run: python3 tests/test_startup_gate.py
 No EPICS, EtherCAT master or hardware required. This checks cycle-by-cycle
 decisions, including masterless operation, not actual scheduling or IOC hooks.
+Dispatch traces preserve current order (COMPAT), not an independent scheduler
+specification. Locks, shared memory and endpoint internals are outside this fixture.
 """
 # Expectation basis: DOC: startup gate contract; COMPAT: internal cycle/call boundaries.
 # Rationale, sources and open questions: EXPECTATIONS.md
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 
@@ -21,12 +24,24 @@ def between(start, end):
     return source[begin:source.index(end, begin)]
 
 
+master_identity = between('  int masterId ',
+                          '  int diagnosticsUpdateFreqHzCached')
 initialization = between('  // Snapshot the configuration once per runtime entry.',
                          '  // Ownership belongs to this thread')
 bus_status = between('    if (ecInitDone) {\n      ec->receive(',
                      '    // Master to master coms')
-gate_and_dispatch = between('    if (!startupReleased',
-                            '    if (counter) {')
+gate_and_dispatch = between('    if (!startup.axisInitializationReleased',
+                            '  }  // enc of RT-loop')
+
+# Compile the real membership snapshot with fake endpoint types. Constants and
+# axis-to-PLC mapping come from production headers, not fixture duplicates.
+runtime_objects = between('struct RuntimeObjects {', '// Mutable startup progress')
+startup_state = between('struct StartupState {', '}  // namespace')
+definitions = (ROOT / 'devEcmcSup/main/ecmcDefinitions.h').read_text()
+sequence_header = (ROOT / 'devEcmcSup/sequence/ecmcMotionSequence.h').read_text()
+constants = '\n'.join(re.findall(
+    r'^#define (?:ECMC_MAX_(?:AXES|PLCS|PLUGINS|MST_SLVS_SMS|MOTION_SEQUENCES)\b|AXIS_PLC_ID_TO_PLC_ID\().*',
+    definitions + '\n' + sequence_header, re.M))
 
 stubs = r'''
 #include <atomic>
@@ -34,6 +49,21 @@ stubs = r'''
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <ctime>
+#include <string>
+#include <vector>
+std::vector<std::string> trace;
+void expectTrace(std::initializer_list<const char *> expected) {
+  const std::vector<std::string> wanted(expected.begin(), expected.end());
+  if (trace != wanted) {
+    fputs("Unexpected cycle trace:\n", stderr);
+    for (const auto &event : trace) fprintf(stderr, "  %s\n", event.c_str());
+    assert(trace == wanted);
+  }
+}
+void printStatus() { trace.push_back("status"); }
+void updateAsynParams(int) { trace.push_back("publish"); }
+struct AsynPort { int getEpicsState() { return 14; } };
 std::atomic<bool> startupGateConfigured{true}, startupMotionHeld{true};
 std::atomic<bool> startupCommandsHeld{true};
 std::atomic<bool> iocRunning{false}, iocExitRequested{false};
@@ -49,6 +79,8 @@ enum { ECMC_MODE_CONFIG = 0 };
 unsigned commands = 0;
 unsigned ecmcTakeGlobalMotionCommands() { unsigned value = commands; commands = 0; return value; }
 struct Axis {
+  const std::string name;
+  explicit Axis(const char *id) : name(id) {}
   bool startup = true;
   bool motorReady = true; // No loaded motor record unless a scenario registers one.
   int error = 0, resets = 0, cycles = 0, stops = 0;
@@ -56,52 +88,96 @@ struct Axis {
   void errorReset() { error = 0; ++resets; }
   bool getInStartupPhase() { return startup; }
   bool getMotorRecordStartupReady() { return motorReady; }
-  void execute(int) { ++cycles; }
-  void stopMotion(bool) { ++stops; }
+  void execute(int) { ++cycles; trace.push_back(name); }
+  void stopMotion(bool disable) {
+    ++stops;
+    trace.push_back((disable ? "disable-" : "stop-") + name);
+  }
+  void slowExecute() { trace.push_back("slow-" + name); }
 };
 struct Task {
+  const std::string name;
+  int result;
+  explicit Task(const char *id, int error = 0) : name(id), result(error) {}
   int calls = 0;
-  void executeRT(double) { ++calls; }
-  void execute() { ++calls; }
-  int exeRTFunc(int) { ++calls; return 0; }
+  void executeRT(double) { ++calls; trace.push_back(name); }
+  void execute() { ++calls; trace.push_back(name); }
+  int exeRTFunc(int) { ++calls; trace.push_back(name); return result; }
 };
 struct Plc {
   int axisCalls = 0, globalCalls = 0;
-  void execute(int, int) { ++axisCalls; }
-  void execute(int) { ++globalCalls; }
+  void execute(int id, int) { ++axisCalls; trace.push_back("axis-plc-" + std::to_string(id)); }
+  void execute(int) { ++globalCalls; trace.push_back("global-plc"); }
 };
 struct Ethercat {
+  int masterIndex = 0;
+  int getMasterIndex() { return masterIndex; }
   bool available = true, healthy = true, timing = true;
   int receives = 0, timingChecks = 0, resets = 0;
-  void receive(int, int) { assert(available); ++receives; }
+  void receive(timespec, int) { assert(available); ++receives; trace.push_back("receive"); }
   void checkDomainsState() { assert(available); }
   int statusOK() { assert(available); return healthy; }
   bool timingStartupReady() { assert(available); ++timingChecks; return timing; }
   void resetStartupCommunicationErrors() { assert(available); ++resets; }
+  void checkState() { assert(available); trace.push_back("bus-state"); }
+  void slowExecute() { assert(available); trace.push_back("slow-bus"); }
+  void send(int) { assert(available); trace.push_back("send"); }
+  void setTimeOffest(int) { trace.push_back("time-offset"); }
 };
+''' + constants + r'''
+using ecmcAxisBase = Axis;
+using ecmcMasterSlaveStateMachine = Task;
+using ecmcPluginLib = Task;
+using ecmcCppLogicLib = Task;
+using ecmcMotionSequence = Task;
+''' + runtime_objects + startup_state + r'''
 struct Rig {
-  Axis axes[3];
-  Axis *activeAxes[3] = {&axes[0], &axes[1], &axes[2]};
-  int activeAxisCount = 3, activeAxisPlcId[3] = {0, 1, 2};
-  Task sequence, pvt, masterSlave, plugin, cppLogic;
-  Task *activeMotionSeqs[1] = {&sequence}, *pvtCtrl_ = &pvt;
-  Task *activeMasterSlaves[1] = {&masterSlave}, *activePlugins[1] = {&plugin};
-  Task *activeCppLogics[1] = {&cppLogic};
-  int activeMotionSeqCount = 1, activeMasterSlaveCount = 1;
-  int activePluginCount = 1, activeCppLogicCount = 1;
+  Axis axes[3] = {Axis("axis-2"), Axis("axis-7"), Axis("axis-11")};
+  Task sequence{"sequence"}, pvt{"pvt"}, masterSlave{"master-slave"};
+  Task plugin{"plugin", 17}, cppLogic{"cpp-logic", 23}, safety{"safety", 31};
+  Task *safetyplugin = &safety;
+  Task *pvtCtrl_ = &pvt;
+  Axis *axisObjects[ECMC_MAX_AXES] = {};
+  Task *masterSlaveObjects[ECMC_MAX_MST_SLVS_SMS] = {};
+  Task *pluginObjects[ECMC_MAX_PLUGINS] = {};
+  Task *cppLogicObjects[ECMC_MAX_PLUGINS] = {};
+  Task *motionSequenceObjects[ECMC_MAX_MOTION_SEQUENCES] = {};
+  RuntimeObjects runtime{axisObjects, masterSlaveObjects, pluginObjects,
+                         cppLogicObjects, motionSequenceObjects};
+  explicit Rig(int masterId = 0) {
+    ethercat.masterIndex = masterId;
+    ecInitDone = masterId >= 0;
+    ethercat.available = ecInitDone;
+    axisObjects[2] = &axes[0];
+    axisObjects[7] = &axes[1];
+    axisObjects[11] = &axes[2];
+    masterSlaveObjects[3] = &masterSlave;
+    pluginObjects[5] = &plugin;
+    cppLogicObjects[7] = &cppLogic;
+    motionSequenceObjects[9] = &sequence;
+    runtime = RuntimeObjects(axisObjects, masterSlaveObjects, pluginObjects,
+                             cppLogicObjects, motionSequenceObjects);
+  }
   Plc plc;
   Plc *plcs = &plc;
   Ethercat ethercat;
   Ethercat *ec = &ethercat;
   bool ecInitDone = true;
-  int startTime = 0, masterActivationTimeOffset = 0;
+  timespec startTime = {}, sendTime = {}, endTime = {};
+  int masterActivationTimeOffset = 0;
+  int counter = 0, diagnosticsUpdateFreqHz = 0;
+  int diagnosticsUpdateFreqHzCached = -1, slowCycleInterval = 1;
+  double mcuFrequency = 4;
+  AsynPort port;
+  AsynPort *localAsynPort = &port;
+  int safetypluginError = 0;
   int controllerError = 0, pluginsError = 0, cppLogicError = 0, appModeCmd = 1;
   // Binary-exact period makes the 2-second boundary deterministic.
   double mcuPeriod = 250000000, ecTimeoutSeconds = 5;
   void expectDispatch(int count) {
     assert(sequence.calls == count && pvt.calls == count);
     assert(masterSlave.calls == count && plugin.calls == count && cppLogic.calls == count);
-    assert(plc.globalCalls == count && plc.axisCalls == count * activeAxisCount);
+    assert(plc.globalCalls == count && plc.axisCalls == count * runtime.activeAxisCount);
   }
   void readyAxes() { for (auto &axis : axes) axis.startup = false; }
   void run(int scenario) {
@@ -109,8 +185,15 @@ struct Rig {
 
 # Keep production locals and initialization intact by placing scenarios inside
 # the same wrapper function; each call represents a new runtime entry.
-body = initialization + r'''
+body = master_identity + initialization + r'''
+    // COMPAT: each runtime entry starts with fresh progress, including after
+    // a timed-out invocation; disabling the gate releases both stages at once.
+    assert(!startup.timedOut && startup.waitSeconds == 0 &&
+           startup.stableSeconds == 0 && startup.motorWaitSeconds == 0);
+    assert(startup.axisInitializationReleased == !startupGateEnabled &&
+           startup.commandsReleased == !startupGateEnabled);
     auto tick = [&]() {
+      trace.clear();
       int i = 0, ecStat = 0;
 ''' + bus_status + gate_and_dispatch + r'''
     };
@@ -118,22 +201,22 @@ body = initialization + r'''
     if (scenario == 0) {
       // IOC wait must not consume the EtherCAT startup timeout.
       ticks(40);
-      assert(startupWaitSeconds == 0 && !startupTimedOut);
+      assert(startup.waitSeconds == 0 && !startup.timedOut);
       expectDispatch(0);
       assert(axes[0].cycles == 40); // Axis initialization still runs.
       iocRunning = true;
       ticks(7);
-      assert(!startupReleased && startupMotionHeld);
+      assert(!startup.axisInitializationReleased && startupMotionHeld);
       ethercat.healthy = false;
       tick(); // Broken stability must restart the full two-second interval.
       ethercat.healthy = true;
       ticks(7);
-      assert(!startupReleased);
+      assert(!startup.axisInitializationReleased);
       axes[0].error = ERROR_AXIS_HW_NOT_READY;
       axes[1].error = ERROR_AXIS_HARDWARE_STATUS_NOT_OK;
       axes[2].error = 99;
       tick();
-      assert(startupReleased && !startupMotionHeld && !startupExecutionReady);
+      assert(startup.axisInitializationReleased && !startupMotionHeld && !startup.commandsReleased);
       assert(ethercat.resets == 1);
       assert(axes[0].resets == 1 && axes[1].resets == 1);
       assert(axes[2].error == 99 && axes[2].resets == 0);
@@ -156,38 +239,44 @@ body = initialization + r'''
       iocRunning = true;
       ethercat.timing = false; // Bus healthy but timing discovery pending.
       ticks(19);
-      assert(!startupTimedOut && !startupReleased);
+      assert(!startup.timedOut && !startup.axisInitializationReleased);
       tick();
-      assert(startupTimedOut && startupMotionHeld);
+      assert(startup.timedOut && startupMotionHeld);
       ethercat.timing = true;
       readyAxes();
       ticks(12);
-      assert(!startupReleased && !startupExecutionReady);
+      assert(!startup.axisInitializationReleased && !startup.commandsReleased);
       expectDispatch(0); // Recovery requires a new runtime entry.
       assert(ethercat.resets == 0);
     } else if (scenario == 2) {
-      // No master: skip every EtherCAT call, but preserve both readiness gates.
-      ecInitDone = false;
-      ethercat.available = false;
+      // MASTER_ID=-1: skip bus I/O, preserving readiness and PLC timing.
+      assert(masterId == -1 && !hasRealMaster && !ecInitDone);
       ticks(20);
-      assert(startupWaitSeconds == 0);
+      assert(startup.waitSeconds == 0);
       iocRunning = true;
       ticks(7);
-      assert(!startupReleased);
+      assert(!startup.axisInitializationReleased);
       tick();
-      assert(startupReleased && !startupExecutionReady);
+      assert(startup.axisInitializationReleased && !startup.commandsReleased);
       expectDispatch(0);
+      expectTrace({"axis-2", "axis-7", "axis-11", "safety", "publish", "time-offset"});
       readyAxes();
+      diagnosticsUpdateFreqHz = 1;
       tick();
       expectDispatch(1);
+      // COMPAT: masterless dispatch and slow diagnostics retain their order;
+      // receive/send and bus diagnostics are skipped, timing offset still updates.
+      expectTrace({"sequence", "axis-plc-18", "axis-2", "axis-plc-23", "axis-7",
+                   "axis-plc-27", "axis-11", "pvt", "master-slave", "plugin",
+                   "cpp-logic", "global-plc", "status", "slow-axis-2", "slow-axis-7",
+                   "slow-axis-11", "safety", "publish", "time-offset"});
       assert(ethercat.receives == 0 && ethercat.timingChecks == 0 && ethercat.resets == 0);
     } else if (scenario == 3) {
-      // Explicit IOC-wait opt-out, also with no master or configured axes.
-      ecInitDone = false;
-      ethercat.available = false;
-      activeAxisCount = 0;
+      // Explicit IOC-wait opt-out, also with MASTER_ID=-1 and no axes.
+      assert(masterId == -1 && !hasRealMaster && !ecInitDone);
+      runtime.activeAxisCount = 0;
       ticks(8);
-      assert(!iocRunning && startupReleased && startupExecutionReady);
+      assert(!iocRunning && startup.axisInitializationReleased && startup.commandsReleased);
       expectDispatch(1);
     } else if (scenario == 4) {
       // Gate disabled retains immediate legacy dispatch.
@@ -195,27 +284,140 @@ body = initialization + r'''
       assert(!startupCommandsHeld);
       tick();
       expectDispatch(1);
-      assert(!iocRunning && startupWaitSeconds == 0);
+      assert(!iocRunning && startup.waitSeconds == 0);
     } else if (scenario == 5) {
       // A fresh runtime can recover following a timeout.
-      assert(!startupTimedOut && startupWaitSeconds == 0 && startupMotionHeld);
+      assert(!startup.timedOut && startup.waitSeconds == 0 && startupMotionHeld);
       iocRunning = true;
       readyAxes();
       ticks(8);
       expectDispatch(1);
+    } else if (scenario == 6) {
+      // COMPAT: explicit sequence, sparse axis/PLC association, diagnostics,
+      // safety and publication placement before send. Expected order is
+      // written independently of the extracted production dispatch.
+      iocRunning = true;
+      readyAxes();
+      ticks(8);
+      diagnosticsUpdateFreqHz = 1;
+      tick();
+      expectTrace({"receive", "sequence", "axis-plc-18", "axis-2",
+                   "axis-plc-23", "axis-7", "axis-plc-27", "axis-11",
+                   "pvt", "master-slave", "plugin", "cpp-logic", "global-plc",
+                   "bus-state", "status", "slow-axis-2", "slow-axis-7",
+                   "slow-axis-11", "slow-bus", "safety", "publish", "send"});
+      assert(pluginsError == 17 && cppLogicError == 23 && safetypluginError == 31);
+    } else if (scenario == 7) {
+      // COMPAT: stop is consumed once and enforced on both sides of ordinary
+      // producers, even while startup is held; safety remains active.
+      commands = ECMC_GLOBAL_CMD_STOP_ALL_AXES;
+      tick();
+      expectTrace({"receive", "stop-axis-2", "stop-axis-7", "stop-axis-11",
+                   "axis-2", "axis-7", "axis-11",
+                   "stop-axis-2", "stop-axis-7", "stop-axis-11",
+                   "safety", "publish", "send"});
+      assert(commands == 0 && startupCommandsHeld);
+      expectDispatch(0);
+      tick();
+      expectTrace({"receive", "axis-2", "axis-7", "axis-11",
+                   "safety", "publish", "send"});
+    } else if (scenario == 8) {
+      // COMPAT: disable implies stop, surrounding all ordinary producers.
+      commands = ECMC_GLOBAL_CMD_DISABLE_ALL_AXES;
+      tick();
+      expectTrace({"receive", "sequence", "disable-axis-2", "disable-axis-7",
+                   "disable-axis-11", "axis-plc-18", "axis-2", "axis-plc-23",
+                   "axis-7", "axis-plc-27", "axis-11", "pvt", "master-slave",
+                   "plugin", "cpp-logic", "global-plc", "disable-axis-2",
+                   "disable-axis-7", "disable-axis-11", "safety", "publish", "send"});
+      assert(commands == 0);
+      expectDispatch(1);
     }
   }
 };
+// COMPAT: empty, sparse and full membership; source order/axis PLC mapping;
+// snapshot lifetime and fresh membership on a later runtime entry. These checks
+// exercise the production constructor, not a fixture implementation of it.
+void checkRuntimeObjects() {
+  Rig rig;
+  const auto &sparse = rig.runtime;
+  assert(sparse.activeAxisCount == 3);
+  assert(sparse.activeAxes[0] == &rig.axes[0]);
+  assert(sparse.activeAxes[1] == &rig.axes[1]);
+  assert(sparse.activeAxes[2] == &rig.axes[2]);
+  assert(sparse.activeAxisPlcId[0] == 18 && sparse.activeAxisPlcId[1] == 23 &&
+         sparse.activeAxisPlcId[2] == 27);
+  assert(sparse.activeMasterSlaveCount == 1 && sparse.activeMasterSlaves[0] == &rig.masterSlave);
+  assert(sparse.activePluginCount == 1 && sparse.activePlugins[0] == &rig.plugin);
+  assert(sparse.activeCppLogicCount == 1 && sparse.activeCppLogics[0] == &rig.cppLogic);
+  assert(sparse.activeMotionSeqCount == 1 && sparse.activeMotionSeqs[0] == &rig.sequence);
+
+  Axis *axisObjects[ECMC_MAX_AXES] = {};
+  Task *masterSlaveObjects[ECMC_MAX_MST_SLVS_SMS] = {};
+  Task *pluginObjects[ECMC_MAX_PLUGINS] = {};
+  Task *cppLogicObjects[ECMC_MAX_PLUGINS] = {};
+  Task *motionSequenceObjects[ECMC_MAX_MOTION_SEQUENCES] = {};
+  const RuntimeObjects empty(axisObjects, masterSlaveObjects, pluginObjects,
+                             cppLogicObjects, motionSequenceObjects);
+  assert(empty.activeAxisCount == 0 && empty.activeMasterSlaveCount == 0 &&
+         empty.activePluginCount == 0 && empty.activeCppLogicCount == 0 &&
+         empty.activeMotionSeqCount == 0);
+  Task alternate{"alternate"};
+  for (int i = 0; i < ECMC_MAX_AXES; ++i) axisObjects[i] = &rig.axes[i % 3];
+  for (int i = 0; i < ECMC_MAX_MST_SLVS_SMS; ++i)
+    masterSlaveObjects[i] = i % 2 ? &alternate : &rig.masterSlave;
+  for (int i = 0; i < ECMC_MAX_PLUGINS; ++i) {
+    pluginObjects[i] = i % 2 ? &alternate : &rig.plugin;
+    cppLogicObjects[i] = i % 2 ? &alternate : &rig.cppLogic;
+  }
+  for (int i = 0; i < ECMC_MAX_MOTION_SEQUENCES; ++i)
+    motionSequenceObjects[i] = i % 2 ? &alternate : &rig.sequence;
+  const RuntimeObjects full(axisObjects, masterSlaveObjects, pluginObjects,
+                            cppLogicObjects, motionSequenceObjects);
+  assert(full.activeAxisCount == ECMC_MAX_AXES);
+  assert(full.activeMasterSlaveCount == ECMC_MAX_MST_SLVS_SMS);
+  assert(full.activePluginCount == ECMC_MAX_PLUGINS && full.activeCppLogicCount == ECMC_MAX_PLUGINS);
+  assert(full.activeMotionSeqCount == ECMC_MAX_MOTION_SEQUENCES);
+  for (int i = 0; i < ECMC_MAX_AXES; ++i) {
+    assert(full.activeAxes[i] == &rig.axes[i % 3]);
+    assert(full.activeAxisPlcId[i] == i + ECMC_MAX_PLCS);
+  }
+  for (int i = 0; i < ECMC_MAX_MST_SLVS_SMS; ++i)
+    assert(full.activeMasterSlaves[i] == (i % 2 ? &alternate : &rig.masterSlave));
+  for (int i = 0; i < ECMC_MAX_PLUGINS; ++i) {
+    assert(full.activePlugins[i] == (i % 2 ? &alternate : &rig.plugin));
+    assert(full.activeCppLogics[i] == (i % 2 ? &alternate : &rig.cppLogic));
+  }
+  for (int i = 0; i < ECMC_MAX_MOTION_SEQUENCES; ++i)
+    assert(full.activeMotionSeqs[i] == (i % 2 ? &alternate : &rig.sequence));
+
+  // Membership is copied, while pointed-to state remains live. This models
+  // source edits between runtime entries, not permission to edit topology in RT.
+  rig.axisObjects[2] = nullptr;
+  rig.pluginObjects[5] = &alternate;
+  rig.plugin.result = 99;
+  assert(sparse.activeAxes[0] == &rig.axes[0]);
+  assert(sparse.activePlugins[0] == &rig.plugin && sparse.activePlugins[0]->result == 99);
+  const RuntimeObjects next(rig.axisObjects, rig.masterSlaveObjects, rig.pluginObjects,
+                            rig.cppLogicObjects, rig.motionSequenceObjects);
+  assert(next.activeAxisCount == 2 && next.activeAxes[0] == &rig.axes[1]);
+  assert(next.activeAxisPlcId[0] == 23 && next.activeAxisPlcId[1] == 27);
+  assert(next.activePluginCount == 1 && next.activePlugins[0] == &alternate);
+}
 int main() {
-  for (int scenario = 0; scenario < 6; ++scenario) {
-    startupGateConfigured = scenario != 4;
+  checkRuntimeObjects();
+  for (int scenario = 0; scenario < 9; ++scenario) {
+    startupGateConfigured = scenario != 4 && scenario != 8;
     iocRunning = false;
+    iocExitRequested = false;
+    commands = 0;
     waitSetting = scenario == 3 ? "0" : nullptr;
-    Rig rig;
+    Rig rig(scenario == 2 || scenario == 3 ? -1 : 0);
     rig.run(scenario);
   }
   puts("Startup gate: IOC readiness, bus stability, timing timeout, axis readiness, "
-       "dispatch, masterless operation, opt-outs, and runtime reentry passed.");
+       "runtime membership, dispatch order, stop/disable enforcement, safety/publication/send, "
+       "masterless operation, opt-outs, and runtime reentry passed.");
 }
 '''
 

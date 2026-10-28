@@ -54,7 +54,8 @@ guards += between(axis, 'void ecmcAxisBase::preExecute(bool masterOK) {',
   (void)masterOK;
 }
 '''
-release = between(main, '    if (startupReleased && !startupExecutionReady)',
+startup_state = between(main, 'struct StartupState {', '}  // namespace')
+release = between(main, '    if (startup.axisInitializationReleased && !startup.commandsReleased)',
                   '    const unsigned int globalMotionCommands')
 producers = between(main, '    // Motion\n', '    // Enforce the global command')
 
@@ -95,22 +96,27 @@ struct Producer {
 struct Ethercat { bool timing = true; bool timingStartupReady() { return timing; } } bus;
 Ethercat *ec = &bus;
 bool ecInitDone = true, ecStat = true;
-bool startupReleased = true, startupExecutionReady = false;
-int activeAxisCount = 2, i = 0, appModeCmd = 1;
+''' + startup_state + r'''
+StartupState startup(true);
+int i = 0, appModeCmd = 1;
 double mcuPeriod = 1000000;
-double motorStartupWaitSeconds = 0, ecTimeoutSeconds = 30;
+double ecTimeoutSeconds = 30;
 std::atomic<bool> iocExitRequested {false};
 ecmcAxisBase withRecord, withoutRecord;
-ecmcAxisBase *activeAxes[] = {&withRecord, &withoutRecord};
-int activeAxisPlcId[] = {0, 1};
 Producer sequence, plc, pvt, slave, plugin, cpp;
-Producer *activeMotionSeqs[] = {&sequence};
-Producer *activeMasterSlaves[] = {&slave};
-Producer *activePlugins[] = {&plugin};
-Producer *activeCppLogics[] = {&cpp};
 Producer *pvtCtrl_ = &pvt, *plcs = &plc;
-int activeMotionSeqCount = 1, activeMasterSlaveCount = 1;
-int activePluginCount = 1, activeCppLogicCount = 1;
+// Controlled dispatch membership; the production builder is tested in test_startup_gate.py.
+struct {
+  int activeAxisCount = 2;
+  ecmcAxisBase *activeAxes[2] = {&withRecord, &withoutRecord};
+  int activeAxisPlcId[2] = {0, 1};
+  Producer *activeMotionSeqs[1] = {&sequence};
+  Producer *activeMasterSlaves[1] = {&slave};
+  Producer *activePlugins[1] = {&plugin};
+  Producer *activeCppLogics[1] = {&cpp};
+  int activeMotionSeqCount = 1, activeMasterSlaveCount = 1;
+  int activePluginCount = 1, activeCppLogicCount = 1;
+} runtime;
 int controllerError = 0, pluginsError = 0, cppLogicError = 0;
 '''
 tests = r'''
@@ -118,6 +124,7 @@ int totalProducerCalls() {
   return sequence.calls + plc.calls + pvt.calls + slave.calls + plugin.calls + cpp.calls;
 }
 int main() {
+  startup.axisInitializationReleased = true;
   // Only a loaded motor record registers a pending handshake. A native axis or
   // a driver axis with no loaded record starts ready and cannot deadlock startup.
   assert(withoutRecord.getMotorRecordStartupReady());
@@ -132,7 +139,7 @@ int main() {
     assert(withRecord.setExecute(false) == 0);
     assert(withRecord.setEnable(false) == 0);
     tick();
-    assert(!startupExecutionReady && totalProducerCalls() == 0);
+    assert(!startup.commandsReleased && totalProducerCalls() == 0);
     assert(!withRecord.enabled && !withoutRecord.enabled);
   }
   assert(waitWarnings >= 2); // Timeout reports hold and blocking slot without release.
@@ -141,30 +148,30 @@ int main() {
   withRecord.setMotorRecordStartupReady(true); // Full motor handshake finished.
   ecStat = false;
   tick();
-  assert(!startupExecutionReady && totalProducerCalls() == 0);
+  assert(!startup.commandsReleased && totalProducerCalls() == 0);
   ecStat = true; bus.timing = false;
   tick();
-  assert(!startupExecutionReady && totalProducerCalls() == 0);
+  assert(!startup.commandsReleased && totalProducerCalls() == 0);
   bus.timing = true;
   tick();
-  assert(startupExecutionReady && !ecmcStartupCommandsHeld());
+  assert(startup.commandsReleased && !ecmcStartupCommandsHeld());
   assert(sequence.calls == 1 && plc.calls == 3 && pvt.calls == 1);
   assert(slave.calls == 1 && plugin.calls == 1 && cpp.calls == 1);
   assert(withRecord.enabled && !withRecord.startupEnablePending_);
   assert(withRecord.motionRequests == 0); // No rejected motion was replayed.
   assert(withRecord.setExecute(true) == 0 && withRecord.motionRequests == 1);
   // No loaded motor records: axis initialization alone is sufficient.
-  startupExecutionReady = false; startupCommandsHeld = true;
+  startup.commandsReleased = false; startupCommandsHeld = true;
   withRecord.inStartup = true;
   tick();
-  assert(!startupExecutionReady);
+  assert(!startup.commandsReleased);
   withRecord.inStartup = false;
   tick();
-  assert(startupExecutionReady);
+  assert(startup.commandsReleased);
   // A runtime fault is handled normally; this startup gate never auto-resets it.
   ecStat = false;
   tick();
-  assert(startupExecutionReady);
+  assert(startup.commandsReleased);
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

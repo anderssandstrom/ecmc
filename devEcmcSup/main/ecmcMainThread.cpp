@@ -332,18 +332,12 @@ struct timespec timespec_sub(struct timespec time1, struct timespec time2) {
   return result;
 }
 
-void cyclic_task(void *usr) {
-  LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
-  int i      = 0;
-  int ecStat = 0;
-  struct timespec wakeupTime, sendTime, lastSendTime = {};
-  struct timespec startTime, endTime, lastStartTime = {};
-  struct timespec offsetStartTime = {};
-  const struct timespec cycletime = { 0, (long int)mcuPeriod };
-  int masterId                    = ec->getMasterIndex();
-  const bool hasRealMaster        = masterId >= 0;
-  int diagnosticsUpdateFreqHzCached = -1;
-  int slowCycleInterval           = 1;
+namespace {
+// Non-owning membership snapshot for one runtime entry. The configuration owns
+// these objects; their state remains live. Preserve ascending source-index order
+// and the original axis PLC IDs when compacting sparse arrays.
+// Construction and all cyclic dispatch remain on the same cyclic RT thread.
+struct RuntimeObjects {
   int activeAxisCount             = 0;
   ecmcAxisBase *activeAxes[ECMC_MAX_AXES] = {};
   int activeAxisPlcId[ECMC_MAX_AXES] = {};
@@ -356,6 +350,77 @@ void cyclic_task(void *usr) {
   int activeMotionSeqCount = 0;
   ecmcMotionSequence *activeMotionSeqs[ECMC_MAX_MOTION_SEQUENCES] = {};
 
+  RuntimeObjects(ecmcAxisBase *const *axisObjects,
+                 ecmcMasterSlaveStateMachine *const *masterSlaveObjects,
+                 ecmcPluginLib *const *pluginObjects,
+                 ecmcCppLogicLib *const *cppLogicObjects,
+                 ecmcMotionSequence *const *motionSequenceObjects) {
+    for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
+      auto * const axis = axisObjects[axisIndex];
+      if (axis != NULL) {
+        activeAxes[activeAxisCount] = axis;
+        activeAxisPlcId[activeAxisCount] = AXIS_PLC_ID_TO_PLC_ID(axisIndex);
+        activeAxisCount++;
+      }
+    }
+    for (int smsIndex = 0; smsIndex < ECMC_MAX_MST_SLVS_SMS; ++smsIndex) {
+      auto * const masterSlaveSM = masterSlaveObjects[smsIndex];
+      if (masterSlaveSM != NULL) {
+        activeMasterSlaves[activeMasterSlaveCount] = masterSlaveSM;
+        activeMasterSlaveCount++;
+      }
+    }
+    for (int pluginIndex = 0; pluginIndex < ECMC_MAX_PLUGINS; ++pluginIndex) {
+      auto * const plugin = pluginObjects[pluginIndex];
+      if (plugin != NULL) {
+        activePlugins[activePluginCount] = plugin;
+        activePluginCount++;
+      }
+    }
+    for (int logicIndex = 0; logicIndex < ECMC_MAX_PLUGINS; ++logicIndex) {
+      auto * const nativeLogic = cppLogicObjects[logicIndex];
+      if (nativeLogic != NULL) {
+        activeCppLogics[activeCppLogicCount] = nativeLogic;
+        activeCppLogicCount++;
+      }
+    }
+    for (int seqIndex = 0; seqIndex < ECMC_MAX_MOTION_SEQUENCES; ++seqIndex) {
+      auto * const motionSeq = motionSequenceObjects[seqIndex];
+      if (motionSeq != NULL) {
+        activeMotionSeqs[activeMotionSeqCount] = motionSeq;
+        activeMotionSeqCount++;
+      }
+    }
+  }
+};
+// Mutable startup progress belongs to one cyclic RT invocation. The two
+// releases are distinct: axis initialization runs before command producers.
+struct StartupState {
+  bool axisInitializationReleased;
+  bool commandsReleased;
+  bool timedOut = false;
+  double waitSeconds = 0;
+  double stableSeconds = 0;
+  double motorWaitSeconds = 0;
+
+  explicit StartupState(bool gateEnabled)
+    : axisInitializationReleased(!gateEnabled), commandsReleased(!gateEnabled) {}
+};
+}  // namespace
+
+void cyclic_task(void *usr) {
+  LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
+  int i      = 0;
+  int ecStat = 0;
+  struct timespec wakeupTime, sendTime, lastSendTime = {};
+  struct timespec startTime, endTime, lastStartTime = {};
+  struct timespec offsetStartTime = {};
+  const struct timespec cycletime = { 0, (long int)mcuPeriod };
+  int masterId                    = ec->getMasterIndex();
+  const bool hasRealMaster        = masterId >= 0;
+  int diagnosticsUpdateFreqHzCached = -1;
+  int slowCycleInterval           = 1;
+
   int writeToShm = masterId < ECMC_SHM_MAX_MASTERS &&
                    masterId > -ECMC_SHM_MAX_MASTERS;
 
@@ -365,43 +430,8 @@ void cyclic_task(void *usr) {
   // start 100ms + 1 period after  master activate (in setAppMode())
   wakeupTime = timespec_add(masterActivationTimeMonotonic, offsetStartTime);
 
-  // Build active object index lists once at RT start to avoid scanning sparse arrays each cycle.
-  for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex) {
-    auto * const axis = axes[axisIndex];
-    if (axis != NULL) {
-      activeAxes[activeAxisCount] = axis;
-      activeAxisPlcId[activeAxisCount] = AXIS_PLC_ID_TO_PLC_ID(axisIndex);
-      activeAxisCount++;
-    }
-  }
-  for (int smsIndex = 0; smsIndex < ECMC_MAX_MST_SLVS_SMS; ++smsIndex) {
-    auto * const masterSlaveSM = masterSlaveSMs[smsIndex];
-    if (masterSlaveSM != NULL) {
-      activeMasterSlaves[activeMasterSlaveCount] = masterSlaveSM;
-      activeMasterSlaveCount++;
-    }
-  }
-  for (int pluginIndex = 0; pluginIndex < ECMC_MAX_PLUGINS; ++pluginIndex) {
-    auto * const plugin = plugins[pluginIndex];
-    if (plugin != NULL) {
-      activePlugins[activePluginCount] = plugin;
-      activePluginCount++;
-    }
-  }
-  for (int logicIndex = 0; logicIndex < ECMC_MAX_PLUGINS; ++logicIndex) {
-    auto * const nativeLogic = cppLogics[logicIndex];
-    if (nativeLogic != NULL) {
-      activeCppLogics[activeCppLogicCount] = nativeLogic;
-      activeCppLogicCount++;
-    }
-  }
-  for (int seqIndex = 0; seqIndex < ECMC_MAX_MOTION_SEQUENCES; ++seqIndex) {
-    auto * const motionSeq = motionSeqs[seqIndex];
-    if (motionSeq != NULL) {
-      activeMotionSeqs[activeMotionSeqCount] = motionSeq;
-      activeMotionSeqCount++;
-    }
-  }
+  // Build membership once per RT entry; no allocations or ownership changes.
+  const RuntimeObjects runtime(axes, masterSlaveSMs, plugins, cppLogics, motionSeqs);
 
   prepareControllerErrorObjectsRT();
 
@@ -411,12 +441,7 @@ void cyclic_task(void *usr) {
   // Explicit opt-out for applications that never call iocInit/iocRun.
   const char *waitForIoc = getenv("ECMC_WAIT_FOR_IOC_RUNNING");
   const bool waitForIocRunning = !waitForIoc || strcmp(waitForIoc, "0") != 0;
-  bool startupReleased = !startupGateEnabled;
-  bool startupExecutionReady = !startupGateEnabled;
-  bool startupTimedOut = false;
-  double startupWaitSeconds = 0;
-  double startupStableSeconds = 0;
-  double motorStartupWaitSeconds = 0;
+  StartupState startup(startupGateEnabled);
   startupMotionHeld.store(startupGateEnabled, std::memory_order_release);
   startupCommandsHeld.store(startupGateEnabled, std::memory_order_release);
   if (startupGateEnabled) {
@@ -534,65 +559,69 @@ void cyclic_task(void *usr) {
       }
     }
 
-    if (!startupReleased && !startupTimedOut &&
+    // First release axis initialization after IOC/bus readiness. Without a
+    // master, ecStat is healthy and bus timing checks are skipped above/below.
+    if (!startup.axisInitializationReleased && !startup.timedOut &&
         (!waitForIocRunning || iocRunning.load(std::memory_order_acquire))) {
-      startupWaitSeconds += mcuPeriod / 1.0e9;
+      startup.waitSeconds += mcuPeriod / 1.0e9;
       const bool timingReady = !ecInitDone || ec->timingStartupReady();
       if (ecStat && timingReady) {
-        startupStableSeconds += mcuPeriod / 1.0e9;
+        startup.stableSeconds += mcuPeriod / 1.0e9;
       } else {
-        startupStableSeconds = 0;
+        startup.stableSeconds = 0;
       }
-      if (startupStableSeconds >= 2.0) {
+      if (startup.stableSeconds >= 2.0) {
         // One reset attempt per startup, only for transient bus/axis errors.
         if (ecInitDone) {
           ec->resetStartupCommunicationErrors();
         }
-        for (i = 0; i < activeAxisCount; ++i) {
-          const int error = activeAxes[i]->getErrorID();
+        for (i = 0; i < runtime.activeAxisCount; ++i) {
+          const int error = runtime.activeAxes[i]->getErrorID();
           if (error == ERROR_AXIS_HW_NOT_READY ||
               error == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) {
-            activeAxes[i]->errorReset();
+            runtime.activeAxes[i]->errorReset();
           }
         }
-        startupReleased = true;
+        startup.axisInitializationReleased = true;
         startupMotionHeld.store(false, std::memory_order_release);
         ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization.\n");
-      } else if (startupWaitSeconds >= ecTimeoutSeconds) {
-        startupTimedOut = true;
+      } else if (startup.waitSeconds >= ecTimeoutSeconds) {
+        startup.timedOut = true;
         ecmcRtLoggerLogError("Startup: EtherCAT did not stabilize after IOC running; axes and PLCs remain held. Restart runtime after resolving the bus fault.\n");
       }
     }
 
-    if (startupReleased && !startupExecutionReady) {
-      motorStartupWaitSeconds += mcuPeriod / 1.0e9;
-      if (motorStartupWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
+    // Release command producers only after axes and motor-record restore agree.
+    // Axis execution below continues while producers are held.
+    if (startup.axisInitializationReleased && !startup.commandsReleased) {
+      startup.motorWaitSeconds += mcuPeriod / 1.0e9;
+      if (startup.motorWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
         ecmcRtLoggerLogError("Startup: motor/axis handshake still pending; motion remains held. Check motor-controller report for soft-limit restore status.\n");
-        for (int axisIndex = 0; axisIndex < activeAxisCount; ++axisIndex) {
-          if (activeAxes[axisIndex]->getInStartupPhase() ||
-              !activeAxes[axisIndex]->getMotorRecordStartupReady()) {
+        for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex) {
+          if (runtime.activeAxes[axisIndex]->getInStartupPhase() ||
+              !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady()) {
             ecmcRtLoggerLogError("Startup: active axis slot %d waiting: axis initialization=%d, motor record=%d.\n",
-              axisIndex, activeAxes[axisIndex]->getInStartupPhase(),
-              !activeAxes[axisIndex]->getMotorRecordStartupReady());
+              axisIndex, runtime.activeAxes[axisIndex]->getInStartupPhase(),
+              !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady());
           }
         }
-        motorStartupWaitSeconds = 0;
+        startup.motorWaitSeconds = 0;
       }
 
       bool axesReady = ecStat && (!ecInitDone || ec->timingStartupReady());
-      for (i = 0; i < activeAxisCount; ++i) {
-        axesReady &= !activeAxes[i]->getInStartupPhase() &&
-                     activeAxes[i]->getMotorRecordStartupReady();
+      for (i = 0; i < runtime.activeAxisCount; ++i) {
+        axesReady &= !runtime.activeAxes[i]->getInStartupPhase() &&
+                     runtime.activeAxes[i]->getMotorRecordStartupReady();
       }
       if (axesReady) {
-        startupExecutionReady = true;
+        startup.commandsReleased = true;
         startupCommandsHeld.store(false, std::memory_order_release);
         ecmcRtLoggerLogInfo("Startup: axes and motor-record restoration complete; releasing PLCs and motion command producers.\n");
       }
     }
 
-    for (i = 0; startupExecutionReady && i < activeMotionSeqCount; i++) {
-      activeMotionSeqs[i]->executeRT(mcuPeriod / 1.0e9);
+    for (i = 0; startup.commandsReleased && i < runtime.activeMotionSeqCount; i++) {
+      runtime.activeMotionSeqs[i]->executeRT(mcuPeriod / 1.0e9);
     }
 
     const unsigned int globalMotionCommands =
@@ -603,38 +632,41 @@ void cyclic_task(void *usr) {
     const bool disableAllAxes =
       globalMotionCommands & ECMC_GLOBAL_CMD_DISABLE_ALL_AXES;
 
+    // Apply the pending global stop/disable before executing the axes.
     if (stopAllAxes) {
-      for (i = 0; i < activeAxisCount; i++) {
-        activeAxes[i]->stopMotion(disableAllAxes);
+      for (i = 0; i < runtime.activeAxisCount; i++) {
+        runtime.activeAxes[i]->stopMotion(disableAllAxes);
       }
     }
 
     // Motion
-    for (i = 0; i < activeAxisCount; i++) {
-      auto * const axis = activeAxes[i];
-      if (startupExecutionReady) {
-        plcs->execute(activeAxisPlcId[i], ecStat);
+    // Keep each axis PLC immediately before its axis; moving all PLCs together
+    // would change which commands and feedback are visible in this cycle.
+    for (i = 0; i < runtime.activeAxisCount; i++) {
+      auto * const axis = runtime.activeAxes[i];
+      if (startup.commandsReleased) {
+        plcs->execute(runtime.activeAxisPlcId[i], ecStat);
       }
       axis->execute(ecStat);
     }
 
     // PVT motion
-    if(startupExecutionReady && pvtCtrl_) {
+    if(startup.commandsReleased && pvtCtrl_) {
       pvtCtrl_->execute();
     }
 
     // Master Slave statemachines
-    for (int i = 0; startupExecutionReady && i < activeMasterSlaveCount; i++) {
-      activeMasterSlaves[i]->execute();
+    for (int i = 0; startup.commandsReleased && i < runtime.activeMasterSlaveCount; i++) {
+      runtime.activeMasterSlaves[i]->execute();
     }
 
     // Plugins
-    for (i = 0; startupExecutionReady && i < activePluginCount; i++) {
-      pluginsError = activePlugins[i]->exeRTFunc(controllerError);
+    for (i = 0; startup.commandsReleased && i < runtime.activePluginCount; i++) {
+      pluginsError = runtime.activePlugins[i]->exeRTFunc(controllerError);
     }
 
-    for (i = 0; startupExecutionReady && i < activeCppLogicCount; i++) {
-      cppLogicError = activeCppLogics[i]->exeRTFunc(controllerError);
+    for (i = 0; startup.commandsReleased && i < runtime.activeCppLogicCount; i++) {
+      cppLogicError = runtime.activeCppLogics[i]->exeRTFunc(controllerError);
     }
 
     if (iocExitRequested.load(std::memory_order_acquire)) {
@@ -642,14 +674,15 @@ void cyclic_task(void *usr) {
     }
 
     // PLCs
-    if (startupExecutionReady && plcs) {
+    if (startup.commandsReleased && plcs) {
       plcs->execute(ecStat);
     }
 
     // Enforce the global command after normal command producers as well.
+    // Keep this second pass: PLCs/plugins may have issued new motion commands.
     if (stopAllAxes) {
-      for (i = 0; i < activeAxisCount; i++) {
-        activeAxes[i]->stopMotion(disableAllAxes);
+      for (i = 0; i < runtime.activeAxisCount; i++) {
+        runtime.activeAxes[i]->stopMotion(disableAllAxes);
       }
     }
 
@@ -671,8 +704,8 @@ void cyclic_task(void *usr) {
         }
         printStatus();
 
-        for (int i = 0; i < activeAxisCount; i++) {
-          activeAxes[i]->slowExecute();
+        for (int i = 0; i < runtime.activeAxisCount; i++) {
+          runtime.activeAxes[i]->slowExecute();
         }
 
         if (ecInitDone) {
@@ -681,7 +714,8 @@ void cyclic_task(void *usr) {
       }
     }
 
-    // Special safety plugin execute last
+    // Special safety plugin executes after ordinary producers and slow work,
+    // including during startup hold, before publication and EtherCAT send.
     if (safetyplugin != NULL) {
       safetypluginError = safetyplugin->exeRTFunc(controllerError);
     }
