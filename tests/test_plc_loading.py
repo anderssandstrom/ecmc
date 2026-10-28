@@ -22,7 +22,7 @@ def method(signature):
     return source[start:source.index('\n}', start) + 2] + '\n'
 
 
-constants = '\n'.join(line for line in definitions.splitlines() if line.startswith(
+constants = '#define ERROR_PLC_DATA_SOURCE_BOUND 0x20511\n' + '\n'.join(line for line in definitions.splitlines() if line.startswith(
     ('#define ECMC_MAX_PLCS ', '#define ECMC_MAX_AXES ', '#define ECMC_PLC_FILE_COMMENT_CHAR ')))
 checks = header[header.index('#define ERROR_PLCS_INDEX_OUT_OF_RANGE'):header.index('class ecmcPLCMain')]
 stubs = r'''
@@ -38,6 +38,7 @@ void ecmcRtLoggerLogError(const char *, ...) {}
 struct Task {
   std::string code;
   int calls = 0, failAt = 0;
+  bool hasDataBindings() const { return false; }
   int appendRawExpr(const char *line) {
     if (++calls == failAt) return 71;
     code += line; return 0;

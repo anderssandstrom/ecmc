@@ -376,6 +376,7 @@ ecmcAxisBase::ecmcAxisBase(ecmcAsynPortDriver *asynPortDriver,
 }
 
 ecmcAxisBase::~ecmcAxisBase() {
+  invalidateDataSources();
   for (int i = 0; i < ECMC_MAX_ENCODERS; i++) {
     delete encArray_[i];
   }
@@ -417,7 +418,7 @@ void ecmcAxisBase::initVars() {
     data_.axAsynParams_[i] = NULL;
   }
 
-  statusOutputEntry_ = 0;
+  statusOutputEntry_.reset();
 
   memset(diagBuffer_, 0, AX_MAX_DIAG_STRING_CHAR_LENGTH);
   extTrajVeloFilter_         = NULL;
@@ -739,7 +740,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   memcpy(&mrCmdsOld_,&mrCmds_, sizeof(mrCmdsOld_));
   
   // Update status entry if linked
-  if (statusOutputEntry_) {
+  if (statusOutputEntry_ && statusOutputEntry_->data) {
     statusOutputEntry_->writeValue(getErrorID() == 0);
   }
 
@@ -832,7 +833,7 @@ int ecmcAxisBase::setEncDataSourceType(dataSource refSource) {
 
   // If realtime: Ensure that ethercat enty for actual position is linked
   if ((refSource == ECMC_DATA_SOURCE_INTERNAL) && data_.status_.statusWord_.inrealtime) {
-    int errorCode = getEnc()->validateEntry(
+    int errorCode = getEnc()->validateData(
       ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
 
     if (errorCode) {
@@ -1829,7 +1830,7 @@ int ecmcAxisBase::getAxisDebugInfoData(char *buffer,
 }
 
 int ecmcAxisBase::setEcStatusOutputEntry(ecmcEcEntry *entry) {
-  statusOutputEntry_ = entry;
+  statusOutputEntry_ = entry ? entry->getDataAccess() : nullptr;
   return 0;
 }
 
@@ -4339,4 +4340,419 @@ void ecmcAxisBase::setBlocked(bool blocked) {
 // get Group blocked
 bool ecmcAxisBase::getBlocked() {
   return masterSlaveBlocked_ || getBlockCom();
+}
+
+ecmcAxisDataType ecmcAxisBase::parseDataSource(const char *path, int *isBoolean) {
+  if (isBoolean) *isBoolean = 0;
+  if (!path || !strstr(path, ECMC_AX_STR)) return ECMC_AXIS_DATA_NONE;
+  const char *name = strchr(path, '.');
+  if (!name) return ECMC_AXIS_DATA_NONE;
+  ++name;
+  struct Name { const char *name; ecmcAxisDataType type; int boolean; };
+  static const Name names[] = {
+    {ECMC_AXIS_DATA_STR_AXIS_ID, ECMC_AXIS_DATA_AXIS_ID, 0},
+    {ECMC_AXIS_DATA_STR_POS_SET, ECMC_AXIS_DATA_POS_SET, 0},
+    {ECMC_AXIS_DATA_STR_POS_ACT, ECMC_AXIS_DATA_POS_ACT, 0},
+    {ECMC_AXIS_DATA_STR_POS_TARGET, ECMC_AXIS_DATA_POS_TARGET, 0},
+    {ECMC_AXIS_DATA_STR_POS_ERROR, ECMC_AXIS_DATA_POS_ERROR, 0},
+    {ECMC_AXIS_DATA_STR_POS_RAW, ECMC_AXIS_DATA_POS_RAW, 0},
+    {ECMC_AXIS_DATA_STR_CNTRL_OUT, ECMC_AXIS_DATA_CNTRL_OUT, 0},
+    {ECMC_AXIS_DATA_STR_VEL_SET, ECMC_AXIS_DATA_VEL_SET, 0},
+    {ECMC_AXIS_DATA_STR_VEL_ACT, ECMC_AXIS_DATA_VEL_ACT, 0},
+    {ECMC_AXIS_DATA_STR_VEL_SET_FF_RAW, ECMC_AXIS_DATA_VEL_SET_FF_RAW, 0},
+    {ECMC_AXIS_DATA_STR_VEL_SET_RAW, ECMC_AXIS_DATA_VEL_SET_RAW, 0},
+    {ECMC_AXIS_DATA_STR_CYCLE_COUNTER, ECMC_AXIS_DATA_CYCLE_COUNTER, 0},
+    {ECMC_AXIS_DATA_STR_ERROR, ECMC_AXIS_DATA_ERROR, 0},
+    {ECMC_AXIS_DATA_STR_COMMAND, ECMC_AXIS_DATA_COMMAND, 0},
+    {ECMC_AXIS_DATA_STR_CMD_DATA, ECMC_AXIS_DATA_CMD_DATA, 0},
+    {ECMC_AXIS_DATA_STR_SEQ_STATE, ECMC_AXIS_DATA_SEQ_STATE, 0},
+    {ECMC_AXIS_DATA_STR_INTERLOCK_TYPE, ECMC_AXIS_DATA_INTERLOCK_TYPE, 0},
+    {ECMC_AXIS_DATA_STR_TRAJ_SOURCE, ECMC_AXIS_DATA_TRAJ_SOURCE, 1},
+    {ECMC_AXIS_DATA_STR_ENC_SOURCE, ECMC_AXIS_DATA_ENC_SOURCE, 1},
+    {ECMC_AXIS_DATA_STR_ENABLE, ECMC_AXIS_DATA_ENABLE, 1},
+    {ECMC_AXIS_DATA_STR_ENABLED, ECMC_AXIS_DATA_ENABLED, 1},
+    {ECMC_AXIS_DATA_STR_EXECUTE, ECMC_AXIS_DATA_EXECUTE, 1},
+    {ECMC_AXIS_DATA_STR_BUSY, ECMC_AXIS_DATA_BUSY, 1},
+    {ECMC_AXIS_DATA_STR_AT_TARGET, ECMC_AXIS_DATA_AT_TARGET, 1},
+    {ECMC_AXIS_DATA_STR_HOMED, ECMC_AXIS_DATA_HOMED, 1},
+    {ECMC_AXIS_DATA_STR_LIMIT_BWD, ECMC_AXIS_DATA_LIMIT_BWD, 1},
+    {ECMC_AXIS_DATA_STR_LIMIT_FWD, ECMC_AXIS_DATA_LIMIT_FWD, 1},
+    {ECMC_AXIS_DATA_STR_HOME_SWITCH, ECMC_AXIS_DATA_HOME_SWITCH, 1},
+    {ECMC_AXIS_DATA_STR_RESET, ECMC_AXIS_DATA_RESET, 1},
+    {ECMC_AXIS_DATA_STR_VEL_TARGET_SET, ECMC_AXIS_DATA_VEL_TARGET_SET, 0},
+    {ECMC_AXIS_DATA_STR_ACC_TARGET_SET, ECMC_AXIS_DATA_ACC_TARGET_SET, 0},
+    {ECMC_AXIS_DATA_STR_DEC_TARGET_SET, ECMC_AXIS_DATA_DEC_TARGET_SET, 0},
+    {ECMC_AXIS_DATA_STR_SOFT_LIMIT_BWD, ECMC_AXIS_DATA_SOFT_LIMIT_BWD, 0},
+    {ECMC_AXIS_DATA_STR_SOFT_LIMIT_FWD, ECMC_AXIS_DATA_SOFT_LIMIT_FWD, 0},
+    {ECMC_AXIS_DATA_STR_SOFT_LIMIT_BWD_ENABLE, ECMC_AXIS_DATA_SOFT_LIMIT_BWD_ENABLE, 1},
+    {ECMC_AXIS_DATA_STR_SOFT_LIMIT_FWD_ENABLE, ECMC_AXIS_DATA_SOFT_LIMIT_FWD_ENABLE, 1},
+    {ECMC_AXIS_DATA_STR_TRAJ_DIRECTION, ECMC_AXIS_DATA_TRAJ_DIRECTION, 0},
+    {ECMC_AXIS_DATA_STR_ENC_HOMEPOS, ECMC_AXIS_DATA_ENC_HOMEPOS, 0},
+    {ECMC_AXIS_DATA_STR_BLOCK_COM, ECMC_AXIS_DATA_BLOCK_COM, 1},
+    {ECMC_AXIS_DATA_STR_INTERLOCK_FWD_TYPE, ECMC_AXIS_DATA_INTERLOCK_FWD_TYPE, 1},
+    {ECMC_AXIS_DATA_STR_INTERLOCK_BWD_TYPE, ECMC_AXIS_DATA_INTERLOCK_BWD_TYPE, 1},
+    {ECMC_AXIS_DATA_STR_ALLOW_PLC_CMD, ECMC_AXIS_DATA_ALLOW_PLC_WRITE, 1},
+    {ECMC_AXIS_DATA_STR_POS_SET_EXTERNAL, ECMC_AXIS_DATA_POS_SET_EXTERNAL, 0},
+    {ECMC_AXIS_DATA_STR_POS_ACT_EXTERNAL, ECMC_AXIS_DATA_POS_ACT_EXTERNAL, 0},
+    {ECMC_AXIS_DATA_STR_CTRL_KP_CMD, ECMC_AXIS_DATA_CTRL_KP, 0},
+    {ECMC_AXIS_DATA_STR_CTRL_KI_CMD, ECMC_AXIS_DATA_CTRL_KI, 0},
+    {ECMC_AXIS_DATA_STR_CTRL_KD_CMD, ECMC_AXIS_DATA_CTRL_KD, 0},
+    {ECMC_AXIS_DATA_STR_CTRL_KFF_CMD, ECMC_AXIS_DATA_CTRL_KFF, 0},
+  };
+  for (const auto &entry : names) {
+    if (strcmp(name, entry.name)) continue;
+    if (isBoolean) *isBoolean = entry.boolean;
+    return entry.type;
+  }
+  return ECMC_AXIS_DATA_NONE;
+}
+
+int ecmcAxisBase::readDataSource(ecmcAxisDataType source, double *value) {
+  auto *axis = this;
+  if (!value || !getTraj()) return ERROR_AXIS_TRAJ_OBJECT_NULL;
+  ecmcAxisDataStatus * const axisData = axis->getAxisStatusDataPtr();
+  // Shared reader for bit fields and values computed by motion objects.
+  auto * const mon  = axis->getMon();
+  auto * const seq  = axis->getSeq();
+  auto * const traj = axis->getTraj();
+  auto * const cntrl = axis->getCntrl();
+
+  switch (source) {
+  case ECMC_AXIS_DATA_NONE:
+    *value = 0;
+    break;
+
+  case ECMC_AXIS_DATA_AXIS_ID:
+    *value = static_cast<double>(axisData->axisId);
+    break;
+
+  case ECMC_AXIS_DATA_POS_SET:
+    *value = axisData->currentPositionSetpoint;
+    break;
+
+  case ECMC_AXIS_DATA_POS_ACT:
+    *value = axisData->currentPositionActual;
+    break;
+
+  case ECMC_AXIS_DATA_CNTRL_ERROR:
+    *value = axisData->cntrlError;
+    break;
+
+  case ECMC_AXIS_DATA_POS_TARGET:
+    *value = axisData->currentTargetPosition;
+    break;
+
+  case ECMC_AXIS_DATA_POS_ERROR:
+    *value = axisData->currentPositionSetpoint - axisData->currentPositionActual;
+    break;
+
+  case ECMC_AXIS_DATA_POS_RAW:
+    // Risc of data loss
+    *value = static_cast<double>(axisData->currentPositionActualRaw);
+    break;
+
+  case ECMC_AXIS_DATA_CNTRL_OUT:
+    *value = axisData->cntrlOutput;
+    break;
+
+  case ECMC_AXIS_DATA_VEL_SET:
+    *value = axisData->currentVelocitySetpoint;
+    break;
+
+  case ECMC_AXIS_DATA_VEL_ACT:
+    *value = axisData->currentVelocityActual;
+    break;
+
+  case ECMC_AXIS_DATA_VEL_SET_FF_RAW:
+    *value = axisData->currentvelocityFFRaw;
+    break;
+
+  case ECMC_AXIS_DATA_VEL_SET_RAW:
+    *value = static_cast<double>(axisData->currentVelocitySetpointRaw);
+    break;
+
+  case ECMC_AXIS_DATA_CYCLE_COUNTER:
+    *value = static_cast<double>(axisData->cycleCounter);
+    break;
+
+  case ECMC_AXIS_DATA_ERROR:
+    *value = static_cast<double>(axisData->errorCode);
+    break;
+
+  case ECMC_AXIS_DATA_COMMAND:
+    *value = static_cast<double>(axisData->command);
+    break;
+
+  case ECMC_AXIS_DATA_CMD_DATA:
+    *value = static_cast<double>(axisData->cmdData);
+    break;
+
+  case ECMC_AXIS_DATA_SEQ_STATE:
+    *value = static_cast<double>(axisData->statusWord_.seqstate);
+    break;
+
+  case ECMC_AXIS_DATA_INTERLOCK_TYPE:
+    *value = static_cast<double>(axis->getSumInterlock() == 0);
+    break;
+
+  case ECMC_AXIS_DATA_TRAJ_SOURCE:
+    *value = static_cast<double>(axisData->statusWord_.trajsource);
+    break;
+
+  case ECMC_AXIS_DATA_ENC_SOURCE:
+    *value = static_cast<double>(axisData->statusWord_.encsource);
+    break;
+
+  case ECMC_AXIS_DATA_ENABLE:
+
+    *value = static_cast<double>(axisData->statusWord_.enable);
+    break;
+
+  case ECMC_AXIS_DATA_ENABLED:
+    *value = static_cast<double>(axisData->statusWord_.enabled);
+    break;
+
+  case ECMC_AXIS_DATA_EXECUTE:
+    *value = static_cast<double>(axisData->statusWord_.execute);
+    break;
+
+  case ECMC_AXIS_DATA_BUSY:
+    *value = static_cast<double>(axisData->statusWord_.busy);
+    break;
+
+  case ECMC_AXIS_DATA_AT_TARGET:
+    *value = static_cast<double>(axisData->statusWord_.attarget);
+    break;
+
+  case ECMC_AXIS_DATA_HOMED:
+    *value = static_cast<double>(axisData->statusWord_.homed);
+    break;
+
+  case ECMC_AXIS_DATA_LIMIT_BWD:
+    *value = static_cast<double>(axisData->statusWord_.limitbwd);
+    break;
+
+  case ECMC_AXIS_DATA_LIMIT_FWD:
+    *value = static_cast<double>(axisData->statusWord_.limitfwd);
+    break;
+
+  case ECMC_AXIS_DATA_HOME_SWITCH:
+    *value = static_cast<double>(axisData->statusWord_.homeswitch);
+    break;
+
+  case ECMC_AXIS_DATA_RESET:
+    *value = 0;
+    break;
+
+  case ECMC_AXIS_DATA_VEL_TARGET_SET:
+    *value = seq->getTargetVel();
+    break;
+
+  case ECMC_AXIS_DATA_ACC_TARGET_SET:
+    *value = traj->getAcc();
+    break;
+
+  case ECMC_AXIS_DATA_DEC_TARGET_SET:
+    *value = traj->getDec();
+    break;
+
+  case ECMC_AXIS_DATA_SOFT_LIMIT_BWD:
+    *value = mon->getSoftLimitBwd();
+    break;
+
+  case ECMC_AXIS_DATA_SOFT_LIMIT_FWD:
+    *value = mon->getSoftLimitFwd();
+    break;
+
+  case ECMC_AXIS_DATA_SOFT_LIMIT_BWD_ENABLE:
+    *value = static_cast<double>(mon->getEnableSoftLimitBwd());
+    break;
+
+  case ECMC_AXIS_DATA_SOFT_LIMIT_FWD_ENABLE:
+    *value = static_cast<double>(mon->getEnableSoftLimitFwd());
+    break;
+
+  case ECMC_AXIS_DATA_TRAJ_DIRECTION:
+
+    switch (axis->getAxisSetDirection()) {
+    case ECMC_DIR_BACKWARD:
+      *value = -1;
+      break;
+
+    case ECMC_DIR_FORWARD:
+      *value = 1;
+      break;
+
+    case ECMC_DIR_STANDSTILL:
+      *value = 0;
+      break;
+    }
+    break;
+
+  case ECMC_AXIS_DATA_ENC_HOMEPOS:
+    *value = seq->getHomePosition();
+    break;
+
+  case ECMC_AXIS_DATA_BLOCK_COM:
+    *value = axis->getBlockCom();
+    break;
+
+  case ECMC_AXIS_DATA_INTERLOCK_BWD_TYPE:
+    *value =
+      static_cast<double>(axisData->statusWord_.sumilockbwd == 0);
+    break;
+
+  case ECMC_AXIS_DATA_INTERLOCK_FWD_TYPE:
+    *value =
+      static_cast<double>(axisData->statusWord_.sumilockfwd == 0);
+    break;
+
+  case ECMC_AXIS_DATA_ALLOW_PLC_WRITE:
+    *value = static_cast<double>(axis->getAllowCmdFromPLC());
+    break;
+
+  case ECMC_AXIS_DATA_POS_SET_EXTERNAL:
+    *value = axis->getExtSetPos();
+    break;
+
+  case ECMC_AXIS_DATA_POS_ACT_EXTERNAL:
+    *value = axis->getExtActPos();
+    break;
+
+  case ECMC_AXIS_DATA_CTRL_KP:
+
+    if (cntrl) {
+      *value = cntrl->getKp();
+    } else {
+      *value = 0;
+    }
+    break;
+
+  case ECMC_AXIS_DATA_CTRL_KI:
+
+    if (cntrl) {
+      *value = cntrl->getKi();
+    } else {
+      *value = 0;
+    }
+    break;
+
+  case ECMC_AXIS_DATA_CTRL_KD:
+
+    if (cntrl) {
+      *value = cntrl->getKd();
+    } else {
+      *value = 0;
+    }
+    break;
+
+  case ECMC_AXIS_DATA_CTRL_KFF:
+
+    if (cntrl) {
+      *value = cntrl->getKff();
+    } else {
+      *value = 0;
+    }
+    break;
+
+  default:
+    return ERROR_AXIS_SOURCE_TYPE_NOT_DEFINED;
+
+    break;
+  }
+
+  return 0;
+}
+std::shared_ptr<ecmcDataAccess> ecmcAxisBase::getDataSource(const char *path) {
+  if (!path || strncmp(path, ECMC_AX_STR, strlen(ECMC_AX_STR))) return nullptr;
+  const char *index = path + strlen(ECMC_AX_STR);
+  if (*index < '0' || *index > '9') return nullptr;
+  int axisId = 0;
+  while (*index >= '0' && *index <= '9') {
+    axisId = axisId * 10 + (*index++ - '0');
+    if (axisId >= ECMC_MAX_AXES) return nullptr;
+  }
+  if (*index != '.' || axisId != data_.status_.axisId) return nullptr;
+  int boolean = 0;
+  const auto source = parseDataSource(path, &boolean);
+  if (source == ECMC_AXIS_DATA_NONE) return nullptr;
+  for (const auto &entry : dataSources_)
+    if (entry->selector == source) return entry;
+  auto view = std::make_shared<ecmcDataAccess>();
+  view->identity = this;
+  view->selector = source;
+  view->data = reinterpret_cast<uint8_t *>(this); // Lifetime sentinel for computed sources.
+  view->type = ECMC_EC_F64;
+  view->bits = 64;
+  view->positiveBoolean = boolean;
+  view->numberReader = [](const ecmcDataAccess &access, double *value) {
+    return static_cast<ecmcAxisBase *>(access.identity)->readDataSource(
+      static_cast<ecmcAxisDataType>(access.selector), value);
+  };
+  switch (source) {
+    case ECMC_AXIS_DATA_AXIS_ID:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.axisId);
+      view->type = ECMC_EC_S32; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_SET:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentPositionSetpoint);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_ACT:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentPositionActual);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_CNTRL_ERROR:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.cntrlError);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_TARGET:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentTargetPosition);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_RAW:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentPositionActualRaw);
+      view->type = ECMC_EC_S64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_CNTRL_OUT:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.cntrlOutput);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_VEL_SET:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentVelocitySetpoint);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_VEL_ACT:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentVelocityActual);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_VEL_SET_FF_RAW:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentvelocityFFRaw);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_VEL_SET_RAW:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.currentVelocitySetpointRaw);
+      view->type = ECMC_EC_S64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_CYCLE_COUNTER:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.cycleCounter);
+      view->type = ECMC_EC_U32; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_ERROR:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.errorCode);
+      view->type = ECMC_EC_S32; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_COMMAND:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.command);
+      view->type = ECMC_EC_S32; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_CMD_DATA:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.cmdData);
+      view->type = ECMC_EC_S32; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_SET_EXTERNAL:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.externalTrajectoryPosition);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    case ECMC_AXIS_DATA_POS_ACT_EXTERNAL:
+      view->data = reinterpret_cast<uint8_t *>(&data_.status_.externalEncoderPosition);
+      view->type = ECMC_EC_F64; view->numberReader = nullptr; break;
+    default: break;
+  }
+  view->bits = static_cast<int>(ecmcDataAccess::sizeOf(view->type) * 8);
+  view->finiteRequired = view->type == ECMC_EC_F32 || view->type == ECMC_EC_F64;
+  dataSources_.push_back(view); // Configuration only; consumers keep a stable descriptor.
+  return view;
+}
+
+void ecmcAxisBase::invalidateDataSources() {
+  for (const auto &view : dataSources_) {
+    view->data = nullptr;
+    view->numberReader = nullptr;
+  }
+  dataSources_.clear();
 }

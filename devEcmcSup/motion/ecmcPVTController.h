@@ -30,14 +30,16 @@ enum ecmcPVTSMType {
 //#define ECMC_PVT_EC_ENTRY_TRIGGER_TIME "pvtctrl.trigg.timestamp"
 
 #include "ecmcErrorsList.h"
-#include "ecmcEcEntryLink.h"
+#include "ecmcDataLink.h"
 #include "ecmcAxisPVTSequence.h"
 #include "ecmcAxisBase.h"
 #include <vector>
 
 class ecmcMotionStateYamlWriter;
 
-class ecmcPVTController: public ecmcEcEntryLink {
+class ecmcEcEntry;
+
+class ecmcPVTController: public ecmcDataLink {
   friend class ecmcMotionStateYamlWriter;
   public:
     ecmcPVTController(ecmcAsynPortDriver *asynPortDriver,double sampleTime);

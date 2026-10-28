@@ -55,7 +55,7 @@ int ecmcDriveDS402::validate() {
   }
 
   int bitCount = 0;  // DS402 must have 16 bit control word
-  getEntryBitCount(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD, &bitCount);
+  getDataBitCount(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD, &bitCount);
 
   if (bitCount != 16) {
     return setErrorID(__FILE__,
@@ -65,7 +65,7 @@ int ecmcDriveDS402::validate() {
   }
 
   int startBit = 0;  // DS402 must use all bits in word
-  getEntryStartBit(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD, &startBit);
+  getDataStartBit(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD, &startBit);
 
   if (startBit != -1) {
     return setErrorID(__FILE__,
@@ -75,7 +75,7 @@ int ecmcDriveDS402::validate() {
   }
 
   bitCount = 0;  // DS402 must have 16 bit status word
-  getEntryBitCount(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, &bitCount);
+  getDataBitCount(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, &bitCount);
 
   if (bitCount != 16) {
     return setErrorID(__FILE__,
@@ -85,7 +85,7 @@ int ecmcDriveDS402::validate() {
   }
 
   startBit = 0;  // DS402 must use all bits in word
-  getEntryStartBit(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, &startBit);
+  getDataStartBit(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, &startBit);
 
   if (startBit != -1) {
     return setErrorID(__FILE__,

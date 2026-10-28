@@ -25,9 +25,7 @@
 #include "ecmcDefinitions.h"
 #include "ecmcErrorsList.h"
 #include "ecmcError.h"
-#include "ecmcEcEntry.h"
-#include "ecmcEcEntryLink.h"
-#include "ecmcEcPdo.h"
+#include "ecmcDataLink.h"
 #include "ecmcFilter.h"
 #include "ecmcAxisData.h"
 #include "ecmcMotionUtils.h"
@@ -51,7 +49,7 @@ enum ecmcOverUnderFlowType {
 
 class ecmcMotionStateYamlWriter;
 
-class ecmcEncoder : public ecmcEcEntryLink {
+class ecmcEncoder : public ecmcDataLink {
   friend class ecmcMotionStateYamlWriter;
 public:
   ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,

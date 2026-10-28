@@ -1,75 +1,42 @@
-/*************************************************************************\
-* Copyright (c) 2019 European Spallation Source ERIC
-* ecmc is distributed subject to a Software License Agreement found
-* in file LICENSE that is included with this distribution.
-*
-*  ecmcEcEntryLink.h
-*
-*  Created on: May 23, 2016
-*      Author: anderssandstrom
-*
-\*************************************************************************/
-
 #ifndef ECMCECENTRYLINK_H_
 #define ECMCECENTRYLINK_H_
-
 #include "ecmcEcEntry.h"
-
-#define ECMC_EC_ENTRY_LINKS_MAX 20
-
-struct entryInfo {
-  ecmcEcEntry *entry;
-  int          bitNumber;
-};
-
-class ecmcMotionStateYamlWriter;
-
-class ecmcEcEntryLink : public ecmcError {
-  friend class ecmcMotionStateYamlWriter;
+#include "ecmcDataLink.h"
+// Legacy configuration record retained for external source compatibility.
+struct entryInfo { ecmcEcEntry *entry; int bitNumber; };
+class ecmcEcEntryLink : public ecmcDataLink {
 public:
-  ecmcEcEntryLink();
-  ecmcEcEntryLink(int *errorPtr,
-                  int *warningPtr);
-  ~ecmcEcEntryLink();
-  void           initVars();
-
-  int            setEntryAtIndex(ecmcEcEntry *entry,
-                                 int          index,
-                                 int          bitIndex);
-  int            validateEntry(int index);
-  int            readEcEntryValue(int       entryIndex,
-                                  uint64_t *value);
-  int            readEcEntryValueDouble(int     entryIndex,
-                                        double *value);
-  int            readEcEntryBits(int entryIndex,
+  using ecmcDataLink::ecmcDataLink;
+  int setEntryAtIndex(ecmcEcEntry *entry, int index, int bitIndex) {
+    return setDataAtIndex(entry, index, bitIndex);
+  }
+  int readEcEntryValueDouble(int     entryIndex,
+                                        double *value) { return readDataValueDouble(entryIndex, value); }
+  int readEcEntryValue(int       entryIndex,
+                                  uint64_t *value) { return readDataValue(entryIndex, value); }
+  int writeEcEntryValueDouble(int    entryIndex,
+                                         double value) { return writeDataValueDouble(entryIndex, value); }
+  int writeEcEntryValue(int      entryIndex,
+                                   uint64_t value) { return writeDataValue(entryIndex, value); }
+  int readEcEntryBits(int entryIndex,
                                  int bits,
-                                 uint64_t *value);
-  int            writeEcEntryValue(int      entryIndex,
-                                   uint64_t value);
-
-  int            writeEcEntryValueDouble(int    entryIndex,
-                                         double value);
-  int            writeEcEntryBits(int entryIndex, 
+                                 uint64_t *value) { return readDataBits(entryIndex, bits, value); }
+  int writeEcEntryBits(int entryIndex,
                                   int bits,       // Note: start bit is already stored in entry
-                                  uint64_t value);
-  bool           checkEntryExist(int entryIndex);
-  bool           checkDomainOK(int entryIndex);
-  bool           checkDomainOKAllEntries();
-
-protected:
-  int            setDomainError(const char *fileName,
+                                  uint64_t value) { return writeDataBits(entryIndex, bits, value); }
+  bool checkDomainOKAllEntries() { return checkAllDataValid(); }
+  bool checkDomainOK(int entryIndex) { return checkDataValid(entryIndex); }
+  bool checkEntryExist(int entryIndex) { return checkDataExist(entryIndex); }
+  ecmcEcDataType getEntryDataType(int index) { return getDataType(index); }
+  int getEntryBitCount(int  index,
+                                  int *bitCount) { return getDataBitCount(index, bitCount); }
+  int getEntryStartBit(int  index,
+                                  int *startBit) { return getDataStartBit(index, startBit); }
+  int getSlaveId(int index) { return getSourceId(index); }
+  int validateEntryBit(int index) { return validateDataBit(index); }
+  int validateEntry(int index) { return validateData(index); }
+  int setDomainError(const char *fileName,
                                 const char *functionName,
-                                int         lineNumber);
-  int            validateEntryBit(int index);
-  int            getEntryBitCount(int  index,
-                                  int *bitCount);
-  int            getEntryStartBit(int  index,
-                                  int *startBit);
-  ecmcEcDataType getEntryDataType(int index);
-  int            getSlaveId(int index);
-
-private:
-  entryInfo entryInfoArray_[ECMC_EC_ENTRY_LINKS_MAX];
+                                int         lineNumber) { return setDataError(fileName, functionName, lineNumber); }
 };
-
-#endif  /* ECMCECENTRYLINK_H_ */
+#endif

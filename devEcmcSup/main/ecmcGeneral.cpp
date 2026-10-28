@@ -416,3 +416,115 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
 
   return ERROR_MAIN_ECMC_LINK_INVALID;
 }
+
+namespace {
+int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, int *slot) {
+  mainObjectType type;
+  int error = getMainObjectType(path, axisIndex, &type);
+  if (error) return error;
+  if (type != ECMC_OBJ_AXIS || *axisIndex < 0 || *axisIndex >= ECMC_MAX_AXES || !axes[*axisIndex])
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  axisSubObjectType sub;
+  error = getAxSubObjectType(path, &sub);
+  if (error) return error;
+  auto *axis = axes[*axisIndex];
+  if (sub == ECMC_AX_SUB_OBJ_ENCODER) {
+    error = getAxEncFuncType(path, slot);
+    if (error) return error;
+    // Input slots only; commands/control outputs must retain their handlers.
+    if (*slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL ||
+        *slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
+        *slot == ECMC_ENCODER_ENTRY_INDEX_RESET || *slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME)
+      return ERROR_MAIN_ECMC_LINK_INVALID;
+    *target = axis->getConfigEnc();
+  } else if (sub == ECMC_AX_SUB_OBJ_MONITOR) {
+    error = getAxMonFuncType(path, slot);
+    if (error) return error;
+    *target = axis->getMon();
+  } else if (sub == ECMC_AX_SUB_OBJ_DRIVE) {
+    error = getAxDriveFuncType(path, slot);
+    if (error) return error;
+    if (*slot != ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD &&
+        *slot != ECMC_DRIVEBASE_ENTRY_INDEX_WARNING &&
+        (*slot < ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0 || *slot > ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2))
+      return ERROR_MAIN_ECMC_LINK_INVALID;
+    *target = axis->getDrv();
+  } else return ERROR_MAIN_ECMC_LINK_INVALID;
+  return *target ? 0 : ERROR_MAIN_ECMC_LINK_INVALID;
+}
+}
+
+int linkPLCDataToObject(int producerPLC, const char *source, char *destination, int conversion) {
+  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (!plcs || !destination || !source || (conversion < 0 || conversion > 2))
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  int axisIndex = -1, slot = -1;
+  ecmcDataLink *target = nullptr;
+  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
+  if (error) return error;
+  axisSubObjectType sub;
+  error = getAxSubObjectType(destination, &sub);
+  if (error) return error;
+  const bool numericInput =
+    (sub == ECMC_AX_SUB_OBJ_ENCODER &&
+      (slot == ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
+    (sub == ECMC_AX_SUB_OBJ_MONITOR && slot == ECMC_MON_ENTRY_INDEX_ANALOG);
+  // PLC scalars are doubles. Require an explicit conversion for integer/bit
+  // destinations instead of accepting a link that would fail on its first read.
+  if (!numericInput && conversion == 0) return ERROR_MAIN_ECMC_LINK_INVALID;
+  error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
+  if (error) return error;
+  return plcs->linkDataInput(producerPLC, source, axisIndex, target, slot, conversion);
+}
+
+int linkDataToObject(const char *source, char *destination, int conversion) {
+  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (!plcs || !source || !destination || conversion < 0 || conversion > 2)
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  int sourceAxis = -1, axisIndex = -1, slot = -1;
+  mainObjectType type;
+  // The existing parser validates the complete path and axis index.
+  int error = getMainObjectType(const_cast<char *>(source), &sourceAxis, &type);
+  if (error) return error;
+  if (type != ECMC_OBJ_AXIS || sourceAxis < 0 || sourceAxis >= ECMC_MAX_AXES || !axes[sourceAxis])
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  ecmcDataLink *target = nullptr;
+  error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
+  if (error) return error;
+  axisSubObjectType sub;
+  error = getAxSubObjectType(destination, &sub);
+  if (error) return error;
+  const bool numericInput =
+    (sub == ECMC_AX_SUB_OBJ_ENCODER &&
+      (slot == ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
+    (sub == ECMC_AX_SUB_OBJ_MONITOR && slot == ECMC_MON_ENTRY_INDEX_ANALOG);
+  // Preserve explicit numeric conversion policy for non-Boolean axis values.
+  int boolean = 0;
+  const auto sourceType = ecmcAxisBase::parseDataSource(source, &boolean);
+  if (sourceType == ECMC_AXIS_DATA_NONE)
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  // Compare canonical signal names, not whole axes. Different signals on the
+  // same axis and reciprocal cross-axis links retain normal execution order.
+  if (sourceAxis == axisIndex && sourceType == ecmcAxisBase::parseDataSource(destination))
+    return ERROR_PLC_SOURCE_INVALID;
+  if (!numericInput && !boolean && conversion == 0) return ERROR_MAIN_ECMC_LINK_INVALID;
+  error = plcs->setAxisArrayPointer(axes[sourceAxis], sourceAxis);
+  if (error) return error;
+  error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
+  return error ? error : plcs->linkAxisDataInput(sourceAxis, source, axisIndex, target, slot, conversion);
+}
+
+int unlinkDataFromObject(char *destination) {
+  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (!plcs || !destination) return ERROR_MAIN_ECMC_LINK_INVALID;
+  int axisIndex = -1, slot = -1;
+  ecmcDataLink *target = nullptr;
+  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
+  return error ? error : plcs->unlinkDataInput(target, slot);
+}

@@ -41,6 +41,7 @@ public:
   void         slowExecute();
   uint8_t*     getDataPtr();
   int          getOK();
+  const int*   getValidityPointer() const { return &statusOk_; }
 
 private:
   void         initVars();

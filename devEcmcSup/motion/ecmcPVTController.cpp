@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcPVTController.h"
+#include "ecmcEcEntry.h"
 #include "ecmcRtLogger.h"
 
 #define ecmcRtLoggerLogDebug(...) \
@@ -584,7 +585,7 @@ void ecmcPVTController::initPVT() {
 
 int ecmcPVTController::setEcEntry(ecmcEcEntry *entry,int entryIndex, int bitIndex) {
   
-  int error = setEntryAtIndex(entry,
+  int error = setDataAtIndex(entry,
                               entryIndex,
                               bitIndex);
   if(error) {
@@ -592,7 +593,7 @@ int ecmcPVTController::setEcEntry(ecmcEcEntry *entry,int entryIndex, int bitInde
     return error;
   }
   
-  error = validateEntryBit(entryIndex);
+  error = validateDataBit(entryIndex);
   if(error) {
     return setErrorID(error);
   }
@@ -651,7 +652,7 @@ void ecmcPVTController::setTriggerOutput(bool high) {
     return;
   }
 
-  writeEcEntryValue(triggerEcEntryIndex_, high ? 1 : 0);
+  writeDataValue(triggerEcEntryIndex_, high ? 1 : 0);
   triggerOutputHigh_ = high;
 }
 

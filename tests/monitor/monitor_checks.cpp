@@ -249,9 +249,71 @@ static void directionalLimits() {
   }
 }
 
+// INFERRED common-data contract; real monitor and encoder input processing.
+static void commonDataInputs() {
+  context = "common data inputs";
+  Bench bench;
+  double limit = 1;
+  int healthy = 1;
+  ecmcDataItem limitItem("static.limit");
+  limitItem.setEcmcDataPointer(reinterpret_cast<uint8_t *>(&limit), sizeof(limit));
+  limitItem.setEcmcDataType(ECMC_EC_F64);
+  limitItem.setAllowWriteToEcmc(false);
+  ecmcDataAccess limitAccess;
+  CHECK(ecmcDataAccess::bind(limitItem, &healthy, true, &limitAccess));
+  CHECK(bench.monitor->setDataAtIndex(limitAccess, ECMC_MON_ENTRY_INDEX_LOWLIM, -1) == 0);
+  bench.monitor->setLimitSwitchBwdPLCOverride(false);
+  bench.monitor->readEntries();
+  CHECK(bench.data.status_.statusWord_.limitbwd);
+  limit = 0;
+  bench.monitor->readEntries();
+  CHECK(!bench.data.status_.statusWord_.limitbwd);
+  healthy = 0; limit = 1;
+  bench.monitor->readEntries();
+  CHECK(!bench.data.status_.statusWord_.limitbwd); // Preserve last valid input.
+  CHECK(bench.monitor->getErrorID() == ERROR_EC_ENTRY_EC_DOMAIN_ERROR);
+  healthy = 1;
+  bench.monitor->errorReset();
+  bench.monitor->readEntries();
+  CHECK(bench.data.status_.statusWord_.limitbwd);
+
+  ecmcAxisData axis;
+  axis.status_.sampleTime = 0.001;
+  axis.status_.axisId = 2;
+  axis.status_.statusWord_.encsource = ECMC_DATA_SOURCE_INTERNAL;
+  ecmcAsynPortDriver port;
+  ecmcEncoder encoder(&port, axis, 0.001, 1);
+  double position = 10.5;
+  ecmcDataItem positionItem("global.position");
+  positionItem.setEcmcDataPointer(reinterpret_cast<uint8_t *>(&position), sizeof(position));
+  positionItem.setEcmcDataType(ECMC_EC_F64);
+  positionItem.setAllowWriteToEcmc(false);
+  ecmcDataAccess positionAccess;
+  CHECK(ecmcDataAccess::bind(positionItem, &healthy, false, &positionAccess));
+  CHECK(encoder.setDataAtIndex(positionAccess, ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION, -1) == 0);
+  CHECK(encoder.setScaleNum(2) == 0);
+  CHECK(encoder.setScaleDenom(1) == 0);
+  CHECK(encoder.setPosFilterEnable(false) == 0);
+  CHECK(encoder.validate() == 0);
+  encoder.readEntries(true);
+  CHECK(encoder.getRawPosRegisterDouble() == 10.5);
+  position = 13.25;
+  encoder.readEntries(true);
+  CHECK(encoder.getRawPosRegisterDouble() == 13.25);
+  const double lastPosition = encoder.getActPos();
+  healthy = 0; position = 99;
+  encoder.readEntries(true);
+  CHECK(encoder.getRawPosRegisterDouble() == 13.25);
+  CHECK(encoder.getActPos() == lastPosition);
+  healthy = 1;
+  encoder.errorReset();
+  encoder.readEntries(true);
+  CHECK(encoder.getRawPosRegisterDouble() == 99);
+}
+
 int main() {
   try {
-    followingError(); maximumVelocity(); targetDetection(); directionalLimits();
+    followingError(); maximumVelocity(); targetDetection(); directionalLimits(); commonDataInputs();
     std::cout << "Monitor: " << scenarios << " scenarios, " << samples << " production samples passed.\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n'; return 1;

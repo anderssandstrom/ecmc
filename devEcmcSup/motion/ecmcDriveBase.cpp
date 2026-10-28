@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcDriveBase.h"
+#include "ecmcAsynPortDriver.h"
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 
@@ -20,7 +21,7 @@
   ECMC_RT_LOG_AXIS_DRV_ERROR((data_ ? data_->status_.axisId : -1), __VA_ARGS__)
 
 ecmcDriveBase::ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,
-                             ecmcAxisData       &axisData) : ecmcEcEntryLink(&(
+                             ecmcAxisData       &axisData) : ecmcDataLink(&(
                                                                                axisData
                                                                                .
                                                                                status_
@@ -111,12 +112,12 @@ bool ecmcDriveBase::entryTypeIsFloat(ecmcEcDataType type) const {
 
 bool ecmcDriveBase::csvUsesFloatingPoint() {
   return entryTypeIsFloat(
-    getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT));
+    getDataType(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT));
 }
 
 bool ecmcDriveBase::cspUsesFloatingPoint() {
   return entryTypeIsFloat(
-    getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT));
+    getDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT));
 }
 
 int ecmcDriveBase::setVelSet(double vel) {
@@ -243,7 +244,7 @@ int ecmcDriveBase::setVelSetRaw(int vel) {
 
 int ecmcDriveBase::setEnableBrake(bool enable) {
   if (enable) {
-    int errorCode = validateEntry(3);  // brake output
+    int errorCode = validateData(3);  // brake output
 
     if (errorCode) {
       enableBrake_ = false;
@@ -261,7 +262,7 @@ int ecmcDriveBase::setEnableBrake(bool enable) {
 
 int ecmcDriveBase::setEnableReduceTorque(bool enable) {
   if (enable) {
-    int errorCode = validateEntry(4);  // brake output
+    int errorCode = validateData(4);  // brake output
 
     if (errorCode) {
       enableReduceTorque_ = false;
@@ -341,7 +342,7 @@ void ecmcDriveBase::writeEntries() {
   int errorCode = 0;
   // will only write the number of bits configured
   errorCode =
-    writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD,
+    writeDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD,
                       (uint64_t)controlWord_);
 
   if (errorCode) {
@@ -360,7 +361,7 @@ void ecmcDriveBase::writeEntries() {
 
     if (csvUsesFloatingPoint()) {
       errorCode =
-        writeEcEntryValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
+        writeDataValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
                                 csvOutput);
     } else {
       if (veloPosOutput_ > maxVeloOutput_) {
@@ -370,7 +371,7 @@ void ecmcDriveBase::writeEntries() {
       }
 
       errorCode =
-        writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
+        writeDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT,
                           (uint64_t)veloPosOutput_);
     }
 
@@ -396,11 +397,11 @@ void ecmcDriveBase::writeEntries() {
 
     if (cspUsesFloatingPoint()) {
       errorCode =
-        writeEcEntryValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
+        writeDataValueDouble(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
                                 cspOutput);
     } else {
       errorCode =
-        writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
+        writeDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT,
                           (uint64_t)veloPosOutput_);
     }
 
@@ -416,7 +417,7 @@ void ecmcDriveBase::writeEntries() {
 
   if (enableBrake_) {
     errorCode =
-      writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT,
+      writeDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT,
                         (uint64_t)brakeOutputCmd_);
 
     if (errorCode) {
@@ -433,7 +434,7 @@ void ecmcDriveBase::writeEntries() {
     // Reduce trq if traj source is external and within ctrlWithinDeadband (settable via PLC) or not busy adn internal traj
     reduceTorqueOutputCmd_    = data_->status_.ctrlWithinDeadband && (!data_->status_.statusWord_.busy || data_->status_.statusWord_.trajsource > 0) ;
     reduceTorqueOutputCmdOld_ = reduceTorqueOutputCmd_;
-    errorCode                 = writeEcEntryValue(
+    errorCode                 = writeDataValue(
       ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT,
       (uint64_t)reduceTorqueOutputCmd_);
 
@@ -450,7 +451,7 @@ void ecmcDriveBase::writeEntries() {
   // write reset
   if (hwResetDefined_) {
     errorCode =
-      writeEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_RESET,
+      writeDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_RESET,
                         (uint64_t)hwReset_);
     hwReset_ = 0;
 
@@ -516,7 +517,7 @@ void ecmcDriveBase::writeEntries() {
 
 void ecmcDriveBase::readEntries(bool masterOK) {
   masterOK_ = masterOK;
-  int errorCode = readEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD,
+  int errorCode = readDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD,
                                    &statusWord_);
 
   if (errorCode) {
@@ -536,7 +537,7 @@ void ecmcDriveBase::readEntries(bool masterOK) {
 
   // Check warning link. Think about forwarding warning info to motor record somehow
   if (hwWarningDefined_) {
-    errorCode = readEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING,
+    errorCode = readDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING,
                                  &hwWarning_);
 
     if (errorCode) {
@@ -569,7 +570,7 @@ void ecmcDriveBase::readEntries(bool masterOK) {
 
   // check alarm 0
   if (hwErrorAlarm0Defined_) {
-    errorCode = readEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0,
+    errorCode = readDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0,
                                  &hwErrorAlarm0_);
 
     if (errorCode) {
@@ -602,7 +603,7 @@ void ecmcDriveBase::readEntries(bool masterOK) {
 
   // check alarm 1
   if (hwErrorAlarm1Defined_) {
-    errorCode = readEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1,
+    errorCode = readDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1,
                                  &hwErrorAlarm1_);
 
     if (errorCode) {
@@ -635,7 +636,7 @@ void ecmcDriveBase::readEntries(bool masterOK) {
 
   // check alarm 2
   if (hwErrorAlarm2Defined_) {
-    errorCode = readEcEntryValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2,
+    errorCode = readDataValue(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2,
                                  &hwErrorAlarm2_);
 
     if (errorCode) {
@@ -670,28 +671,28 @@ void ecmcDriveBase::readEntries(bool masterOK) {
 int ecmcDriveBase::validate() {
 
   // Enable entry output OR controlword
-  int errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD);
+  int errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT)) {
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT)) {
     // CSV
-    int errorCodeVel = validateEntry(
+    int errorCodeVel = validateData(
       ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT);
 
     if (errorCodeVel) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCodeVel);
     }
     data_->control_.drvMode = ECMC_DRV_MODE_CSV;
-    ecmcEcDataType dt = getEntryDataType(
+    ecmcEcDataType dt = getDataType(
       ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT);
     minVeloOutput_ = getEcDataTypeMinVal(dt);
     maxVeloOutput_ = getEcDataTypeMaxVal(dt);
   } else {
     // Must be CSP
-    int errorCodePos = validateEntry(
+    int errorCodePos = validateData(
       ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
 
     if (errorCodePos) {
@@ -712,7 +713,7 @@ int ecmcDriveBase::validate() {
     }
     const ecmcEcDataType encType = cspEnc_->getActPosEntryDataType();
     const ecmcEcDataType posSetType =
-      getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
+      getDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
     const bool encFloat = entryTypeIsFloat(encType);
     const bool posSetFloat = entryTypeIsFloat(posSetType);
 
@@ -732,7 +733,7 @@ int ecmcDriveBase::validate() {
       }
     }
     // Allow wrap around for position
-    // ecmcEcDataType dt = getEntryDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
+    // ecmcEcDataType dt = getDataType(ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT);
     // minVeloOutput_ = getEcDataTypeMinVal(dt);
     // maxVeloOutput_ = getEcDataTypeMaxVal(dt);
   }
@@ -751,7 +752,7 @@ int ecmcDriveBase::validate() {
   }
 
   // Enabled entry input OR statusword
-  errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD);
+  errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -759,7 +760,7 @@ int ecmcDriveBase::validate() {
 
   // Brake output
   if (enableBrake_) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT);
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -768,7 +769,7 @@ int ecmcDriveBase::validate() {
 
   // reduce torque output
   if (enableReduceTorque_) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT);
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -776,8 +777,8 @@ int ecmcDriveBase::validate() {
   }
 
   // Check reset link
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_RESET)) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_RESET);
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_RESET)) {
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_RESET);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -786,8 +787,8 @@ int ecmcDriveBase::validate() {
   }
 
   // Check warning link
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING)) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING);
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING)) {
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_WARNING);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -796,8 +797,8 @@ int ecmcDriveBase::validate() {
   }
 
   // Check alarm link 0
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0)) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0);
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0)) {
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -806,8 +807,8 @@ int ecmcDriveBase::validate() {
   }
 
   // Check alarm link 1
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1)) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1);
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1)) {
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_1);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -816,8 +817,8 @@ int ecmcDriveBase::validate() {
   }
 
   // Check alarm link 2
-  if (checkEntryExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2)) {
-    errorCode = validateEntry(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2);
+  if (checkDataExist(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2)) {
+    errorCode = validateData(ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -969,7 +970,7 @@ void ecmcDriveBase::errorReset() {
   if (hwResetDefined_) {
     hwReset_ = 1;
   }
-  ecmcEcEntryLink::errorReset();
+  ecmcDataLink::errorReset();
   ecmcError::errorReset();
 }
 

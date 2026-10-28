@@ -42,25 +42,8 @@
 #define ECMC_ASYN_ASYNPARAMINT64
 #endif // if ECMC_ASYN_VERSION_INT >= VERSION_INT_4_37
 
-// ECENTRY ERRORS
-#define ERROR_EC_ENTRY_DATA_POINTER_NULL 0x21000
-#define ERROR_EC_ENTRY_INVALID_OFFSET 0x21001
-#define ERROR_EC_ENTRY_INVALID_DOMAIN_ADR 0x21002
-#define ERROR_EC_ENTRY_INVALID_BIT_LENGTH 0x21003
-#define ERROR_EC_ENTRY_LINK_FAILED 0x21004
-#define ERROR_EC_ENTRY_INDEX_OUT_OF_RANGE 0x21005
-#define ERROR_EC_ENTRY_INVALID_BIT_INDEX 0x21006
-#define ERROR_EC_ENTRY_READ_FAIL 0x21007
-#define ERROR_EC_ENTRY_WRITE_FAIL 0x21008
-#define ERROR_EC_ENTRY_ASYN_TYPE_NOT_SUPPORTED 0x21009
-#define ERROR_EC_ENTRY_ASSIGN_ADD_FAIL 0x2100A
-#define ERROR_EC_ENTRY_REGISTER_FAIL 0x2100B
-#define ERROR_EC_ENTRY_VALUE_OUT_OF_RANGE 0x2100C
-#define ERROR_EC_ENTRY_SET_ALARM_STATE_FAIL 0x2100D
-#define ERROR_EC_ENTRY_EC_DOMAIN_ERROR 0x2100E
-#define ERROR_EC_ENTRY_DATATYPE_INVALID 0x2100F
-#define ERROR_EC_ENTRY_SIZE_OUT_OF_RANGE 0x21010
-
+#include "ecmcDataErrors.h"
+#include "ecmcDataAccess.h"
 
 class ecmcEcEntry : public ecmcError {
 public:
@@ -90,6 +73,7 @@ public:
               ecmcEcDataType      dt,
               std::string         id);
   virtual ~ecmcEcEntry();
+  virtual std::shared_ptr<ecmcDataAccess> getDataAccess();
   void                  initVars();
   uint16_t              getEntryIndex();
   uint8_t               getEntrySubIndex();
@@ -141,6 +125,7 @@ public:
   ec_direction_t        getDirection();
 
 protected:
+  std::shared_ptr<ecmcDataAccess> getDirectDataAccess();
   typedef void (ecmcEcEntry::*processImageReadFuncPtr)();
   typedef void (ecmcEcEntry::*processImageWriteFuncPtr)();
 
@@ -241,5 +226,6 @@ protected:
   size_t usedSizeBytes_;
   processImageReadFuncPtr processImageReadFunc_;
   processImageWriteFuncPtr processImageWriteFunc_;
+  std::shared_ptr<ecmcDataAccess> dataAccess_;
 };
 #endif  /* ECMCECENTRY_H_ */

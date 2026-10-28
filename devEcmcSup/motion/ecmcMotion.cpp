@@ -4437,7 +4437,7 @@ int linkEcEntryToAxisEnc(int   slaveIndex,
   // Inform slave that it is used in motion axis (SDO settings check)
   slave->setEnableSDOCheck(1);
 
-  return axes[axisIndex]->getConfigEnc()->setEntryAtIndex(entry,
+  return axes[axisIndex]->getConfigEnc()->setDataAtIndex(entry,
                                                           encoderEntryIndex,
                                                           bitIndex);
 }
@@ -4593,7 +4593,7 @@ int linkEcEntryToAxisPositionCompare(int   slaveIndex,
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
 
   const int error =
-    axes[axisIndex]->getPositionCompare()->setEntryAtIndex(entry,
+    axes[axisIndex]->getPositionCompare()->setDataAtIndex(entry,
                                                            compareEntryIndex,
                                                            bitIndex);
   if (error) {
@@ -4601,9 +4601,9 @@ int linkEcEntryToAxisPositionCompare(int   slaveIndex,
   }
   slave->setEnableSDOCheck(1);
   ecmcPositionCompare *compare = axes[axisIndex]->getPositionCompare();
-  if (compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) &&
-      compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) &&
-      compare->checkEntryExist(ECMC_POS_COMPARE_ENTRY_START_TIME)) {
+  if (compare->checkDataExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) &&
+      compare->checkDataExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) &&
+      compare->checkDataExist(ECMC_POS_COMPARE_ENTRY_START_TIME)) {
     return compare->validate();
   }
   return 0;
@@ -4693,7 +4693,7 @@ int linkEcEntryToAxisDrv(int   slaveIndex,
     return ERROR_MAIN_DRIVE_ENTRY_INDEX_OUT_OF_RANGE;
   }
 
-  int ret = axes[axisIndex]->getDrv()->setEntryAtIndex(entry,
+  int ret = axes[axisIndex]->getDrv()->setDataAtIndex(entry,
                                                        driveEntryIndex,
                                                        bitIndex);
 
@@ -4768,7 +4768,7 @@ int linkEcEntryToAxisMon(int   slaveIndex,
       (monitorEntryIndex <
        0)) return ERROR_MAIN_MONITOR_ENTRY_INDEX_OUT_OF_RANGE;
 
-  int errorCode = axes[axisIndex]->getMon()->setEntryAtIndex(entry,
+  int errorCode = axes[axisIndex]->getMon()->setDataAtIndex(entry,
                                                              monitorEntryIndex,
                                                              bitIndex);
 

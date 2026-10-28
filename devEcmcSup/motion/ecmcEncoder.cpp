@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcEncoder.h"
+#include "ecmcAsynPortDriver.h"
 #include "ecmcRtLogger.h"
 #include <algorithm>
 #include <cstring>
@@ -37,7 +38,7 @@ ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
                          ecmcAxisData       &axisData,
                          double              sampleTime,
                          int                 index)
-  : ecmcEcEntryLink(&(axisData.status_.errorCode),
+  : ecmcDataLink(&(axisData.status_.errorCode),
                     &(axisData.status_.warningCode)) {
   initVars();
   asynPortDriver_ = asynPortDriver;
@@ -297,7 +298,7 @@ uint64_t ecmcEncoder::getRawAbsPosRegister() {
 }
 
 ecmcEcDataType ecmcEncoder::getActPosEntryDataType() {
-  return getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
+  return getDataType(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
 }
 
 bool ecmcEncoder::entryTypeIsFloat(ecmcEcDataType type) const {
@@ -406,7 +407,7 @@ double ecmcEncoder::getActVel() {
 }
 
 int ecmcEncoder::getActPosSlaveId() {
-  return getSlaveId(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
+  return getSourceId(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
 }
 
 void ecmcEncoder::setHomed(bool homed) {
@@ -586,10 +587,10 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   // Actual position entry
   // Act position
   if (actPosEntryUsesFloatingPoint()) {
-    errorCode = readEcEntryValueDouble(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,
+    errorCode = readDataValueDouble(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,
                                        &tempRawDouble);
   } else {
-    errorCode = readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,
+    errorCode = readDataValue(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,
                                  &tempRaw);
   }
 
@@ -840,20 +841,20 @@ int ecmcEncoder::readHwLatch(bool domainOK) {
   uint64_t tempRaw = 0;
   double tempRawDouble = 0;
 
-  if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS, &tempRaw)) {
+  if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS, &tempRaw)) {
     return ERROR_ENC_ENTRY_READ_FAIL;
   }
   encLatchStatusOld_ = encLatchStatus_;
   encLatchStatus_    = tempRaw > 0;
   
-  if (entryTypeIsFloat(getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE))) {
-    if (readEcEntryValueDouble(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE,
+  if (entryTypeIsFloat(getDataType(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE))) {
+    if (readDataValueDouble(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE,
                                &tempRawDouble)) {
       return ERROR_ENC_ENTRY_READ_FAIL;
     }
     rawEncLatchPos_ = tempRawDouble;
   } else {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE, &tempRaw)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE, &tempRaw)) {
       return ERROR_ENC_ENTRY_READ_FAIL;
     }
 
@@ -864,15 +865,15 @@ int ecmcEncoder::readHwLatch(bool domainOK) {
   // if new latched value then calculate latched value in engineering units
   if (encLatchStatus_ > encLatchStatusOld_) {
     encLatchTimestampValid_ = false;
-    if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
-      if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
+    if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
+      if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
                            &encLatchTimestampRaw_)) {
         return ERROR_ENC_ENTRY_READ_FAIL;
       }
       encLatchTimestampValid_ = encLatchTimestampBits_ == 32 ||
                                 encLatchTimestampBits_ == 64;
     }
-    if (entryTypeIsFloat(getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE))) {
+    if (entryTypeIsFloat(getDataType(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE))) {
       rawEncLatchPosMultiTurn_ = rawEncLatchPos_ + rawPosOffset_;
     } else {
       // Calculate multiturn latch value position (raw)
@@ -906,7 +907,7 @@ int ecmcEncoder::readHwTouchProbe(bool domainOK) {
   uint64_t tempRaw = 0;
   double tempRawDouble = 0;
 
-  if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS,
+  if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS,
                        &tempRaw)) {
     return ERROR_ENC_ENTRY_READ_FAIL;
   }
@@ -914,14 +915,14 @@ int ecmcEncoder::readHwTouchProbe(bool domainOK) {
   touchProbeStatus_    = tempRaw > 0;
 
   if (entryTypeIsFloat(
-        getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
-    if (readEcEntryValueDouble(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
+        getDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
+    if (readDataValueDouble(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
                                &tempRawDouble)) {
       return ERROR_ENC_ENTRY_READ_FAIL;
     }
     rawTouchProbePos_ = tempRawDouble;
   } else {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,
                          &tempRaw)) {
       return ERROR_ENC_ENTRY_READ_FAIL;
     }
@@ -930,8 +931,8 @@ int ecmcEncoder::readHwTouchProbe(bool domainOK) {
 
   uint64_t timestampRaw = touchProbeTimestampRaw_;
   bool timestampValid = false;
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP,
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP,
                          &timestampRaw)) {
       return ERROR_ENC_ENTRY_READ_FAIL;
     }
@@ -949,7 +950,7 @@ int ecmcEncoder::readHwTouchProbe(bool domainOK) {
     touchProbeTimestampRaw_ = timestampRaw;
     touchProbeTimestampValid_ = timestampValid;
     if (entryTypeIsFloat(
-          getEntryDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
+          getDataType(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE))) {
       rawTouchProbePosMultiTurn_ = rawTouchProbePos_ + rawPosOffset_;
     } else {
       const int64_t turns = handleOverUnderFlow(
@@ -981,7 +982,7 @@ int ecmcEncoder::readHwWarningError(bool domainOK) {
 
   // Check warning link. Think about forwarding warning info to motor record somehow
   if (hwWarningDefined_) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_WARNING, &hwWarning_)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_WARNING, &hwWarning_)) {
       hwWarning_    = 0;
       hwWarningOld_ = 0;
       errorLocal    = ERROR_ENC_WARNING_READ_ENTRY_FAIL;
@@ -1009,7 +1010,7 @@ int ecmcEncoder::readHwWarningError(bool domainOK) {
 
   // check alarm 0
   if (hwErrorAlarm0Defined_ ) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_0, &hwErrorAlarm0_)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_0, &hwErrorAlarm0_)) {
       hwErrorAlarm0_    = 0;
       hwErrorAlarm0Old_ = 0;
       errorLocal        = ERROR_ENC_ALARM_READ_ENTRY_FAIL;
@@ -1025,7 +1026,7 @@ int ecmcEncoder::readHwWarningError(bool domainOK) {
 
   // check alarm 1
   if (hwErrorAlarm1Defined_) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_1, &hwErrorAlarm1_)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_1, &hwErrorAlarm1_)) {
       hwErrorAlarm1_    = 0;
       hwErrorAlarm1Old_ = 0;
       errorLocal        = ERROR_ENC_ALARM_READ_ENTRY_FAIL;
@@ -1041,7 +1042,7 @@ int ecmcEncoder::readHwWarningError(bool domainOK) {
 
   // check alarm 2
   if (hwErrorAlarm2Defined_) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_2, &hwErrorAlarm2_)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_ALARM_2, &hwErrorAlarm2_)) {
       hwErrorAlarm2_    = 0;
       hwErrorAlarm2Old_ = 0;
       errorLocal        = ERROR_ENC_ALARM_READ_ENTRY_FAIL;
@@ -1070,7 +1071,7 @@ int ecmcEncoder::readHwReady(bool domainOK) {
   }
 
   if (hwReadyBitDefined_) {
-    if (readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_READY, &hwReady_)) {
+    if (readDataValue(ECMC_ENCODER_ENTRY_INDEX_READY, &hwReady_)) {
       hwReady_ = 0;
       return ERROR_ENC_READY_READ_ENTRY_FAIL;
     }
@@ -1112,7 +1113,7 @@ double ecmcEncoder::readEntries(bool masterOK) {
 
   actPosOld_ = actPos_;
 
-  domainOK_ = checkDomainOKAllEntries();
+  domainOK_ = checkAllDataValid();
 
   // Ensure that no errors
   errorLocal = readHwWarningError(domainOK_);
@@ -1178,7 +1179,7 @@ int ecmcEncoder::writeEntries() {
   if (encLatchFunctEnabled_ && encLatchControlEnabled_) {
     if (latchIdleReadPending_) {
       uint64_t value = 0;
-      int error = readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
+      int error = readDataBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
                                   encLatchControlBits_, &value);
       if (error) return error;
       encLatchControlWordIdle_ = value & ~encLatchControlWordArm_;
@@ -1195,7 +1196,7 @@ int ecmcEncoder::writeEntries() {
       wordToWrite = encLatchControlWordArm_;
     }
     // Note start bit is already stored in entry
-    if (writeEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
+    if (writeDataBits(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL,
                             encLatchControlBits_, wordToWrite)) {
         encLocalErrorId_ = ERROR_ENC_ENTRY_WRITE_FAIL;  // Write to error id will happen in readEntries        
     } else if (latchTouchProbeMode && touchProbeRearmState_ == 1) {
@@ -1217,7 +1218,7 @@ int ecmcEncoder::writeEntries() {
   if (touchProbeFunctEnabled_ && touchProbeControlEnabled_) {
     if (touchProbeIdleReadPending_) {
       uint64_t value = 0;
-      int error = readEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
+      int error = readDataBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
                                   touchProbeControlBits_, &value);
       if (error) return error;
       touchProbeControlWordIdle_ = value & ~touchProbeControlWordArm_;
@@ -1232,7 +1233,7 @@ int ecmcEncoder::writeEntries() {
        (!touchProbeAutoRearm_ || touchProbeRearmState_ == 0)) {
       wordToWrite = touchProbeControlWordArm_;
     }
-    if (writeEcEntryBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
+    if (writeDataBits(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,
                          touchProbeControlBits_,
                          wordToWrite)) {
       encLocalErrorId_ = ERROR_ENC_ENTRY_WRITE_FAIL;
@@ -1254,7 +1255,7 @@ int ecmcEncoder::writeEntries() {
   // write reset
   if (hwResetDefined_) {
     errorCode =
-      writeEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_RESET,
+      writeDataValue(ECMC_ENCODER_ENTRY_INDEX_RESET,
                         (uint64_t)hwReset_);
     hwReset_ = 0;
     if(errorCode) {
@@ -1287,8 +1288,8 @@ int ecmcEncoder::validate() {
   hwActPosDefined_ = false;
 
 
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION);
     if (errorCode && data_->status_.statusWord_.encsource == ECMC_DATA_SOURCE_INTERNAL) {
       return setErrorID(__FILE__,
                         __FUNCTION__,
@@ -1312,26 +1313,26 @@ int ecmcEncoder::validate() {
   }
 
   // Check if latch entries are linked then "enable" latch funct
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS) &&
-      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE)  &&
-      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL)) {
-    encLatchFunctEnabled_ = !validateEntry(
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS) &&
+      checkDataExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE)  &&
+      checkDataExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL)) {
+    encLatchFunctEnabled_ = !validateData(
       ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS) &&
-                            !validateEntry(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE)
+                            !validateData(ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE)
                             &&
-                            !validateEntry(
+                            !validateData(
       ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL);
   } else {
     encLatchFunctEnabled_ = false;
   }
 
   encLatchTimestampBits_ = 0;
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP);
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
     }
-    errorCode = getEntryBitCount(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
+    errorCode = getDataBitCount(ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP,
                                  &encLatchTimestampBits_);
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1342,26 +1343,26 @@ int ecmcEncoder::validate() {
     }
   }
 
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS) &&
-      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)  &&
-      checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL)) {
-    touchProbeFunctEnabled_ = !validateEntry(
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS) &&
+      checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)  &&
+      checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL)) {
+    touchProbeFunctEnabled_ = !validateData(
       ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS) &&
-                              !validateEntry(
+                              !validateData(
       ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE) &&
-                              !validateEntry(
+                              !validateData(
       ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL);
   } else {
     touchProbeFunctEnabled_ = false;
   }
 
   touchProbeTimestampBits_ = 0;
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP);
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
     }
-    errorCode = getEntryBitCount(
+    errorCode = getDataBitCount(
       ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP,
       &touchProbeTimestampBits_);
     if (errorCode) {
@@ -1374,8 +1375,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check reset link
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_RESET)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_RESET);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_RESET)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_RESET);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1384,8 +1385,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check warning link
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_WARNING)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_WARNING);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_WARNING)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_WARNING);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1394,8 +1395,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check alarm link 0
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_0)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_ALARM_0);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_0)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_ALARM_0);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1404,8 +1405,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check alarm link 1
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_1)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_ALARM_1);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_1)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_ALARM_1);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1414,8 +1415,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check alarm link 2
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_2)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_ALARM_2);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_ALARM_2)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_ALARM_2);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1424,8 +1425,8 @@ int ecmcEncoder::validate() {
   }
 
   // Check ready link
-  if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_READY)) {
-    errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_READY);
+  if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_READY)) {
+    errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_READY);
 
     if (errorCode) {
       return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1435,15 +1436,15 @@ int ecmcEncoder::validate() {
 
   // Check hw trigged homing
   if (homeSeqId_ == ECMC_SEQ_HOME_TRIGG_EXTERN) {
-    if (checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME) &&
-        checkEntryExist(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME)) {
-      errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME);
+    if (checkDataExist(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME) &&
+        checkDataExist(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME)) {
+      errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME);
 
       if (errorCode) {
         return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
       }
 
-      errorCode = validateEntry(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME);
+      errorCode = validateData(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME);
 
       if (errorCode) {
         return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -1831,7 +1832,7 @@ void ecmcEncoder::errorReset() {
   
   encLocalErrorId_ = 0;
     
-  ecmcEcEntryLink::errorReset();
+  ecmcDataLink::errorReset();
   ecmcError::errorReset();
 }
 
@@ -2288,7 +2289,7 @@ int ecmcEncoder::setHomeExtTrigg(bool val) {
   // write trigg external homing
   if (hwTriggedHomingEnabled_) {
     int errorCode =
-      writeEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME,
+      writeDataValue(ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME,
                         (uint64_t)val > 0);
 
     if (errorCode) {
@@ -2309,7 +2310,7 @@ int ecmcEncoder::getHomeExtTriggStat() {
 
   // Actual position entry
   // Act position
-  errorCode = readEcEntryValue(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME,
+  errorCode = readDataValue(ECMC_ENCODER_ENTRY_INDEX_STAT_HOME,
                                &tempRaw);
 
   if (errorCode != 0) {

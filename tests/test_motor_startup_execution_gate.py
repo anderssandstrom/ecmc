@@ -86,6 +86,7 @@ stubs += method(header, 'void setMotorRecordStartupReady(bool ready)')
 stubs += r'''
 };
 struct Producer {
+  void updateDataInputHealth(int) {}
   int calls = 0;
   void executeRT(double) { ++calls; }
   void execute() { ++calls; }
@@ -96,6 +97,8 @@ struct Producer {
 struct Ethercat { bool timing = true; bool timingStartupReady() { return timing; } } bus;
 Ethercat *ec = &bus;
 bool ecInitDone = true, ecStat = true;
+bool dataInputsConfigured = false;
+constexpr int ECMC_MAX_PLCS = 16;
 ''' + startup_state + r'''
 StartupState startup(true);
 int i = 0, appModeCmd = 1;

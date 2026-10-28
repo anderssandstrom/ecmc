@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcAxisSequencer.h"
+#include "ecmcEcEntry.h"
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 
@@ -156,8 +157,8 @@ void ecmcAxisSequencer::initVars() {
   homeEnablePostMove_    = false;
   homePostMoveTargetPos_ = 0;
   seqPosHomeState_       = 0;
-  modeSetEntry_          = NULL;
-  modeActEntry_          = NULL;
+  modeSetEntry_.reset();
+  modeActEntry_.reset();
   modeAct_               = 0;
   modeMotionCmd_         = 0;
   modeHomingCmd_         = 0;
@@ -265,7 +266,7 @@ void ecmcAxisSequencer::executeInternal() {
   uint64_t tempRaw = 0;
 
   const bool autoModeEnabled = modeMotionCmdSet_ || modeHomingCmdSet_;
-  if (modeActEntry_ && autoModeEnabled) {
+  if (modeActEntry_ && modeActEntry_->data && autoModeEnabled) {
     modeActEntry_->readValue(&tempRaw);
     modeAct_ = (int)tempRaw;
   }
@@ -833,7 +834,7 @@ int ecmcAxisSequencer::setExecute(bool execute) {
     // write mode if entry is linked
     data_->clearLatchedInterlock();
 
-    if (modeSetEntry_) {
+    if (modeSetEntry_ && modeSetEntry_->data) {
       modeSetEntry_->writeValue((uint64_t)modeSet);
     }
   }
@@ -3507,12 +3508,12 @@ void ecmcAxisSequencer::setTrajAccAndDec() {
 }
 
 int ecmcAxisSequencer::setAutoModeSetEntry(ecmcEcEntry *entry) {
-  modeSetEntry_ = entry;
+  modeSetEntry_ = entry ? entry->getDataAccess() : nullptr;
   return 0;
 }
 
 int ecmcAxisSequencer::setAutoModeActEntry(ecmcEcEntry *entry) {
-  modeActEntry_ = entry;
+  modeActEntry_ = entry ? entry->getDataAccess() : nullptr;
   return 0;
 }
 
@@ -3530,13 +3531,13 @@ int ecmcAxisSequencer::setAutoModeMotionCmd(int motion) {
 
 // Set motion mode
 bool ecmcAxisSequencer::autoModeSetMotion() {
-  if (modeSetEntry_ && modeMotionCmdSet_) {
+  if (modeSetEntry_ && modeSetEntry_->data && modeMotionCmdSet_) {
     // write mode if entry is linked
     modeSetEntry_->writeValue((uint64_t)modeMotionCmd_);
   }
 
   // wait for drive mode to be set
-  if ((modeMotionCmd_ == modeAct_) || !modeActEntry_) {
+  if ((modeMotionCmd_ == modeAct_) || !modeActEntry_ || !modeActEntry_->data) {
     return 1;
   }
   return 0;  // use seq step that is not used by post move and other seqs
@@ -3544,13 +3545,13 @@ bool ecmcAxisSequencer::autoModeSetMotion() {
 
 // Set homing mode
 bool ecmcAxisSequencer::autoModeSetHoming() {
-  if (modeSetEntry_ && modeHomingCmdSet_) {
+  if (modeSetEntry_ && modeSetEntry_->data && modeHomingCmdSet_) {
     // write mode if entry is linked
     modeSetEntry_->writeValue((uint64_t)modeHomingCmd_);
   }
 
   // wait for drive mode to be set
-  if ((modeHomingCmd_ == modeAct_) || !modeActEntry_) {
+  if ((modeHomingCmd_ == modeAct_) || !modeActEntry_ || !modeActEntry_->data) {
     return 1;
   }
   return 0;  // Use seq step that is not used by post move and other seqs

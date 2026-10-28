@@ -18,6 +18,9 @@
 #include "stdlib.h"
 #include "inttypes.h"
 #include "ecmcDefinitions.h"
+#include <memory>
+
+struct ecmcDataAccess;
 
 #define ECMC_DATA_ITEM_MAX_CALLBACK_FUNCS 8
 typedef enum {
@@ -82,6 +85,10 @@ public:
   char*             getDataPtr();
 
   ecmcDataItemInfo* getDataItemInfo();
+  // Configuration-time scalar export. Borrowed native storage, read-only by
+  // default. Owners must invalidate before destroying/replacing the data.
+  std::shared_ptr<ecmcDataAccess> getDataAccess();
+  void invalidateDataBindings();
 
   /** general write function
      asyn param callback will not be made if this function is used */
@@ -105,6 +112,7 @@ public:
 protected:
   virtual void refresh();
 
+  std::shared_ptr<ecmcDataAccess> dataAccess_;
   ecmcDataItemInfo dataItem_;
   int checkIntRange_;
   int arrayCheckSize_;

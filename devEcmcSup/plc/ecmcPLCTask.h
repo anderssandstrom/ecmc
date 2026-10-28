@@ -41,6 +41,10 @@ public:
                        ecmcAsynPortDriver *asynPortDriver_);
   ~ecmcPLCTask();
   bool         getCompiled();
+  void pinDataBindings() { ++dataBindingUsers_; }
+  void unpinDataBindings() { if (dataBindingUsers_) --dataBindingUsers_; }
+  bool hasDataBindings() const { return dataBindingUsers_ != 0; }
+  ecmcPLCDataIF *findBindingVariable(const char *name) const;
   int          validate();
   int          execute(bool ecOK);
   std::string* getExpr();
@@ -68,6 +72,7 @@ public:
   
 
 private:
+  unsigned dataBindingUsers_ = 0;
   void initVars();
   void rebuildVariableAccessLists();
   int  initAsyn(int plcIndex);

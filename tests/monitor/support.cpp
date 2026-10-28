@@ -9,3 +9,6 @@ void ecmcRtLoggerLogInfoSource(int, int, const char *, ...) {}
 void ecmcRtLoggerLogErrorSource(int, int, const char *, ...) {}
 void ecmcRtLoggerLogWarningSource(int, int, const char *, ...) {}
 void ecmcRtLoggerLogDebugSource(int, int, const char *, ...) {}
+
+#include "ecmcDefinitions.h"
+app_mode_type appModeStat = ECMC_MODE_RUNTIME;

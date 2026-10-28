@@ -14,7 +14,6 @@
 #define MOTIONMONITOR_H
 #include <cstdint>
 #include <cmath>
-#include "ecmcEcEntry.h"
 #include "ecmcError.h"
 #include "ecmcTrajectoryTrapetz.h"
 #include "ecmcAxisData.h"
@@ -28,7 +27,7 @@ enum ecmcSwitchPolarity {
 
 class ecmcMotionStateYamlWriter;
 
-class ecmcMonitor : public ecmcEcEntryLink {
+class ecmcMonitor : public ecmcDataLink {
   friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcMonitor(ecmcAxisData &axisData,

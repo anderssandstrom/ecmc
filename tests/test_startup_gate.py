@@ -105,6 +105,9 @@ struct Task {
   int exeRTFunc(int) { ++calls; trace.push_back(name); return result; }
 };
 struct Plc {
+  bool dataInputs = false;
+  bool hasDataInputs() const { return dataInputs; }
+  void updateDataInputHealth(int id) { trace.push_back("input-health-" + std::to_string(id)); }
   int axisCalls = 0, globalCalls = 0;
   void execute(int id, int) { ++axisCalls; trace.push_back("axis-plc-" + std::to_string(id)); }
   void execute(int) { ++globalCalls; trace.push_back("global-plc"); }
@@ -332,6 +335,20 @@ body = master_identity + initialization + r'''
                    "disable-axis-7", "disable-axis-11", "safety", "publish", "send"});
       assert(commands == 0);
       expectDispatch(1);
+    } else if (scenario == 9) {
+      // Common-input health is refreshed after each axis PLC, before that axis.
+      tick();
+      expectTrace({"receive", "sequence", "axis-plc-18", "input-health-2", "axis-2",
+                   "axis-plc-23", "input-health-7", "axis-7", "axis-plc-27",
+                   "input-health-11", "axis-11", "pvt", "master-slave", "plugin",
+                   "cpp-logic", "global-plc", "safety", "publish", "send"});
+    } else if (scenario == 10) {
+      // Masterless startup still services native input health, without running
+      // held PLC producers or invoking any EtherCAT receive/send operation.
+      tick();
+      expectTrace({"input-health-2", "axis-2", "input-health-7", "axis-7",
+                   "input-health-11", "axis-11", "safety", "publish", "time-offset"});
+      expectDispatch(0);
     }
   }
 };
@@ -406,13 +423,14 @@ void checkRuntimeObjects() {
 }
 int main() {
   checkRuntimeObjects();
-  for (int scenario = 0; scenario < 9; ++scenario) {
-    startupGateConfigured = scenario != 4 && scenario != 8;
+  for (int scenario = 0; scenario < 11; ++scenario) {
+    startupGateConfigured = scenario != 4 && scenario != 8 && scenario != 9;
     iocRunning = false;
     iocExitRequested = false;
     commands = 0;
     waitSetting = scenario == 3 ? "0" : nullptr;
-    Rig rig(scenario == 2 || scenario == 3 ? -1 : 0);
+    Rig rig(scenario == 2 || scenario == 3 || scenario == 10 ? -1 : 0);
+    rig.plc.dataInputs = scenario == 9 || scenario == 10;
     rig.run(scenario);
   }
   puts("Startup gate: IOC readiness, bus stability, timing timeout, axis readiness, "

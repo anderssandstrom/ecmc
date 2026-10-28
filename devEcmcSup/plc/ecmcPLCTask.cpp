@@ -277,6 +277,7 @@ std::string * ecmcPLCTask::getRawExpr() {
 }
 
 int ecmcPLCTask::appendRawExpr(const char *exprStr) {
+  if (hasDataBindings()) return ERROR_PLC_DATA_SOURCE_BOUND;
   try {
     exprStrRaw_ += exprStr;
     exprStrRaw_ += "\n";  // Add Enter
@@ -298,6 +299,7 @@ int ecmcPLCTask::appendRawExpr(const char *exprStr) {
 }
 
 int ecmcPLCTask::addExprLine(const char *exprStr) {
+  if (hasDataBindings()) return ERROR_PLC_DATA_SOURCE_BOUND;
   try {
     exprStr_ += exprStr;
     updateAsyn();
@@ -320,11 +322,13 @@ int ecmcPLCTask::addExprLine(const char *exprStr) {
 }
 
 int ecmcPLCTask::clearRawExpr() {
+  if (hasDataBindings()) return ERROR_PLC_DATA_SOURCE_BOUND;
   exprStrRaw_ = "";
   return 0;
 }
 
 int ecmcPLCTask::clearExpr() {
+  if (hasDataBindings()) return ERROR_PLC_DATA_SOURCE_BOUND;
   exprStr_ = "";
   updateAsyn();
   compiled_ = false;
@@ -1247,4 +1251,16 @@ int ecmcPLCTask::addLib(ecmcPLCLib* lib) {
   }
 
   return 0;
+}
+
+ecmcPLCDataIF *ecmcPLCTask::findBindingVariable(const char *name) const {
+  if (!name) return nullptr;
+  if (strncmp(name, "static.", 7) == 0) {
+    for (int i = 0; i < localVariableCount_; ++i)
+      if (localArray_[i] && strcmp(name, localArray_[i]->getVarName()) == 0) return localArray_[i];
+  } else if (strncmp(name, "global.", 7) == 0) {
+    for (int i = 0; i < globalVariableCount_; ++i)
+      if (globalArray_[i] && strcmp(name, globalArray_[i]->getVarName()) == 0) return globalArray_[i];
+  }
+  return nullptr;
 }

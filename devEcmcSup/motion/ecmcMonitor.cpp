@@ -25,7 +25,7 @@
 
 ecmcMonitor::ecmcMonitor(ecmcAxisData &axisData,
                          ecmcEncoder **encArray)
-  : ecmcEcEntryLink(&(axisData.status_.errorCode),
+  : ecmcDataLink(&(axisData.status_.errorCode),
                     &(axisData.status_.warningCode))
 {
   data_ = &axisData;
@@ -314,7 +314,7 @@ void ecmcMonitor::readEntries() {
   auto &interlocks = data_->interlocks_;
   // Hard limit BWD
   if(!limitSwitchBwdPLCOverride_) {
-    errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_LOWLIM, &tempRaw);
+    errorCode = readDataValue(ECMC_MON_ENTRY_INDEX_LOWLIM, &tempRaw);
   
     if (errorCode) {
       if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
@@ -342,7 +342,7 @@ void ecmcMonitor::readEntries() {
   // Hard limit FWD
   tempRaw = 0;
   if(!limitSwitchFwdPLCOverride_) {
-    errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_HIGHLIM, &tempRaw);
+    errorCode = readDataValue(ECMC_MON_ENTRY_INDEX_HIGHLIM, &tempRaw);
   
     if (errorCode) {
       if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
@@ -370,7 +370,7 @@ void ecmcMonitor::readEntries() {
   // Home
   tempRaw = 0;
   if(!homeSwitchPLCOverride_ && enableHomeSensor_) {
-    errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_HOMESENSOR, &tempRaw);
+    errorCode = readDataValue(ECMC_MON_ENTRY_INDEX_HOMESENSOR, &tempRaw);
   
     if (errorCode) {
       if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
@@ -399,7 +399,7 @@ void ecmcMonitor::readEntries() {
 
   if (enableHardwareInterlock_) {
     tempRaw   = 0;
-    errorCode = readEcEntryValue(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK, &tempRaw);
+    errorCode = readDataValue(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK, &tempRaw);
 
     if (errorCode) {
       if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
@@ -426,7 +426,7 @@ void ecmcMonitor::readEntries() {
 
   if (enableAnalogInterlock_) {
     double tempDouble = 0;
-    errorCode = readEcEntryValueDouble(ECMC_MON_ENTRY_INDEX_ANALOG, &tempDouble);
+    errorCode = readDataValueDouble(ECMC_MON_ENTRY_INDEX_ANALOG, &tempDouble);
 
     if (errorCode) {
       if (statusWord.instartup && (errorCode == ERROR_EC_ENTRY_EC_DOMAIN_ERROR)) {
@@ -464,7 +464,7 @@ bool ecmcMonitor::getEnable() {
 int ecmcMonitor::validate() {
   int errorCode = 0;
   if(!limitSwitchBwdPLCOverride_) {
-    errorCode = validateEntryBit(ECMC_MON_ENTRY_INDEX_LOWLIM);
+    errorCode = validateDataBit(ECMC_MON_ENTRY_INDEX_LOWLIM);
   
     if (errorCode) {  // Hard limit BWD
       return setErrorID(__FILE__,
@@ -475,7 +475,7 @@ int ecmcMonitor::validate() {
   }
 
   if(!limitSwitchFwdPLCOverride_) {
-    errorCode = validateEntryBit(ECMC_MON_ENTRY_INDEX_HIGHLIM);
+    errorCode = validateDataBit(ECMC_MON_ENTRY_INDEX_HIGHLIM);
   
     if (errorCode) {  // Hard limit FWD
       return setErrorID(__FILE__,
@@ -486,7 +486,7 @@ int ecmcMonitor::validate() {
   }
 
   if(!homeSwitchPLCOverride_ && enableHomeSensor_) {
-    errorCode = validateEntryBit(ECMC_MON_ENTRY_INDEX_HOMESENSOR);
+    errorCode = validateDataBit(ECMC_MON_ENTRY_INDEX_HOMESENSOR);
   
     if (errorCode) {  // Home
       return setErrorID(__FILE__,
@@ -497,7 +497,7 @@ int ecmcMonitor::validate() {
   }
 
   if (enableHardwareInterlock_) {
-    errorCode = validateEntryBit(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK);
+    errorCode = validateDataBit(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK);
 
     if (errorCode) {  // External interlock
       return setErrorID(__FILE__,
@@ -508,7 +508,7 @@ int ecmcMonitor::validate() {
   }
 
   if (enableAnalogInterlock_) {
-    errorCode = validateEntry(ECMC_MON_ENTRY_INDEX_ANALOG);
+    errorCode = validateData(ECMC_MON_ENTRY_INDEX_ANALOG);
 
     if (errorCode) {  // Analog interlock
       return setErrorID(__FILE__,
@@ -591,13 +591,13 @@ int ecmcMonitor::reset() {
 
 void ecmcMonitor::errorReset() {
   reset();
-  ecmcEcEntryLink::errorReset();
+  ecmcDataLink::errorReset();
   ecmcError::errorReset();
 }
 
 int ecmcMonitor::setEnableHardwareInterlock(bool enable) {
   if (enable) {
-    int error = validateEntryBit(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK);
+    int error = validateDataBit(ECMC_MON_ENTRY_INDEX_EXTINTERLOCK);
 
     if (error) {
       return setErrorID(__FILE__,
@@ -613,7 +613,7 @@ int ecmcMonitor::setEnableHardwareInterlock(bool enable) {
 
 int ecmcMonitor::setHomeSwitchEnable(bool enable) {
   if (enable) {
-    int error = validateEntryBit(ECMC_MON_ENTRY_INDEX_HOMESENSOR);
+    int error = validateDataBit(ECMC_MON_ENTRY_INDEX_HOMESENSOR);
 
     if (error) {
       return setErrorID(__FILE__,
@@ -629,7 +629,7 @@ int ecmcMonitor::setHomeSwitchEnable(bool enable) {
 
 int ecmcMonitor::setEnableAnalogInterlock(bool enable) {
   if (enable) {
-    int error = validateEntry(ECMC_MON_ENTRY_INDEX_ANALOG);
+    int error = validateData(ECMC_MON_ENTRY_INDEX_ANALOG);
 
     if (error) {
       return setErrorID(__FILE__,

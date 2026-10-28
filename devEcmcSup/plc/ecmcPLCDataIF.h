@@ -19,11 +19,11 @@
 #include "ecmcError.h"
 #include "ecmcAxisBase.h"
 #include "ecmcDataStorage.h"
-#include "ecmcEc.h"
-#include "ecmcEcEntry.h"
-#include "ecmcEcEntryLink.h"
-#include "ecmcEcSlave.h"
+#include "ecmcDataLink.h"
 #include "ecmcAsynPortDriver.h"
+
+class ecmcEc;
+class ecmcEcSlave;
 
 #define ECMC_PLC_EC_ENTRY_INDEX 0
 
@@ -41,7 +41,7 @@
 #define ERROR_PLC_DATA_STORAGE_NULL 0x2060B
 
 
-class ecmcPLCDataIF : public ecmcEcEntryLink {
+class ecmcPLCDataIF : public ecmcDataLink {
 public:
   ecmcPLCDataIF(int                 plcIndex,
                 double              plcSampleRateMs,
@@ -75,6 +75,7 @@ public:
   bool                needsWrite() const {
     return needsRead() && !readOnly_;
   }
+  ecmcDataItem*        getDataItem() { return asynDataItem_; }
   double&             getDataRef();
   double              getData();
   void                setData(double data);

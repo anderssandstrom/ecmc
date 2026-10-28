@@ -128,23 +128,23 @@ int ecmcPositionCompare::configure(uint64_t minLeadTimeNs,
 }
 
 int ecmcPositionCompare::validate() {
-  if (!checkEntryExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) ||
-      !checkEntryExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) ||
-      !checkEntryExist(ECMC_POS_COMPARE_ENTRY_START_TIME)) {
+  if (!checkDataExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) ||
+      !checkDataExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) ||
+      !checkDataExist(ECMC_POS_COMPARE_ENTRY_START_TIME)) {
     linked_ = false;
     return ERROR_MAIN_EC_ENTRY_NULL;
   }
-  int error = validateEntry(ECMC_POS_COMPARE_ENTRY_OUTPUT);
+  int error = validateData(ECMC_POS_COMPARE_ENTRY_OUTPUT);
   if (error) {
     linked_ = false;
     return error;
   }
-  error = validateEntry(ECMC_POS_COMPARE_ENTRY_ACTIVATE);
+  error = validateData(ECMC_POS_COMPARE_ENTRY_ACTIVATE);
   if (error) {
     linked_ = false;
     return error;
   }
-  error = validateEntry(ECMC_POS_COMPARE_ENTRY_START_TIME);
+  error = validateData(ECMC_POS_COMPARE_ENTRY_START_TIME);
   linked_ = error == 0;
   return error;
 }
@@ -206,7 +206,7 @@ void ecmcPositionCompare::execute(bool masterOK,
   // Already scheduled events retain the normal error handling below.
   if ((status_.state == ECMC_POS_COMPARE_ARMED ||
        status_.state == ECMC_POS_COMPARE_DISABLED) &&
-      (!masterOK || !checkDomainOKAllEntries() || !sampleTimeValid ||
+      (!masterOK || !checkAllDataValid() || !sampleTimeValid ||
        !controllerTimeNs || !sampleTimeNs)) {
     return;
   }
@@ -614,9 +614,9 @@ void ecmcPositionCompare::updateAsynShadow() {
 
 int ecmcPositionCompare::scheduleEvent(uint64_t outputValue,
                                        uint64_t eventTimeNs) {
-  if (writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_OUTPUT, outputValue) ||
-      writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_START_TIME, eventTimeNs) ||
-      writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateSchedule_)) {
+  if (writeDataValue(ECMC_POS_COMPARE_ENTRY_OUTPUT, outputValue) ||
+      writeDataValue(ECMC_POS_COMPARE_ENTRY_START_TIME, eventTimeNs) ||
+      writeDataValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateSchedule_)) {
     return ERROR_EC_ENTRY_WRITE_FAIL;
   }
   status_.lastOutputValue = outputValue;
@@ -627,7 +627,7 @@ int ecmcPositionCompare::scheduleEvent(uint64_t outputValue,
 
 int ecmcPositionCompare::writeIdleActivate() {
   if (linked_) {
-    int error = writeEcEntryValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateIdle_);
+    int error = writeDataValue(ECMC_POS_COMPARE_ENTRY_ACTIVATE, activateIdle_);
     if (error) return error;
     status_.lastActivateValue = activateIdle_;
   }

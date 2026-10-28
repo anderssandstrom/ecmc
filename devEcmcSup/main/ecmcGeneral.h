@@ -31,6 +31,13 @@ extern "C" {
  */
 int         getControllerError();
 
+// Configuration only. conversion: 0=native, 1=positive Boolean, 2=exact unsigned integer.
+// source is an existing global.* or static.* variable in producer PLC.
+int linkPLCDataToObject(int producerPLC, const char *source, char *destination, int conversion);
+// Native readable axis source; no PLC program or variable registration required.
+int linkDataToObject(const char *source, char *destination, int conversion);
+int unlinkDataFromObject(char *destination);
+
 // Internal RT lifecycle hooks. Call on the RT thread before cyclic execution
 // and after leaving the loop; rebuild on every runtime entry.
 void        prepareControllerErrorObjectsRT();

@@ -12,6 +12,7 @@
 
 #include "ecmcEcEntry.h"
 #include <stdlib.h>
+#include <typeinfo>
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 
@@ -189,6 +190,7 @@ void ecmcEcEntry::initVars() {
 }
 
 ecmcEcEntry::~ecmcEcEntry() {
+  if (dataAccess_) { dataAccess_->data = nullptr; dataAccess_->publish = nullptr; }
   free(idStringChar_);
   idStringChar_ = NULL;
   delete entryAsynParam_;
@@ -1027,4 +1029,41 @@ int ecmcEcEntry::readBits(int startBitNumber, int bits, uint64_t *result) {
   *result = (buffer_ >> static_cast<uint64_t>(startBitNumber)) & lowMask;
  
   return 0;
+}
+
+// Configuration-time export of the existing buffer, never a second value copy.
+std::shared_ptr<ecmcDataAccess> ecmcEcEntry::getDataAccess() {
+  auto access = getDirectDataAccess();
+  // Preserve existing custom getDomainOK overrides. Ordinary entries and the
+  // in-tree process-image data provider export direct filtered status instead.
+  if (typeid(*this) != typeid(ecmcEcEntry)) {
+    access->validation = ecmcDataAccess::CUSTOM_STATUS;
+    access->validity = nullptr;
+    access->validityContext = this;
+    access->customValidity = [](void *context) {
+      return static_cast<ecmcEcEntry *>(context)->getDomainOK();
+    };
+  }
+  return access;
+}
+
+std::shared_ptr<ecmcDataAccess> ecmcEcEntry::getDirectDataAccess() {
+  if (!dataAccess_) dataAccess_ = std::make_shared<ecmcDataAccess>();
+  auto &access = *dataAccess_;
+  access.identity = this;
+  access.data = reinterpret_cast<uint8_t *>(&buffer_);
+  access.type = dataType_;
+  access.bits = bitLength_;
+  access.sourceId = slaveId_;
+  access.validation = ecmcDataAccess::DIRECT_STATUS;
+  access.customValidity = nullptr;
+  access.validityContext = nullptr;
+  access.wordStorage = true;
+  access.writable = true; // Preserve existing entry-link write semantics.
+  access.validity = domain_ ? domain_->getValidityPointer() : nullptr;
+  access.publishContext = this;
+  access.publish = [](void *context) {
+    return static_cast<ecmcEcEntry *>(context)->updateAsyn(0);
+  };
+  return dataAccess_;
 }

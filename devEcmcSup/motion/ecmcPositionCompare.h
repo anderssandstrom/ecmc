@@ -15,7 +15,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stddef.h>
-#include "ecmcEcEntryLink.h"
+#include "ecmcDataLink.h"
 #include "ecmcAsynDataItem.h"
 #include "ecmcAsynPortDriver.h"
 
@@ -97,7 +97,7 @@ struct ecmcPositionCompareStatus {
 
 class ecmcMotionStateYamlWriter;
 
-class ecmcPositionCompare : public ecmcEcEntryLink {
+class ecmcPositionCompare : public ecmcDataLink {
   friend class ecmcMotionStateYamlWriter;
 public:
   ecmcPositionCompare();

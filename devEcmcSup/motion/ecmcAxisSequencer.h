@@ -22,6 +22,8 @@
 #include "ecmcDriveBase.h"
 #include "ecmcAxisPVTSequence.h"
 
+class ecmcEcEntry;
+
 enum localTrajDataSource {
   ECMC_TRAJ_SRC_TRAJ = 0,
   ECMC_TRAJ_SRC_PLC  = 1,
@@ -206,8 +208,8 @@ private:
   bool enableHome_;
 
   // Entries for drive modes
-  ecmcEcEntry *modeSetEntry_;
-  ecmcEcEntry *modeActEntry_;
+  std::shared_ptr<ecmcDataAccess> modeSetEntry_;
+  std::shared_ptr<ecmcDataAccess> modeActEntry_;
   int modeAct_;
   int modeMotionCmd_;  // Mode to write when running normal motion (CSP or CSV depending on how axis cfg)
   int modeHomingCmd_;  // Mode for homing

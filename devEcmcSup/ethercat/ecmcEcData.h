@@ -14,6 +14,7 @@
 #define ecmcEcData_H_
 #include <string>
 #include <cmath>
+#include <typeinfo>
 #include "stdio.h"
 #include "ecrt.h"
 #include "ecmcDefinitions.h"
@@ -41,6 +42,10 @@ public:
              ecmcEcDataType      dt,
              std::string         id);
   ~ecmcEcData();
+
+  std::shared_ptr<ecmcDataAccess> getDataAccess() override {
+    return typeid(*this) == typeid(ecmcEcData) ? getDirectDataAccess() : ecmcEcEntry::getDataAccess();
+  }
 
   // Overridden ecmcEcEntry functions
   int  updateInputProcessImage();

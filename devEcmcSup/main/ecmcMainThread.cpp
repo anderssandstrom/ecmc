@@ -436,6 +436,7 @@ void cyclic_task(void *usr) {
   prepareControllerErrorObjectsRT();
 
   // Snapshot the configuration once per runtime entry.
+  const bool dataInputsConfigured = plcs && plcs->hasDataInputs();
   const bool startupGateEnabled =
     startupGateConfigured.load(std::memory_order_acquire);
   // Explicit opt-out for applications that never call iocInit/iocRun.
@@ -646,6 +647,9 @@ void cyclic_task(void *usr) {
       auto * const axis = runtime.activeAxes[i];
       if (startup.commandsReleased) {
         plcs->execute(runtime.activeAxisPlcId[i], ecStat);
+      }
+      if (dataInputsConfigured) {
+        plcs->updateDataInputHealth(runtime.activeAxisPlcId[i] - ECMC_MAX_PLCS);
       }
       axis->execute(ecStat);
     }

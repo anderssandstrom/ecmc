@@ -526,6 +526,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x20511:
+    return "ERROR_PLC_DATA_SOURCE_BOUND";
+
   case 0x14600:   // DRIVE
     return "ERROR_DRV_DRIVE_INTERLOCKED";
 

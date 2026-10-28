@@ -18,9 +18,7 @@
 
 #include "ecmcDefinitions.h"
 #include "ecmcError.h"
-#include "ecmcEcEntry.h"
-#include "ecmcEcEntryLink.h"
-#include "ecmcEcPdo.h"
+#include "ecmcDataLink.h"
 #include "ecmcAxisData.h"
 #include "ecmcEncoder.h"
 
@@ -42,7 +40,7 @@ enum ecmcBrakeStates {
 
 class ecmcMotionStateYamlWriter;
 
-class ecmcDriveBase : public ecmcEcEntryLink {
+class ecmcDriveBase : public ecmcDataLink {
   friend class ecmcMotionStateYamlWriter;
 public:
   explicit ecmcDriveBase(ecmcAsynPortDriver *asynPortDriver,

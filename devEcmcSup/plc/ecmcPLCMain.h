@@ -29,6 +29,7 @@
 #include "ecmcPLCTask.h"
 #include "ecmcPLCDataIF.h"
 #include "ecmcLookupTable.h"
+#include <memory>
 
 #define ERROR_PLCS_INDEX_OUT_OF_RANGE 0x20700
 #define ERROR_PLCS_AXIS_INDEX_OUT_OF_RANGE 0x20701
@@ -69,6 +70,14 @@ public:
   int          createPLC(int plcIndex,
                          int skipCycles);
   int          deletePLC(int plcIndex);
+  int linkDataInput(int plcIndex, const char *name, int axisIndex,
+                    ecmcDataLink *target, int entryIndex, int conversion);
+  int linkAxisDataInput(int sourceAxis, const char *name, int axisIndex,
+                        ecmcDataLink *target, int entryIndex, int conversion);
+  int unlinkDataInput(ecmcDataLink *target, int entryIndex);
+  bool hasDataInputs() const { return !dataInputs_.empty(); }
+  void updateDataInputHealth(int axisIndex);
+  int validateDataInputs();
   int          setAxisGroupArrayPointer(ecmcAxisGroup *grp,
                                         int index);
   int          setAxisArrayPointer(ecmcAxisBase *axis,
@@ -167,6 +176,20 @@ private:
   bool         isExpandableBase(const std::string& rhs);
   void         trimInplace(std::string& s);
 
+  struct DataInputLink {
+    ecmcDataLink *target;
+    std::shared_ptr<ecmcDataAccess> previous;
+    ecmcDataAccess source;
+    std::shared_ptr<ecmcDataAccess> installed;
+    std::shared_ptr<int> health;
+    int previousBit;
+    int entryIndex;
+    int axisIndex;
+    int plcIndex;
+    int sourceAxis = -1;
+  };
+  std::vector<DataInputLink> dataInputs_;
+  std::vector<size_t> dataInputIndices_[ECMC_MAX_AXES];
   int          globalVariableCount_;
 
   // Dedicateed plcs then one per axis

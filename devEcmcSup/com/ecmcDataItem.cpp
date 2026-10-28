@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcDataItem.h"
+#include "ecmcDataAccess.h"
 #include "string.h"
 
 ecmcDataItem::ecmcDataItem(const char *name) {
@@ -31,6 +32,7 @@ ecmcDataItem::ecmcDataItem(const char *name) {
 }
 
 ecmcDataItem::~ecmcDataItem() {
+  invalidateDataBindings();
   free(dataItem_.name);
 }
 
@@ -45,6 +47,7 @@ void ecmcDataItem::setEcmcMinValueInt(int64_t intMin) {
 }
 
 void ecmcDataItem::setEcmcBitCount(size_t bits) {
+  if (dataItem_.dataBitCount != bits) invalidateDataBindings();
   dataItem_.dataBitCount = bits;
 }
 
@@ -77,6 +80,7 @@ bool ecmcDataItem::getArrayCheckSize() {
 }
 
 void ecmcDataItem::setEcmcDataType(ecmcEcDataType dt) {
+  if (dataItem_.dataType != dt) invalidateDataBindings();
   dataItem_.dataType = dt;
 }
 
@@ -85,6 +89,7 @@ ecmcEcDataType ecmcDataItem::getEcmcDataType() {
 }
 
 int ecmcDataItem::setEcmcDataPointer(uint8_t *data, size_t bytes) {
+  if (dataItem_.data != data || dataItem_.dataSize != bytes) invalidateDataBindings();
   dataItem_.data             = data;
   dataItem_.dataSize         = bytes;
   ecmcMaxSize_               = bytes;
@@ -101,6 +106,7 @@ ecmcDataItemInfo * ecmcDataItem::getDataItemInfo() {
 }
 
 void ecmcDataItem::setEcmcDataSize(size_t bytes) {
+  if (dataItem_.dataSize != bytes) invalidateDataBindings();
   dataItem_.dataSize = bytes;
 }
 
@@ -109,6 +115,7 @@ size_t ecmcDataItem::getEcmcDataSize() {
 }
 
 void ecmcDataItem::setEcmcDataElementSize(size_t bytes) {
+  if (dataItem_.dataElementSize != bytes) invalidateDataBindings();
   dataItem_.dataElementSize = bytes;
 }
 
@@ -205,4 +212,18 @@ bool ecmcDataItem::hasDataUpdatedCallbacks() const {
 
 char * ecmcDataItem::getDataPtr() {
   return (char *)dataItem_.data;
+}
+
+void ecmcDataItem::invalidateDataBindings() {
+  if (dataAccess_) { dataAccess_->data = nullptr; dataAccess_->publish = nullptr; }
+  dataAccess_.reset();
+}
+
+std::shared_ptr<ecmcDataAccess> ecmcDataItem::getDataAccess() {
+  if (!dataAccess_) {
+    auto access = std::make_shared<ecmcDataAccess>();
+    if (!ecmcDataAccess::bind(*this, nullptr, 0, access.get())) return nullptr;
+    dataAccess_ = std::move(access);
+  }
+  return dataAccess_;
 }

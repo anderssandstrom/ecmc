@@ -11,6 +11,8 @@
 \*************************************************************************/
 
 #include "ecmcPLCDataIF.h"
+#include "ecmcEc.h"
+#include "ecmcEcSlave.h"
 #include "ecmcRtLogger.h"
 
 ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
@@ -119,7 +121,9 @@ ecmcPLCDataIF::ecmcPLCDataIF(int                 plcIndex,
   }
 }
 
-ecmcPLCDataIF::~ecmcPLCDataIF() {}
+ecmcPLCDataIF::~ecmcPLCDataIF() {
+  if (asynDataItem_) asynDataItem_->invalidateDataBindings();
+}
 
 void ecmcPLCDataIF::initVars() {
   plcIndex_          = 0;
@@ -232,7 +236,7 @@ int ecmcPLCDataIF::write() {
 int ecmcPLCDataIF::readEc() {
   double tempData  = 0;
   int    errorCode =
-    readEcEntryValueDouble(ECMC_PLC_EC_ENTRY_INDEX, &tempData);
+    readDataValueDouble(ECMC_PLC_EC_ENTRY_INDEX, &tempData);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -244,7 +248,7 @@ int ecmcPLCDataIF::readEc() {
 }
 
 int ecmcPLCDataIF::writeEc() {
-  int errorCode = writeEcEntryValueDouble(ECMC_PLC_EC_ENTRY_INDEX, data_);
+  int errorCode = writeDataValueDouble(ECMC_PLC_EC_ENTRY_INDEX, data_);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
@@ -367,270 +371,10 @@ int ecmcPLCDataIF::writeDs() {
 }
 
 int ecmcPLCDataIF::readAxis() {
-  ecmcAxisBase * const axis = axis_;
-  if (axis == NULL) {
-    return ERROR_PLC_AXIS_NULL;
-  }
-
-  if (axis->getTraj() == NULL) {
-    return ERROR_PLC_TRAJ_NULL;
-  }
-
-  ecmcAxisDataStatus * const axisData = axis->getAxisStatusDataPtr();
-  // Cache commonly used sub-objects once per PLC cycle call.
-  auto * const mon  = axis->getMon();
-  auto * const seq  = axis->getSeq();
-  auto * const traj = axis->getTraj();
-  auto * const cntrl = axisHasController_ ? axis->getCntrl() : NULL;
-
-  switch (dataSourceAxis_) {
-  case ECMC_AXIS_DATA_NONE:
-    data_ = 0;
-    break;
-
-  case ECMC_AXIS_DATA_AXIS_ID:
-    data_ = static_cast<double>(axisData->axisId);
-    break;
-
-  case ECMC_AXIS_DATA_POS_SET:
-    data_ = axisData->currentPositionSetpoint;
-    break;
-
-  case ECMC_AXIS_DATA_POS_ACT:
-    data_ = axisData->currentPositionActual;
-    break;
-
-  case ECMC_AXIS_DATA_CNTRL_ERROR:
-    data_ = axisData->cntrlError;
-    break;
-
-  case ECMC_AXIS_DATA_POS_TARGET:
-    data_ = axisData->currentTargetPosition;
-    break;
-
-  case ECMC_AXIS_DATA_POS_ERROR:
-    data_ = axisData->currentPositionSetpoint - axisData->currentPositionActual;
-    break;
-
-  case ECMC_AXIS_DATA_POS_RAW:
-    // Risc of data loss
-    data_ = static_cast<double>(axisData->currentPositionActualRaw);
-    break;
-
-  case ECMC_AXIS_DATA_CNTRL_OUT:
-    data_ = axisData->cntrlOutput;
-    break;
-
-  case ECMC_AXIS_DATA_VEL_SET:
-    data_ = axisData->currentVelocitySetpoint;
-    break;
-
-  case ECMC_AXIS_DATA_VEL_ACT:
-    data_ = axisData->currentVelocityActual;
-    break;
-
-  case ECMC_AXIS_DATA_VEL_SET_FF_RAW:
-    data_ = axisData->currentvelocityFFRaw;
-    break;
-
-  case ECMC_AXIS_DATA_VEL_SET_RAW:
-    data_ = static_cast<double>(axisData->currentVelocitySetpointRaw);
-    break;
-
-  case ECMC_AXIS_DATA_CYCLE_COUNTER:
-    data_ = static_cast<double>(axisData->cycleCounter);
-    break;
-
-  case ECMC_AXIS_DATA_ERROR:
-    data_ = static_cast<double>(axisData->errorCode);
-    break;
-
-  case ECMC_AXIS_DATA_COMMAND:
-    data_ = static_cast<double>(axisData->command);
-    break;
-
-  case ECMC_AXIS_DATA_CMD_DATA:
-    data_ = static_cast<double>(axisData->cmdData);
-    break;
-
-  case ECMC_AXIS_DATA_SEQ_STATE:
-    data_ = static_cast<double>(axisData->statusWord_.seqstate);
-    break;
-
-  case ECMC_AXIS_DATA_INTERLOCK_TYPE:
-    data_ = static_cast<double>(axis->getSumInterlock() == 0);
-    break;
-
-  case ECMC_AXIS_DATA_TRAJ_SOURCE:
-    data_ = static_cast<double>(axisData->statusWord_.trajsource);
-    break;
-
-  case ECMC_AXIS_DATA_ENC_SOURCE:
-    data_ = static_cast<double>(axisData->statusWord_.encsource);
-    break;
-
-  case ECMC_AXIS_DATA_ENABLE:
-
-    data_ = static_cast<double>(axisData->statusWord_.enable);
-    break;
-
-  case ECMC_AXIS_DATA_ENABLED:
-    data_ = static_cast<double>(axisData->statusWord_.enabled);
-    break;
-
-  case ECMC_AXIS_DATA_EXECUTE:
-    data_ = static_cast<double>(axisData->statusWord_.execute);
-    break;
-
-  case ECMC_AXIS_DATA_BUSY:
-    data_ = static_cast<double>(axisData->statusWord_.busy);
-    break;
-
-  case ECMC_AXIS_DATA_AT_TARGET:
-    data_ = static_cast<double>(axisData->statusWord_.attarget);
-    break;
-
-  case ECMC_AXIS_DATA_HOMED:
-    data_ = static_cast<double>(axisData->statusWord_.homed);
-    break;
-
-  case ECMC_AXIS_DATA_LIMIT_BWD:
-    data_ = static_cast<double>(axisData->statusWord_.limitbwd);
-    break;
-
-  case ECMC_AXIS_DATA_LIMIT_FWD:
-    data_ = static_cast<double>(axisData->statusWord_.limitfwd);
-    break;
-
-  case ECMC_AXIS_DATA_HOME_SWITCH:
-    data_ = static_cast<double>(axisData->statusWord_.homeswitch);
-    break;
-
-  case ECMC_AXIS_DATA_RESET:
-    data_ = 0;
-    break;
-
-  case ECMC_AXIS_DATA_VEL_TARGET_SET:
-    data_ = seq->getTargetVel();
-    break;
-
-  case ECMC_AXIS_DATA_ACC_TARGET_SET:
-    data_ = traj->getAcc();
-    break;
-
-  case ECMC_AXIS_DATA_DEC_TARGET_SET:
-    data_ = traj->getDec();
-    break;
-
-  case ECMC_AXIS_DATA_SOFT_LIMIT_BWD:
-    data_ = mon->getSoftLimitBwd();
-    break;
-
-  case ECMC_AXIS_DATA_SOFT_LIMIT_FWD:
-    data_ = mon->getSoftLimitFwd();
-    break;
-
-  case ECMC_AXIS_DATA_SOFT_LIMIT_BWD_ENABLE:
-    data_ = static_cast<double>(mon->getEnableSoftLimitBwd());
-    break;
-
-  case ECMC_AXIS_DATA_SOFT_LIMIT_FWD_ENABLE:
-    data_ = static_cast<double>(mon->getEnableSoftLimitFwd());
-    break;
-
-  case ECMC_AXIS_DATA_TRAJ_DIRECTION:
-
-    switch (axis->getAxisSetDirection()) {
-    case ECMC_DIR_BACKWARD:
-      data_ = -1;
-      break;
-
-    case ECMC_DIR_FORWARD:
-      data_ = 1;
-      break;
-
-    case ECMC_DIR_STANDSTILL:
-      data_ = 0;
-      break;
-    }
-    break;
-
-  case ECMC_AXIS_DATA_ENC_HOMEPOS:
-    data_ = seq->getHomePosition();
-    break;
-
-  case ECMC_AXIS_DATA_BLOCK_COM:
-    data_ = axis->getBlockCom();
-    break;
-
-  case ECMC_AXIS_DATA_INTERLOCK_BWD_TYPE:
-    data_ =
-      static_cast<double>(axisData->statusWord_.sumilockbwd == 0);
-    break;
-
-  case ECMC_AXIS_DATA_INTERLOCK_FWD_TYPE:
-    data_ =
-      static_cast<double>(axisData->statusWord_.sumilockfwd == 0);
-    break;
-
-  case ECMC_AXIS_DATA_ALLOW_PLC_WRITE:
-    data_ = static_cast<double>(axis->getAllowCmdFromPLC());
-    break;
-
-  case ECMC_AXIS_DATA_POS_SET_EXTERNAL:
-    data_ = axis->getExtSetPos();
-    break;
-
-  case ECMC_AXIS_DATA_POS_ACT_EXTERNAL:
-    data_ = axis->getExtActPos();
-    break;
-
-  case ECMC_AXIS_DATA_CTRL_KP:
-
-    if (axisHasController_) {
-      data_ = cntrl->getKp();
-    } else {
-      data_ = 0;
-    }
-    break;
-
-  case ECMC_AXIS_DATA_CTRL_KI:
-
-    if (axisHasController_) {
-      data_ = cntrl->getKi();
-    } else {
-      data_ = 0;
-    }
-    break;
-
-  case ECMC_AXIS_DATA_CTRL_KD:
-
-    if (axisHasController_) {
-      data_ = cntrl->getKd();
-    } else {
-      data_ = 0;
-    }
-    break;
-
-  case ECMC_AXIS_DATA_CTRL_KFF:
-
-    if (axisHasController_) {
-      data_ = cntrl->getKff();
-    } else {
-      data_ = 0;
-    }
-    break;
-
-  default:
-    return setErrorID(__FILE__,
-                      __FUNCTION__,
-                      __LINE__,
-                      ERROR_PLC_AXIS_DATA_TYPE_ERROR);
-
-    break;
-  }
-
-  return 0;
+  if (!axis_) return ERROR_PLC_AXIS_NULL;
+  if (!axis_->getTraj()) return ERROR_PLC_TRAJ_NULL;
+  int error = axis_->readDataSource(dataSourceAxis_, &data_);
+  return error ? setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_PLC_AXIS_DATA_TYPE_ERROR) : 0;
 }
 
 int ecmcPLCDataIF::writeAxis() {
@@ -1024,327 +768,7 @@ ecmcDataStorageType ecmcPLCDataIF::parseDataStorageDataSource(
 }
 
 ecmcAxisDataType ecmcPLCDataIF::parseAxisDataSource(char *axisDataSource) {
-  char *varName;
-
-  varName = strstr(axisDataSource, ECMC_AX_STR);
-
-  if (!varName) {
-    return ECMC_AXIS_DATA_NONE;
-  }
-  varName = strstr(axisDataSource, ".");
-
-  if (!varName) {
-    return ECMC_AXIS_DATA_NONE;
-  }
-  varName++;
-
-  int npos = strcmp(varName, ECMC_AXIS_DATA_STR_AXIS_ID);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_AXIS_ID;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_SET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_SET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_ACT);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_ACT;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_TARGET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_TARGET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_ERROR);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_ERROR;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_RAW);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_RAW;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CNTRL_OUT);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CNTRL_OUT;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_VEL_SET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_VEL_SET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_VEL_ACT);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_VEL_ACT;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_VEL_SET_FF_RAW);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_VEL_SET_FF_RAW;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_VEL_SET_RAW);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_VEL_SET_RAW;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CYCLE_COUNTER);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CYCLE_COUNTER;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ERROR);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_ERROR;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_COMMAND);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_COMMAND;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CMD_DATA);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CMD_DATA;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_SEQ_STATE);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_SEQ_STATE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_INTERLOCK_TYPE);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_INTERLOCK_TYPE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_TRAJ_SOURCE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_TRAJ_SOURCE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ENC_SOURCE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_ENC_SOURCE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ENABLE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_ENABLE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ENABLED);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_ENABLED;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_EXECUTE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_EXECUTE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_BUSY);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_BUSY;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_AT_TARGET);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_AT_TARGET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOMED);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_HOMED;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_LIMIT_BWD);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_LIMIT_BWD;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_LIMIT_FWD);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_LIMIT_FWD;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_HOME_SWITCH);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_HOME_SWITCH;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_RESET);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_RESET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_VEL_TARGET_SET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_VEL_TARGET_SET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ACC_TARGET_SET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_ACC_TARGET_SET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_DEC_TARGET_SET);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_DEC_TARGET_SET;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_SOFT_LIMIT_BWD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_SOFT_LIMIT_BWD;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_SOFT_LIMIT_FWD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_SOFT_LIMIT_FWD;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_SOFT_LIMIT_BWD_ENABLE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_SOFT_LIMIT_BWD_ENABLE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_SOFT_LIMIT_FWD_ENABLE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_SOFT_LIMIT_FWD_ENABLE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_TRAJ_DIRECTION);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_TRAJ_DIRECTION;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ENC_HOMEPOS);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_ENC_HOMEPOS;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_BLOCK_COM);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_BLOCK_COM;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_INTERLOCK_FWD_TYPE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_INTERLOCK_FWD_TYPE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_INTERLOCK_BWD_TYPE);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_INTERLOCK_BWD_TYPE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_ALLOW_PLC_CMD);
-
-  if (npos == 0) {
-    isBool_ = 1;
-    return ECMC_AXIS_DATA_ALLOW_PLC_WRITE;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_SET_EXTERNAL);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_SET_EXTERNAL;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_POS_ACT_EXTERNAL);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_POS_ACT_EXTERNAL;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CTRL_KP_CMD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CTRL_KP;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CTRL_KI_CMD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CTRL_KI;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CTRL_KD_CMD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CTRL_KD;
-  }
-
-  npos = strcmp(varName, ECMC_AXIS_DATA_STR_CTRL_KFF_CMD);
-
-  if (npos == 0) {
-    return ECMC_AXIS_DATA_CTRL_KFF;
-  }
-
-  return ECMC_AXIS_DATA_NONE;
+  return ecmcAxisBase::parseDataSource(axisDataSource, &isBool_);
 }
 
 int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
@@ -1423,20 +847,20 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
                       ERROR_PLC_EC_ENTRY_NULL);
   }
 
-  errorCode = setEntryAtIndex(entry, ECMC_PLC_EC_ENTRY_INDEX, bitId);
+  errorCode = setDataAtIndex(entry, ECMC_PLC_EC_ENTRY_INDEX, bitId);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 
-  errorCode = validateEntry(ECMC_PLC_EC_ENTRY_INDEX);
+  errorCode = validateData(ECMC_PLC_EC_ENTRY_INDEX);
 
   if (errorCode) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 
   // Print warning if data type is "NONE" , "U64" or "S64"
-  ecmcEcDataType dt = getEntryDataType(ECMC_PLC_EC_ENTRY_INDEX);
+  ecmcEcDataType dt = getDataType(ECMC_PLC_EC_ENTRY_INDEX);
 
   if ((dt == ECMC_EC_NONE) || (dt == ECMC_EC_U64) || (dt == ECMC_EC_S64)) {
     ecmcRtLoggerLogWarning(
@@ -1626,6 +1050,6 @@ int ecmcPLCDataIF::updateAsyn(int force) {
 }
 
 void ecmcPLCDataIF::errorReset() {
-  ecmcEcEntryLink::errorReset();
+  ecmcDataLink::errorReset();
   ecmcError::errorReset();
 }

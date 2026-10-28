@@ -15,6 +15,8 @@
 
 #define __STDC_FORMAT_MACROS  // To "reinclude" inttypes
 #include <atomic>
+#include <vector>
+#include "ecmcDataAccess.h"
 #include "ecmcDefinitions.h"
 #include "ecmcError.h"
 #include "ecmcAsynPortDriver.h"
@@ -108,6 +110,11 @@ public:
   int                        getCmdData();
   int                        slowExecute();
   ecmcAxisDataStatus*        getAxisStatusDataPtr();
+  // Configuration-time lookup of the same readable names supported by PLCs.
+  static ecmcAxisDataType parseDataSource(const char *path, int *isBoolean = nullptr);
+  std::shared_ptr<ecmcDataAccess> getDataSource(const char *path);
+  int readDataSource(ecmcAxisDataType source, double *value);
+  void invalidateDataSources();
   int                        getAxisDebugInfoData(char *buffer,
                                        int   bufferByteSize,
                                        int  *bytesUsed);
@@ -349,12 +356,13 @@ protected:
   ecmcEncoder *encArray_[ECMC_MAX_ENCODERS];
   ecmcPositionCompare positionCompare_;
   ecmcAxisSequencer seq_;
+  std::vector<std::shared_ptr<ecmcDataAccess>> dataSources_;
   ecmcAxisData data_;
   axisState axisState_;
 
   // Axis default parameters over asyn I/O intr
   ecmcAsynPortDriver *asynPortDriver_;
-  ecmcEcEntry *statusOutputEntry_;
+  std::shared_ptr<ecmcDataAccess> statusOutputEntry_;
   ecmcFilter *extTrajVeloFilter_;
   ecmcFilter *extEncVeloFilter_;
   bool allowCmdFromOtherPLC_;

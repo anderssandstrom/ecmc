@@ -1089,13 +1089,13 @@ private:
     }
   }
 
-  void dumpEcEntryLink(const ecmcEcEntryLink& o, const std::string& p) {
+  void dumpEcEntryLink(const ecmcDataLink& o, const std::string& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
     for (int i = 0; i < ECMC_EC_ENTRY_LINKS_MAX; ++i) {
       std::ostringstream ep, bp;
       ep << p << ".entryInfoArray_[" << i << "].entry";
       bp << p << ".entryInfoArray_[" << i << "].bitNumber";
-      pointer(ep.str(), o.entryInfoArray_[i].entry);
+      pointer(ep.str(), o.entryInfoArray_[i].entry ? o.entryInfoArray_[i].entry->identity : nullptr);
       value(bp.str(), o.entryInfoArray_[i].bitNumber);
     }
   }
@@ -1219,7 +1219,7 @@ private:
   }
 
   void dumpEncoder(const ecmcEncoder& o, const std::string& p) {
-    dumpEcEntryLink(static_cast<const ecmcEcEntryLink&>(o), child(p, "ecEntryLinkBase"));
+    dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1278,7 +1278,7 @@ private:
   }
 
   void dumpMonitor(const ecmcMonitor& o, const std::string& p) {
-    dumpEcEntryLink(static_cast<const ecmcEcEntryLink&>(o), child(p, "ecEntryLinkBase"));
+    dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1397,7 +1397,7 @@ private:
     P(mon_); P(cntrl_); P(drv_); P(data_); P(pvt_); D(oldencRawAbsPosReg_);
     D(encRawAbsPosReg_); E(overUnderFlowLatch_); D(homeLatchCountOffset_);
     D(homeLatchCountAct_); D(enablePos_); D(enableConstVel_); D(enableHome_);
-    P(modeSetEntry_); P(modeActEntry_); D(modeAct_); D(modeMotionCmd_);
+    pointer(child(p, "modeSetEntry_"), o.modeSetEntry_ ? o.modeSetEntry_->identity : nullptr); pointer(child(p, "modeActEntry_"), o.modeActEntry_ ? o.modeActEntry_->identity : nullptr); D(modeAct_); D(modeMotionCmd_);
     D(modeHomingCmd_); D(modeMotionCmdSet_); D(modeHomingCmdSet_); D(pvtOk_);
     D(trajLock_); D(trajLockOld_); D(pvtStopping_); D(pvtmode_); D(posSource_);
     D(homeTrigStatOld_); D(monPosLagEnaStatePriorHome_);
@@ -1452,7 +1452,7 @@ private:
   }
 
   void dumpPvtController(const ecmcPVTController& o, const std::string& p) {
-    dumpEcEntryLink(static_cast<const ecmcEcEntryLink&>(o), child(p, "ecEntryLinkBase"));
+    dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1482,7 +1482,7 @@ private:
   }
 
   void dumpDrive(const ecmcDriveBase& o, const std::string& p) {
-    dumpEcEntryLink(static_cast<const ecmcEcEntryLink&>(o), child(p, "ecEntryLinkBase"));
+    dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1523,7 +1523,7 @@ private:
   }
 
   void dumpPositionCompare(const ecmcPositionCompare& o, const std::string& p) {
-    dumpEcEntryLink(static_cast<const ecmcEcEntryLink&>(o), child(p, "ecEntryLinkBase"));
+    dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define P(name) pointer(child(p, #name), o.name)
     D(minLeadTimeNs_); D(maxLeadTimeNs_); D(activateIdle_); D(activateSchedule_);
@@ -1567,7 +1567,7 @@ private:
       std::ostringstream n; n << p << ".encArray_[" << i << "]";
       pointer(n.str(), o.encArray_[i]);
     }
-    E(axisState_); P(asynPortDriver_); P(statusOutputEntry_);
+    E(axisState_); P(asynPortDriver_); pointer(child(p, "statusOutputEntry_"), o.statusOutputEntry_ ? o.statusOutputEntry_->identity : nullptr);
     P(extTrajVeloFilter_); P(extEncVeloFilter_); D(allowCmdFromOtherPLC_);
     D(executeCmdOld_); D(enableExtTrajVeloFilter_); D(enableExtEncVeloFilter_);
     D(disableAxisAtErrorReset_); D(firstEnableDone_);

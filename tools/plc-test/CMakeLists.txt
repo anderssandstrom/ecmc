@@ -18,6 +18,9 @@ add_executable(ecmcPlcTest
   "${ECMC_ROOT}/exprtkSupport/exprtkWrap.cpp"
   "${ECMC_ROOT}/exprtkSupport/exprtkImp.cpp"
   "${SUP}/main/ecmcError.cpp"
+  "${SUP}/com/ecmcDataLink.cpp"
+  "${SUP}/com/ecmcDataAccess.cpp"
+  "${SUP}/com/ecmcDataItem.cpp"
   "${SUP}/misc/ecmcDataStorage.cpp")
 foreach(source ecmcAxisBase ecmcAxisVirt ecmcAxisData ecmcAxisSequencer
                ecmcEncoder ecmcMonitor ecmcTrajectoryBase ecmcTrajectoryTrapetz
