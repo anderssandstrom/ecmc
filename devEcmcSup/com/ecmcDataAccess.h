@@ -20,7 +20,7 @@ struct ecmcDataAccess {
   ecmcEcDataType type = ECMC_EC_NONE;
   int bits = 0;
   int sourceId = -1000;
-  enum Validation { NATIVE_ITEM, DIRECT_STATUS, CUSTOM_STATUS };
+  enum Validation { NATIVE_ITEM, DIRECT_STATUS, CUSTOM_STATUS, ORIGIN_STATUS };
   Validation validation = NATIVE_ITEM;
   int (*customValidity)(void *) = nullptr;
   void *validityContext = nullptr;

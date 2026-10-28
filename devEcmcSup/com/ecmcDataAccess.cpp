@@ -2,8 +2,11 @@
 
 // Extended/native-source checks are separate from the short entry hot path.
 bool ecmcDataAccess::validExtended() const {
+    // Transformed provider views check lifetime before asking the original
+    // descriptor for health; copied raw domain pointers may already be gone.
+    if (originOwner && (!originOwner->data ||
+        (validation == ORIGIN_STATUS && !originOwner->valid()))) return false;
     if (validation == CUSTOM_STATUS) return customValidity && customValidity(validityContext);
-    if (originOwner && !originOwner->data) return false;
     if (exactUnsigned && !finiteRequired) {
       double value; // Only a sign check; integer reads below retain all 64 bits.
       if (readNumber(&value) || value < 0) return false;

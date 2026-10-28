@@ -93,7 +93,8 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |
 | `test_domain_health.py` | Configured domain-failure tolerance, complete-sample recovery, startup priming and offline summary/local validity |
-| `test_common_data_links.py` | Real common scalar access, lazy axis sources, bit/computed values, same-axis/reciprocal links and identical signal self-link rejection and source invalidation; PLC pins, source health, publication, runtime re-entry and unlink; fake endpoints |
+| `test_common_data_links.py` | Unified command for EtherCAT entries/bits, PLC variables and lazy axis sources; native scalar access, filtered/custom health and entry lifetime, bit/computed values, same-axis/reciprocal links and identical signal self-link rejection and source invalidation; deferred PLC lookup/batch validation, pins, source health, publication, runtime re-entry and unlink; fake endpoints |
+| `test_data_link_startup.py` | Pending PLC links resolve before axis validation; original validation order without pending links; errors stop final validation; fake endpoints |
 | `test_data_binding.py` | Experimental native scalar read binding, metadata rejection, health gating and a PLC-reference-to-axis-setter pilot; no live RT integration |
 | `test_controller_error_scan.py` | Error priority, cached/live scanning, thread isolation and cache rebuilding |
 | `test_drive_brake.py` | Real drive brake opening/closing timing, feedback loss in all states, bounded signal traces, faults, timeouts, Stepper/DS402 output handling and recovery |

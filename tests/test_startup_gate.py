@@ -106,7 +106,7 @@ struct Task {
 };
 struct Plc {
   bool dataInputs = false;
-  bool hasDataInputs() const { return dataInputs; }
+  bool hasDataInputProducers() const { return dataInputs; }
   void updateDataInputHealth(int id) { trace.push_back("input-health-" + std::to_string(id)); }
   int axisCalls = 0, globalCalls = 0;
   void execute(int id, int) { ++axisCalls; trace.push_back("axis-plc-" + std::to_string(id)); }

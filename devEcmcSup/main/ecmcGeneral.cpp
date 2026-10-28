@@ -454,10 +454,63 @@ int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, in
 }
 }
 
-int linkPLCDataToObject(int producerPLC, const char *source, char *destination, int conversion) {
+namespace {
+int resolveEthercatDataSource(const char *path, int conversion,
+                              std::shared_ptr<ecmcDataAccess> *result) {
+  if (!ec) return ERROR_MAIN_EC_NULL;
+  // Require an explicit master and slave; do not guess from a bare alias.
+  if (strncmp(path, "ec", 2) || !strstr(path, ".s")) return ERROR_MAIN_ECMC_LINK_INVALID;
+  int master = -1, slaveId = -1, bit = -1;
+  char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+  int error = parseEcPath(const_cast<char *>(path), &master, &slaveId, alias, &bit);
+  if (error) return error;
+  if (master != ec->getMasterIndex()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+  auto *slave = slaveId >= 0 ? ec->findSlave(slaveId) : ec->getSlave(slaveId);
+  if (!slave) return ERROR_MAIN_EC_SLAVE_NULL;
+  auto *entry = slave->findEntry(alias);
+  if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+  auto source = entry->getDataAccess();
+  if (!source || !source->data) return ERROR_MAIN_ECMC_LINK_INVALID;
+  if (bit >= source->getBits() || bit >= 64) return ERROR_MAIN_ECMC_LINK_INVALID;
+  if (bit >= 0) {
+    const auto type = source->getDataType();
+    if (type == ECMC_EC_F32 || type == ECMC_EC_F64) return ERROR_MAIN_ECMC_LINK_INVALID;
+    auto selected = std::make_shared<ecmcDataAccess>(*source);
+    selected->originOwner = source;
+    selected->validation = ecmcDataAccess::ORIGIN_STATUS;
+    selected->validity = nullptr;
+    selected->selector = bit;
+    selected->numberReader = [](const ecmcDataAccess &access, double *value) {
+      uint64_t raw = 0;
+      int error = access.originOwner->readBit(access.selector, &raw);
+      if (!error) *value = static_cast<double>(raw);
+      return error;
+    };
+    selected->type = ECMC_EC_U8; selected->bits = 1;
+    selected->wordStorage = false; selected->writable = false;
+    selected->positiveBoolean = true; selected->exactUnsigned = false;
+    selected->finiteRequired = false;
+    source = selected;
+  } else if (conversion) {
+    auto converted = std::make_shared<ecmcDataAccess>(*source);
+    converted->originOwner = source;
+    converted->validation = ecmcDataAccess::ORIGIN_STATUS;
+    converted->validity = nullptr;
+    converted->positiveBoolean = conversion == 1;
+    converted->exactUnsigned = conversion == 2;
+    converted->finiteRequired = source->type == ECMC_EC_F32 || source->type == ECMC_EC_F64;
+    converted->writable = false;
+    source = converted;
+  }
+  *result = source;
+  return 0;
+}
+}
+
+int linkDataToObject(const char *source, char *destination, int conversion) {
   if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
-  if (!plcs || !destination || !source || (conversion < 0 || conversion > 2))
+  if (!plcs || !source || !destination || conversion < 0 || conversion > 2)
     return ERROR_MAIN_ECMC_LINK_INVALID;
   int axisIndex = -1, slot = -1;
   ecmcDataLink *target = nullptr;
@@ -469,47 +522,58 @@ int linkPLCDataToObject(int producerPLC, const char *source, char *destination, 
   const bool numericInput =
     (sub == ECMC_AX_SUB_OBJ_ENCODER &&
       (slot == ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION ||
-       slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE ||
-       slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
     (sub == ECMC_AX_SUB_OBJ_MONITOR && slot == ECMC_MON_ENTRY_INDEX_ANALOG);
-  // PLC scalars are doubles. Require an explicit conversion for integer/bit
-  // destinations instead of accepting a link that would fail on its first read.
-  if (!numericInput && conversion == 0) return ERROR_MAIN_ECMC_LINK_INVALID;
-  error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
-  if (error) return error;
-  return plcs->linkDataInput(producerPLC, source, axisIndex, target, slot, conversion);
-}
 
-int linkDataToObject(const char *source, char *destination, int conversion) {
-  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
-    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
-  if (!plcs || !source || !destination || conversion < 0 || conversion > 2)
-    return ERROR_MAIN_ECMC_LINK_INVALID;
-  int sourceAxis = -1, axisIndex = -1, slot = -1;
+  if (strncmp(source, "ec", 2) == 0) {
+    try {
+      std::shared_ptr<ecmcDataAccess> resolved;
+      error = resolveEthercatDataSource(source, conversion, &resolved);
+      if (error) return error;
+      const auto type = resolved->getDataType();
+      if (!numericInput && conversion == 0 && (type == ECMC_EC_F32 || type == ECMC_EC_F64))
+        return ERROR_MAIN_ECMC_LINK_INVALID;
+      error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
+      return error ? error : plcs->linkResolvedDataInput(resolved, axisIndex, target, slot);
+    } catch (...) { return ERROR_MAIN_EXCEPTION; }
+  }
+
+  if (strncmp(source, "plcs.", 5) == 0) {
+    // The path declares the producer whose lifetime and health are monitored.
+    // Axis PLCs use their existing plcs.axN namespace.
+    const char *index = source + 5;
+    int offset = 0, limit = ECMC_MAX_PLCS;
+    if (strncmp(index, "plc", 3) == 0) index += 3;
+    else if (strncmp(index, "ax", 2) == 0) {
+      index += 2; offset = ECMC_MAX_PLCS; limit = ECMC_MAX_AXES;
+    } else return ERROR_MAIN_ECMC_LINK_INVALID;
+    if (*index < '0' || *index > '9') return ERROR_MAIN_ECMC_LINK_INVALID;
+    int producer = 0;
+    while (*index >= '0' && *index <= '9') {
+      producer = producer * 10 + (*index++ - '0');
+      if (producer >= limit) return ERROR_MAIN_ECMC_LINK_INVALID;
+    }
+    if (*index != '.') return ERROR_MAIN_ECMC_LINK_INVALID;
+    ++index;
+    if (!((strncmp(index, "static.", 7) == 0 && index[7]) ||
+          (strncmp(index, "global.", 7) == 0 && index[7])))
+      return ERROR_MAIN_ECMC_LINK_INVALID;
+    // PLC scalars are doubles; integer/Boolean inputs need explicit conversion.
+    if (!numericInput && conversion == 0) return ERROR_MAIN_ECMC_LINK_INVALID;
+    error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
+    return error ? error : plcs->linkDataInput(offset + producer, index, axisIndex, target, slot, conversion);
+  }
+
+  int sourceAxis = -1;
   mainObjectType type;
-  // The existing parser validates the complete path and axis index.
-  int error = getMainObjectType(const_cast<char *>(source), &sourceAxis, &type);
+  error = getMainObjectType(const_cast<char *>(source), &sourceAxis, &type);
   if (error) return error;
   if (type != ECMC_OBJ_AXIS || sourceAxis < 0 || sourceAxis >= ECMC_MAX_AXES || !axes[sourceAxis])
     return ERROR_MAIN_ECMC_LINK_INVALID;
-  ecmcDataLink *target = nullptr;
-  error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
-  if (error) return error;
-  axisSubObjectType sub;
-  error = getAxSubObjectType(destination, &sub);
-  if (error) return error;
-  const bool numericInput =
-    (sub == ECMC_AX_SUB_OBJ_ENCODER &&
-      (slot == ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION ||
-       slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
-    (sub == ECMC_AX_SUB_OBJ_MONITOR && slot == ECMC_MON_ENTRY_INDEX_ANALOG);
-  // Preserve explicit numeric conversion policy for non-Boolean axis values.
   int boolean = 0;
   const auto sourceType = ecmcAxisBase::parseDataSource(source, &boolean);
-  if (sourceType == ECMC_AXIS_DATA_NONE)
-    return ERROR_MAIN_ECMC_LINK_INVALID;
-  // Compare canonical signal names, not whole axes. Different signals on the
-  // same axis and reciprocal cross-axis links retain normal execution order.
+  if (sourceType == ECMC_AXIS_DATA_NONE) return ERROR_MAIN_ECMC_LINK_INVALID;
+  // Compare canonical signal names, not whole axes.
   if (sourceAxis == axisIndex && sourceType == ecmcAxisBase::parseDataSource(destination))
     return ERROR_PLC_SOURCE_INVALID;
   if (!numericInput && !boolean && conversion == 0) return ERROR_MAIN_ECMC_LINK_INVALID;

@@ -33,25 +33,109 @@ write publication and bit-write behavior are retained by the descriptor.
 The old `ecmcEcEntryLink` header and historical method spellings remain as
 source-compatibility interfaces. Internal C++ class layouts have changed:
 rebuild external C++ clients that use these classes. The legacy plugin C ABI
-descriptor and existing configuration commands are unchanged; this is not a
+descriptor and pre-existing EtherCAT configuration commands are unchanged; this is not a
 claim of binary compatibility for clients compiled against internal C++ layouts.
+
+## One link command
+
+`Cfg.LinkDataToObject(source,destination,conversion)` resolves all currently
+supported input source families through `ecmcDataAccess` and `ecmcDataLink`:
+
+| Source | Example |
+| --- | --- |
+| EtherCAT entry or selected bit | `ec0.s3.Position`, `ec0.s3.Inputs.2` |
+| General PLC static/global variable | `plcs.plc0.static.limit`, `plcs.plc0.global.position` |
+| Axis PLC static/global variable | `plcs.ax1.static.limit` |
+| Readable axis value | `ax1.enc.actpos`, `ax1.drv.enable` |
+
+Source lookup and view creation happen before cyclic runtime. PLC source names
+are deferred until final configuration validation. There is one
+resolved binding at the consumer; no second value buffer or cyclic name lookup.
+The original EtherCAT configuration commands remain accepted with their existing
+behavior and use the same neutral consumer access layer.
+
+## EtherCAT source configuration
+
+```iocsh
+# Native word access and the normal encoder scaling/processing path.
+ecmcConfigOrDie "Cfg.LinkDataToObject(ec0.s3.Position,ax2.enc.actpos,0)"
+
+# Select bit 2. Both integer and numeric reads see 0 or 1.
+ecmcConfigOrDie "Cfg.LinkDataToObject(ec0.s3.Inputs.2,ax2.mon.lowlim,0)"
+ecmcConfigOrDie "Cfg.UnlinkDataFromObject(ax2.mon.lowlim)"
+```
+
+The master must match the configured master. Nonnegative slave numbers identify
+bus positions; `s-1` retains the existing simulated-slave convention. Entry aliases
+and optional bit indices use the existing EtherCAT path parser. Missing entries,
+wrong masters, invalid bit ranges and bit selection on floating entries are
+rejected before replacing a binding.
+
+Conversion `0` for a whole entry binds the provider's existing descriptor
+directly. It retains the entry's filtered domain-health pointer, native datatype
+and raw word precision. Bit selection and explicit numeric conversions prepare
+a read view during configuration, retaining the original descriptor for lifetime
+and health. Bit selection produces a Boolean value; conversions `1` and `2` do
+not change its 0/1 result. No receive/send calls are added to signal access.
+
+Bus-health errors leave the previous consumer input untouched. Existing domain
+failure filtering and lost-frame tolerances remain authoritative; configuration
+and runtime-entry lifetime checks do not demand an already healthy bus. Entry
+invalidation makes retained native and converted/bit bindings unreadable.
+Native whole-entry floating reads retain their existing semantics; explicit
+conversions validate their numeric inputs. Floating entries supplying integer
+inputs require conversion `1` or `2`.
 
 ## PLC source configuration
 
-The initial command interface supports an existing `static.*` or `global.*`
-scalar registered in a named producer PLC:
+PLC sources use `static.*` or `global.*` scalars in a named producer PLC, using
+the same `LinkDataToObject` command as EtherCAT and axis sources. Declare the
+links while configuring motion; load the PLC programs last:
 
 ```iocsh
-# Compile the producer and configure axis 2 first.
+# Hardware and axis 2 are configured first; PLC 0 need not exist yet.
 # Feed the normally configured encoder's raw position input; retain its scaling.
-ecmcConfigOrDie "Cfg.LinkPLCDataToObject(0,global.position,ax2.enc.actpos,0)"
+ecmcConfigOrDie "Cfg.LinkDataToObject(plcs.plc0.global.position,ax2.enc.actpos,0)"
 
 # Positive PLC value means switch input 1; zero/negative means input 0.
-ecmcConfigOrDie "Cfg.LinkPLCDataToObject(0,static.limit,ax2.mon.lowlim,1)"
+ecmcConfigOrDie "Cfg.LinkDataToObject(plcs.plc0.static.limit,ax2.mon.lowlim,1)"
 
-# Stop runtime before unlinking. The prior binding is restored if still alive.
+# Configure PLC programs later, after hardware/motion.
+ecmcConfigOrDie "Cfg.CreatePLC(0)"
+ecmcConfigOrDie "Cfg.AppendPLCExpr(0)=static.limit:=1;global.position:=0;"
+ecmcConfigOrDie "Cfg.SetPLCEnable(0,1)"
+
+# Optional explicit final check; entering runtime also performs this validation.
+ecmcConfigOrDie "Cfg.ValidateConfig()"
+
+# In configuration mode, unlink restores the prior binding if still alive.
 ecmcConfigOrDie "Cfg.UnlinkDataFromObject(ax2.mon.lowlim)"
 ```
+
+A PLC link command checks destination, path syntax and requested conversion,
+then reserves the input slot without replacing its previous binding. The named
+PLC and variable may be created later. Final validation parses/compiles PLCs,
+checks every pending source and its scalar metadata, then installs the prepared
+bindings before axis input validation. It does not create missing variables.
+Missing PLCs, failed compilation and absent variables prevent entry into RT.
+A missing variable reports `ERROR_PLC_VARIABLE_NOT_FOUND` at validation time.
+
+No pending binding is installed or producer pinned unless all pending sources
+pass preflight. A failed validation can therefore be corrected by loading or
+editing the PLCs and validating again. Previously resolved links retain their
+existing pins and must be unlinked before editing those producers. Pending links
+can also be cancelled with
+`UnlinkDataFromObject`; the original binding stays untouched. A destination
+changed by another command after declaration is reported as a conflict rather
+than silently overwritten. EtherCAT and readable-axis sources still resolve
+immediately from existing configured objects.
+
+PLC sources use `plcs.plcN.static.<name>` or `plcs.plcN.global.<name>`.
+For an axis PLC, use `plcs.axN.static.<name>` or `plcs.axN.global.<name>`.
+The prefix identifies the producer for lifetime pinning and health checks;
+global variable storage remains shared. A `plcs.plcN.global.*` link does not
+make a separate copy or establish exclusive ownership. These are source paths
+for the link command, not additional asyn parameter names.
 
 The encoder destination is the encoder selected for configuration, consistent
 with existing encoder-link commands (`Cfg.SelectAxisEncConfig`). These links
@@ -74,7 +158,7 @@ polarity, encoder scaling and other consumer configuration remain explicit
 existing settings. Linking does not enable motion or enable a monitor feature.
 
 Both application mode command and status must be configuration mode. A
-destination cannot be stacked with another PLC link: unlink it first. A failed
+destination cannot be stacked with another data link: unlink it first. A failed
 source lookup/type binding leaves the previous destination unchanged.
 
 ## Axis sources without a PLC program
@@ -102,7 +186,7 @@ used by PLCs. This requires no periodically refreshed proxy value. The descripto
 are read-only: linking an enable **source** does not issue an enable command.
 This command does not create additional `plcs.*` asyn parameters.
 
-Both link commands accept the same input destinations and configuration-mode
+All source families accept the same input destinations and configuration-mode
 rules. Non-Boolean axis sources still require conversion `1` or `2` for integer
 or Boolean destinations. Invalid names leave the destination untouched. An axis
 source becomes invalid when its owning axis is destroyed. It does not become
@@ -124,9 +208,10 @@ programs are not analysed.
 
 ## Lifetime, scheduling and validity
 
-The producer's variable is resolved during configuration. Global storage belongs
-to the PLC manager; static storage belongs to the PLC task. A linked producer
-is pinned against reload, expression replacement and deletion. Unlink all its
+The producer's variable is resolved during final pre-RT validation. Global
+storage belongs to the PLC manager; static storage belongs to the PLC task.
+After resolution, the producer is pinned against reload, expression replacement
+and deletion. Pending declarations do not pin a producer. Unlink all its
 inputs before changing its program. `ERROR_PLC_DATA_SOURCE_BOUND` reports this
 condition. Destruction/invalidation also makes retained source descriptors
 unreadable; a retained descriptor does not keep the source value alive.
@@ -160,17 +245,19 @@ links and refreshes their health without a name lookup in the cyclic path.
 ## Scope and validation
 
 Registered data items can export the neutral descriptor through C++
-`getDataAccess()` and be bound with `setDataAtIndex`. The initial command interface
-resolves PLC static/global sources and readable axis sources. Identical signal
+`getDataAccess()` and be bound with `setDataAtIndex`. The command resolves
+EtherCAT entries/bits, PLC static/global sources and readable axis sources.
+Identical signal
 self-links are rejected; different signals on the same axis and reciprocal
 cross-axis links are allowed. Array links, generic command
 destinations, analysis of PLC program dependencies and a simulated I/O driver
 are not implemented.
 
-Tests cover common scalar access/publication, on-demand axis names, native
+Tests cover common scalar access/publication, EtherCAT lookup/bit selection,
+filtered/custom health and entry invalidation, on-demand axis names, native
 position/bit/computed sources, same-axis and reciprocal links, identical signal
-self-link rejection and owner invalidation, PLC
-producer pins and faults, restore/unlink, runtime-entry validation and real
+self-link rejection and owner invalidation, deferred PLC resolution/atomic preflight, producer pins and faults, restore/unlink,
+runtime-entry validation and real
 encoder/monitor inputs.
 Logging/asyn and producer endpoints are controlled fixtures, not IOC execution.
 See [the expectation inventory](../tests/EXPECTATIONS.md).
@@ -180,6 +267,8 @@ no new per-signal transport dispatch or value buffer is introduced. Computed
 axis sources use a numeric-reader callback; ordinary native scalar sources and
 EtherCAT entry-word reads retain direct storage access. Explicit
 PLC links add producer-health work and an optional branch in the axis loop.
+EtherCAT and axis source links do not enter the PLC producer-health list; when
+there are no linked PLC producers, the cyclic health calls are skipped.
 This does not establish performance parity: measure the production cycle,
 jitter, deadlines and memory/cache effects against the baseline before rollout.
 

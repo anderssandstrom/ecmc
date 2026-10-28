@@ -171,8 +171,15 @@ removed before wiring it into the RT path.
 `ecmcDataAccess` and `ecmcDataLink` now provide the neutral scalar contract.
 Normal encoder/monitor/drive/PLC entry consumers use it; EtherCAT exports its
 existing buffer directly. Registered data items can export native storage, and
-configuration commands bind PLC `static.*`/`global.*` sources and lazily resolved
-readable axis values to ordinary axis input slots. Axis sources do not require
+`Cfg.LinkDataToObject` resolves EtherCAT entry/bit paths, producer-qualified PLC
+`static.*`/`global.*` sources and lazily resolved readable axis values into the
+same neutral bindings for ordinary axis input slots. Whole EtherCAT entries
+retain direct descriptor access and the existing filtered domain-health checks.
+Bit selection and explicit conversions are resolved before cyclic execution.
+PLC link names can be declared with motion configuration before their programs
+exist. Final validation compiles PLCs and resolves pending links before validating
+axis inputs; missing sources prevent RT entry without partially installing the
+pending batch. Axis sources do not require
 a PLC expression to register them. Native scalars retain direct storage access;
 bit fields and computed sources share the motion reader used by PLCs. Only
 identical signal self-links are rejected during configuration; different signals

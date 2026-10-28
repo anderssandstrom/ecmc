@@ -1723,26 +1723,24 @@ int ecmcPLCMain::linkDataInput(int plcIndex, const char *name, int axisIndex,
                               ecmcDataLink *target, int entryIndex, int conversion) {
   if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
-  CHECK_PLC_RETURN_IF_ERROR(plcIndex);
-  if (!target || axisIndex < 0 || axisIndex >= ECMC_MAX_AXES || !axes_[axisIndex] ||
-      entryIndex < 0 || entryIndex >= ECMC_DATA_LINKS_MAX) return ERROR_PLC_SOURCE_INVALID;
-  if (!plcs_[plcIndex]->getCompiled()) return ERROR_PLC_COMPILE_ERROR;
-  auto *variable = plcs_[plcIndex]->findBindingVariable(name);
-  if (!variable || !variable->getDataItem()) return ERROR_PLC_VARIABLE_NOT_FOUND;
+  if (plcIndex < 0 || plcIndex >= ECMC_MAX_PLCS + ECMC_MAX_AXES)
+    return ERROR_PLCS_INDEX_OUT_OF_RANGE;
+  if (!name || !target || axisIndex < 0 || axisIndex >= ECMC_MAX_AXES || !axes_[axisIndex] ||
+      entryIndex < 0 || entryIndex >= ECMC_DATA_LINKS_MAX || conversion < 0 || conversion > 2)
+    return ERROR_PLC_SOURCE_INVALID;
+  if (!((strncmp(name, "static.", 7) == 0 && name[7]) ||
+        (strncmp(name, "global.", 7) == 0 && name[7])) ||
+      strlen(name) >= EC_MAX_OBJECT_PATH_CHAR_LENGTH) return ERROR_PLC_SOURCE_INVALID;
   for (const auto &link : dataInputs_)
     if (link.target == target && link.entryIndex == entryIndex) return ERROR_PLC_DATA_SOURCE_BOUND;
-  DataInputLink link;
   bool inserted = false;
   try {
-    link.health.reset(new int(0));
-    if (!ecmcDataAccess::bind(*variable->getDataItem(), link.health.get(), conversion, &link.source))
-      return ERROR_PLC_SOURCE_INVALID;
-    link.source.originOwner = variable->getDataItem()->getDataAccess();
-    if (!link.source.originOwner) return ERROR_PLC_SOURCE_INVALID;
-    link.source.validityOwner = link.health;
+    DataInputLink link;
+    link.health = std::make_shared<int>(0);
     link.previous = target->getDataAtIndex(entryIndex, &link.previousBit);
     link.target = target; link.entryIndex = entryIndex;
     link.axisIndex = axisIndex; link.plcIndex = plcIndex;
+    link.variable = name; link.conversion = conversion;
     dataInputs_.push_back(std::move(link));
     inserted = true;
     dataInputIndices_[axisIndex].push_back(dataInputs_.size() - 1);
@@ -1750,15 +1748,8 @@ int ecmcPLCMain::linkDataInput(int plcIndex, const char *name, int axisIndex,
     if (inserted) dataInputs_.pop_back();
     return ERROR_MAIN_EXCEPTION;
   }
-  auto &added = dataInputs_.back();
-  int error = target->setDataAtIndex(added.source, entryIndex, -1);
-  if (error) {
-    dataInputIndices_[axisIndex].pop_back();
-    dataInputs_.pop_back();
-    return error;
-  }
-  added.installed = target->getDataAtIndex(entryIndex, nullptr);
-  plcs_[plcIndex]->pinDataBindings();
+  // Reserve the destination, but leave its existing binding untouched. PLCs
+  // and their static variables may be configured later in the startup script.
   return 0;
 }
 
@@ -1768,12 +1759,12 @@ int ecmcPLCMain::unlinkDataInput(ecmcDataLink *target, int entryIndex) {
   for (auto it = dataInputs_.begin(); it != dataInputs_.end(); ++it) {
     if (it->target != target || it->entryIndex != entryIndex) continue;
     auto current = target->getDataAtIndex(entryIndex, nullptr);
-    if (current == it->installed) {
+    if (it->installed && current == it->installed) {
       int error = it->previous && it->previous->data ?
         target->setDataAtIndex(it->previous, entryIndex, it->previousBit) : target->clearDataAtIndex(entryIndex);
       if (error) return error;
     }
-    if (it->plcIndex >= 0) plcs_[it->plcIndex]->unpinDataBindings();
+    if (it->plcIndex >= 0 && it->installed) plcs_[it->plcIndex]->unpinDataBindings();
     const size_t removed = static_cast<size_t>(it - dataInputs_.begin());
     dataInputs_.erase(it);
     // Only configuration-time membership maintenance; no RT name/list scans.
@@ -1787,13 +1778,70 @@ int ecmcPLCMain::unlinkDataInput(ecmcDataLink *target, int entryIndex) {
 }
 
 int ecmcPLCMain::validateDataInputs() {
-  for (const auto &link : dataInputs_) {
-    if ((link.plcIndex >= 0 && (!plcs_[link.plcIndex] || !plcs_[link.plcIndex]->getCompiled())) ||
-        (link.target->getDataAtIndex(link.entryIndex, nullptr) != link.installed ||
-         !link.source.originOwner || !link.source.originOwner->data))
-      return ERROR_PLC_SOURCE_INVALID;
-    *link.health = link.plcIndex < 0; // PLC health is recomputed before axis execution.
+  if (appModeStat != ECMC_MODE_CONFIG && appModeStat != ECMC_MODE_STARTUP)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  struct Prepared {
+    DataInputLink *link;
+    std::shared_ptr<ecmcDataAccess> access;
+  };
+  std::vector<Prepared> prepared;
+  const auto fail = [](const DataInputLink &link, int error) {
+    ecmcRtLoggerLogError("PLC data link validation failed: PLC%d %s -> axis%d input%d (0x%x).\n",
+                         link.plcIndex, link.variable.c_str(), link.axisIndex, link.entryIndex, error);
+    return error;
+  };
+  try {
+    prepared.reserve(dataInputs_.size());
+    for (auto &link : dataInputs_) {
+      if (link.plcIndex >= 0 && !link.installed) {
+        auto *producer = plcs_[link.plcIndex];
+        if (!producer) return fail(link, ERROR_PLCS_PLC_NULL);
+        if (!producer->getCompiled()) return fail(link, ERROR_PLC_COMPILE_ERROR);
+        auto *variable = producer->findBindingVariable(link.variable.c_str());
+        if (!variable || !variable->getDataItem()) return fail(link, ERROR_PLC_VARIABLE_NOT_FOUND);
+        int bit = -1;
+        if (link.target->getDataAtIndex(link.entryIndex, &bit) != link.previous || bit != link.previousBit)
+          return fail(link, ERROR_PLC_DATA_SOURCE_BOUND);
+        auto access = std::make_shared<ecmcDataAccess>();
+        if (!ecmcDataAccess::bind(*variable->getDataItem(), link.health.get(), link.conversion, access.get()))
+          return fail(link, ERROR_PLC_SOURCE_INVALID);
+        access->originOwner = variable->getDataItem()->getDataAccess();
+        if (!access->originOwner || !access->originOwner->data) return fail(link, ERROR_PLC_SOURCE_INVALID);
+        access->validityOwner = link.health;
+        prepared.push_back({&link, access});
+        continue;
+      }
+      if ((link.plcIndex >= 0 && (!plcs_[link.plcIndex] || !plcs_[link.plcIndex]->getCompiled())) ||
+          link.target->getDataAtIndex(link.entryIndex, nullptr) != link.installed || !link.source.originOwner)
+        return fail(link, ERROR_PLC_SOURCE_INVALID);
+      // Communication need not be healthy yet, but all storage must be alive.
+      for (auto *source = link.source.originOwner.get(); source; source = source->originOwner.get())
+        if (!source->data) return fail(link, ERROR_PLC_SOURCE_INVALID);
+    }
+  } catch (...) { return ERROR_MAIN_EXCEPTION; }
+
+  // All pending sources have passed lookup/type/lifetime checks. Installing a
+  // prepared shared descriptor allocates no memory. Roll back on attach failure.
+  for (size_t i = 0; i < prepared.size(); ++i) {
+    auto &link = *prepared[i].link;
+    int error = link.target->setDataAtIndex(prepared[i].access, link.entryIndex, -1);
+    if (error) {
+      for (size_t j = 0; j < i; ++j) {
+        auto &undo = *prepared[j].link;
+        if (undo.previous && undo.previous->data)
+          undo.target->setDataAtIndex(undo.previous, undo.entryIndex, undo.previousBit);
+        else undo.target->clearDataAtIndex(undo.entryIndex);
+        plcs_[undo.plcIndex]->unpinDataBindings();
+        undo.installed.reset(); undo.source = ecmcDataAccess();
+      }
+      return fail(link, error);
+    }
+    link.source = *prepared[i].access;
+    link.installed = prepared[i].access;
+    plcs_[link.plcIndex]->pinDataBindings();
   }
+  for (const auto &link : dataInputs_)
+    *link.health = link.plcIndex < 0; // PLC health is recomputed before axis execution.
   return 0;
 }
 
@@ -1815,38 +1863,49 @@ int ecmcPLCMain::linkAxisDataInput(int sourceAxis, const char *name, int axisInd
                                   ecmcDataLink *target, int entryIndex, int conversion) {
   if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
-  if (!target || sourceAxis < 0 || sourceAxis >= ECMC_MAX_AXES || !axes_[sourceAxis] ||
-      axisIndex < 0 || axisIndex >= ECMC_MAX_AXES || !axes_[axisIndex] ||
-      entryIndex < 0 || entryIndex >= ECMC_DATA_LINKS_MAX || conversion < 0 || conversion > 2)
-    return ERROR_PLC_SOURCE_INVALID;
-  for (const auto &link : dataInputs_)
-    if (link.target == target && link.entryIndex == entryIndex) return ERROR_PLC_DATA_SOURCE_BOUND;
-  bool inserted = false;
+  if (sourceAxis < 0 || sourceAxis >= ECMC_MAX_AXES || !axes_[sourceAxis] ||
+      conversion < 0 || conversion > 2) return ERROR_PLC_SOURCE_INVALID;
   try {
     auto source = axes_[sourceAxis]->getDataSource(name);
     if (!source || !source->data) return ERROR_PLC_VARIABLE_NOT_FOUND;
+    if (conversion) {
+      auto converted = std::make_shared<ecmcDataAccess>(*source);
+      converted->originOwner = source;
+      converted->positiveBoolean = source->positiveBoolean || conversion == 1;
+      converted->exactUnsigned = conversion == 2;
+      source = converted;
+    }
+    return linkResolvedDataInput(source, axisIndex, target, entryIndex, sourceAxis);
+  } catch (...) { return ERROR_MAIN_EXCEPTION; }
+}
+
+int ecmcPLCMain::linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &source,
+                                      int axisIndex, ecmcDataLink *target, int entryIndex,
+                                      int sourceAxis) {
+  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (!source || !source->data || !target || axisIndex < 0 || axisIndex >= ECMC_MAX_AXES ||
+      !axes_[axisIndex] || entryIndex < 0 || entryIndex >= ECMC_DATA_LINKS_MAX)
+    return ERROR_PLC_SOURCE_INVALID;
+  for (const auto &link : dataInputs_)
+    if (link.target == target && link.entryIndex == entryIndex) return ERROR_PLC_DATA_SOURCE_BOUND;
+  try {
     DataInputLink link;
-    link.source = *source;
+    // Keep the provider's descriptor itself on the cyclic path. In particular,
+    // native EtherCAT word reads retain their direct filtered-domain check.
     link.source.originOwner = source;
-    link.source.positiveBoolean = source->positiveBoolean || conversion == 1;
-    link.source.exactUnsigned = conversion == 2;
-    link.health = std::make_shared<int>(1);
-    link.source.validityOwner = link.health;
-    link.source.validity = link.health.get();
+    link.health = std::make_shared<int>(1); // Lifecycle bookkeeping, not provider health.
     link.previous = target->getDataAtIndex(entryIndex, &link.previousBit);
     link.target = target; link.entryIndex = entryIndex;
     link.axisIndex = axisIndex; link.plcIndex = -1; link.sourceAxis = sourceAxis;
     dataInputs_.push_back(std::move(link));
-    inserted = true;
-    dataInputIndices_[axisIndex].push_back(dataInputs_.size() - 1);
   } catch (...) {
-    if (inserted) dataInputs_.pop_back();
     return ERROR_MAIN_EXCEPTION;
   }
   auto &added = dataInputs_.back();
-  int error = target->setDataAtIndex(added.source, entryIndex, -1);
+  int error = target->setDataAtIndex(source, entryIndex, -1);
   if (error) {
-    dataInputIndices_[axisIndex].pop_back(); dataInputs_.pop_back(); return error;
+    dataInputs_.pop_back(); return error;
   }
   added.installed = target->getDataAtIndex(entryIndex, nullptr);
   return 0;

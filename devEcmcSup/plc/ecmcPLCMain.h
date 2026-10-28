@@ -74,8 +74,19 @@ public:
                     ecmcDataLink *target, int entryIndex, int conversion);
   int linkAxisDataInput(int sourceAxis, const char *name, int axisIndex,
                         ecmcDataLink *target, int entryIndex, int conversion);
+  int linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &source,
+                            int axisIndex, ecmcDataLink *target, int entryIndex,
+                            int sourceAxis = -1);
   int unlinkDataInput(ecmcDataLink *target, int entryIndex);
+  bool hasPendingDataInputs() const {
+    for (const auto &link : dataInputs_) if (link.plcIndex >= 0 && !link.installed) return true;
+    return false;
+  }
   bool hasDataInputs() const { return !dataInputs_.empty(); }
+  bool hasDataInputProducers() const {
+    for (const auto &link : dataInputs_) if (link.plcIndex >= 0) return true;
+    return false;
+  }
   void updateDataInputHealth(int axisIndex);
   int validateDataInputs();
   int          setAxisGroupArrayPointer(ecmcAxisGroup *grp,
@@ -187,6 +198,8 @@ private:
     int axisIndex;
     int plcIndex;
     int sourceAxis = -1;
+    std::string variable; // Pending PLC name; resolved only during final validation.
+    int conversion = 0;
   };
   std::vector<DataInputLink> dataInputs_;
   std::vector<size_t> dataInputIndices_[ECMC_MAX_AXES];

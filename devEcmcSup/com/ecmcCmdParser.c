@@ -863,15 +863,7 @@ static int handleCfgCommand(const char *myarg_1) {
     return validateConfig();
   }
 
-  // Bind a PLC scalar to a normal axis input; all strings are bounded.
-  if (strncmp(myarg_1, "LinkPLCDataToObject(", 20) == 0) {
-    int parsedEnd = 0;
-    nvals = sscanf(myarg_1, "LinkPLCDataToObject(%d,%1023[^,],%1023[^,],%d)%n",
-                   &iValue, cIdBuffer, cIdBuffer2, &iValue2, &parsedEnd);
-    if (nvals != 4 || !parsedEnd || myarg_1[parsedEnd] != '\0')
-      return ERROR_MAIN_PARSER_INVALID_FORMAT;
-    return linkPLCDataToObject(iValue, trimWhitespace(cIdBuffer), trimWhitespace(cIdBuffer2), iValue2);
-  }
+  // Bind a scalar source to a normal axis input; all strings are bounded.
   if (strncmp(myarg_1, "LinkDataToObject(", 17) == 0) {
     int parsedEnd = 0;
     nvals = sscanf(myarg_1, "LinkDataToObject(%1023[^,],%1023[^,],%d)%n",

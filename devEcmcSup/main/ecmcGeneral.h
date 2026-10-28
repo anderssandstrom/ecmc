@@ -32,9 +32,9 @@ extern "C" {
 int         getControllerError();
 
 // Configuration only. conversion: 0=native, 1=positive Boolean, 2=exact unsigned integer.
-// source is an existing global.* or static.* variable in producer PLC.
-int linkPLCDataToObject(int producerPLC, const char *source, char *destination, int conversion);
-// Native readable axis source; no PLC program or variable registration required.
+// source: axN.<readable value>, plcs.plcN.static/global.<name>,
+// plcs.axN.static/global.<name> for an axis PLC, or ecN.sM.<entry>[.<bit>].
+// PLC names are queued and resolved during final validation, before cyclic RT.
 int linkDataToObject(const char *source, char *destination, int conversion);
 int unlinkDataFromObject(char *destination);
 

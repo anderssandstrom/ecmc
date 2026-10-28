@@ -436,7 +436,7 @@ void cyclic_task(void *usr) {
   prepareControllerErrorObjectsRT();
 
   // Snapshot the configuration once per runtime entry.
-  const bool dataInputsConfigured = plcs && plcs->hasDataInputs();
+  const bool dataInputsConfigured = plcs && plcs->hasDataInputProducers();
   const bool startupGateEnabled =
     startupGateConfigured.load(std::memory_order_acquire);
   // Explicit opt-out for applications that never call iocInit/iocRun.
@@ -1281,6 +1281,17 @@ int validateConfig() {
     }
   }
 
+  // PLC links may be declared with motion configuration, before PLC programs
+  // exist. Compile/resolve those links before validating their axis inputs.
+  const bool plcInputsPending = plcs && plcs->hasPendingDataInputs();
+  if (plcInputsPending) {
+    errorCode = plcs->validate();
+    if (errorCode) {
+      LOGERR("ERROR: Validation failed on pending PLC data links with error code %x.", errorCode);
+      return errorCode;
+    }
+  }
+
   for (int i = 0; i < ECMC_MAX_AXES; i++) {
     if (axes[i] != NULL) {
       axisCount++;
@@ -1329,7 +1340,7 @@ int validateConfig() {
     }
   }
 
-  if (plcs) {
+  if (plcs && !plcInputsPending) {
     errorCode = plcs->validate();
 
     if (errorCode) {
