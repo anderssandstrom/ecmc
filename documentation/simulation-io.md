@@ -29,8 +29,15 @@ appropriate instance with `Cfg.EcSetMaster(id)` before its configuration command
 Full signal paths identify their instance independently of the current selection.
 This does not add support for multiple physical masters to the existing driver.
 
-A wrapper which normally claims hardware must choose the backend before its
-`EcSetMaster` call. No ecmccfg startup-mode macro is added by this change.
+With ecmccfg, pass `SIM=1` to `startup.cmd` (or its `require` arguments):
+
+```iocsh
+require ecmccfg "MASTER_ID=0,SIM=1,EC_RATE=500"
+```
+
+`SIM` defaults to `0`. Startup selects the backend before `addMaster.cmd` claims
+the instance and skips MX-System hardware discovery in simulation mode.
+`MASTER_ID=-1` retains masterless behavior even when `SIM=1`.
 
 ## Shared values and external models
 
@@ -83,20 +90,44 @@ serialized access paths; stable pointers alone do not make concurrent writes saf
 | --- | --- |
 | Slave and scalar PDO-entry declarations, aliases, constants | Create typed memory; retain the normal signal names and declaration metadata |
 | Encoder, drive, monitor and ordinary PLC scalar links | Bind through the common data layer |
-| Configured scalar/typed/buffer/complete SDO writes | Store bytes in a per-device object dictionary; no mailbox transfer |
+| Immediate scalar (`EcWriteSdo`) and configured scalar/typed/buffer/complete SDO writes | Store bytes in a per-device object dictionary; no mailbox transfer |
 | Scalar SDO read/verify | Read the stored object with matching size; missing objects fail |
 | DC, watchdog, timing overrides, domain/offline and diagnostic settings | Retain configuration metadata; no physical timing, timeout or bus behavior is synthesized |
 | Device identity checks | Use declared vendor/product identity; revision/serial are stored dictionary values or zero when unspecified |
 | Cyclic phases | Run on the existing RT thread, before control and after safety/publication; do not generate device feedback |
+
+Immediate scalar SDO writes accept 1–4 bytes, matching the command's 32-bit
+payload. For example, the `0x1011:1` reset write in `slaveVerify.cmd` stores the
+request for later readback; it does not erase configured signals or run a reset
+model.
 
 This is currently scalar buffer simulation, not a complete EtherLab emulator.
 Memory maps, derived process-image items, asynchronous SDO requests, SoE,
 entry-copy services and several specialized timing services return
 `ERROR_MAIN_IO_CONFIG_UNSUPPORTED` for a selected simulated instance. Some
 specialized axis status/sequencer/PVT link commands still require migration.
-Master/slave diagnostic and timing PV collections are not reproduced; loading
-all existing hardware diagnostic templates is not yet verified. Therefore an
-arbitrary complete ecmccfg startup is not yet guaranteed to work unchanged.
+The standard master/slave status and count parameters and default-domain
+parameters are registered with their existing asyn names:
+
+- `ecN.masterstatus`, `ecN.slavecounter`, `ecN.entrycounter`, `ecN.memmapcounter`
+- `ecN.sM.slavestatus` for each nonnegative configured device position
+- `ecN.dom0.domainstatus`, `ecN.dom0.domainfailcountertotal`
+
+These parameters are read-only. Existing record bit layouts are retained:
+a validated healthy instance reports synthetic online/OP and domain-complete
+flags; an unhealthy instance clears those flags and reports domain-zero.
+Status publication occurs in the existing slow phase. Counts describe configured
+nonnegative devices and declared entries, excluding built-in `ZERO`/`ONE` and
+aliases. Memory-map count is zero because memory maps are unsupported. Master
+status embeds the healthy simulated device count in its high 16 bits, and slave
+status embeds that device's entry count. The domain working-counter field is
+zero; no measured EtherCAT counter is available. The failure total counts cyclic
+status checks with injected unhealthy state, saturates at UINT32_MAX, and is
+retained on recovery and startup reset.
+
+Additional domain and hardware timing diagnostic collections are not reproduced.
+Loading every hardware diagnostic template is not yet verified, so an arbitrary
+complete ecmccfg startup is not yet guaranteed to work unchanged.
 
 The driver does not exercise PDO byte offsets, bit packing, endianness conversion,
 distributed clock discovery or physical bus state. Stored configuration settings
@@ -105,7 +136,8 @@ must not be interpreted as proof that those hardware behaviors were tested.
 ## Validation
 
 `test_simulation_driver.py` compiles the real memory driver with controlled asyn
-publication. It covers shared storage, typed writes, aliases, object dictionaries,
+publication. It covers diagnostic names/bit layouts/counts and fault recovery
+with 31 configured devices, plus shared storage, typed writes, aliases, object dictionaries,
 faults and invalidation. `test_simulation_configuration.py` exercises the actual
 registry and extracted configuration/parser routes with controlled hardware and
 axis endpoints. It also checks that the parser's API header compiles as C.

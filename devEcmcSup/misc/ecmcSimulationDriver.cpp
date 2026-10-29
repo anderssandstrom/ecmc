@@ -28,7 +28,29 @@ ecmcSimulationDriver::ecmcSimulationDriver(int id, ecmcAsynPortDriver *port)
     healthParameter_->setEcmcMinValueInt(0);
     healthParameter_->setEcmcMaxValueInt(1);
     healthParameter_->refreshParam(1);
+    const std::string prefix = "ec" + std::to_string(id_) + ".";
+    registerDiagnostic(prefix + "masterstatus", &masterStatus_);
+    registerDiagnostic(prefix + "slavecounter", &slaveCount_);
+    registerDiagnostic(prefix + "entrycounter", &entryCount_);
+    registerDiagnostic(prefix + "memmapcounter", &memmapCount_);
+    registerDiagnostic(prefix + "dom0.domainstatus", &domainStatus_);
+    registerDiagnostic(prefix + "dom0.domainfailcountertotal", &failedCycles_);
   }
+}
+
+int ecmcSimulationDriver::registerDiagnostic(const std::string &name, uint32_t *value) {
+  if (!port_) return 0;
+  auto *parameter = port_->addNewAvailParam(name.c_str(), asynParamInt32,
+    reinterpret_cast<uint8_t *>(value), sizeof(*value), ECMC_EC_U32, 0);
+  if (!parameter) {
+    configurationError_ = ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+    return configurationError_;
+  }
+  parameter->addSupportedAsynType(asynParamUInt32Digital);
+  parameter->setAllowWriteToEcmc(false);
+  parameter->refreshParam(1);
+  diagnosticParameters_.push_back(parameter);
+  return 0;
 }
 
 ecmcSimulationDriver::Entry::~Entry() {
@@ -39,6 +61,7 @@ ecmcSimulationDriver::Entry::~Entry() {
 ecmcSimulationDriver::~ecmcSimulationDriver() {
   *healthy_ = 0;
   if (healthParameter_) healthParameter_->setEcmcDataPointer(nullptr, 0);
+  for (auto *parameter : diagnosticParameters_) parameter->setEcmcDataPointer(nullptr, 0);
 }
 
 int ecmcSimulationDriver::addDevice(int alias, int position, uint32_t vendor, uint32_t product) {
@@ -50,7 +73,13 @@ int ecmcSimulationDriver::addDevice(int alias, int position, uint32_t vendor, ui
   Device device;
   device.alias = alias; device.vendor = vendor; device.product = product;
   devices_.emplace(position, std::move(device));
-  if (position >= 0) deviceOrder_.push_back(position);
+  if (position >= 0) {
+    deviceOrder_.push_back(position);
+    slaveCount_ = static_cast<uint32_t>(deviceOrder_.size());
+    int error = registerDiagnostic("ec" + std::to_string(id_) + ".s" +
+      std::to_string(position) + ".slavestatus", &devices_.at(position).status);
+    if (error) return error;
+  }
   active_ = false;
   int error = addEntry(position, vendor, product, 2, 0, 0, 0, 0, ECMC_EC_U32, "ZERO", true);
   if (error) return error;
@@ -125,6 +154,7 @@ int ecmcSimulationDriver::addEntry(int position, uint32_t vendor, uint32_t produ
   auto *stored = entry.get();
   device->entries.emplace(name, std::move(entry));
   device->entryOrder.push_back(stored);
+  if (position >= 0 && strcmp(name, "ZERO") && strcmp(name, "ONE")) ++entryCount_;
   active_ = false;
   return 0;
 }
@@ -271,8 +301,29 @@ int ecmcSimulationDriver::validate() {
   for (auto &device : devices_) for (auto &entry : device.second.entries)
     if (entry.second->realtime) entries.push_back(entry.second.get());
   cyclicEntries_ = std::move(entries);
+  cyclicDevices_.clear();
+  for (int position : deviceOrder_) cyclicDevices_.push_back(&devices_.at(position));
   active_ = true;
+  updateStatusWords();
   return 0;
+}
+
+void ecmcSimulationDriver::updateStatusWords() {
+  const bool ready = active_ && *healthy_;
+  // Existing record layouts, describing the memory backend's synthetic state.
+  // No measured working counter or distributed-clock state is claimed.
+  masterStatus_ = ready ? 1u | (8u << 1) | ((slaveCount_ & 0xffffu) << 16) : 0;
+  domainStatus_ = ready ? 1u << 3 : 1u << 1;
+  for (auto *device : cyclicDevices_) {
+    const uint32_t entries = static_cast<uint32_t>(device->entryOrder.size() - 2);
+    device->status = ((entries & 0xffffu) << 16) | (ready ? 1u | 2u | (8u << 2) : 0);
+  }
+}
+
+int ecmcSimulationDriver::updateIoStatus() {
+  if (active_ && !*healthy_ && failedCycles_ < std::numeric_limits<uint32_t>::max())
+    ++failedCycles_;
+  return *healthy_;
 }
 
 void ecmcSimulationDriver::readInputs(timespec time, timespec offset) {
@@ -281,6 +332,8 @@ void ecmcSimulationDriver::readInputs(timespec time, timespec offset) {
 }
 
 void ecmcSimulationDriver::slowExecute() {
+  updateStatusWords();
   if (healthParameter_) healthParameter_->refreshParamRT(0);
+  for (auto *parameter : diagnosticParameters_) parameter->refreshParamRT(0);
   for (auto *entry : cyclicEntries_) if (entry->parameter) entry->parameter->refreshParamRT(0);
 }

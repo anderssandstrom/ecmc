@@ -29,6 +29,7 @@ public:
   struct Device {
     int alias = 0;
     uint32_t vendor = 0, product = 0;
+    uint32_t status = 0;
     std::map<std::string, std::unique_ptr<Entry>> entries;
     std::vector<Entry *> entryOrder;
     std::map<unsigned, std::vector<uint8_t>> objects;
@@ -61,7 +62,7 @@ public:
 
   bool isActive() const override { return active_; }
   void readInputs(timespec time, timespec offset) override;
-  int updateIoStatus() override { return *healthy_; }
+  int updateIoStatus() override;
   void writeOutputs(timespec offset) override { offset_ = offset; }
   void setTimeOffset(timespec offset) override { offset_ = offset; }
   bool timingReady() const override { return active_ && *healthy_; }
@@ -71,6 +72,8 @@ public:
 
 private:
   static int parseValue(ecmcEcDataType type, const char *text, uint64_t *result);
+  int registerDiagnostic(const std::string &name, uint32_t *value);
+  void updateStatusWords();
   std::vector<int> deviceOrder_;
   int configurationError_ = 0;
   ecmcAsynDataItem *healthParameter_ = nullptr;
@@ -82,6 +85,10 @@ private:
   std::map<int, Device> devices_;
   std::map<std::pair<int, std::string>, Entry *> aliases_;
   std::vector<Entry *> cyclicEntries_; // Frozen before RT; no cyclic name lookup.
+  std::vector<Device *> cyclicDevices_;
+  std::vector<ecmcAsynDataItem *> diagnosticParameters_;
+  uint32_t masterStatus_ = 0, slaveCount_ = 0, entryCount_ = 0, memmapCount_ = 0;
+  uint32_t domainStatus_ = 0, failedCycles_ = 0;
 };
 
 #endif

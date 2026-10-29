@@ -189,6 +189,17 @@ int main() {
   assert(ecAddSdoBuffer(2,0x8000,2,"01 02 ff",3) == 0);
   uint8_t bytes[3] = {};
   auto *simulation = ecmcFindSimulation(0);
+  // slaveVerify.cmd immediately writes the factory-reset SDO after verification.
+  // Store the request in simulation without resetting or requesting hardware.
+  assert(ecVerifySlave(0,3,0x2,0x13893052,0) == 0);
+  assert(ecWriteSdo(3,0x1011,1,1684107116,4) == 0);
+  uint32_t resetRequest = 0;
+  assert(ecReadSdo(3,0x1011,1,4,&resetRequest) == 0 && resetRequest == 1684107116);
+  assert(ecWriteSdo(3,0x1011,1,0,0) == ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR);
+  assert(ecWriteSdo(3,0x1011,1,0,5) == ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR);
+  assert(ecReadSdo(3,0x1011,1,4,&resetRequest) == 0 && resetRequest == 1684107116);
+  assert(ecWriteSdo(99,0x1011,1,0,4) != 0);
+  assert(hardware.requests == 0);
   assert(simulation->getObject(2,0x8000,2,bytes,3) == 0 && bytes[2] == 255);
   assert(simulation->findDevice(2)->settings["dc"][2] == -1000);
   assert(command("SimSetValue(ec0.s2.positionActual01,-123)") == 0);

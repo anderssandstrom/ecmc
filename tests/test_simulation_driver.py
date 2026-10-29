@@ -17,10 +17,22 @@ checks = r'''
 #include "ecmcAsynPortDriver.h"
 #include "ecmcDataLink.h"
 #include "ecmcErrorsList.h"
+// DOC: simulation-io.md; bit layouts match ecmcEc/Slave/Domain and ecmccfg records.
+uint32_t diagnostic(ecmcAsynPortDriver &port, const char *name) {
+  auto *parameter = port.find(name);
+  assert(parameter && !parameter->writable && parameter->bytes == sizeof(uint32_t));
+  uint32_t value = 0;
+  memcpy(&value, parameter->data, sizeof(value));
+  return value;
+}
 int main() {
   ecmcAsynPortDriver port;
   auto driver = std::make_unique<ecmcSimulationDriver>(0, &port);
+  assert(driver->configurationError() == 0);
+  assert(driver->addDevice(0, -1, 0, 0) == 0);
   assert(driver->addDevice(0, 2, 123, 456) == 0);
+  auto *slaveStatusPV = port.find("ec0.s2.slavestatus");
+  auto *masterStatusPV = port.find("ec0.masterstatus");
   assert(driver->addEntry(2, 123, 456, 2, 3, 0x1a00, 0x6000, 1, ECMC_EC_S32, "positionActual01", true) == 0);
   assert(driver->addEntry(2, 123, 456, 1, 2, 0x1600, 0x7000, 1, ECMC_EC_U16, "controlWord01", true) == 0);
   auto input = driver->findEntry(2, "positionActual01")->access;
@@ -33,6 +45,14 @@ int main() {
   assert(encoder.setDataAtIndex(input, 0, -1) == 0);
   assert(drive.setDataAtIndex(output, 0, -1) == 0);
   assert(driver->validate() == 0 && driver->isActive());
+  driver->slowExecute();
+  assert(diagnostic(port,"ec0.masterstatus") == ((1u << 16) | 17u));
+  assert(diagnostic(port,"ec0.s2.slavestatus") == ((2u << 16) | 35u));
+  assert(diagnostic(port,"ec0.slavecounter") == 1);
+  assert(diagnostic(port,"ec0.entrycounter") == 2);
+  assert(diagnostic(port,"ec0.memmapcounter") == 0);
+  assert(diagnostic(port,"ec0.dom0.domainstatus") == 8);
+  assert(diagnostic(port,"ec0.dom0.domainfailcountertotal") == 0);
   driver->readInputs({1,2}, {3,4});
   double position = 0;
   assert(encoder.readDataValueDouble(0, &position) == 0 && position == -123);
@@ -53,9 +73,20 @@ int main() {
   const int unhealthy = 0;
   memcpy(healthPV->data, &unhealthy, sizeof(unhealthy)); position = 77;
   assert(!driver->updateIoStatus() && !driver->timingReady());
+  driver->slowExecute();
+  assert(diagnostic(port,"ec0.masterstatus") == 0);
+  assert(diagnostic(port,"ec0.s2.slavestatus") == (2u << 16));
+  assert(diagnostic(port,"ec0.dom0.domainstatus") == 2);
+  assert(diagnostic(port,"ec0.dom0.domainfailcountertotal") == 1);
   assert(encoder.readDataValueDouble(0, &position) != 0 && position == 77);
   driver->resetStartupErrors(); assert(!input->valid());
   driver->setHealthy(true); assert(input->valid());
+  assert(driver->updateIoStatus());
+  driver->slowExecute();
+  assert(diagnostic(port,"ec0.masterstatus") == ((1u << 16) | 17u));
+  assert(diagnostic(port,"ec0.s2.slavestatus") == ((2u << 16) | 35u));
+  assert(diagnostic(port,"ec0.dom0.domainstatus") == 8);
+  assert(diagnostic(port,"ec0.dom0.domainfailcountertotal") == 1);
   assert(driver->setObjectTyped(2, 0x8000, 1, ECMC_EC_U64, "18446744073709551615") == 0);
   uint64_t object = 0;
   assert(driver->getObject(2, 0x8000, 1, &object, 8) == 0 && object == UINT64_MAX);
@@ -66,6 +97,20 @@ int main() {
   assert(!input->data && !output->data && !input->valid());
   assert(!pv->data && pv->bytes == 0);
   assert(!healthPV->data);
+  assert(!slaveStatusPV->data && !masterStatusPV->data);
+  // A 31-device configuration retains stable status addresses while growing.
+  ecmcSimulationDriver many(1, &port);
+  assert(many.addDevice(0, -1, 0, 0) == 0);
+  for (int i = 1; i <= 31; ++i) assert(many.addDevice(0, i, 123, 456) == 0);
+  assert(many.addDevice(0, 1, 123, 456) == 0); // Verify/redeclare does not double-count.
+  assert(many.addEntry(31,123,456,2,3,0x1a00,0x6000,1,ECMC_EC_S32,"position",true) == 0);
+  assert(many.validate() == 0);
+  many.slowExecute();
+  assert(diagnostic(port,"ec1.slavecounter") == 31);
+  assert(diagnostic(port,"ec1.entrycounter") == 1);
+  assert(diagnostic(port,"ec1.masterstatus") == ((31u << 16) | 17u));
+  assert(diagnostic(port,"ec1.s1.slavestatus") == 35u);
+  assert(diagnostic(port,"ec1.s31.slavestatus") == ((1u << 16) | 35u));
 }
 '''
 with tempfile.TemporaryDirectory(prefix='ecmc-simulation-') as directory:

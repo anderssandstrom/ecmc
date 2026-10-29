@@ -1074,8 +1074,9 @@ int ecWriteSdo(uint16_t slavePosition,
                uint8_t  sdoSubIndex,
                uint32_t value,
                int      byteSize) {
-  if (ecmcSelectedSimulation()) {
-    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (byteSize < 1 || byteSize > 4) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    return simulation->setObject(slavePosition, sdoIndex, sdoSubIndex, &value, byteSize);
   }
 
   LOGINFO4(

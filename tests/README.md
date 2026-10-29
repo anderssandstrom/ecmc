@@ -92,7 +92,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_async_sdo_array.py` | Scalar/array payloads, asynchronous request lifecycle, lookup and PLC/C++ interfaces |
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |
-| `test_simulation_driver.py` | Real memory driver with controlled asyn: shared typed storage/PV buffers, aliases, scalar/object range checks, explicit health and invalidation; no device model |
+| `test_simulation_driver.py` | Real memory driver with controlled asyn: shared typed storage/PV buffers, aliases, scalar/object range checks, explicit health, standard diagnostic names/status/counters with 31 devices and invalidation; no device model |
 | `test_simulation_configuration.py` | Backend locking, C-compatible parser API, actual registry and configuration routes, SDO storage, identical encoder/drive/monitor commands on both backends, feature setup and mixed instance selection; controlled hardware/axis endpoints |
 | `test_io_driver.py` | Real cyclic I/O interface/EtherCAT adapter with controlled provider: input/output timestamps, receive/domain/status order, health, startup reset, slow work and timing-only offset update |
 | `test_domain_health.py` | Configured domain-failure tolerance, complete-sample recovery, startup priming and offline summary/local validity |
