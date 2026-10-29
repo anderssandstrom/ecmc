@@ -46,10 +46,24 @@ position load, record processing, and a subsequent RT sample acknowledging that
 load. An axis with no loaded motor record has no motor handshake to wait for;
 creating an asyn motor axis object alone does not add this wait.
 
-Only after these conditions are met, with the bus and timing still ready, are
-axis/general PLCs, motion sequences, PVT, master/slave state machines, ordinary
-plugin cyclic callbacks and C++ logic released. Configured enable-at-startup is
-deferred until that release. Position compare is also held until this point.
+After common IOC/bus stabilization, each axis releases its own direct enable
+and motion commands, axis PLC and position compare when its native initialization
+and motor-record handshake complete. Configured enable-at-startup is deferred
+until that axis releases. An unready physical motor does not hold another
+physical motor, including motors in the same mirror/slit slave group.
+
+Virtual/master axes belonging to a configured master/slave state machine also
+wait for the native/motor handshakes of that machine's master and slave groups.
+Each machine starts when its own groups are ready; unrelated axes do not hold it.
+Physical/slave members retain independent direct startup release. Existing
+runtime ownership/command-blocking rules still apply after a coordinated group
+takes control.
+
+General PLCs, motion sequences, PVT, ordinary plugin cyclic callbacks and C++
+logic retain the aggregate startup gate, because their axis dependencies are
+not declared here. They wait for all configured axes. The per-axis and shared
+program holds have separate diagnostic PVs. This change does not infer arbitrary
+PLC, plugin or sequence dependencies.
 Execute/enable requests during the hold return `ERROR_AXIS_BUSY` without latching
 a new axis error or queuing the request for later. STOP, disable, position loading
 and status polling remain available. Plugin/logic enter-RT initialization hooks
@@ -73,7 +87,7 @@ mask domain faults or suppress motor-record STOP requests from interlocks.
 If the bus fails to stabilize within the configured startup timeout after IOC
 running (45 seconds by default), execution remains held and an error is logged.
 Resolve the fault and restart runtime to retry. Axis hardware errors can still
-prevent the subsequent axis-initialization phase from completing.
+prevent that axis and dependent virtual masters from completing initialization.
 
 For applications that never call `iocInit`/`iocRun`, set this before entering
 runtime:
@@ -85,12 +99,16 @@ epicsEnvSet("ECMC_WAIT_FOR_IOC_RUNNING", "0")
 This skips only the IOC-hook requirement, not bus stabilization or axis startup.
 If motor records are loaded, they still require IOC initialization and their
 startup handshake; this option is intended for applications without motor records.
-Startup PLCs or plugins that are themselves required to make an axis ready will
-need their initialization moved to configuration; otherwise they remain held.
+An axis PLC waits for its own axis. General startup PLCs/plugins remain behind
+the shared gate. Code required to establish readiness must initialize its signals
+before that gate, for example by configuration or external simulation injection.
 
 For a hardware test, check the logs in order: bus/timing startup complete, IOC
 running, bus stable/axis initialization released, motor-record position restoration
-complete, then PLC/motion command producer execution released. Also test a native
+complete, then that axis's direct commands and PLC released. Confirm that one
+unready physical axis does not prevent another physical axis from enabling, that
+a virtual master waits for its participating axes, and that a separate ready
+master/slave group runs while unrelated startup remains pending. Also test a native
 axis with no loaded motor record: it must not wait for a nonexistent motor record.
 Verify outputs stay disabled before release and that a later bus fault is still
 reported without automatic clearing. The behavior has not yet been hardware tested.

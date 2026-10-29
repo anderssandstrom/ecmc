@@ -856,7 +856,12 @@ const char *ecmcMotorRecordAxis::getSoftLimitRestoreStatus() {
 }
 
 void ecmcMotorRecordAxis::publishStartupDiagnostics() {
-  setIntegerParam(pC_->startupCommandsHeld_, ecmcStartupCommandsHeld());
+  setIntegerParam(pC_->startupCommandsHeld_, drvlocal.ecmcAxis->getStartupCommandsHeld());
+  setStringParam(pC_->startupHoldReason_, drvlocal.ecmcAxis->getStartupHoldReason());
+  setIntegerParam(pC_->startupSharedCommandsHeld_, ecmcStartupCommandsHeld());
+  setIntegerParam(pC_->startupSharedBlockingAxis_, ecmcStartupSharedBlockingAxis());
+  setIntegerParam(pC_->startupBlockingAxis_, drvlocal.ecmcAxis->getStartupBlockingAxis());
+  setIntegerParam(pC_->startupBlockingGroup_, drvlocal.ecmcAxis->getStartupBlockingGroup());
   setIntegerParam(pC_->startupMotorReady_,
                   drvlocal.ecmcAxis->getMotorRecordStartupReady());
   setIntegerParam(pC_->startupLimitsReady_, updateFirstPollDone_);

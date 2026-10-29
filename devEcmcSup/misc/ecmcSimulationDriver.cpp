@@ -30,6 +30,7 @@ ecmcSimulationDriver::ecmcSimulationDriver(int id, ecmcAsynPortDriver *port)
     healthParameter_->refreshParam(1);
     const std::string prefix = "ec" + std::to_string(id_) + ".";
     registerDiagnostic(prefix + "masterstatus", &masterStatus_);
+    registerDiagnostic(prefix + "ok", &statusOk_);
     registerDiagnostic(prefix + "slavecounter", &slaveCount_);
     registerDiagnostic(prefix + "entrycounter", &entryCount_);
     registerDiagnostic(prefix + "memmapcounter", &memmapCount_);
@@ -56,6 +57,7 @@ int ecmcSimulationDriver::registerDiagnostic(const std::string &name, uint32_t *
 ecmcSimulationDriver::Entry::~Entry() {
   if (access) { access->data = nullptr; access->publish = nullptr; }
   if (parameter) parameter->setEcmcDataPointer(nullptr, 0);
+  if (simulationParameter) simulationParameter->setEcmcDataPointer(nullptr, 0);
 }
 
 ecmcSimulationDriver::~ecmcSimulationDriver() {
@@ -145,11 +147,8 @@ int ecmcSimulationDriver::addEntry(int position, uint32_t vendor, uint32_t produ
     parameter->setEcmcBitCount(bits);
     parameter->setAllowWriteToEcmc(true); // Inputs may be injected by an external model.
     parameter->refreshParam(1);
-    access.publishContext = parameter;
-    access.publish = [](void *context) {
-      static_cast<ecmcAsynDataItem *>(context)->refreshParamRT(0);
-      return 0;
-    };
+    // Cyclic publication belongs to the input/output phases below. Repeated
+    // scalar writes must not advance asyn's cycle-based sampling divider.
   }
   auto *stored = entry.get();
   device->entries.emplace(name, std::move(entry));
@@ -172,10 +171,17 @@ int ecmcSimulationDriver::importEntry(int position, const char *name,
 }
 
 int ecmcSimulationDriver::addAlias(int position, const char *name, const char *alias) {
-  if (!alias || !*alias || strchr(alias, '.') || findEntry(position, alias))
+  if (!alias || !*alias || strchr(alias, '.'))
     return ERROR_MAIN_ECMC_LINK_INVALID;
   auto *entry = findEntry(position, name);
   if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+  if (auto *existing = findEntry(position, alias))
+    return existing == entry ? 0 : ERROR_MAIN_ECMC_LINK_INVALID;
+  if (port_ && entry->parameter) {
+    const std::string prefix = "ec" + std::to_string(id_) + ".s" + std::to_string(position) + ".";
+    int error = port_->addParamAlias((prefix + name).c_str(), (prefix + alias).c_str());
+    if (error) return error;
+  }
   aliases_[{position, alias}] = entry;
   return 0;
 }
@@ -294,13 +300,47 @@ int ecmcSimulationDriver::setObjectTyped(int position, int index, int subIndex,
   return error ? error : setObject(position, index, subIndex, &word, (bitsOf(type) + 7) / 8);
 }
 
+const char *ecmcSimulationDriver::portName() const { return port_ ? port_->portName : nullptr; }
+
+int ecmcSimulationDriver::prepareSimulationParameter(int position, const char *name) {
+  auto *entry = findEntry(position, name);
+  if (!entry || !port_) return ERROR_MAIN_EC_ENTRY_NULL;
+  if (entry->simulationParameter) return 0;
+  const auto type = entry->access->type;
+  asynParamType asynType = asynParamUInt32Digital;
+  if (type == ECMC_EC_F32 || type == ECMC_EC_F64) asynType = asynParamFloat64;
+  else if (entry->access->getBits() == 64) {
+#ifdef ECMC_ASYN_ASYNPARAMINT64
+    asynType = asynParamInt64;
+#else
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+#endif
+  } else if (type == ECMC_EC_S8 || type == ECMC_EC_S16 || type == ECMC_EC_S32)
+    asynType = asynParamInt32;
+  const std::string path = "sim.ec" + std::to_string(id_) + ".s" + std::to_string(position) + "." + name;
+  auto *parameter = port_->addNewAvailParam(path.c_str(), asynType,
+    entry->access->data, sizeof(entry->value), type, 0);
+  if (!parameter) return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  entry->simulationParameter = parameter;
+  parameter->setEcmcDataSize((entry->access->getBits() + 7) / 8);
+  parameter->setEcmcBitCount(entry->access->getBits());
+  parameter->setAllowWriteToEcmc(entry->direction == 2);
+  parameter->refreshParam(1);
+  active_ = false; // Rebuild the publication lists before the next RT entry.
+  return 0;
+}
+
 int ecmcSimulationDriver::validate() {
   if (configurationError_) return configurationError_;
   if (active_) return 0;
-  std::vector<Entry *> entries;
-  for (auto &device : devices_) for (auto &entry : device.second.entries)
-    if (entry.second->realtime) entries.push_back(entry.second.get());
-  cyclicEntries_ = std::move(entries);
+  std::vector<Entry *> inputs, outputs;
+  for (auto &device : devices_) for (auto &entry : device.second.entries) {
+    if (!entry.second->realtime || (!entry.second->parameter && !entry.second->simulationParameter)) continue;
+    if (entry.second->direction == 2) inputs.push_back(entry.second.get());
+    else outputs.push_back(entry.second.get());
+  }
+  cyclicInputs_ = std::move(inputs);
+  cyclicOutputs_ = std::move(outputs);
   cyclicDevices_.clear();
   for (int position : deviceOrder_) cyclicDevices_.push_back(&devices_.at(position));
   active_ = true;
@@ -310,6 +350,7 @@ int ecmcSimulationDriver::validate() {
 
 void ecmcSimulationDriver::updateStatusWords() {
   const bool ready = active_ && *healthy_;
+  statusOk_ = ready;
   // Existing record layouts, describing the memory backend's synthetic state.
   // No measured working counter or distributed-clock state is claimed.
   masterStatus_ = ready ? 1u | (8u << 1) | ((slaveCount_ & 0xffffu) << 16) : 0;
@@ -321,19 +362,28 @@ void ecmcSimulationDriver::updateStatusWords() {
 }
 
 int ecmcSimulationDriver::updateIoStatus() {
+  if (statusOk_ != static_cast<uint32_t>(active_ && *healthy_)) updateStatusWords();
   if (active_ && !*healthy_ && failedCycles_ < std::numeric_limits<uint32_t>::max())
     ++failedCycles_;
+  // refreshParamRT applies a divider expressed in RT cycles, not slow ticks.
+  if (healthParameter_) healthParameter_->refreshParamRT(0);
+  for (auto *parameter : diagnosticParameters_) parameter->refreshParamRT(0);
   return *healthy_;
 }
 
 void ecmcSimulationDriver::readInputs(timespec time, timespec offset) {
   inputTime_ = time; offset_ = offset;
   // Input storage is already updated by PV clients or a separately bound model.
+  for (auto *entry : cyclicInputs_) {
+    if (entry->parameter) entry->parameter->refreshParamRT(0);
+    if (entry->simulationParameter) entry->simulationParameter->refreshParamRT(0);
+  }
 }
 
-void ecmcSimulationDriver::slowExecute() {
-  updateStatusWords();
-  if (healthParameter_) healthParameter_->refreshParamRT(0);
-  for (auto *parameter : diagnosticParameters_) parameter->refreshParamRT(0);
-  for (auto *entry : cyclicEntries_) if (entry->parameter) entry->parameter->refreshParamRT(0);
+void ecmcSimulationDriver::writeOutputs(timespec offset) {
+  offset_ = offset;
+  for (auto *entry : cyclicOutputs_) {
+    if (entry->parameter) entry->parameter->refreshParamRT(0);
+    if (entry->simulationParameter) entry->simulationParameter->refreshParamRT(0);
+  }
 }

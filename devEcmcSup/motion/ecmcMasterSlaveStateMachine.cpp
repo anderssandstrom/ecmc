@@ -1019,3 +1019,16 @@ void ecmcMasterSlaveStateMachine::setMrIgnoreEnableAlarm() {
     masterGrp_->setMRIgnoreDisableStatusCheck(true);
   }
 }
+
+bool ecmcMasterSlaveStateMachine::getStartupReady() const {
+  return masterGrp_ && slaveGrp_ && masterGrp_->getStartupReady() && slaveGrp_->getStartupReady();
+}
+
+bool ecmcMasterSlaveStateMachine::isMasterAxis(int axisIndex) const {
+  return masterGrp_ && masterGrp_->inGroup(axisIndex);
+}
+
+int ecmcMasterSlaveStateMachine::getStartupBlockingAxis() const {
+  const int master = masterGrp_ ? masterGrp_->getStartupBlockingAxis() : -1;
+  return master >= 0 ? master : (slaveGrp_ ? slaveGrp_->getStartupBlockingAxis() : -1);
+}

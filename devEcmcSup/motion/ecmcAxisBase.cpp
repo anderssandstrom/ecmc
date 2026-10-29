@@ -464,7 +464,7 @@ void ecmcAxisBase::initVars() {
 }
 
 void ecmcAxisBase::preExecute(bool masterOK) {
-  if (ecmcStartupCommandsHeld()) {
+  if (getStartupCommandsHeld()) {
     // Keep drives disabled (including external trajectory mode) while motor
     // startup callbacks and position restoration run. Do not re-enter axis
     // startup here: the motor poller needs initialized axes to finish its work.
@@ -556,7 +556,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
       refreshAsynTargetValue();
 
       // start enable if needed
-      if (ecmcStartupCommandsHeld()) {
+      if (getStartupCommandsHeld()) {
         startupEnablePending_ = true;
       } else {
         setEnable(data_.control_.enableAtStartup);
@@ -689,7 +689,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
                                         false);
   }
 
-  if (!ecmcStartupCommandsHeld() && positionCompare_.isActive()) {
+  if (!getStartupCommandsHeld() && positionCompare_.isActive()) {
     uint64_t encoderSampleTimeNs = 0;
     ecmcEncoder *encoder = getPrimEnc();
     const bool sampleTimeValid =
@@ -817,6 +817,25 @@ void ecmcAxisBase::setInStartupPhase(bool startup) {
 
 bool ecmcAxisBase::getInStartupPhase() {
   return data_.status_.statusWord_.instartup || data_.statusOld_.statusWord_.instartup;
+}
+
+bool ecmcAxisBase::getStartupCommandsHeld() const {
+  // The controller gate covers configuration/RT entry and the explicit opt-out.
+  // An axis may finish its own handshake while unrelated axes are still waiting.
+  return ecmcStartupCommandsHeld() &&
+         !startupCommandsReleased_.load(std::memory_order_acquire);
+}
+
+const char *ecmcAxisBase::getStartupHoldReason() const {
+  return getStartupCommandsHeld() ? startupHoldReason_.load(std::memory_order_acquire) : "released";
+}
+
+int ecmcAxisBase::getStartupBlockingAxis() const {
+  return getStartupCommandsHeld() ? startupBlockingAxis_.load(std::memory_order_acquire) : -1;
+}
+
+int ecmcAxisBase::getStartupBlockingGroup() const {
+  return getStartupCommandsHeld() ? startupBlockingGroup_.load(std::memory_order_acquire) : -1;
 }
 
 int ecmcAxisBase::setEncDataSourceType(dataSource refSource) {
@@ -1370,7 +1389,7 @@ void ecmcAxisBase::printAxisStatus() {
 // Ignore busy so that PVT can run (PVT controller will check that traj is not busy)
 int ecmcAxisBase::setExecute(bool execute) {
   // Reject before auto-enable can queue a move for later execution.
-  if (execute && ecmcStartupCommandsHeld()) {
+  if (execute && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
   }
   // Auto enable if needed  (except for homing seq 15)
@@ -1389,7 +1408,7 @@ int ecmcAxisBase::setExecute(bool execute) {
 }
 
 int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
-  if (execute && ecmcStartupCommandsHeld()) {
+  if (execute && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
   }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
@@ -1997,7 +2016,7 @@ void ecmcAxisBase::refreshStatusWd() {
     (unsigned char)data_.interlocks_.lastActiveInterlock;
 }
 int ecmcAxisBase::setEnable(bool enable) {
-  if (enable && ecmcStartupCommandsHeld()) {
+  if (enable && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
   }
   if (data_.status_.statusWord_.enable == enable) return 0;

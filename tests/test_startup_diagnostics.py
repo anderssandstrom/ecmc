@@ -18,9 +18,16 @@ code = r'''
 #include <string>
 bool held = true;
 int ecmcStartupCommandsHeld() { return held; }
-struct Native { bool ready = false; bool getMotorRecordStartupReady() { return ready; } };
+int ecmcStartupSharedBlockingAxis() { return held ? 6 : -1; }
+struct Native { bool ready = false, localHeld = true;
+  const char *getStartupHoldReason() { return getStartupCommandsHeld() ? "waiting for master/slave group startup" : "released"; }
+  int getStartupBlockingAxis() { return getStartupCommandsHeld() ? 6 : -1; }
+  int getStartupBlockingGroup() { return getStartupCommandsHeld() ? 2 : -1; }
+  bool getStartupCommandsHeld() { return held && localHeld; } bool getMotorRecordStartupReady() { return ready; } };
 struct Controller {
   int startupCommandsHeld_ = 0, startupMotorReady_ = 1, startupLimitsReady_ = 2, startupRestoreStatus_ = 3;
+  int startupHoldReason_ = 4, startupBlockingAxis_ = 5, startupBlockingGroup_ = 6;
+  int startupSharedCommandsHeld_ = 7, startupSharedBlockingAxis_ = 8;
   int calls = 0, address = -1;
   void callParamCallbacks(int axis) { ++calls; address = axis; }
 };
@@ -29,11 +36,11 @@ struct ecmcMotorRecordAxis {
   Controller *pC_ = &controller;
   Native native;
   struct Local { Native *ecmcAxis; } drvlocal {&native};
-  int axisNo_ = 7, params[3] = {-1, -1, -1};
+  int axisNo_ = 7, params[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
   bool updateFirstPollDone_ = false;
-  std::string text, reason = "waiting for IOC running";
-  void setIntegerParam(int param, int value) { assert(param < 3); params[param] = value; }
-  void setStringParam(int param, const char *value) { assert(param == 3); text = value; }
+  std::string holdReason, text, reason = "waiting for IOC running";
+  void setIntegerParam(int param, int value) { assert(param < 9 && param != 3 && param != 4); params[param] = value; }
+  void setStringParam(int param, const char *value) { assert(param == 3 || param == 4); if (param == 3) text = value; else holdReason = value; }
   const char *getSoftLimitRestoreStatus() { return reason.c_str(); }
   void publishStartupDiagnostics();
 };
@@ -44,6 +51,9 @@ int main() {
   axis.publishStartupDiagnostics();
   assert(axis.params[0] == 1 && axis.params[1] == 0 && axis.params[2] == 0);
   assert(axis.text == axis.reason && axis.controller.address == 7);
+  assert(axis.params[5] == 6 && axis.params[6] == 2);
+  assert(axis.params[7] == 1 && axis.params[8] == 6);
+  assert(axis.holdReason == "waiting for master/slave group startup");
   axis.reason = "invalid snapshot: correct DLLM/DHLM/MRES and restart IOC";
   axis.publishStartupDiagnostics();
   assert(axis.text == axis.reason); // Preserve text longer than a stringin.
@@ -51,11 +61,17 @@ int main() {
   axis.reason = "complete";
   axis.publishStartupDiagnostics();
   assert(axis.params[0] == 1 && axis.params[1] == 0 && axis.params[2] == 1);
+  axis.native.localHeld = false; axis.native.ready = true;
+  axis.publishStartupDiagnostics();
+  assert(axis.params[0] == 0 && axis.params[7] == 1 && axis.params[8] == 6);
+  assert(axis.params[5] == -1 && axis.params[6] == -1 && axis.holdReason == "released");
   held = false;
   axis.native.ready = true;
   axis.publishStartupDiagnostics();
   assert(axis.params[0] == 0 && axis.params[1] == 1 && axis.params[2] == 1);
-  assert(axis.controller.calls == 4);
+  assert(axis.params[5] == -1 && axis.params[6] == -1 && axis.holdReason == "released");
+  assert(axis.params[7] == 0 && axis.params[8] == -1);
+  assert(axis.controller.calls == 5);
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

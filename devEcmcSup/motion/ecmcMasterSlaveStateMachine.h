@@ -124,6 +124,9 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int getLastFaultCode() const;
     int getLastFaultStatus() const;
     uint64_t getLastFaultCycle() const;
+    bool getStartupReady() const;
+    int getStartupBlockingAxis() const;
+    bool isMasterAxis(int axisIndex) const;
     void execute();
     int validate();
     int validateAxisOwnership(ecmcMasterSlaveStateMachine *other);

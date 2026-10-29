@@ -29,6 +29,7 @@ int main() {
   ecmcAsynPortDriver port;
   auto driver = std::make_unique<ecmcSimulationDriver>(0, &port);
   assert(driver->configurationError() == 0);
+  assert(diagnostic(port,"ec0.ok") == 0);
   assert(driver->addDevice(0, -1, 0, 0) == 0);
   assert(driver->addDevice(0, 2, 123, 456) == 0);
   auto *slaveStatusPV = port.find("ec0.s2.slavestatus");
@@ -46,6 +47,7 @@ int main() {
   assert(drive.setDataAtIndex(output, 0, -1) == 0);
   assert(driver->validate() == 0 && driver->isActive());
   driver->slowExecute();
+  assert(diagnostic(port,"ec0.ok") == 1);
   assert(diagnostic(port,"ec0.masterstatus") == ((1u << 16) | 17u));
   assert(diagnostic(port,"ec0.s2.slavestatus") == ((2u << 16) | 35u));
   assert(diagnostic(port,"ec0.slavecounter") == 1);
@@ -74,6 +76,7 @@ int main() {
   memcpy(healthPV->data, &unhealthy, sizeof(unhealthy)); position = 77;
   assert(!driver->updateIoStatus() && !driver->timingReady());
   driver->slowExecute();
+  assert(diagnostic(port,"ec0.ok") == 0);
   assert(diagnostic(port,"ec0.masterstatus") == 0);
   assert(diagnostic(port,"ec0.s2.slavestatus") == (2u << 16));
   assert(diagnostic(port,"ec0.dom0.domainstatus") == 2);
@@ -83,6 +86,7 @@ int main() {
   driver->setHealthy(true); assert(input->valid());
   assert(driver->updateIoStatus());
   driver->slowExecute();
+  assert(diagnostic(port,"ec0.ok") == 1);
   assert(diagnostic(port,"ec0.masterstatus") == ((1u << 16) | 17u));
   assert(diagnostic(port,"ec0.s2.slavestatus") == ((2u << 16) | 35u));
   assert(diagnostic(port,"ec0.dom0.domainstatus") == 8);
@@ -98,6 +102,69 @@ int main() {
   assert(!pv->data && pv->bytes == 0);
   assert(!healthPV->data);
   assert(!slaveStatusPV->data && !masterStatusPV->data);
+  // Existing typo-correction aliases must be available to EPICS as well as links.
+  auto latch = std::make_unique<ecmcSimulationDriver>(2, &port);
+  assert(latch->addDevice(0,7,123,456) == 0);
+  assert(latch->addEntry(7,123,456,2,3,0x1a00,0x6000,0x12,ECMC_EC_U32,"encoderLatchPostion01",true) == 0);
+  assert(latch->addEntry(7,123,456,2,3,0x1a00,0x6000,0x13,ECMC_EC_U16,"encoderLatchPostion02",true) == 0);
+  for (const char *suffix : {"01", "02"}) {
+    const std::string oldName = std::string("encoderLatchPostion") + suffix;
+    const std::string alias = std::string("encoderLatchPosition") + suffix;
+    assert(latch->addAlias(7,oldName.c_str(),alias.c_str()) == 0);
+    assert(latch->addAlias(7,oldName.c_str(),alias.c_str()) == 0); // Idempotent.
+    auto *original = port.find(("ec2.s7." + oldName).c_str());
+    auto *corrected = port.find(("ec2.s7." + alias).c_str());
+    assert(original && original == corrected); // Same conversions, publication and buffer.
+    assert(latch->findEntry(7,oldName.c_str()) == latch->findEntry(7,alias.c_str()));
+  }
+  assert(latch->addAlias(7,"encoderLatchPosition01","latchAlias") == 0);
+  assert(port.find("ec2.s7.latchAlias") == port.find("ec2.s7.encoderLatchPostion01"));
+  assert(latch->addAlias(7,"encoderLatchPostion02","encoderLatchPosition01") != 0);
+  assert(latch->addAlias(7,"encoderLatchPostion01","slavestatus") != 0);
+  assert(!latch->findEntry(7,"slavestatus")); // Failed asyn alias leaves no data alias.
+  assert(latch->setValue(7,"encoderLatchPosition01","123456") == 0);
+  auto *corrected = port.find("ec2.s7.encoderLatchPosition01");
+  uint32_t latchValue = 0;
+  memcpy(&latchValue,corrected->data,sizeof(latchValue));
+  assert(latchValue == 123456);
+  const uint32_t injectedLatch = 654321;
+  memcpy(corrected->data,&injectedLatch,sizeof(injectedLatch));
+  ecmcDataLink latchInput;
+  assert(latchInput.setDataAtIndex(latch->findEntry(7,"encoderLatchPostion01")->access,0,-1) == 0);
+  assert(latchInput.readDataValueDouble(0,&position) == 0 && position == 654321);
+  assert(latch->validate() == 0);
+  latch->slowExecute();
+  assert(diagnostic(port,"ec2.entrycounter") == 2); // Aliases never create entries.
+  latch.reset();
+  assert(!corrected->data);
+  // 1 kHz RT, 10 ms records: exactly one sampling tick per phase per cycle.
+  // A ten-cycle enable pulse must be observable, even without slow work.
+  ecmcSimulationDriver timing(3, &port);
+  assert(timing.addEntry(14,123,456,2,3,0,0,0,ECMC_EC_U16,"driveStatus01",true) == 0);
+  assert(timing.addEntry(14,123,456,1,2,0,0,0,ECMC_EC_U16,"driveControl01",true) == 0);
+  auto *status = port.find("ec3.s14.driveStatus01");
+  auto *control = port.find("ec3.s14.driveControl01");
+  status->sampleCycles = control->sampleCycles = 10;
+  assert(timing.validate() == 0);
+  ecmcDataLink command;
+  assert(command.setDataAtIndex(timing.findEntry(14,"driveControl01")->access,0,-1) == 0);
+  for (int cycle = 1; cycle <= 100; ++cycle) {
+    timing.readInputs({cycle,0},{});
+    timing.updateIoStatus();
+    assert(status->rtCalls == cycle && control->rtCalls == cycle-1);
+    const uint64_t word = cycle >= 11 && cycle <= 20 ? 1 : 0;
+    assert(command.writeDataValue(0,word) == 0);
+    assert(command.writeDataValue(0,word) == 0); // Multiple producers do not accelerate sampling.
+    assert(control->rtCalls == cycle-1);
+    timing.writeOutputs({});
+    assert(control->rtCalls == cycle);
+    if (cycle == 20) assert(control->lastRTValue == 1);
+    if (cycle % 100 == 0) timing.slowExecute();
+  }
+  assert(status->rtPublications == 10 && control->rtPublications == 10);
+  assert(port.find("ec3.ok")->rtCalls == 100);
+  assert(port.find("ec3.simulation.healthy")->rtCalls == 100);
+  assert(port.find("ec3.dom0.domainstatus")->rtCalls == 100);
   // A 31-device configuration retains stable status addresses while growing.
   ecmcSimulationDriver many(1, &port);
   assert(many.addDevice(0, -1, 0, 0) == 0);

@@ -24,6 +24,8 @@ public:
     int subIndex = 0;
     bool realtime = true;
     std::shared_ptr<ecmcDataAccess> access;
+    ecmcAsynDataItem *simulationParameter = nullptr;
+    std::string recordsPrefix;
     ecmcAsynDataItem *parameter = nullptr; // Registered/owned by asyn.
   };
   struct Device {
@@ -55,6 +57,8 @@ public:
   int getObject(int position, int index, int subIndex, void *data, size_t size);
   int setSetting(int position, const std::string &name, std::vector<int64_t> values);
   int setValue(int position, const char *name, const char *value);
+  int prepareSimulationParameter(int position, const char *name);
+  const char *portName() const;
   int validate();
   int configurationError() const { return configurationError_; }
   void setHealthy(bool healthy) { *healthy_ = healthy; }
@@ -63,12 +67,12 @@ public:
   bool isActive() const override { return active_; }
   void readInputs(timespec time, timespec offset) override;
   int updateIoStatus() override;
-  void writeOutputs(timespec offset) override { offset_ = offset; }
+  void writeOutputs(timespec offset) override;
   void setTimeOffset(timespec offset) override { offset_ = offset; }
   bool timingReady() const override { return active_ && *healthy_; }
   void resetStartupErrors() override {} // Never hide an injected fault.
   void updateDiagnostics() override {}
-  void slowExecute() override;
+  void slowExecute() override {}
 
 private:
   static int parseValue(ecmcEcDataType type, const char *text, uint64_t *result);
@@ -84,11 +88,13 @@ private:
   timespec inputTime_{}, offset_{};
   std::map<int, Device> devices_;
   std::map<std::pair<int, std::string>, Entry *> aliases_;
-  std::vector<Entry *> cyclicEntries_; // Frozen before RT; no cyclic name lookup.
+  // Publication membership is frozen before RT; no cyclic name lookup.
+  std::vector<Entry *> cyclicInputs_, cyclicOutputs_;
   std::vector<Device *> cyclicDevices_;
   std::vector<ecmcAsynDataItem *> diagnosticParameters_;
   uint32_t masterStatus_ = 0, slaveCount_ = 0, entryCount_ = 0, memmapCount_ = 0;
   uint32_t domainStatus_ = 0, failedCycles_ = 0;
+  uint32_t statusOk_ = 0;
 };
 
 #endif

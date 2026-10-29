@@ -38,6 +38,7 @@ void ecmcNotifyIocRunning(void);
 int ecmcIocRunning(void);
 int ecmcStartupMotionHeld(void);
 int ecmcStartupCommandsHeld(void);
+int ecmcStartupSharedBlockingAxis(void);
 #endif  // ifdef __cplusplus
 
 // Error Codes

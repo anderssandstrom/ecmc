@@ -502,8 +502,15 @@ int ecAddEntryAliasByPath(
   char *entryPath,
   char *aliasIDString
   ) {
-  if (ecmcSelectedSimulation()) {
-    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    int masterId = -1, slaveIndex = -1, bitIndex = -1;
+    char entryId[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+    int error = parseEcPath(entryPath, &masterId, &slaveIndex, entryId, &bitIndex);
+    if (error) return error;
+    if (slaveIndex < 0) return ERROR_MAIN_EC_SLAVE_NULL;
+    if (bitIndex >= 0) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    if (masterId != simulation->id()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+    return simulation->addAlias(slaveIndex, entryId, aliasIDString);
   }
 
   LOGINFO4(

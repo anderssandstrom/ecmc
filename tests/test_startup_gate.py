@@ -66,6 +66,7 @@ void updateAsynParams(int) { trace.push_back("publish"); }
 struct AsynPort { int getEpicsState() { return 14; } };
 std::atomic<bool> startupGateConfigured{true}, startupMotionHeld{true};
 std::atomic<bool> startupCommandsHeld{true};
+std::atomic<int> startupSharedBlockingAxis {-1};
 std::atomic<bool> iocRunning{false}, iocExitRequested{false};
 const char *waitSetting = nullptr;
 // Keep the test independent of the invoking shell's environment.
@@ -82,6 +83,18 @@ struct Axis {
   const std::string name;
   explicit Axis(const char *id) : name(id) {}
   bool startup = true;
+  const char *holdReason = "waiting for IOC/bus stabilization";
+  int blockingAxis = -1, blockingGroup = -1;
+  const char *getStartupHoldReason() { return holdReason; }
+  int getStartupBlockingAxis() { return blockingAxis; }
+  int getStartupBlockingGroup() { return blockingGroup; }
+  void setStartupHoldReason(const char *reason, int axis = -1, int group = -1) {
+    holdReason = reason; blockingAxis = axis; blockingGroup = group;
+  }
+  bool released = false;
+  void setStartupCommandsReleased(bool value) { released = value; }
+  bool getStartupCommandsHeld() { return startupCommandsHeld && !released; }
+  int getAxisID() { return std::stoi(name.substr(5)); }
   bool motorReady = true; // No loaded motor record unless a scenario registers one.
   int error = 0, resets = 0, cycles = 0, stops = 0;
   int getErrorID() { return error; }
@@ -99,6 +112,12 @@ struct Task {
   const std::string name;
   int result;
   explicit Task(const char *id, int error = 0) : name(id), result(error) {}
+  bool groupReady = false;
+  int masterAxis = -1;
+  bool getStartupReady() const { return groupReady; }
+  bool isMasterAxis(int id) const { return masterAxis == id; }
+  int getStartupBlockingAxis() const { return -1; }
+  int getIndex() const { return 0; }
   int calls = 0;
   void executeRT(double) { ++calls; trace.push_back(name); }
   void execute() { ++calls; trace.push_back(name); }
@@ -191,10 +210,10 @@ struct Rig {
   int controllerError = 0, pluginsError = 0, cppLogicError = 0, appModeCmd = 1;
   // Binary-exact period makes the 2-second boundary deterministic.
   double mcuPeriod = 250000000, ecTimeoutSeconds = 5;
-  void expectDispatch(int count) {
+  void expectDispatch(int count, int extraAxisCalls = 0) {
     assert(sequence.calls == count && pvt.calls == count);
     assert(masterSlave.calls == count && plugin.calls == count && cppLogic.calls == count);
-    assert(plc.globalCalls == count && plc.axisCalls == count * runtime.activeAxisCount);
+    assert(plc.globalCalls == count && plc.axisCalls == count * runtime.activeAxisCount + extraAxisCalls);
   }
   void readyAxes() { for (auto &axis : axes) axis.startup = false; }
   void run(int scenario) {
@@ -241,19 +260,20 @@ body = master_identity + initialization + r'''
       assert(axes[0].resets == 1 && axes[1].resets == 1);
       assert(axes[2].error == 99 && axes[2].resets == 0);
       axes[0].startup = axes[1].startup = false;
+      axes[1].motorReady = false;
       tick();
-      expectDispatch(0); // Last axis still initializing.
+      expectDispatch(0,1); // Ready axes run their own PLCs while the last axis waits.
       axes[2].startup = false;
       axes[1].motorReady = false;
       ticks(3);
-      expectDispatch(0); // Native startup alone cannot release a pending restore.
+      expectDispatch(0,7); // Released axes stay released; the third axis releases independently.
       assert(startupCommandsHeld);
       axes[1].motorReady = true;
       tick();
-      expectDispatch(1);
+      expectDispatch(1,7);
       assert(!startupCommandsHeld);
       tick();
-      expectDispatch(2);
+      expectDispatch(2,7);
       assert(ethercat.resets == 1 && axes[0].resets == 1);
     } else if (scenario == 1) {
       iocRunning = true;

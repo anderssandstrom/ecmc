@@ -101,6 +101,7 @@ public:
   int axisState_ = ECMC_AXIS_STATE_STARTUP, error = 0;
   bool hwReady_ = false, hwReadyOld_ = false, mrEnable = false;
   bool startupEnablePending_ = false;
+  bool getStartupCommandsHeld() const { return commandsHeld; }
   int syncs = 0, targetRefreshes = 0;
   ecmcEncoder *getPrimEnc() { return encArray_[data_.control_.primaryEncIndex]; }
   void setEnable(bool value) { data_.status_.statusWord_.enable = value; }

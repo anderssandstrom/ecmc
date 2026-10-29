@@ -32,6 +32,7 @@ extern "C" {
 int setIoBackend(int id, int backend);
 int setSimulationValue(const char *path, const char *value);
 int setSimulationHealthy(int id, int healthy);
+int loadSimulationRecords(const char *prefix);
 #ifdef __cplusplus
 }
 #endif

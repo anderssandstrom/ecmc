@@ -50,6 +50,8 @@ class ecmcAxisGroup : public ecmcError {
     void addAxis(ecmcAxisBase *axis);
     // Check if all axes in group are enable
     bool getEnable();
+    bool getStartupReady() const;
+    int getStartupBlockingAxis() const;
     // Check if at least one axis in group are enable
     bool getAnyEnable();
     // Check if all axes in group are enabled

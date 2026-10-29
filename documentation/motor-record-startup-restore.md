@@ -136,14 +136,29 @@ and `AXIS_NO` macros and require a driver providing the startup parameters.
 
 | Suffix appended to the motor PV name | Meaning |
 | --- | --- |
-| `-StartupHeld` | Global startup command gate; 1 means motion producers remain held |
+| `-StartupHeld` | This axis's startup command hold; 1 means its enable/motion requests are rejected |
+| `-StartupHoldReason` | Reason for this axis's hold, or `released`; 256-byte CHAR waveform |
+| `-StartupBlockingAxis` | First blocking axis ID; own ID for local initialization/restore; -1 for none/common I/O |
+| `-StartupBlockingGroup` | Blocking master/slave state-machine index, or -1 |
+| `-StartupSharedHeld` | Shared-program startup hold: general PLCs, sequences, PVT, plugins and C++ logic |
+| `-StartupSharedBlockingAxis` | First axis holding shared startup, or -1 for none/common I/O |
 | `-StartupMotorReady` | This axis's motor-record startup handshake is complete |
 | `-StartupLimitsReady` | This axis's initial soft-limit synchronization is complete |
 | `-StartupRestoreStatus` | Full soft-limit restore reason as a 256-byte CHAR waveform |
 
 These are independent: soft limits can be complete while position restoration
-still holds the motor handshake. Global hold can remain asserted because of
-another axis. Gate opt-out can release the hold while restoration is incomplete.
+still holds the motor handshake. A physical axis releases independently of
+other axes; a configured virtual master additionally waits for its own group's
+members. Shared programs retain an all-axis wait, shown separately. A ready axis
+can therefore show `StartupHeld=0` with `StartupSharedHeld=1`. Gate opt-out can
+release the hold while restoration is incomplete.
+
+The troubleshooting panel labels the gate as **Axis hold** and shows the reason,
+blocking axis/group, shared-program hold and shared blocking axis. The existing
+`STARTUP_COMMANDS_HELD` motor-port parameter now reports the addressed axis's
+hold. Shared-program state is exposed by `STARTUP_SHARED_COMMANDS_HELD` and
+`STARTUP_SHARED_BLOCKING_AXIS`. Other new parameters are `STARTUP_HOLD_REASON`,
+`STARTUP_BLOCKING_AXIS` and `STARTUP_BLOCKING_GROUP`; existing PV names are retained.
 The parameters are published on every motor poll, including early-return paths;
 changes within a poll are reflected on the next poll. They do not require the
 RT logger and do not control startup. Before network access becomes available,

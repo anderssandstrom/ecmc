@@ -2380,6 +2380,8 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
   case 0x20078:
     return "ERROR_MAIN_IO_BACKEND_LOCKED";
+  case 0x2007A:
+    return "ERROR_MAIN_SIM_RECORDS_LOAD_FAILED";
   case 0x20079:
     return "ERROR_MAIN_IO_CONFIG_UNSUPPORTED";
   case 0x20076:

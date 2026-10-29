@@ -877,6 +877,12 @@ static int handleCfgCommand(const char *myarg_1) {
     if (nvals != 2 || !end || myarg_1[end]) return ERROR_MAIN_PARSER_INVALID_FORMAT;
     return setSimulationValue(trimWhitespace(cIdBuffer), trimWhitespace(cIdBuffer2));
   }
+  if (strncmp(myarg_1, "SimLoadRecords(", 15) == 0) {
+    int end = 0;
+    nvals = sscanf(myarg_1, "SimLoadRecords(%1023[^)])%n", cIdBuffer, &end);
+    if (nvals != 1 || !end || myarg_1[end]) return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    return loadSimulationRecords(trimWhitespace(cIdBuffer));
+  }
   if (strncmp(myarg_1, "SimSetHealthy(", 14) == 0) {
     int end = 0;
     nvals = sscanf(myarg_1, "SimSetHealthy(%d,%d)%n", &iValue, &iValue2, &end);

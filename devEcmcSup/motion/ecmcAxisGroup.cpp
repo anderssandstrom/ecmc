@@ -478,3 +478,15 @@ bool ecmcAxisGroup::getAxisAutoDisableEnabled() {
   }
   return autoDisable;
 }
+
+// Initial native-axis and motor-record handshake only. Runtime faults retain
+// their existing handling; this does not reset or bypass them.
+bool ecmcAxisGroup::getStartupReady() const {
+  return getStartupBlockingAxis() < 0;
+}
+
+int ecmcAxisGroup::getStartupBlockingAxis() const {
+  for (auto *axis : axes_)
+    if (axis->getInStartupPhase() || !axis->getMotorRecordStartupReady()) return axis->getAxisID();
+  return -1;
+}

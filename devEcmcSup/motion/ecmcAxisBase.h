@@ -150,6 +150,20 @@ public:
   bool                       getAllowCmdFromPLC();
   void                       setInStartupPhase(bool startup);
   bool                       getInStartupPhase();
+  bool getStartupCommandsHeld() const;
+  const char *getStartupHoldReason() const;
+  int getStartupBlockingAxis() const;
+  int getStartupBlockingGroup() const;
+  void setStartupHoldReason(const char *reason, int axis = -1, int group = -1) {
+    // Internal callers supply static string literals; never allocate in RT.
+    startupBlockingAxis_.store(axis, std::memory_order_release);
+    startupBlockingGroup_.store(group, std::memory_order_release);
+    startupHoldReason_.store(reason, std::memory_order_release);
+  }
+  void setStartupCommandsReleased(bool released) {
+    if (!released) setStartupHoldReason("waiting for IOC/bus stabilization");
+    startupCommandsReleased_.store(released, std::memory_order_release);
+  }
   bool getMotorRecordStartupReady() const {
     return motorRecordStartupReady_.load(std::memory_order_acquire);
   }
@@ -328,6 +342,9 @@ public:
 
 protected:
   std::atomic<bool> motorRecordStartupReady_ {true};
+  std::atomic<bool> startupCommandsReleased_ {false};
+  std::atomic<const char *> startupHoldReason_ {"waiting for IOC/bus stabilization"};
+  std::atomic<int> startupBlockingAxis_ {-1}, startupBlockingGroup_ {-1};
   bool startupEnablePending_ {false};
   void       initVars();
   void       refreshDebugInfoStruct();

@@ -54,11 +54,83 @@ native conversion (`0`); an integer resource can also select a bit. Floating
 point bit selections are rejected.
 
 Realtime entries register asyn parameters with their existing names. Both input
-and output storage permit writes so an external model can inject inputs and
-observe outputs. Existing EPICS database records still have to be loaded; the
-driver does not create records. Publication uses the existing slow-work phase.
-Entries declared without realtime publication have storage but no newly
-registered scalar asyn parameter.
+and output storage retain the existing raw write capability. Cyclic input/output
+publication runs once per corresponding RT phase, with asyn applying the record's
+requested sampling divider. Diagnostic publication also advances once per cycle;
+slow work does not apply a second sampling divider. Repeated scalar writes do not
+advance the simulation sampling clock. Entries declared without realtime
+publication have storage but no newly registered scalar asyn parameter.
+
+## Generated simulation field records
+
+The common ecmccfg `setAppMode.cmd` hook loads these records automatically when
+startup used `SIM=1`. This includes the normal finalize path, which calls
+`setAppMode.cmd`. No per-device hardware template or axis record is changed.
+For manual setup, call this after declaring the simulated entries and before
+runtime or `iocInit`:
+
+```iocsh
+ecmcConfigOrDie "Cfg.SimLoadRecords(c6025a-08:SIM:)"
+```
+
+`SIM:` belongs to the generated record names. Existing ECMC signal paths such
+as `ec0.s14.driveStatus01` and all axis links retain their names. Record names
+use `:` between the instance, device and field because EPICS reserves `.` for
+field access.
+
+| Declared field direction | Generated records |
+| --- | --- |
+| Input to ECMC (status, encoder position, switches) | Writable `PREFIXecN:sM:field` plus readback `PREFIXecN:sM:field-RB` |
+| Output from ECMC (control word, setpoint) | Read-only `PREFIXecN:sM:field` |
+
+For example, with `ECMC_PREFIX=c6025a-08:` and simulated slave 14:
+
+```sh
+# Observe the control word produced by the controller.
+caget c6025a-08:SIM:ec0:s14:driveControl01
+# Inject status: bit 0 ready, bit 1 enabled. This is a test value, not a model.
+caput c6025a-08:SIM:ec0:s14:driveStatus01 3
+caget c6025a-08:SIM:ec0:s14:driveStatus01-RB
+```
+
+These records represent native I/O fields, not axis engineering values. An encoder
+position write supplies raw counts unless the declared field itself is floating
+point. The loader chooses `longin/longout` for signed values up to 32 bits,
+`mbbiDirect/mbboDirect` for unsigned values/bit fields, `ai/ao` for floating point,
+and `int64in/int64out` for 64-bit integers. Unsigned 64-bit fields use signed
+Int64 bit-pattern representation (the upper half appears negative); no conversion
+through double occurs. Exact unsigned decimal injection also remains available
+with `Cfg.SimSetValue`. Builds without asyn Int64 support reject 64-bit record
+creation instead of losing precision.
+
+The generated records use private native asyn views (`sim.ecN.sM.field`) sharing
+the original descriptor's buffer. These views have independent asyn metadata so
+legacy scaled/converted records cannot change the model interface's datatype.
+There is no second I/O image. Input views permit writes; output views reject them.
+Injection records do not process at initialization, preserving preloaded values.
+
+Only declared realtime scalar fields at nonnegative device positions are included;
+built-in ZERO/ONE and aliases do not create duplicate records. Generated names use
+the canonical declared field names. Repeated loading with the same prefix adds
+only newly declared fields; changing the prefix for existing records is rejected.
+Name/type collisions are preflighted. A subsequent EPICS database-load failure
+is reported; restart the IOC after resolving it because EPICS may have loaded
+part of that batch. Creation is refused after runtime or the IOC-running hook.
+The ecmccfg default prefix is `${ECMC_PREFIX}SIM:` and can be overridden with
+`ECMC_SIM_PREFIX` before `setAppMode.cmd`. Raw asyn views require additional
+parameter slots; increase `MAX_PARAM_COUNT` at startup if the table is too small.
+
+The loader uses the standard [EPICS static database API](https://docs.epics-controls.org/projects/base/en/b7.0.10/dbStaticLib_h.html)
+from configuration code. It allocates records before RT, without device models
+or another worker thread.
+
+Entry aliases created by `Cfg.EcAddEntryAlias` or `Cfg.EcAddEntryAliasByPath`
+resolve through the same data descriptor. For published entries they are also
+registered with the existing asyn parameter-alias service: original and alias
+names share the same parameter, conversions, publication and value storage.
+For example, the legacy `encoderLatchPostion01` name and its corrected
+`encoderLatchPosition01` alias both work. Aliases do not increase entry counts;
+repeating an alias for the same entry is accepted, while conflicts are rejected.
 
 Values may also be injected through serialized ECMC commands:
 
@@ -109,14 +181,15 @@ specialized axis status/sequencer/PVT link commands still require migration.
 The standard master/slave status and count parameters and default-domain
 parameters are registered with their existing asyn names:
 
-- `ecN.masterstatus`, `ecN.slavecounter`, `ecN.entrycounter`, `ecN.memmapcounter`
+- `ecN.masterstatus`, `ecN.ok`, `ecN.slavecounter`, `ecN.entrycounter`, `ecN.memmapcounter`
 - `ecN.sM.slavestatus` for each nonnegative configured device position
 - `ecN.dom0.domainstatus`, `ecN.dom0.domainfailcountertotal`
 
 These parameters are read-only. Existing record bit layouts are retained:
-a validated healthy instance reports synthetic online/OP and domain-complete
+`ecN.ok` is 1 for an active healthy instance and 0 otherwise.
+A validated healthy instance reports synthetic online/OP and domain-complete
 flags; an unhealthy instance clears those flags and reports domain-zero.
-Status publication occurs in the existing slow phase. Counts describe configured
+Status publication follows the cyclic asyn sampling clock. Counts describe configured
 nonnegative devices and declared entries, excluding built-in `ZERO`/`ONE` and
 aliases. Memory-map count is zero because memory maps are unsupported. Master
 status embeds the healthy simulated device count in its high 16 bits, and slave
@@ -137,7 +210,8 @@ must not be interpreted as proof that those hardware behaviors were tested.
 
 `test_simulation_driver.py` compiles the real memory driver with controlled asyn
 publication. It covers diagnostic names/bit layouts/counts and fault recovery
-with 31 configured devices, plus shared storage, typed writes, aliases, object dictionaries,
+with 31 configured devices, cyclic publication cadence including a short enable
+pulse, plus shared storage, typed writes, aliases, object dictionaries,
 faults and invalidation. `test_simulation_configuration.py` exercises the actual
 registry and extracted configuration/parser routes with controlled hardware and
 axis endpoints. It also checks that the parser's API header compiles as C.
@@ -148,3 +222,32 @@ not load an IOC, perform network CA/PVA access or measure RT deadlines. The
 EtherCAT forwarding code-generation probe does not establish full-loop timing
 parity after adding simulation iteration. Production performance remains to be
 measured on the target system.
+
+`test_simulation_records.py` compiles the real generator and driver with controlled
+EPICS static-database calls. It verifies native record types, names, startup
+write behavior, raw buffer identity, read/write permissions, collision checks,
+64-bit storage and cleanup. It does not run IOC record processing or network
+clients. The generated records still need an IOC integration check.
+
+## External Python models and discovery
+
+The [Python simulation tools](../tools/simulation/README.md) provide an EL7041
+model and a discovery runner for supported slaves. They write the generated I/O
+field records, independently of axis commands and the memory driver.
+
+```sh
+python3 tools/simulation/ioc.py --prefix c6025a-08:SIM: --list
+python3 tools/simulation/ioc.py --prefix c6025a-08:SIM:
+```
+
+Discovery uses `FirstSlave`, `ecN:sM:HWType` and `ecN:sM:NxtObjId` aliases under
+that prefix. Common ecmccfg hooks alias the existing normal metadata records;
+no second hardware inventory is maintained. Set a custom `ECMC_SIM_PREFIX`
+before adding slaves, and leave normal default slave metadata enabled. The
+current discovery follows a single master's existing slave chain; see the tool
+README for master selection, supported descriptors and per-slave settings.
+
+The EL7041 defaults use 2000 full steps/s, 200 full steps/rev and 12800 encoder
+counts/rev. Unsupported types are listed and left untouched. A failed model
+connection stops only that external worker; no global simulated bus fault is
+injected. CA feedback and Python worker timing are not cycle-synchronous.

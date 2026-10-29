@@ -225,6 +225,8 @@ protected:
 
   int ecmcMotorRecordErrId_;
   int startupCommandsHeld_;
+  int startupHoldReason_, startupBlockingAxis_, startupBlockingGroup_;
+  int startupSharedCommandsHeld_, startupSharedBlockingAxis_;
   int startupMotorReady_;
   int startupLimitsReady_;
   int startupRestoreStatus_;

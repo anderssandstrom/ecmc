@@ -257,6 +257,11 @@ ecmcMotorRecordController::ecmcMotorRecordController(const char *portName,
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
   createParam("STARTUP_COMMANDS_HELD", asynParamInt32, &startupCommandsHeld_);
+  createParam("STARTUP_HOLD_REASON", asynParamOctet, &startupHoldReason_);
+  createParam("STARTUP_SHARED_COMMANDS_HELD", asynParamInt32, &startupSharedCommandsHeld_);
+  createParam("STARTUP_SHARED_BLOCKING_AXIS", asynParamInt32, &startupSharedBlockingAxis_);
+  createParam("STARTUP_BLOCKING_AXIS", asynParamInt32, &startupBlockingAxis_);
+  createParam("STARTUP_BLOCKING_GROUP", asynParamInt32, &startupBlockingGroup_);
   createParam("STARTUP_MOTOR_READY", asynParamInt32, &startupMotorReady_);
   createParam("STARTUP_LIMITS_READY", asynParamInt32, &startupLimitsReady_);
   createParam("STARTUP_RESTORE_STATUS", asynParamOctet, &startupRestoreStatus_);

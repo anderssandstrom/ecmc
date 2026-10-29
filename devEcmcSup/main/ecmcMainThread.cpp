@@ -62,6 +62,7 @@ static std::atomic<int> iocExitCode {0};
 static std::atomic<bool> iocRunning {false};
 static std::atomic<bool> startupMotionHeld {true};
 static std::atomic<bool> startupCommandsHeld {true};
+static std::atomic<int> startupSharedBlockingAxis {-1};
 static std::atomic<bool> startupGateConfigured {true};
 
 void ecmcNotifyIocRunning(void) {
@@ -78,6 +79,10 @@ int ecmcStartupMotionHeld(void) {
 
 int ecmcStartupCommandsHeld(void) {
   return startupCommandsHeld.load(std::memory_order_acquire);
+}
+
+int ecmcStartupSharedBlockingAxis(void) {
+  return startupSharedBlockingAxis.load(std::memory_order_acquire);
 }
 
 /*****************************************************************************/
@@ -401,6 +406,7 @@ struct StartupState {
   bool axisInitializationReleased;
   bool commandsReleased;
   bool timedOut = false;
+  bool masterSlaveCommandsReleased[ECMC_MAX_MST_SLVS_SMS] = {};
   double waitSeconds = 0;
   double stableSeconds = 0;
   double motorWaitSeconds = 0;
@@ -448,6 +454,9 @@ void cyclic_task(void *usr) {
   const bool waitForIocRunning = !waitForIoc || strcmp(waitForIoc, "0") != 0;
   StartupState startup(startupGateEnabled);
   startupMotionHeld.store(startupGateEnabled, std::memory_order_release);
+  for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex)
+    runtime.activeAxes[axisIndex]->setStartupCommandsReleased(false);
+  startupSharedBlockingAxis.store(-1, std::memory_order_release);
   startupCommandsHeld.store(startupGateEnabled, std::memory_order_release);
   if (startupGateEnabled) {
     ecmcRtLoggerLogInfo("Startup gate enabled: holding axes and PLCs until IOC readiness and EtherCAT stabilization.\n");
@@ -603,32 +612,66 @@ void cyclic_task(void *usr) {
       }
     }
 
-    // Release command producers only after axes and motor-record restore agree.
-    // Axis execution below continues while producers are held.
+    // Release each axis after its native/motor handshake. Masters additionally
+    // wait for their own group; shared programs keep the aggregate gate.
     if (startup.axisInitializationReleased && !startup.commandsReleased) {
       startup.motorWaitSeconds += mcuPeriod / 1.0e9;
       if (startup.motorWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
-        ecmcRtLoggerLogError("Startup: motor/axis handshake still pending; motion remains held. Check motor-controller report for soft-limit restore status.\n");
+        ecmcRtLoggerLogError("Startup: motor/axis handshake still pending; waiting axes and shared command producers remain held. Check motor-controller report for soft-limit restore status.\n");
         for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex) {
-          if (runtime.activeAxes[axisIndex]->getInStartupPhase() ||
-              !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady()) {
-            ecmcRtLoggerLogError("Startup: active axis slot %d waiting: axis initialization=%d, motor record=%d.\n",
-              axisIndex, runtime.activeAxes[axisIndex]->getInStartupPhase(),
-              !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady());
+          if (runtime.activeAxes[axisIndex]->getStartupCommandsHeld()) {
+            ecmcRtLoggerLogError("Startup: axis %d waiting: axis initialization=%d, motor record=%d, reason=%s, blocking axis=%d, group=%d.\n",
+              runtime.activeAxes[axisIndex]->getAxisID(), runtime.activeAxes[axisIndex]->getInStartupPhase(),
+              !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady(),
+              runtime.activeAxes[axisIndex]->getStartupHoldReason(),
+              runtime.activeAxes[axisIndex]->getStartupBlockingAxis(),
+              runtime.activeAxes[axisIndex]->getStartupBlockingGroup());
           }
         }
         startup.motorWaitSeconds = 0;
       }
 
-      bool axesReady = ecStat && (!ioActive || io.timingReady()) && simulationReady;
-      for (i = 0; i < runtime.activeAxisCount; ++i) {
-        axesReady &= !runtime.activeAxes[i]->getInStartupPhase() &&
-                     runtime.activeAxes[i]->getMotorRecordStartupReady();
+      const bool ioReady = ecStat && (!ioActive || io.timingReady()) && simulationReady;
+      for (int group = 0; ioReady && group < runtime.activeMasterSlaveCount; ++group) {
+        if (!startup.masterSlaveCommandsReleased[group])
+          startup.masterSlaveCommandsReleased[group] = runtime.activeMasterSlaves[group]->getStartupReady();
       }
+      bool axesReady = ioReady;
+      int sharedBlockingAxis = -1;
+      for (i = 0; i < runtime.activeAxisCount; ++i) {
+        auto *axis = runtime.activeAxes[i];
+        if (!axis->getStartupCommandsHeld()) continue;
+        int blockingAxis = -1, blockingGroup = -1;
+        for (int group = 0; group < runtime.activeMasterSlaveCount; ++group) {
+          auto *machine = runtime.activeMasterSlaves[group];
+          if (!startup.masterSlaveCommandsReleased[group] && machine->isMasterAxis(axis->getAxisID())) {
+            blockingAxis = machine->getStartupBlockingAxis();
+            blockingGroup = machine->getIndex();
+            break;
+          }
+        }
+        if (!ioReady)
+          axis->setStartupHoldReason("waiting for I/O readiness");
+        else if (axis->getInStartupPhase())
+          axis->setStartupHoldReason("waiting for axis initialization", axis->getAxisID());
+        else if (!axis->getMotorRecordStartupReady())
+          axis->setStartupHoldReason("waiting for motor-record restore", axis->getAxisID());
+        else if (blockingGroup >= 0)
+          axis->setStartupHoldReason("waiting for master/slave group startup", blockingAxis, blockingGroup);
+        else
+          axis->setStartupCommandsReleased(true);
+        const bool held = axis->getStartupCommandsHeld();
+        if (ioReady && held && sharedBlockingAxis < 0) {
+          sharedBlockingAxis = axis->getStartupBlockingAxis();
+          if (sharedBlockingAxis < 0) sharedBlockingAxis = axis->getAxisID();
+        }
+        axesReady &= !held;
+      }
+      startupSharedBlockingAxis.store(sharedBlockingAxis, std::memory_order_release);
       if (axesReady) {
         startup.commandsReleased = true;
         startupCommandsHeld.store(false, std::memory_order_release);
-        ecmcRtLoggerLogInfo("Startup: axes and motor-record restoration complete; releasing PLCs and motion command producers.\n");
+        ecmcRtLoggerLogInfo("Startup: all axes and motor-record restoration complete; releasing shared command producers.\n");
       }
     }
 
@@ -656,7 +699,7 @@ void cyclic_task(void *usr) {
     // would change which commands and feedback are visible in this cycle.
     for (i = 0; i < runtime.activeAxisCount; i++) {
       auto * const axis = runtime.activeAxes[i];
-      if (startup.commandsReleased) {
+      if ((startup.commandsReleased || !axis->getStartupCommandsHeld()) && plcs) {
         plcs->execute(runtime.activeAxisPlcId[i], ecStat);
       }
       if (dataInputsConfigured) {
@@ -671,8 +714,9 @@ void cyclic_task(void *usr) {
     }
 
     // Master Slave statemachines
-    for (int i = 0; startup.commandsReleased && i < runtime.activeMasterSlaveCount; i++) {
-      runtime.activeMasterSlaves[i]->execute();
+    for (int i = 0; i < runtime.activeMasterSlaveCount; i++) {
+      if (startup.commandsReleased || startup.masterSlaveCommandsReleased[i])
+        runtime.activeMasterSlaves[i]->execute();
     }
 
     // Plugins
@@ -1025,6 +1069,9 @@ int setAppModeRun(int mode) {
 
   // Also cover plugin/logic enter-RT initialization and runtime re-entry, before
   // the cyclic thread has started and established its own gate snapshot.
+  for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex)
+    if (axes[axisIndex]) axes[axisIndex]->setStartupCommandsReleased(false);
+  startupSharedBlockingAxis.store(-1, std::memory_order_release);
   startupCommandsHeld.store(startupGateConfigured.load(std::memory_order_acquire),
                             std::memory_order_release);
 
@@ -1183,6 +1230,9 @@ int setStartupGate(int enable) {
   if (enable != 0 && enable != 1) {
     return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
   }
+  for (int axisIndex = 0; axisIndex < ECMC_MAX_AXES; ++axisIndex)
+    if (axes[axisIndex]) axes[axisIndex]->setStartupCommandsReleased(false);
+  startupSharedBlockingAxis.store(-1, std::memory_order_release);
   startupGateConfigured.store(enable != 0, std::memory_order_release);
   startupCommandsHeld.store(enable != 0, std::memory_order_release);
   return 0;

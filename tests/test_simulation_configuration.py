@@ -80,6 +80,7 @@ ecmcAsynPortDriver *asynPort = nullptr;
 app_mode_type appModeCmd = ECMC_MODE_CONFIG;
 extern app_mode_type appModeStat;
 int sampleRateChangeAllowed = 1;
+int loadSimulationRecords(const char *prefix) { return strcmp(prefix,"TEST:SIM:"); }
 #undef LOGINFO4
 #define LOGINFO4(...) ((void)0)
 #undef LOGERR
@@ -172,6 +173,8 @@ void checkMotionBindings(Axis &axis, uint64_t &positionValue, uint64_t &controlV
 }
 int main() {
   appModeStat = ECMC_MODE_CONFIG;
+  assert(command("SimLoadRecords(TEST:SIM:)") == 0);
+  assert(command("SimLoadRecords(TEST:SIM:)junk") == ERROR_MAIN_PARSER_INVALID_FORMAT);
   assert(command("SetIoBackend(0,1)") == 0);
   assert(ecSetMaster(0) == 0 && hardware.requests == 0);
   assert(setIoBackend(0,0) == ERROR_MAIN_IO_BACKEND_LOCKED);
@@ -202,6 +205,12 @@ int main() {
   assert(hardware.requests == 0);
   assert(simulation->getObject(2,0x8000,2,bytes,3) == 0 && bytes[2] == 255);
   assert(simulation->findDevice(2)->settings["dc"][2] == -1000);
+  char positionAlias[] = "positionAlias", positionPath[] = "ec0.s2.positionActual01";
+  assert(ecAddEntryAliasByPath(positionPath,positionAlias) == 0);
+  assert(simulation->findEntry(2,positionAlias) == simulation->findEntry(2,position));
+  char wrongMaster[] = "ec1.s2.positionActual01", bitAlias[] = "ec0.s2.controlWord01.3";
+  assert(ecAddEntryAliasByPath(wrongMaster,positionAlias) == ERROR_MAIN_EC_INDEX_OUT_OF_RANGE);
+  assert(ecAddEntryAliasByPath(bitAlias,positionAlias) == ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR);
   assert(command("SimSetValue(ec0.s2.positionActual01,-123)") == 0);
   assert(command("SimSetValue(ec0.s2.controlWord01,15)") == 0);
   assert(simulation->findEntry(2,control)->value == 15);
