@@ -23,6 +23,7 @@
 #include "ecmcEcEntry.h"
 
 #include "ecmcGlobalsExtern.h"
+#include "ecmcIoConfig.h"
 
 #include <cerrno>
 #include <cctype>
@@ -33,6 +34,14 @@
   ECMC_RT_LOG_WARNING_SOURCE(ECMC_RT_LOG_SOURCE_ETHERCAT, -1, __VA_ARGS__)
 
 int ecSetMaster(int masterIndex) {
+  if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (ecmcFindSimulation(masterIndex)) {
+    sampleRateChangeAllowed = 0;
+    ecmcSelectIoConfiguration(masterIndex);
+    return 0;
+  }
+
   LOGINFO4("%s/%s:%d masterIndex=%d \n",
            __FILE__,
            __FUNCTION__,
@@ -46,10 +55,15 @@ int ecSetMaster(int masterIndex) {
   if (errorCode) {
     return errorCode;
   }
+  ecmcSelectIoConfiguration(masterIndex);
   return 0;
 }
 
 int ecResetMaster(int masterIndex) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    simulation->setHealthy(true); return 0;
+  }
+
   LOGINFO4("%s/%s:%d master index=%d \n",
            __FILE__,
            __FUNCTION__,
@@ -65,6 +79,10 @@ int ecResetMaster(int masterIndex) {
 }
 
 int ecResetError() {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    simulation->setHealthy(true); return 0;
+  }
+
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
 
   ec->errorReset();
@@ -75,6 +93,10 @@ int ecAddSlave(uint16_t alias,
                uint16_t position,
                uint32_t vendorId,
                uint32_t productCode) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addDevice(alias, position, vendorId, productCode);
+  }
+
   LOGINFO4("%s/%s:%d alias=%d position=%d vendor_id=%d product_code=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -97,6 +119,10 @@ int ecSlaveConfigDC(
   int32_t  sync0Shift,  /**< SYNC0 shift time [ns]. */
   uint32_t sync1Cycle,   /**< SYNC1 cycle time [ns]. */
   int32_t  sync1Shift /**< SYNC1 shift time [ns]. */) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "dc", {assignActivate, sync0Cycle, sync0Shift, sync1Cycle, sync1Shift});
+  }
+
   LOGINFO4(
     "%s/%s:%d position=%d assign_active=%x sync0_cycle=%d sync0_shift=%d sync1_cycle=%d sync1_shift=%d\n",
     __FILE__,
@@ -127,6 +153,10 @@ int ecSetSlaveTimingOverride(int slaveBusPosition,
                              int32_t cycleOffset,
                              int32_t eventOffsetNs,
                              uint32_t uncertaintyNs) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "timingOverride." + std::to_string(direction), {cycleOffset, eventOffsetNs, uncertaintyNs});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
   if (slave == NULL) {
     return ERROR_EC_MAIN_SLAVE_NULL;
@@ -143,6 +173,10 @@ int ecSetSlaveTimingOverride(int slaveBusPosition,
 int ecSetSlaveTimingSource(int slaveBusPosition,
                            int direction,
                            int source) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "timingSource." + std::to_string(direction), {source});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
   if (!slave ||
       (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT) ||
@@ -157,6 +191,10 @@ int ecSetSlaveTimingSource(int slaveBusPosition,
 int ecSetSlaveTimingUpdateDivisor(int slaveBusPosition,
                                   int direction,
                                   uint32_t updateDivisor) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "timingDivisor." + std::to_string(direction), {updateDivisor});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
   if (!slave || !updateDivisor ||
       (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT)) {
@@ -171,6 +209,10 @@ int ecLinkSlaveTimingTimestamp(int slaveBusPosition,
                                const char *entryId,
                                int bits,
                                int32_t correctionNs) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
   if (!slave || !entryId ||
       (direction != EC_DIR_OUTPUT && direction != EC_DIR_INPUT) ||
@@ -182,6 +224,10 @@ int ecLinkSlaveTimingTimestamp(int slaveBusPosition,
 }
 
 int ecSetSlaveNeedSDOSettings(int slaveBusPosition, int ch, int need) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "needSDO." + std::to_string(ch), {need});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
 
   if (slave == NULL) {
@@ -192,6 +238,10 @@ int ecSetSlaveNeedSDOSettings(int slaveBusPosition, int ch, int need) {
 }
 
 int ecSetSlaveSDOSettingsDone(int slaveBusPosition, int ch,  int done) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "doneSDO." + std::to_string(ch), {done});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
 
   if (slave == NULL) {
@@ -202,6 +252,10 @@ int ecSetSlaveSDOSettingsDone(int slaveBusPosition, int ch,  int done) {
 }
 
 int ecSetSlaveEnableSDOCheck(int slaveBusPosition, int enable) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "enableSDOCheck", {enable});
+  }
+
   ecmcEcSlave *slave = ec->findSlave(slaveBusPosition);
 
   if (slave == NULL) {
@@ -212,6 +266,10 @@ int ecSetSlaveEnableSDOCheck(int slaveBusPosition, int enable) {
 }
 
 int ecSelectReferenceDC(int masterIndex, int slaveBusPosition) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "referenceDC", {masterIndex, slaveBusPosition});
+  }
+
   LOGINFO4("%s/%s:%d master=%d position=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -242,6 +300,10 @@ int ecAddEntryComplete(
   char    *entryIDString,
   int      signedValue
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addEntry(position, vendorId, productCode, direction, syncMangerIndex, pdoIndex, entryIndex, entrySubIndex, getEcDataType(bits, signedValue), entryIDString, true);
+  }
+
   std::string id = entryIDString;
 
   LOGINFO4(
@@ -293,6 +355,10 @@ int ecAddEntry(
   char    *entryIDString,
   int      updateInRealtime
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addEntry(position, vendorId, productCode, direction, syncMangerIndex, pdoIndex, entryIndex, entrySubIndex, getEcDataTypeFromStr(datatype), entryIDString, updateInRealtime);
+  }
+
   std::string id = entryIDString;
 
   LOGINFO4(
@@ -342,6 +408,10 @@ int ecAddEntryFixed(
   char    *entryIDString,
   int      updateInRealtime
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addEntry(position, vendorId, productCode, direction, syncMangerIndex, pdoIndex, entryIndex, entrySubIndex, getEcDataTypeFromStr(datatype), entryIDString, updateInRealtime);
+  }
+
   std::string id = entryIDString;
 
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
@@ -376,6 +446,10 @@ int ecAddEntryFixedPos(
   unsigned int entryPosition,
   int      updateInRealtime
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addEntry(position, vendorId, productCode, direction, syncMangerIndex, pdoIndex, entryIndex, entrySubIndex, getEcDataTypeFromStr(datatype), entryIDString, updateInRealtime);
+  }
+
   std::string id = entryIDString;
 
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
@@ -403,6 +477,10 @@ int ecAddEntryAlias(
   char    *entryIDString,
   char    *aliasIDString
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addAlias(slaveBusPosition, entryIDString, aliasIDString);
+  }
+
   std::string id = entryIDString;
   std::string alias = aliasIDString;
 
@@ -424,6 +502,10 @@ int ecAddEntryAliasByPath(
   char *entryPath,
   char *aliasIDString
   ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d entryPath=%s alias=%s\n",
     __FILE__,
@@ -496,6 +578,10 @@ static int findEntryByPath(char *entryPath, ecmcEcEntry **entry) {
 int ecAddEntryCyclicWrite(char *toEntryPath,
                           char *fromEntryPath,
                           int force) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   if (!ec->getInitDone()) {
     return ERROR_MAIN_EC_NOT_INITIALIZED;
   }
@@ -516,10 +602,19 @@ int ecAddEntryCyclicWrite(char *toEntryPath,
 }
 
 int ecReportEntryCyclicWrites() {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   return ec->reportCyclicEntryWrites();
 }
 
 int ecGetEntryCyclicWriteFlags(const void *data, int *copyBits) {
+  if (ecmcSelectedSimulation()) {
+    if (copyBits) *copyBits = 0;
+    return 0;
+  }
+
   if (!ec) {
     if (copyBits) {
       *copyBits = 0;
@@ -531,6 +626,15 @@ int ecGetEntryCyclicWriteFlags(const void *data, int *copyBits) {
 
 int ecAddSimEntry(
   int position,  char *entryIDString, char *datatype, uint64_t value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *device = simulation->findDevice(position);
+    if (!device) return ERROR_MAIN_EC_SLAVE_NULL;
+    int error = simulation->addEntry(position, device->vendor, device->product, 1, 0, 0, 0, 0,
+      getEcDataTypeFromStr(datatype), entryIDString, true);
+    if (!error) simulation->findEntry(position, entryIDString)->value = value;
+    return error;
+  }
+
   std::string id = entryIDString;
 
   LOGINFO4(
@@ -551,6 +655,8 @@ int ecAddSimEntry(
 }
 
 int ecAddSimEntryGlobal(char *entryIDString, char *datatype, uint64_t value) {
+
+
   return ecAddSimEntry(-1, entryIDString, datatype, value);
 }
 
@@ -559,6 +665,13 @@ int ecSetEntryUpdateInRealtime(
   char    *entryIDString,
   int      updateInRealtime
   ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *entry = simulation->findEntry(slavePosition, entryIDString);
+    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+    entry->realtime = updateInRealtime != 0;
+    return 0;
+  }
+
   LOGINFO4("%s/%s:%d slave=%d id=%s updateInRealtime=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -596,6 +709,10 @@ int ecAddMemMapDT(
   char  *dataType,
   char  *memMapIDString
   ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d startEntryID=%s byteSize=%zu, direction=%d dataType=%s entryId=%s\n",
     __FILE__,
@@ -638,6 +755,10 @@ int ecAddDataDT(
   char  *dataType,
   char  *idString
   ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d startEntryID=%s entryByteOffset=%zu, entryBitOffset=%zu, direction=%d dataType=%s entryId=%s\n",
     __FILE__,
@@ -682,6 +803,10 @@ int ecAddSdoAsync(
   uint8_t  subIndex,
   char    *datatype,
   char    *idString) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   std::string id = idString;
 
   LOGINFO4(
@@ -708,6 +833,10 @@ int ecAddSdoAsync(
 
 int ecAddSdoAsyncArray(int slaveBusPosition, int index, int subIndex,
                        int byteSize, const char *idString) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
   if (slaveBusPosition < 0 || slaveBusPosition > 0xffff ||
       index < 0 || index > 0xffff || subIndex < 0 || subIndex > 0xff ||
@@ -727,6 +856,10 @@ int ecAddMemMap(
   int      direction,
   char    *memMapIDString
   ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   std::string memMapId     = memMapIDString;
   std::string startEntryId = startEntryIDString;
 
@@ -748,6 +881,10 @@ int ecAddMemMap(
 }
 
 int ecGetMemMapId(char *memMapIDString, int *id) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   std::string memMapId = memMapIDString;
 
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
@@ -760,6 +897,10 @@ int ecGetMemMapId(char *memMapIDString, int *id) {
 }
 
 int ecAddPdo(int slaveIndex, int syncManager, uint16_t pdoIndex) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(simulation->positionByIndex(slaveIndex), "pdo." + std::to_string(syncManager) + "." + std::to_string(pdoIndex), {pdoIndex});
+  }
+
   LOGINFO4("%s/%s:%d slave=%d sm=%d pdo_index=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -779,6 +920,10 @@ int ecAddPdo(int slaveIndex, int syncManager, uint16_t pdoIndex) {
 }
 
 int ecAddSyncManager(int slaveIndex, int direction, uint8_t syncMangerIndex) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(simulation->positionByIndex(slaveIndex), "syncManager." + std::to_string(syncMangerIndex), {direction});
+  }
+
   LOGINFO4("%s/%s:%d slave=%d direction=%d sm_index=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -800,6 +945,11 @@ int ecAddSdo(uint16_t slavePosition,
              uint8_t  sdoSubIndex,
              uint32_t value,
              int      byteSize) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (byteSize < 1 || byteSize > 4) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    return simulation->setObject(slavePosition, sdoIndex, sdoSubIndex, &value, byteSize);
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_subindex=%d value=0x%x bytesize=%d\n",
     __FILE__,
@@ -825,6 +975,10 @@ int ecAddSdoDT(uint16_t slavePosition,
                uint8_t  sdoSubIndex,
                char    *valueString,
                char    *datatype) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setObjectTyped(slavePosition, sdoIndex, sdoSubIndex, getEcDataTypeFromStr(datatype), valueString);
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_subindex=%d value=%s datatype=%s\n",
     __FILE__,
@@ -864,6 +1018,10 @@ int ecAddSdoComplete(uint16_t    slavePosition,
                      uint16_t    sdoIndex,
                      const char *valueBuffer,
                      int         byteSize) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setObjectHex(slavePosition, sdoIndex, 0, valueBuffer, byteSize);
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d value=%s bytesize=%d\n",
     __FILE__,
@@ -887,6 +1045,10 @@ int ecAddSdoBuffer(uint16_t    slavePosition,
                    uint8_t     sdoSubIndex,
                    const char *valueBuffer,
                    int         byteSize) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setObjectHex(slavePosition, sdoIndex, sdoSubIndex, valueBuffer, byteSize);
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_sub_index=%d value=%s bytesize=%d\n",
     __FILE__,
@@ -912,6 +1074,10 @@ int ecWriteSdo(uint16_t slavePosition,
                uint8_t  sdoSubIndex,
                uint32_t value,
                int      byteSize) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_subindex=%d value=%d bytesize=%d\n",
     __FILE__,
@@ -968,6 +1134,10 @@ int ecWriteSdo(uint16_t slavePosition,
   return ec->writeSDOComplete(slavePosition, sdoIndex, value, byteSize);
 }*/
 int ecSetDomAllowOffline(int allow) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "domainOffline", {allow});
+  }
+
   LOGINFO4("%s/%s:%d allow=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -980,6 +1150,10 @@ int ecSetDomAllowOffline(int allow) {
 }
 
 int ecSetEcAllowOffline(int allow) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "masterOffline", {allow});
+  }
+
   LOGINFO4("%s/%s:%d allow=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -992,6 +1166,10 @@ int ecSetEcAllowOffline(int allow) {
 }
 
 int ecAddDomain(int rateCycles, int offsetCycles) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "domain." + std::to_string(rateCycles) + "." + std::to_string(offsetCycles), {rateCycles, offsetCycles});
+  }
+
   LOGINFO4("%s/%s:%d rateCycles=%d, offsetCycles=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -1009,6 +1187,12 @@ int ecReadSdo(uint16_t  slavePosition,
               uint8_t   sdoSubIndex,
               int       byteSize,
               uint32_t *value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!value || byteSize < 1 || byteSize > 4) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    *value = 0;
+    return simulation->getObject(slavePosition, sdoIndex, sdoSubIndex, value, byteSize);
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_subindex=%d bytesize=%d\n",
     __FILE__,
@@ -1030,6 +1214,13 @@ int ecVerifySdo(uint16_t slavePosition,
                 uint32_t verValue,
                 int      byteSize
                 ) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (byteSize < 1 || byteSize > 4) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    uint32_t readValue = 0;
+    int error = simulation->getObject(slavePosition, sdoIndex, sdoSubIndex, &readValue, byteSize);
+    return error ? error : readValue == verValue ? 0 : ERROR_MAIN_EC_SDO_VERIFICATION_FAIL;
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d sdo_index=%d sdo_subindex=%d bytesize=%d verValue=0x%x\n",
     __FILE__,
@@ -1074,6 +1265,10 @@ int ecReadSoE(uint16_t slavePosition,  /**< Slave position. */
               size_t   byteSize,       /**< Size of data to write. */
               uint8_t *value       /**< Pointer to data to write. */
               ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d drive no=%d idn=%u bytesize=%zu\n",
     __FILE__,
@@ -1095,6 +1290,10 @@ int ecWriteSoE(uint16_t slavePosition,  /**< Slave position. */
                size_t   byteSize,      /**< Size of data to write. */
                uint8_t *value      /**< Pointer to data to write. */
                ) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   LOGINFO4(
     "%s/%s:%d slave_position=%d drive no=%d idn=%u bytesize=%zu\n",
     __FILE__,
@@ -1113,6 +1312,10 @@ int ecWriteSoE(uint16_t slavePosition,  /**< Slave position. */
 int ecSlaveConfigWatchDog(int slaveBusPosition,
                           int watchdogDivider,
                           int watchdogIntervals) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "watchdog", {watchdogDivider, watchdogIntervals});
+  }
+
   LOGINFO4("%s/%s:%d position=%d, watchdogDivider=%d watchdogIntervals=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -1153,6 +1356,11 @@ int readEcMemMap(const char *memMapIDString,
 }
 
 int writeEcEntry(int slaveIndex, int entryIndex, uint64_t value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *entry = simulation->getEntry(slaveIndex, entryIndex);
+    return entry ? entry->access->writeValue(value) : ERROR_MAIN_EC_ENTRY_NULL;
+  }
+
   LOGINFO4("%s/%s:%d slave_index=%d entry=%d value=%" PRIu64 "\n",
            __FILE__,
            __FUNCTION__,
@@ -1190,6 +1398,13 @@ int writeEcEntryEcPath(char *ecPath,
 
   if (errorCode) {
     return errorCode;
+  }
+
+  if (auto *simulation = ecmcFindSimulation(masterId)) {
+    auto *entry = simulation->findEntry(slaveIndex, alias);
+    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+    if (bitIndex >= entry->access->getBits() || bitIndex >= 64) return ERROR_MAIN_ECMC_LINK_INVALID;
+    return bitIndex < 0 ? entry->access->writeValue(value) : entry->access->writeBit(bitIndex, value);
   }
 
   if (!ec->getInitDone() && (slaveIndex != -1)) {
@@ -1231,6 +1446,11 @@ int writeEcEntryEcPathTyped(char *ecPath,
 
   if (errorCode) {
     return errorCode;
+  }
+
+  if (auto *simulation = ecmcFindSimulation(masterId)) {
+    if (bitIndex >= 0) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    return simulation->setValue(slaveIndex, alias, value);
   }
 
   if (!ec->getInitDone() && (slaveIndex != -1)) {
@@ -1315,6 +1535,11 @@ int writeEcEntryEcPathTyped(char *ecPath,
 
 int writeEcEntryIDString(int slavePosition, char *entryIDString,
                          uint64_t value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *entry = simulation->findEntry(slavePosition, entryIDString);
+    return entry ? entry->access->writeValue(value) : ERROR_MAIN_EC_ENTRY_NULL;
+  }
+
   LOGINFO4("%s/%s:%d slave_position=%d entry=%s value=%" PRIu64 "\n",
            __FILE__,
            __FUNCTION__,
@@ -1347,6 +1572,11 @@ int writeEcEntryIDString(int slavePosition, char *entryIDString,
 }
 
 int readEcEntry(int slaveIndex, int entryIndex, uint64_t *value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *entry = simulation->getEntry(slaveIndex, entryIndex);
+    return entry ? entry->access->readValue(value) : ERROR_MAIN_EC_ENTRY_NULL;
+  }
+
   LOGINFO4("%s/%s:%d slave_index=%d entry=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -1366,6 +1596,11 @@ int readEcEntry(int slaveIndex, int entryIndex, uint64_t *value) {
 
 int readEcEntryIDString(int slavePosition, char *entryIDString,
                         uint64_t *value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *entry = simulation->findEntry(slavePosition, entryIDString);
+    return entry ? entry->access->readValue(value) : ERROR_MAIN_EC_ENTRY_NULL;
+  }
+
   LOGINFO4("%s/%s:%d slave_index=%d entry=%s\n",
            __FILE__,
            __FUNCTION__,
@@ -1398,6 +1633,12 @@ int readEcEntryIDString(int slavePosition, char *entryIDString,
 
 int readEcEntryIndexIDString(int slavePosition, char *entryIDString,
                              int *value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!value) return ERROR_MAIN_ECMC_LINK_INVALID;
+    *value = simulation->findEntryIndex(slavePosition, entryIDString);
+    return *value < 0 ? ERROR_MAIN_EC_ENTRY_NULL : 0;
+  }
+
   LOGINFO4("%s/%s:%d slave_index=%d entry=%s\n",
            __FILE__,
            __FUNCTION__,
@@ -1430,6 +1671,13 @@ int readEcEntryIndexIDString(int slavePosition, char *entryIDString,
 }
 
 int readEcSlaveIndex(int slavePosition, int *value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!value) return ERROR_MAIN_ECMC_LINK_INVALID;
+    for (int i = 0; simulation->positionByIndex(i) != -2; ++i)
+      if (simulation->positionByIndex(i) == slavePosition) { *value = i; return 0; }
+    return ERROR_MAIN_EC_SLAVE_NULL;
+  }
+
   LOGINFO4("%s/%s:%d slave_index=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -1442,6 +1690,10 @@ int readEcSlaveIndex(int slavePosition, int *value) {
 }
 
 int ecApplyConfig(int masterIndex) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->validate();
+  }
+
   // Master index not used right now..
   LOGINFO4("%s/%s:%d value=%d\n", __FILE__, __FUNCTION__, __LINE__,
            masterIndex);
@@ -1458,19 +1710,31 @@ int ecApplyConfig(int masterIndex) {
   return 0;
 }
 
-int ecSetDiagnostics(int value) {  // Set diagnostics mode
+int ecSetDiagnostics(int value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "diagnostics", {value});
+  }
+  // Set diagnostics mode
   LOGINFO4("%s/%s:%d value=%d\n", __FILE__, __FUNCTION__, __LINE__, value);
 
   return ec->setDiagnostics(value);
 }
 
 int ecSetPortWiringCheckEnable(int enable) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "wiringCheck", {enable});
+  }
+
   LOGINFO4("%s/%s:%d enable=%d\n", __FILE__, __FUNCTION__, __LINE__, enable);
 
   return ec->setPortWiringCheckEnable(enable != 0);
 }
 
 int ecSetSlavePortWiringCheckEnable(int slaveBusPosition, int enable) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(slaveBusPosition, "wiringCheck", {enable});
+  }
+
   LOGINFO4("%s/%s:%d slave=%d enable=%d\n",
            __FILE__, __FUNCTION__, __LINE__, slaveBusPosition, enable);
 
@@ -1482,12 +1746,20 @@ int ecSetSlavePortWiringCheckEnable(int slaveBusPosition, int enable) {
 }
 
 int ecSetDomainFailedCyclesLimit(int value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "failedCyclesLimit", {value});
+  }
+
   LOGINFO4("%s/%s:%d value=%d\n", __FILE__, __FUNCTION__, __LINE__, value);
 
   return ec->setDomainFailedCyclesLimitInterlock(value);
 }
 
 int ecEnablePrintouts(int value) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "printouts", {value});
+  }
+
   LOGINFO4("%s/%s:%d value=%d\n", __FILE__, __FUNCTION__, __LINE__, value);
 
   WRITE_DIAG_BIT(FUNCTION_ETHERCAT_DIAGNOSTICS_BIT, value);
@@ -1496,6 +1768,10 @@ int ecEnablePrintouts(int value) {
 }
 
 int ecSetDelayECOkAtStartup(int milliseconds) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "startupDelay", {milliseconds});
+  }
+
   LOGINFO4("%s/%s:%d milliseconds=%d\n",
            __FILE__,
            __FUNCTION__,
@@ -1505,17 +1781,39 @@ int ecSetDelayECOkAtStartup(int milliseconds) {
 }
 
 int ecPrintAllHardware() {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    for (int i = 0; simulation->positionByIndex(i) != -2; ++i) {
+      int position = simulation->positionByIndex(i);
+      auto *device = simulation->findDevice(position);
+      printf("SIMULATION ec%d.s%d vendor=0x%x product=0x%x entries=%zu\n",
+        simulation->id(), position, device->vendor, device->product, device->entries.size());
+    }
+    return 0;
+  }
+
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   return ec->printAllConfig();
 }
 
 int ecPrintSlaveConfig(int slaveIndex) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *device = simulation->findDevice(simulation->positionByIndex(slaveIndex));
+    if (!device) return ERROR_MAIN_EC_SLAVE_NULL;
+    printf("SIMULATION ec%d slave-index=%d entries=%zu objects=%zu settings=%zu\n",
+      simulation->id(), slaveIndex, device->entries.size(), device->objects.size(), device->settings.size());
+    return 0;
+  }
+
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   return ec->printSlaveConfig(slaveIndex);
 }
 
 int ecPrintControlTiming(int inputSlaveBusPosition,
                          int outputSlaveBusPosition) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+
   ecmcEcSlave *inputSlave = ec->findSlave(inputSlaveBusPosition);
   ecmcEcSlave *outputSlave = ec->findSlave(outputSlaveBusPosition);
   if (!inputSlave || !outputSlave) {
@@ -1581,6 +1879,12 @@ int ecVerifySlave(uint16_t alias,  /**< Slave alias. */
                   uint32_t vendorId,   /**< Expected vendor ID. */
                   uint32_t productCode,  /**< Expected product code. */
                   uint32_t revisionNum /**< Revision number*/) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    int error = simulation->addDevice(alias, slavePos, vendorId, productCode);
+    if (!error && revisionNum) error = simulation->setObject(slavePos, 0x1018, 3, &revisionNum, sizeof(revisionNum));
+    return error;
+  }
+
   ecmcEcSlaveVerifyProduct product;
   product.productCode          = productCode;
   product.revisionNum          = revisionNum;
@@ -1594,6 +1898,15 @@ int ecVerifySlaveProducts(uint16_t alias,  /**< Slave alias. */
                           uint32_t vendorId,   /**< Expected vendor ID. */
                           const ecmcEcSlaveVerifyProduct *products,
                           int productCount) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!products || productCount <= 0) return ERROR_MAIN_ECMC_LINK_INVALID;
+    auto *device = simulation->findDevice(slavePos);
+    if (!device) return simulation->addDevice(alias, slavePos, vendorId, products[0].productCode);
+    if (device->vendor != vendorId || device->alias != alias) return ERROR_MAIN_ECMC_LINK_INVALID;
+    for (int i = 0; i < productCount; ++i) if (device->product == products[i].productCode) return 0;
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  }
+
   LOGINFO4(
     "%s/%s:%d alias=%d slavePos=%d, vendorId=0x%x, productCount=%d\n",
     __FILE__,
@@ -1634,6 +1947,12 @@ int ecVerifySlaveProducts(uint16_t alias,  /**< Slave alias. */
 int ecGetSlaveVendorId(uint16_t  alias, /**< Slave alias. */
                        uint16_t  slavePos,       /**< Slave position. */
                        uint32_t *result) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *device = simulation->findDevice(slavePos);
+    if (!device || !result) return ERROR_MAIN_EC_SLAVE_NULL;
+    *result = device->vendor; return 0;
+  }
+
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
 
   *result = ec->getSlaveVendorId(alias, slavePos);
@@ -1643,6 +1962,12 @@ int ecGetSlaveVendorId(uint16_t  alias, /**< Slave alias. */
 int ecGetSlaveProductCode(uint16_t  alias, /**< Slave alias. */
                           uint16_t  slavePos,       /**< Slave position. */
                           uint32_t *result) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    auto *device = simulation->findDevice(slavePos);
+    if (!device || !result) return ERROR_MAIN_EC_SLAVE_NULL;
+    *result = device->product; return 0;
+  }
+
   if (!ec->getInitDone()) return 0;
 
   *result = ec->getSlaveProductCode(alias, slavePos);
@@ -1652,6 +1977,13 @@ int ecGetSlaveProductCode(uint16_t  alias, /**< Slave alias. */
 int ecGetSlaveRevisionNum(uint16_t  alias, /**< Slave alias. */
                           uint16_t  slavePos,       /**< Slave position. */
                           uint32_t *result) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!result || !simulation->findDevice(slavePos)) return ERROR_MAIN_EC_SLAVE_NULL;
+    *result = 0;
+    simulation->getObject(slavePos, 0x1018, 3, result, sizeof(*result));
+    return 0;
+  }
+
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
 
   *result = ec->getSlaveRevisionNum(alias, slavePos);
@@ -1661,6 +1993,13 @@ int ecGetSlaveRevisionNum(uint16_t  alias, /**< Slave alias. */
 int ecGetSlaveSerialNum(uint16_t  alias, /**< Slave alias. */
                         uint16_t  slavePos,       /**< Slave position. */
                         uint32_t *result) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!result || !simulation->findDevice(slavePos)) return ERROR_MAIN_EC_SLAVE_NULL;
+    *result = 0;
+    simulation->getObject(slavePos, 0x1018, 4, result, sizeof(*result));
+    return 0;
+  }
+
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
 
   *result = ec->getSlaveSerialNum(alias, slavePos);
@@ -1668,6 +2007,10 @@ int ecGetSlaveSerialNum(uint16_t  alias, /**< Slave alias. */
 }
 
 int ecUseClockRealtime(int useClkRT) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->setSetting(-1, "clockRealtime", {useClkRT});
+  }
+
   LOGINFO4("%s/%s:%d useClkRT=%d \n",
            __FILE__,
            __FUNCTION__,

@@ -1,8 +1,10 @@
 # EtherCAT dependencies and a simulation boundary
 
 The common scalar layer now has a [production implementation](common-data-links.md).
-The driver interface below remains a design proposal; no simulation backend or
-production performance result is claimed. Preserve existing installations, one cyclic RT thread,
+The initial cyclic I/O interface and EtherCAT adapter are now implemented.
+A model-free [memory simulation backend](simulation-io.md) is also implemented.
+There is no production performance result yet.
+Preserve existing installations, one cyclic RT thread,
 execution order and production performance. Simulation should use the existing
 input/output phases rather than add backend dispatch to every signal access.
 
@@ -12,9 +14,10 @@ Provide separate EtherCAT and simulation drivers implementing the same ECMC I/O
 interface. Keep simulation behavior in its own driver and device models, rather
 than adding simulation branches to EtherCAT, encoder, drive or monitor logic.
 The common interface is an ECMC contract; no external framework is selected.
-Use `ecmcIoDriver` for the common driver interface, with separate
-`ecmcEthercatDriver` and `ecmcSimulationDriver` implementations. These are
-proposed names, not existing classes. The common vocabulary is inputs, outputs,
+The [ecmcIoDriver](../devEcmcSup/com/ecmcIoDriver.h) interface and
+[ecmcEthercatDriver](../devEcmcSup/ethercat/ecmcEthercatDriver.h) adapter are
+implemented as ordinary classes, without templates or a driver factory.
+`ecmcSimulationDriver` implements memory-backed scalar I/O. The common vocabulary is inputs, outputs,
 signals, validity and timing; EtherCAT masters, slaves, PDOs and domains remain
 implementation-specific concepts.
 
@@ -26,7 +29,7 @@ implementation-specific concepts.
                  +---------+----------+
                  |                    |
           EtherCAT driver      Simulation driver
-          EtherLab / PDOs      Scripted I/O / device models
+          EtherLab / PDOs      Typed memory / external models
 ```
 
 | Responsibility | Common contract | Driver-specific implementation |
@@ -45,34 +48,56 @@ EtherCAT-specific setup and mailbox services remain separate from the cyclic
 contract. Existing configuration commands and plugins retain compatibility
 through adapters as needed.
 
-## First common interface contract (design draft)
+## Implemented cyclic interface
 
-Keep configuration, cyclic transport and device simulation as separate
-responsibilities. The names below describe an internal interface proposal,
-not a new public ABI or existing C++ declarations.
+Configuration, cyclic I/O and device simulation remain separate responsibilities.
+`cyclic_task` constructs a non-owning concrete EtherCAT adapter once on RT entry.
+Its methods forward to the existing master; it owns no buffers, copied I/O image,
+thread, lock or backend-selection state. Configuration and activation stay in
+the existing APIs. Simulated instances are selected explicitly during configuration
+and validated before runtime; see [simulation-io.md](simulation-io.md).
 
-| Surface | Proposed operation | Required behavior |
+| Operation | Existing EtherCAT operation | Placement/meaning |
 | --- | --- | --- |
-| Configuration | `bindSignal(request)` | Resolve an existing path/ID, type, direction and optional bit field; return a stable binding or a configuration error. No cyclic name lookup. |
-| Configuration | `validate()` | Check mappings, sizes, capabilities and required links without starting cyclic execution. |
-| Lifecycle | `activate(initialTime)` | Prepare the selected driver before thread start, including storage/address setup. Preserve the existing placement relative to plugin enter-RT hooks and master activation. |
-| Cyclic input | `readInputs(inputTime, timeOffset)` | Refresh input buffers at the current receive position. EtherCAT delegates to the existing receive path; simulation supplies the next scripted/model inputs. |
-| Cyclic health | `updateIoStatus()` | Refresh validity at the existing post-input position. The EtherCAT implementation preserves domain failure counters, offline policy and per-domain scheduling. |
-| Cyclic output | `writeOutputs(timeOffset)` | Process final outputs at the current send position. Preserve entry-copy/output ordering and the existing point of application-time sampling. Simulation consumes outputs for subsequent model steps. |
-| Slow status and publication | Names pending a responsibility split | Retain the current slow-work positions and divider. Distinguish status observation from publication; do not move either into the input/output phases as part of introducing the interface. |
-| Lifecycle | Stop/release | Stop cyclic use and quiesce the RT thread before releasing bindings or storage; preserve existing configuration-transition and failure cleanup order. |
+| `isActive()` | `getInitDone()` | Sample once at the start of the cycle. Transport initialization is separate from communication health. |
+| `readInputs(inputTime,timeOffset)` | `receive(inputTime,timeOffset)` | Existing receive position, before control logic. |
+| `updateIoStatus()` | `checkDomainsState()`, then `statusOK()` | Existing post-input position; retains domain filtering, offline policy and integer status. |
+| `writeOutputs(timeOffset)` | `send(timeOffset)` | Existing send position, after safety and publication. |
+| `setTimeOffset(timeOffset)` | `setTimeOffest(timeOffset)` | Existing `MASTER_ID=-1` fallback; no bus I/O. |
+| `timingReady()` | `timingStartupReady()` | Existing startup-gate checks, independently of communication status. |
+| `resetStartupErrors()` | `resetStartupCommunicationErrors()` | Existing one-time startup reset. |
+| `updateDiagnostics()` | `checkState()` | Existing slow-status position/divider. |
+| `slowExecute()` | `slowExecute()` | Existing slow-work position, after axis slow work. |
 
-The initial EtherCAT adapter maps `readInputs` to `ecmcEc::receive`,
-`updateIoStatus` to `ecmcEc::checkDomainsState`, and `writeOutputs` to
-`ecmcEc::send`. These generic names describe the driver's role; they do not
-rename the existing EtherCAT methods or alter when they run. Time argument
-types/clock references still need an explicit definition before implementation.
+The input timestamp is the existing `CLOCK_MONOTONIC` sample. The offset is
+`CLOCK_REALTIME - CLOCK_MONOTONIC`, sampled at activation. Both keep their
+existing `timespec` representation. The adapter adds no clock reads or unit
+conversions; application-time sampling and clock synchronization remain inside
+`ecmcEc::send` at their original positions.
 
-Do not prescribe a new simulation thread, event queue, per-signal callback or
-extra whole-image copy. Simulation device models belong behind the simulation
-driver: for example a DS402 model consumes a control word/setpoint at the output
-phase and supplies status/position on a later input phase. The production DS402
-control logic remains a consumer of the same common signal contract.
+The caller keeps the same conditions and order. An initialized but unhealthy
+bus still receives/processes/sends data. An uninitialized real master performs
+neither bus I/O nor the masterless offset fallback. With `MASTER_ID=-1`, receive,
+health/timing checks and bus slow work are skipped and the offset is updated.
+There is still only one cyclic RT thread.
+
+`ecmcIoDriver` defines the internal common contract. Production calls use the
+concrete `final` EtherCAT type, allowing the forwarding methods to inline and
+devirtualize. Backend selection happens outside the
+cyclic signal-access path. There is no new per-signal driver dispatch.
+
+Validation, EtherCAT activation, plugin enter/exit hooks, shared-memory master
+identity and cleanup remain on their existing paths. The adapter has no new
+activation/stop behavior. Existing configuration commands and the C plugin ABI
+are unchanged. Signal lookup uses the common data-link configuration, separately
+from this cyclic driver interface.
+
+The memory simulation driver implements these operations without a device model.
+It exposes shared typed storage and explicit health. The input/output phases
+record timing without synthesizing feedback. A future device model may consume
+control/setpoint values and supply status/position through these bindings.
+External PV clients are asynchronous and do not supply deterministic RT feedback.
+No simulation worker thread, event queue or extra image copy is introduced.
 
 ### Stable bindings and shared state
 
@@ -102,8 +127,8 @@ Observation must not initiate hardware access or implicitly reset errors.
 ### Shared signals cover PLCs as well as motion
 
 The current entry type is `ecmcEcEntry`. It is a shared signal object, not just
-a motion implementation detail. `ecmcPLCDataIF` inherits `ecmcEcEntryLink`,
-resolves PLC variable paths to entries and uses the same bound read/write
+a motion implementation detail. `ecmcPLCDataIF` now uses `ecmcDataLink` and
+resolves PLC variable paths to neutral descriptors with the same bound read/write
 operations as motion consumers. PLC library functions additionally use
 EtherCAT services and memory maps through separate paths.
 
@@ -221,26 +246,28 @@ not belong in a mandatory interface that a simulator must pretend to support.
 Inventory/adapt these remaining consumers before declaring full decoupling.
 
 `MASTER_ID=-1` continues to select the current masterless behavior. Selection of
-the richer simulation driver must be explicit; the configuration spelling is
-not decided here. Neither driver may report successful timing discovery,
+the memory simulation driver is explicit: `Cfg.SetIoBackend(id,1)` before
+`Cfg.EcSetMaster(id)`. Neither driver may report successful timing discovery,
 hardware mailbox transfers or device feedback that it cannot actually supply.
 
-Whether the cyclic seam uses an internal virtual interface or bound function
-pointers is still open. Either can add indirect calls. Restrict any new dispatch
-to the cycle/slow/lifecycle operations and compare the optimized production path
-against the baseline before selecting the mechanism. No per-signal dispatch is
-added by this proposal.
+The cyclic seam now uses an internal virtual contract with a concrete `final`
+EtherCAT adapter at the production call site. Keep forwarding calls inlinable;
+any future runtime backend choice must preserve that fast path. No per-signal
+transport dispatch is added. The compiler probe below checks representative
+phase code, while full IOC performance still requires hardware measurement.
+The simulation loops also add empty-list checks in hardware-only operation;
+the forwarding probe does not measure that complete cyclic path.
 
 ## Current cyclic data flow
 
 ```text
 cyclic_task (one cyclic RT thread)
-  ecmcEc::receive
+  io.readInputs -> ecmcEc::receive
     EtherLab receive -> domain process -> input entries and memory maps
-  domain/status checks and startup gates
+  io.updateIoStatus -> domain/status checks; startup gates
   sequences / axis PLC + axis / PVT / master-slave / plugins / logic / PLCs
   repeated stop/disable enforcement, slow work, safety and publication
-  ecmcEc::send
+  io.writeOutputs -> ecmcEc::send
     cyclic entry copies -> output entries and memory maps -> domain queue
     application time / clock synchronization -> EtherLab send
 ```
@@ -289,8 +316,9 @@ Consumer sources: [drive](../devEcmcSup/motion/ecmcDriveBase.cpp),
 
 ## Existing access boundary and compatibility details
 
-`ecmcEcEntryLink` stores an entry pointer and bit number in a fixed array.
-Runtime accesses use these bindings, rather than resolving entry names for each
+Before the common-layer migration, `ecmcEcEntryLink` stored an entry pointer
+and bit number in a fixed array. The neutral layer retains a compact resolved
+pointer/bit slot. Runtime accesses use these bindings rather than resolving names for each
 read/write. `ecmcEcEntry::readValue` reads `buffer_`; `writeValue` updates it and
 calls `updateAsyn`. Whole-value/double writes therefore have publication effects,
 not just memory effects. Bit operations have their own behavior.
@@ -382,36 +410,40 @@ not exercise EtherLab transport, a running axis or physical stopping. See also
 Keep legacy masterless behavior and a richer simulated backend distinguishable.
 Do not silently make `MASTER_ID=-1` invent healthy timing or physical feedback.
 
-## Proposed first implementation boundary
+## Implemented memory simulation boundary
 
-Use a cycle-level boundary for transport, process-image storage, health and
-timing. Keep the existing bound entry buffers visible to motion consumers.
-Select the backend during configuration; allocate storage and bind signal
-metadata before runtime. Run simulation input/output phases synchronously on
-the same cyclic RT thread, in the existing receive/send positions.
+The separate simulation driver owns typed scalar buffers, stored SDO objects,
+configuration metadata and explicit health. Existing slave/entry declarations
+and common data links select it through configuration routing; they retain
+`ecN.sM.entry` names. Motion and PLC consumers access the same neutral descriptors.
+Real and simulated instances may coexist with distinct IDs.
 
-First specify the smallest common configuration/binding, cycle, health and
-timing contract against the existing EtherCAT path. Identify the adapter needed
-to retain existing entry access and configuration. Avoid a broad public API or
-new per-signal polymorphism before this contract has been exercised.
+Allocation, name resolution and publication registration occur during
+configuration. The driver freezes its publication list before runtime. Input
+and output phases execute on the existing cyclic RT thread. Device behavior
+remains separate: there is no built-in drive, encoder, loopback or DS402 model.
 
-Then implement one scripted drive/encoder/limit-switch path in the separate
-simulation driver, reusing production control and entry/link behavior where
-possible. Supply status/position before control execution and capture
-control/setpoint/brake values after it. Exercise delayed enabled feedback,
-limits, communication loss and recovery. Existing simulation helpers are
-implementation resources, not a reason to mix the two drivers' responsibilities.
-
-The prototype should explicitly identify which layer it exercises: buffer-level
-injection is a useful first test, but does not verify PDO offsets, packing,
-endianness or process-image conversion. Add a memory-backed process-image path
-to cover those before claiming a simulated transport.
-
-Keep mailbox/SDO services, DC discovery, memory maps, scheduled outputs and
-publication as explicit follow-up surfaces. Unsupported simulation operations
-must be reported as unsupported, not fabricated successful hardware transfers.
+This is buffer-level simulation. It does not emulate EtherLab process-image
+packing, endianness conversion, distributed clocks or physical timing. Several
+advanced configuration services remain unsupported. The supported commands,
+limitations and examples are listed in [simulation-io.md](simulation-io.md).
 
 ## Performance acceptance before production integration
+
+A [compiler probe](../tools/check-io-driver-codegen.py) compares direct EtherCAT
+calls with the concrete adapter for input/status/control/output phases:
+
+```sh
+CXX=g++ python3 tools/check-io-driver-codegen.py --optimization=-O3
+CXX=clang++ python3 tools/check-io-driver-codegen.py --optimization=-O3
+```
+
+Both compilers produced identical optimized instruction sequences for the two
+probe functions in local checks. This checks forwarding/inlining, not a whole
+IOC build, scheduler, hardware transport, cycle time or jitter. The functional
+suite exercises the real interface/adapter with a controlled provider and the
+existing cycle/startup traces, including masterless and uninitialized-master
+cases. The existing domain-health tests protect filtering semantics.
 
 A standalone access probe is described in [common-data-links.md](common-data-links.md).
 No IOC/hardware RT performance measurements have been made. The existing
@@ -436,4 +468,4 @@ Preserve existing entry paths, IDs, types, bit semantics, alarms, startup gates,
 error priority, plugin ABI and cycle order throughout migration. The
 [expectation inventory](../tests/EXPECTATIONS.md) distinguishes compatibility
 checks from unresolved semantic questions. IOC/hardware validation remains
-necessary; this assessment changes no production behavior.
+necessary; the adapter is intended to preserve existing production behavior.

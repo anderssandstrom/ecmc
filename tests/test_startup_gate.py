@@ -28,7 +28,7 @@ master_identity = between('  int masterId ',
                           '  int diagnosticsUpdateFreqHzCached')
 initialization = between('  // Snapshot the configuration once per runtime entry.',
                          '  // Ownership belongs to this thread')
-bus_status = between('    if (ecInitDone) {\n      ec->receive(',
+bus_status = between('    if (ioActive) {\n      io.readInputs(',
                      '    // Master to master coms')
 gate_and_dispatch = between('    if (!startup.axisInitializationReleased',
                             '  }  // enc of RT-loop')
@@ -116,17 +116,32 @@ struct Ethercat {
   int masterIndex = 0;
   int getMasterIndex() { return masterIndex; }
   bool available = true, healthy = true, timing = true;
-  int receives = 0, timingChecks = 0, resets = 0;
-  void receive(timespec, int) { assert(available); ++receives; trace.push_back("receive"); }
+  int receives = 0, timingChecks = 0, resets = 0, activeChecks = 0;
+  bool getInitDone() { ++activeChecks; return available; }
+  void receive(timespec, timespec) { assert(available); ++receives; trace.push_back("receive"); }
   void checkDomainsState() { assert(available); }
   int statusOK() { assert(available); return healthy; }
   bool timingStartupReady() { assert(available); ++timingChecks; return timing; }
   void resetStartupCommunicationErrors() { assert(available); ++resets; }
   void checkState() { assert(available); trace.push_back("bus-state"); }
   void slowExecute() { assert(available); trace.push_back("slow-bus"); }
-  void send(int) { assert(available); trace.push_back("send"); }
-  void setTimeOffest(int) { trace.push_back("time-offset"); }
+  void send(timespec) { assert(available); trace.push_back("send"); }
+  void setTimeOffest(timespec) { trace.push_back("time-offset"); }
 };
+struct Simulation {
+  bool healthy = true;
+  bool isActive() const { return true; }
+  void readInputs(timespec, timespec) { trace.push_back("sim-input"); }
+  int updateIoStatus() { return healthy; }
+  bool timingReady() const { return healthy; }
+  void slowExecute() { trace.push_back("sim-slow"); }
+  void writeOutputs(timespec) { trace.push_back("sim-output"); }
+};
+std::vector<Simulation *> configuredSimulations;
+const std::vector<Simulation *> &ecmcSimulationDrivers() { return configuredSimulations; }
+using ecmcEc = Ethercat;
+#define ECMCEC_H_
+#include "ecmcEthercatDriver.h"
 ''' + constants + r'''
 using ecmcAxisBase = Axis;
 using ecmcMasterSlaveStateMachine = Task;
@@ -149,8 +164,7 @@ struct Rig {
                          cppLogicObjects, motionSequenceObjects};
   explicit Rig(int masterId = 0) {
     ethercat.masterIndex = masterId;
-    ecInitDone = masterId >= 0;
-    ethercat.available = ecInitDone;
+    ethercat.available = masterId >= 0;
     axisObjects[2] = &axes[0];
     axisObjects[7] = &axes[1];
     axisObjects[11] = &axes[2];
@@ -161,13 +175,13 @@ struct Rig {
     runtime = RuntimeObjects(axisObjects, masterSlaveObjects, pluginObjects,
                              cppLogicObjects, motionSequenceObjects);
   }
+  Simulation simulated;
   Plc plc;
   Plc *plcs = &plc;
   Ethercat ethercat;
   Ethercat *ec = &ethercat;
-  bool ecInitDone = true;
   timespec startTime = {}, sendTime = {}, endTime = {};
-  int masterActivationTimeOffset = 0;
+  timespec masterActivationTimeOffset = {};
   int counter = 0, diagnosticsUpdateFreqHz = 0;
   int diagnosticsUpdateFreqHzCached = -1, slowCycleInterval = 1;
   double mcuFrequency = 4;
@@ -198,7 +212,10 @@ body = master_identity + initialization + r'''
     auto tick = [&]() {
       trace.clear();
       int i = 0, ecStat = 0;
+      const int previousActiveChecks = ethercat.activeChecks;
+      const bool ioActive = io.isActive();
 ''' + bus_status + gate_and_dispatch + r'''
+      assert(ethercat.activeChecks == previousActiveChecks + 1);
     };
     auto ticks = [&](int count) { while (count--) tick(); };
     if (scenario == 0) {
@@ -253,7 +270,7 @@ body = master_identity + initialization + r'''
       assert(ethercat.resets == 0);
     } else if (scenario == 2) {
       // MASTER_ID=-1: skip bus I/O, preserving readiness and PLC timing.
-      assert(masterId == -1 && !hasRealMaster && !ecInitDone);
+      assert(masterId == -1 && !hasRealMaster && !ethercat.available);
       ticks(20);
       assert(startup.waitSeconds == 0);
       iocRunning = true;
@@ -276,7 +293,7 @@ body = master_identity + initialization + r'''
       assert(ethercat.receives == 0 && ethercat.timingChecks == 0 && ethercat.resets == 0);
     } else if (scenario == 3) {
       // Explicit IOC-wait opt-out, also with MASTER_ID=-1 and no axes.
-      assert(masterId == -1 && !hasRealMaster && !ecInitDone);
+      assert(masterId == -1 && !hasRealMaster && !ethercat.available);
       runtime.activeAxisCount = 0;
       ticks(8);
       assert(!iocRunning && startup.axisInitializationReleased && startup.commandsReleased);
@@ -349,6 +366,27 @@ body = master_identity + initialization + r'''
       expectTrace({"input-health-2", "axis-2", "input-health-7", "axis-7",
                    "input-health-11", "axis-11", "safety", "publish", "time-offset"});
       expectDispatch(0);
+    } else if (scenario == 11) {
+      // Preserve the distinction between MASTER_ID=-1 and an uninitialized
+      // real master: neither performs bus I/O, only masterless updates offset.
+      ethercat.available = false;
+      tick();
+      expectTrace({"axis-2", "axis-7", "axis-11", "safety", "publish"});
+      assert(ethercat.receives == 0 && ethercat.timingChecks == 0);
+      expectDispatch(0);
+    } else if (scenario == 12) {
+      tick();
+      expectTrace({"receive", "sim-input", "sequence", "axis-plc-18", "axis-2", "axis-plc-23", "axis-7",
+        "axis-plc-27", "axis-11", "pvt", "master-slave", "plugin", "cpp-logic", "global-plc",
+        "safety", "publish", "send", "sim-output"});
+      expectDispatch(1);
+    } else if (scenario == 13) {
+      simulated.healthy = false;
+      tick();
+      expectTrace({"sim-input", "axis-2", "axis-7", "axis-11", "safety", "publish", "time-offset", "sim-output"});
+      expectDispatch(0);
+      iocRunning = true; ticks(10);
+      assert(!startup.axisInitializationReleased && !startup.commandsReleased);
     }
   }
 };
@@ -423,13 +461,15 @@ void checkRuntimeObjects() {
 }
 int main() {
   checkRuntimeObjects();
-  for (int scenario = 0; scenario < 11; ++scenario) {
-    startupGateConfigured = scenario != 4 && scenario != 8 && scenario != 9;
+  for (int scenario = 0; scenario < 14; ++scenario) {
+    startupGateConfigured = scenario != 4 && scenario != 8 && scenario != 9 && scenario != 12;
     iocRunning = false;
     iocExitRequested = false;
     commands = 0;
     waitSetting = scenario == 3 ? "0" : nullptr;
-    Rig rig(scenario == 2 || scenario == 3 || scenario == 10 ? -1 : 0);
+    Rig rig(scenario == 2 || scenario == 3 || scenario == 10 || scenario == 13 ? -1 : 0);
+    configuredSimulations.clear();
+    if (scenario == 12 || scenario == 13) configuredSimulations.push_back(&rig.simulated);
     rig.plc.dataInputs = scenario == 9 || scenario == 10;
     rig.run(scenario);
   }
@@ -444,6 +484,8 @@ with tempfile.TemporaryDirectory() as directory:
     exe = Path(directory) / 'startup_gate'
     cpp.write_text(stubs + body)
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++11', '-O2',
+                    '-I' + str(ROOT / 'devEcmcSup/com'),
+                    '-I' + str(ROOT / 'devEcmcSup/ethercat'),
                     '-Wall', '-Wextra', '-Werror', str(cpp), '-o', str(exe)],
                    check=True)
     subprocess.run([str(exe)], check=True)

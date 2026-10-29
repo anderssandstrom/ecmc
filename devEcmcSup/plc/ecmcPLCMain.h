@@ -76,7 +76,7 @@ public:
                         ecmcDataLink *target, int entryIndex, int conversion);
   int linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &source,
                             int axisIndex, ecmcDataLink *target, int entryIndex,
-                            int sourceAxis = -1);
+                            int sourceAxis = -1, int bit = -1);
   int unlinkDataInput(ecmcDataLink *target, int entryIndex);
   bool hasPendingDataInputs() const {
     for (const auto &link : dataInputs_) if (link.plcIndex >= 0 && !link.installed) return true;

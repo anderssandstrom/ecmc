@@ -47,6 +47,7 @@ fixture = r'''
 #include <climits>
 #include <cstdlib>
 #include "ecmcDataLink.h"
+#include "ecmcSimulationDriver.h"
 #include "ecmcAxisData.h"
 #include "ecmcErrorsList.h"
 #include "ecmcPLCTaskErrors.h"
@@ -70,6 +71,11 @@ struct ecmcEc {
   ecmcEcSlave *getSlave(int position) { return position == -1 ? sim : nullptr; }
 };
 ecmcEc *ec = nullptr;
+std::map<int, ecmcSimulationDriver *> simulationRegistry;
+ecmcSimulationDriver *ecmcFindSimulation(int id) {
+  auto found = simulationRegistry.find(id);
+  return found == simulationRegistry.end() ? nullptr : found->second;
+}
 #define ECMCECENTRY_H_
 #include "ecmcEcEntryLink.h"
 extern app_mode_type appModeStat;
@@ -167,7 +173,7 @@ struct ecmcPLCMain {
   int setAxisArrayPointer(ecmcAxisBase *, int);
   int linkDataInput(int, const char *, int, ecmcDataLink *, int, int);
   int linkAxisDataInput(int, const char *, int, ecmcDataLink *, int, int);
-  int linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &, int, ecmcDataLink *, int, int = -1);
+  int linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &, int, ecmcDataLink *, int, int = -1, int = -1);
   int unlinkDataInput(ecmcDataLink *, int);
   bool hasPendingDataInputs() const;
   bool hasDataInputProducers() const;
@@ -578,6 +584,29 @@ int main() {
   assert(axis.monitor.readDataValue(0, &raw) != 0 && raw == 97);
   assert(parseCommand("UnlinkDataFromObject(ax2.mon.lowlim)") == 0);
   ec = nullptr;
+  // The same paths and common command resolve memory-backed I/O in mixed mode.
+  ecmcSimulationDriver memory(1, nullptr);
+  simulationRegistry[1] = &memory;
+  assert(memory.addDevice(0, 5, 1, 2) == 0);
+  assert(memory.addEntry(5, 1, 2, 2, 3, 0x1a00, 0x6000, 1, ECMC_EC_S32, "positionActual01", true) == 0);
+  assert(memory.addEntry(5, 1, 2, 1, 2, 0x1600, 0x7000, 1, ECMC_EC_U16, "controlWord01", true) == 0);
+  assert(memory.setValue(5, "positionActual01", "-321") == 0);
+  assert(memory.addEntry(5, 1, 2, 1, 2, 0x1600, 0x7000, 2, ECMC_EC_F64, "floatingOutput", true) == 0);
+  assert(parseCommand("LinkDataToObject(ec1.s5.floatingOutput.3,ax2.drv.control,0)") == ERROR_MAIN_ECMC_LINK_INVALID);
+  ec = &hardware;
+  assert(parseCommand("LinkDataToObject(ec1.s5.positionActual01,ax2.enc.actpos,0)") == 0);
+  assert(axis.encoder.readDataValueDouble(0, &position) == 0 && position == -321);
+  assert(parseCommand("LinkDataToObject(ec1.s5.controlWord01.3,ax2.drv.control,0)") == 0);
+  assert(axis.drive.writeDataValue(0, 1) == 0);
+  assert(memory.findEntry(5, "controlWord01")->value == 8);
+  // No model is baked in: writing control does not change feedback.
+  assert(axis.encoder.readDataValueDouble(0, &position) == 0 && position == -321);
+  memory.setHealthy(false); position = 77;
+  assert(axis.encoder.readDataValueDouble(0, &position) != 0 && position == 77);
+  memory.setHealthy(true);
+  assert(parseCommand("UnlinkDataFromObject(ax2.drv.control)") == 0);
+  assert(parseCommand("UnlinkDataFromObject(ax2.enc.actpos)") == 0);
+  simulationRegistry.clear(); ec = nullptr;
   // Native axis sources exist without any producer PLC or parsed expression.
   auto sourceAxis = std::make_unique<ecmcAxisBase>();
   sourceAxis->data_.status_.axisId = 1;
@@ -722,6 +751,6 @@ with tempfile.TemporaryDirectory() as directory:
                     '-I' + str(SUP / 'main'), '-I' + str(SUP / 'com'),
                     '-I' + str(SUP / 'motion'), '-I' + str(SUP / 'plc'), '-I' + str(SUP / 'ethercat'),
                     str(cpp), str(SUP / 'com/ecmcDataItem.cpp'),
-                    str(SUP / 'com/ecmcDataLink.cpp'), str(SUP / 'com/ecmcDataAccess.cpp'), str(SUP / 'main/ecmcError.cpp'),
+                    str(SUP / 'com/ecmcDataLink.cpp'), str(SUP / 'misc/ecmcSimulationDriver.cpp'), str(SUP / 'com/ecmcDataAccess.cpp'), str(SUP / 'main/ecmcError.cpp'),
                     str(ROOT / 'tests/monitor/support.cpp'), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

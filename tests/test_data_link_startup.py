@@ -26,6 +26,7 @@ fixture = r'''
 #define LOGERR(...) ((void)0)
 const int ECMC_MAX_AXES = 2, ECMC_MAX_MST_SLVS_SMS = 2;
 std::vector<int> trace;
+int ecmcValidateSimulations() { return 0; }
 struct Bus {
   bool initialized = false;
   int error = 0;

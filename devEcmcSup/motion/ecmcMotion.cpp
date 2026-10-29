@@ -18,6 +18,7 @@
 #include <string>
 
 #include "ecmcMotion.h"
+#include "ecmcIoConfig.h"
 #include "ecmcOctetIF.h"        // Log Macros
 #include "ecmcErrorsList.h"
 #include "ecmcGeneral.h"
@@ -4409,23 +4410,9 @@ int linkEcEntryToAxisEnc(int   slaveIndex,
     encoderEntryIndex,
     bitIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
-
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {    // simulation slave
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int resolveError = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (resolveError) return resolveError;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_ENCODER_CFG_RETURN_IF_ERROR(axisIndex);
@@ -4435,7 +4422,8 @@ int linkEcEntryToAxisEnc(int   slaveIndex,
        0)) return ERROR_MAIN_ENCODER_ENTRY_INDEX_OUT_OF_RANGE;
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  int checkError = ecmcEnableIoMotionChecks(slaveIndex);
+  if (checkError) return checkError;
 
   return axes[axisIndex]->getConfigEnc()->setDataAtIndex(entry,
                                                           encoderEntryIndex,
@@ -4671,23 +4659,9 @@ int linkEcEntryToAxisDrv(int   slaveIndex,
     return axes[axisIndex]->getDrv()->setEnableReduceTorque(0);
   }
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
-
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
- 
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-  
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int resolveError = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (resolveError) return resolveError;
 
   if ((driveEntryIndex >= ECMC_EC_ENTRY_LINKS_MAX) || (driveEntryIndex < 0)) {
     return ERROR_MAIN_DRIVE_ENTRY_INDEX_OUT_OF_RANGE;
@@ -4702,7 +4676,8 @@ int linkEcEntryToAxisDrv(int   slaveIndex,
   }
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  int checkError = ecmcEnableIoMotionChecks(slaveIndex);
+  if (checkError) return checkError;
 
   // Auto enable break
   if (driveEntryIndex == ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT) {
@@ -4741,25 +4716,9 @@ int linkEcEntryToAxisMon(int   slaveIndex,
     monitorEntryIndex,
     bitIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
-
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) {
-    return ERROR_MAIN_EC_ENTRY_NULL;
-  }
+  std::shared_ptr<ecmcDataAccess> entry;
+  int resolveError = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (resolveError) return resolveError;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
   CHECK_AXIS_MON_RETURN_IF_ERROR(axisIndex);
@@ -4777,7 +4736,8 @@ int linkEcEntryToAxisMon(int   slaveIndex,
   }
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  int checkError = ecmcEnableIoMotionChecks(slaveIndex);
+  if (checkError) return checkError;
 
   // Auto enable fucntionalities
   if (monitorEntryIndex == ECMC_MON_ENTRY_INDEX_EXTINTERLOCK) {
@@ -4785,7 +4745,7 @@ int linkEcEntryToAxisMon(int   slaveIndex,
   }
 
   if (monitorEntryIndex == ECMC_MON_ENTRY_INDEX_HOMESENSOR) {
-    return setAxisMonHomeSwitchEnable(axisIndex, 1);
+    return setAxisHomeSwitchEnable(axisIndex, 1);
   }
 
   return 0;

@@ -39,6 +39,8 @@
 #include "ecmcGlobals.h"
 #include "ecmcOctetIF.h"
 #include "ecmcEthercat.h"
+#include "ecmcEthercatDriver.h"
+#include "ecmcIoConfig.h"
 #include "ecmcMotion.h"
 #include "ecmcRtLogger.h"
 #include "ecmcPLC.h"
@@ -418,6 +420,8 @@ void cyclic_task(void *usr) {
   const struct timespec cycletime = { 0, (long int)mcuPeriod };
   int masterId                    = ec->getMasterIndex();
   const bool hasRealMaster        = masterId >= 0;
+  ecmcEthercatDriver io(*ec);
+  const auto &simulations = ecmcSimulationDrivers();
   int diagnosticsUpdateFreqHzCached = -1;
   int slowCycleInterval           = 1;
 
@@ -461,7 +465,7 @@ void cyclic_task(void *usr) {
       break;
     }
 
-    const bool ecInitDone = ec->getInitDone();
+    const bool ioActive = io.isActive();
     auto * const localAsynPort = asynPort;
 
     wakeupTime.tv_nsec += cycletime.tv_nsec;
@@ -543,12 +547,19 @@ void cyclic_task(void *usr) {
       threadDiag.send_min_ns = threadDiag.sendperiod_ns;
     }
 
-    if (ecInitDone) {
-      ec->receive(startTime, masterActivationTimeOffset);
-      ec->checkDomainsState();
-      ecStat = ec->statusOK();
+    if (ioActive) {
+      io.readInputs(startTime, masterActivationTimeOffset);
+      ecStat = io.updateIoStatus();
     } else {
       ecStat = 1;
+    }
+
+    bool simulationReady = true;
+    for (const auto &simulation : simulations) {
+      if (!simulation->isActive()) continue;
+      simulation->readInputs(startTime, masterActivationTimeOffset);
+      simulation->updateIoStatus();
+      simulationReady &= simulation->timingReady();
     }
 
     // Master to master coms
@@ -565,7 +576,7 @@ void cyclic_task(void *usr) {
     if (!startup.axisInitializationReleased && !startup.timedOut &&
         (!waitForIocRunning || iocRunning.load(std::memory_order_acquire))) {
       startup.waitSeconds += mcuPeriod / 1.0e9;
-      const bool timingReady = !ecInitDone || ec->timingStartupReady();
+      const bool timingReady = (!ioActive || io.timingReady()) && simulationReady;
       if (ecStat && timingReady) {
         startup.stableSeconds += mcuPeriod / 1.0e9;
       } else {
@@ -573,8 +584,8 @@ void cyclic_task(void *usr) {
       }
       if (startup.stableSeconds >= 2.0) {
         // One reset attempt per startup, only for transient bus/axis errors.
-        if (ecInitDone) {
-          ec->resetStartupCommunicationErrors();
+        if (ioActive) {
+          io.resetStartupErrors();
         }
         for (i = 0; i < runtime.activeAxisCount; ++i) {
           const int error = runtime.activeAxes[i]->getErrorID();
@@ -609,7 +620,7 @@ void cyclic_task(void *usr) {
         startup.motorWaitSeconds = 0;
       }
 
-      bool axesReady = ecStat && (!ecInitDone || ec->timingStartupReady());
+      bool axesReady = ecStat && (!ioActive || io.timingReady()) && simulationReady;
       for (i = 0; i < runtime.activeAxisCount; ++i) {
         axesReady &= !runtime.activeAxes[i]->getInStartupPhase() &&
                      runtime.activeAxes[i]->getMotorRecordStartupReady();
@@ -703,8 +714,8 @@ void cyclic_task(void *usr) {
         }
         counter = slowCycleInterval;
 
-        if (ecInitDone) {
-          ec->checkState();
+        if (ioActive) {
+          io.updateDiagnostics();
         }
         printStatus();
 
@@ -712,9 +723,11 @@ void cyclic_task(void *usr) {
           runtime.activeAxes[i]->slowExecute();
         }
 
-        if (ecInitDone) {
-          ec->slowExecute();
+        if (ioActive) {
+          io.slowExecute();
         }
+        for (const auto &simulation : simulations)
+          if (simulation->isActive()) simulation->slowExecute();
       }
     }
 
@@ -730,12 +743,14 @@ void cyclic_task(void *usr) {
 
     clock_gettime(CLOCK_MONOTONIC, &sendTime);
 
-    if (ecInitDone) {
-      ec->send(masterActivationTimeOffset);
+    if (ioActive) {
+      io.writeOutputs(masterActivationTimeOffset);
     } else if (!hasRealMaster) {
-      // just set offset to make sense of plc timing functions when running without master
-      ec->setTimeOffest(masterActivationTimeOffset);
+      // Preserve PLC timing without EtherCAT transport in masterless mode.
+      io.setTimeOffset(masterActivationTimeOffset);
     }
+    for (const auto &simulation : simulations)
+      if (simulation->isActive()) simulation->writeOutputs(masterActivationTimeOffset);
     clock_gettime(CLOCK_MONOTONIC, &endTime);
   }  // enc of RT-loop
 
@@ -1350,5 +1365,5 @@ int validateConfig() {
     }
   }
 
-  return 0;
+  return ecmcValidateSimulations();
 }

@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcPLCDataIF.h"
+#include "ecmcIoConfig.h"
 #include "ecmcEc.h"
 #include "ecmcEcSlave.h"
 #include "ecmcRtLogger.h"
@@ -787,6 +788,19 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
            ecDataSource,
            errorCode);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
+  }
+
+  if (auto *simulation = ecmcFindSimulation(masterId)) {
+    auto *entry = simulation->findEntry(slaveId, alias);
+    if (!entry) return ERROR_PLC_EC_ENTRY_NULL;
+    if (slaveId < 0) {
+      std::stringstream name;
+      name << ECMC_EC_STR << masterId << "." ECMC_DUMMY_SLAVE_STR << -slaveId << "." << alias;
+      if (bitId >= 0) name << "." << bitId;
+      exprTkVarName_ = name.str();
+    }
+    int error = setDataAtIndex(entry->access, ECMC_PLC_EC_ENTRY_INDEX, bitId);
+    return error ? error : validateData(ECMC_PLC_EC_ENTRY_INDEX);
   }
 
   if (ec_->getMasterIndex() != masterId) {

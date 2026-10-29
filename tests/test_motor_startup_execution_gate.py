@@ -94,9 +94,8 @@ struct Producer {
   void execute(int, bool) { ++calls; }
   int exeRTFunc(int) { ++calls; return 0; }
 };
-struct Ethercat { bool timing = true; bool timingStartupReady() { return timing; } } bus;
-Ethercat *ec = &bus;
-bool ecInitDone = true, ecStat = true;
+struct IoDriver { bool timing = true; bool timingReady() { return timing; } } io;
+bool ioActive = true, ecStat = true, simulationReady = true;
 bool dataInputsConfigured = false;
 constexpr int ECMC_MAX_PLCS = 16;
 ''' + startup_state + r'''
@@ -152,10 +151,10 @@ int main() {
   ecStat = false;
   tick();
   assert(!startup.commandsReleased && totalProducerCalls() == 0);
-  ecStat = true; bus.timing = false;
+  ecStat = true; io.timing = false;
   tick();
   assert(!startup.commandsReleased && totalProducerCalls() == 0);
-  bus.timing = true;
+  io.timing = true;
   tick();
   assert(startup.commandsReleased && !ecmcStartupCommandsHeld());
   assert(sequence.calls == 1 && plc.calls == 3 && pvt.calls == 1);

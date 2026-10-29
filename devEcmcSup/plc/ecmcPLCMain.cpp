@@ -1881,7 +1881,7 @@ int ecmcPLCMain::linkAxisDataInput(int sourceAxis, const char *name, int axisInd
 
 int ecmcPLCMain::linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &source,
                                       int axisIndex, ecmcDataLink *target, int entryIndex,
-                                      int sourceAxis) {
+                                      int sourceAxis, int bit) {
   if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
   if (!source || !source->data || !target || axisIndex < 0 || axisIndex >= ECMC_MAX_AXES ||
@@ -1903,7 +1903,7 @@ int ecmcPLCMain::linkResolvedDataInput(const std::shared_ptr<ecmcDataAccess> &so
     return ERROR_MAIN_EXCEPTION;
   }
   auto &added = dataInputs_.back();
-  int error = target->setDataAtIndex(source, entryIndex, -1);
+  int error = target->setDataAtIndex(source, entryIndex, bit);
   if (error) {
     dataInputs_.pop_back(); return error;
   }

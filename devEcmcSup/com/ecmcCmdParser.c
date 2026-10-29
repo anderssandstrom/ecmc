@@ -34,6 +34,7 @@
 #include "ecmcEthercat.h"
 #include "ecmcMisc.h"
 #include "ecmcGeneral.h"
+#include "ecmcIoConfig.h"
 #include "ecmcCom.h"
 #include "ecmcPLC.h"
 #include "ecmcPlugin.h"
@@ -861,6 +862,26 @@ static int handleCfgCommand(const char *myarg_1) {
   if (nvals == 0) {
     RETURN_ERROR_IF_RUNTIME_CFG_CMD("ValidateConfig");
     return validateConfig();
+  }
+
+  // Backend selection precedes device creation; signal paths do not change.
+  if (strncmp(myarg_1, "SetIoBackend(", 13) == 0) {
+    int end = 0;
+    nvals = sscanf(myarg_1, "SetIoBackend(%d,%d)%n", &iValue, &iValue2, &end);
+    if (nvals != 2 || !end || myarg_1[end]) return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    return setIoBackend(iValue, iValue2);
+  }
+  if (strncmp(myarg_1, "SimSetValue(", 12) == 0) {
+    int end = 0;
+    nvals = sscanf(myarg_1, "SimSetValue(%1023[^,],%1023[^)])%n", cIdBuffer, cIdBuffer2, &end);
+    if (nvals != 2 || !end || myarg_1[end]) return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    return setSimulationValue(trimWhitespace(cIdBuffer), trimWhitespace(cIdBuffer2));
+  }
+  if (strncmp(myarg_1, "SimSetHealthy(", 14) == 0) {
+    int end = 0;
+    nvals = sscanf(myarg_1, "SimSetHealthy(%d,%d)%n", &iValue, &iValue2, &end);
+    if (nvals != 2 || !end || myarg_1[end]) return ERROR_MAIN_PARSER_INVALID_FORMAT;
+    return setSimulationHealthy(iValue, iValue2);
   }
 
   // Bind a scalar source to a normal axis input; all strings are bounded.

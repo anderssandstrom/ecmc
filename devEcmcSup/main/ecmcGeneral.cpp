@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcGeneral.h"
+#include "ecmcIoConfig.h"
 
 
 // TODO: REMOVE GLOBALS
@@ -259,6 +260,11 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
     return errorCode;
   }
 
+  const bool explicitMaster = strncmp(ecPath, "ec", 2) == 0 && strstr(ecPath, ".s");
+  if (explicitMaster && !ecmcFindSimulation(masterId) && ec->getMasterIndex() != masterId)
+    return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+  ecmcIoConfigurationScope context(explicitMaster ? masterId : ecmcIoConfigurationId());
+
   // Get object type
   mainObjectType objType;
   int objIndex      = -1;
@@ -418,7 +424,7 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
 }
 
 namespace {
-int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, int *slot) {
+int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, int *slot, bool allowOutputs = false) {
   mainObjectType type;
   int error = getMainObjectType(path, axisIndex, &type);
   if (error) return error;
@@ -432,9 +438,9 @@ int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, in
     error = getAxEncFuncType(path, slot);
     if (error) return error;
     // Input slots only; commands/control outputs must retain their handlers.
-    if (*slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL ||
+    if (!allowOutputs && (*slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL ||
         *slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
-        *slot == ECMC_ENCODER_ENTRY_INDEX_RESET || *slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME)
+        *slot == ECMC_ENCODER_ENTRY_INDEX_RESET || *slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME))
       return ERROR_MAIN_ECMC_LINK_INVALID;
     *target = axis->getConfigEnc();
   } else if (sub == ECMC_AX_SUB_OBJ_MONITOR) {
@@ -444,9 +450,9 @@ int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, in
   } else if (sub == ECMC_AX_SUB_OBJ_DRIVE) {
     error = getAxDriveFuncType(path, slot);
     if (error) return error;
-    if (*slot != ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD &&
+    if (!allowOutputs && (*slot != ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD &&
         *slot != ECMC_DRIVEBASE_ENTRY_INDEX_WARNING &&
-        (*slot < ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0 || *slot > ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2))
+        (*slot < ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0 || *slot > ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_2)))
       return ERROR_MAIN_ECMC_LINK_INVALID;
     *target = axis->getDrv();
   } else return ERROR_MAIN_ECMC_LINK_INVALID;
@@ -464,12 +470,19 @@ int resolveEthercatDataSource(const char *path, int conversion,
   char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
   int error = parseEcPath(const_cast<char *>(path), &master, &slaveId, alias, &bit);
   if (error) return error;
-  if (master != ec->getMasterIndex()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
-  auto *slave = slaveId >= 0 ? ec->findSlave(slaveId) : ec->getSlave(slaveId);
-  if (!slave) return ERROR_MAIN_EC_SLAVE_NULL;
-  auto *entry = slave->findEntry(alias);
-  if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
-  auto source = entry->getDataAccess();
+  std::shared_ptr<ecmcDataAccess> source;
+  if (auto *simulation = ecmcFindSimulation(master)) {
+    auto *entry = simulation->findEntry(slaveId, alias);
+    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+    source = entry->access;
+  } else {
+    if (master != ec->getMasterIndex()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
+    auto *slave = slaveId >= 0 ? ec->findSlave(slaveId) : ec->getSlave(slaveId);
+    if (!slave) return ERROR_MAIN_EC_SLAVE_NULL;
+    auto *entry = slave->findEntry(alias);
+    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+    source = entry->getDataAccess();
+  }
   if (!source || !source->data) return ERROR_MAIN_ECMC_LINK_INVALID;
   if (bit >= source->getBits() || bit >= 64) return ERROR_MAIN_ECMC_LINK_INVALID;
   if (bit >= 0) {
@@ -512,9 +525,23 @@ int linkDataToObject(const char *source, char *destination, int conversion) {
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
   if (!plcs || !source || !destination || conversion < 0 || conversion > 2)
     return ERROR_MAIN_ECMC_LINK_INVALID;
+  bool simulationSource = false;
+  int simulationBit = -1;
+  std::shared_ptr<ecmcDataAccess> simulationAccess;
+  if (strncmp(source, "ec", 2) == 0) {
+    int master = -1, slave = -1;
+    char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
+    int parsed = parseEcPath(const_cast<char *>(source), &master, &slave, alias, &simulationBit);
+    if (parsed) return parsed;
+    if (auto *simulation = ecmcFindSimulation(master)) {
+      auto *entry = simulation->findEntry(slave, alias);
+      if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
+      simulationSource = true; simulationAccess = entry->access;
+    }
+  }
   int axisIndex = -1, slot = -1;
   ecmcDataLink *target = nullptr;
-  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
+  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot, simulationSource);
   if (error) return error;
   axisSubObjectType sub;
   error = getAxSubObjectType(destination, &sub);
@@ -524,6 +551,24 @@ int linkDataToObject(const char *source, char *destination, int conversion) {
       (slot == ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION ||
        slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE)) ||
     (sub == ECMC_AX_SUB_OBJ_MONITOR && slot == ECMC_MON_ENTRY_INDEX_ANALOG);
+
+  const bool outputSlot =
+    (sub == ECMC_AX_SUB_OBJ_DRIVE &&
+      (slot == ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD || slot == ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT ||
+       slot == ECMC_DRIVEBASE_ENTRY_INDEX_POSITION_SETPOINT || slot == ECMC_DRIVEBASE_ENTRY_INDEX_BRAKE_OUTPUT ||
+       slot == ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT || slot == ECMC_DRIVEBASE_ENTRY_INDEX_RESET)) ||
+    (sub == ECMC_AX_SUB_OBJ_ENCODER &&
+      (slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_RESET || slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME));
+  if (simulationSource && outputSlot) {
+    const auto type = simulationAccess->getDataType();
+    if (simulationBit >= 0 && (type == ECMC_EC_F32 || type == ECMC_EC_F64))
+      return ERROR_MAIN_ECMC_LINK_INVALID;
+    if (conversion || simulationBit < -1 || simulationBit >= simulationAccess->getBits() || simulationBit >= 64)
+      return ERROR_MAIN_ECMC_LINK_INVALID;
+    error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
+    return error ? error : plcs->linkResolvedDataInput(simulationAccess, axisIndex, target, slot, -1, simulationBit);
+  }
 
   if (strncmp(source, "ec", 2) == 0) {
     try {
@@ -589,6 +634,6 @@ int unlinkDataFromObject(char *destination) {
   if (!plcs || !destination) return ERROR_MAIN_ECMC_LINK_INVALID;
   int axisIndex = -1, slot = -1;
   ecmcDataLink *target = nullptr;
-  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot);
+  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot, true);
   return error ? error : plcs->unlinkDataInput(target, slot);
 }

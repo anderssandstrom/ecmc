@@ -92,6 +92,9 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_async_sdo_array.py` | Scalar/array payloads, asynchronous request lifecycle, lookup and PLC/C++ interfaces |
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |
+| `test_simulation_driver.py` | Real memory driver with controlled asyn: shared typed storage/PV buffers, aliases, scalar/object range checks, explicit health and invalidation; no device model |
+| `test_simulation_configuration.py` | Backend locking, C-compatible parser API, actual registry and configuration routes, SDO storage, identical encoder/drive/monitor commands on both backends, feature setup and mixed instance selection; controlled hardware/axis endpoints |
+| `test_io_driver.py` | Real cyclic I/O interface/EtherCAT adapter with controlled provider: input/output timestamps, receive/domain/status order, health, startup reset, slow work and timing-only offset update |
 | `test_domain_health.py` | Configured domain-failure tolerance, complete-sample recovery, startup priming and offline summary/local validity |
 | `test_common_data_links.py` | Unified command for EtherCAT entries/bits, PLC variables and lazy axis sources; native scalar access, filtered/custom health and entry lifetime, bit/computed values, same-axis/reciprocal links and identical signal self-link rejection and source invalidation; deferred PLC lookup/batch validation, pins, source health, publication, runtime re-entry and unlink; fake endpoints |
 | `test_data_link_startup.py` | Pending PLC links resolve before axis validation; original validation order without pending links; errors stop final validation; fake endpoints |
@@ -137,3 +140,12 @@ production implementation, label the expectation basis using
 fails when the old bug is reintroduced. Keep fault injection temporary; do not
 leave modified production code in the checkout. The runner discovers new
 scripts automatically.
+
+The cyclic-driver forwarding probe can be run separately, without building an IOC:
+
+```sh
+CXX=g++ python3 tools/check-io-driver-codegen.py --optimization=-O3
+```
+
+It compares representative optimized phase instructions. It does not measure
+IOC execution time, jitter or hardware deadlines.

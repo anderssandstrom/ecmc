@@ -2378,6 +2378,10 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
   case 0x20077:
     return "ERROR_MAIN_RT_THREAD_CREATE_FAILED";
 
+  case 0x20078:
+    return "ERROR_MAIN_IO_BACKEND_LOCKED";
+  case 0x20079:
+    return "ERROR_MAIN_IO_CONFIG_UNSUPPORTED";
   case 0x20076:
     return "ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT";
 

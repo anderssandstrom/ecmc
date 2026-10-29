@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcCom.h"
+#include "ecmcIoConfig.h"
 #include "ecmcGeneral.h"
 #include "ecmcOctetIF.h"        // Log Macros
 #include "ecmcErrorsList.h"
@@ -333,6 +334,7 @@ void ecmcCleanup(int signum) {
   }
 
   printf("ecmc rt-thread closed....\n");
+  ecmcClearSimulations();
   delete ec;
   ec = NULL;
 
