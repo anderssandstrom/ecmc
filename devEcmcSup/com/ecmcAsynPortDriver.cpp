@@ -3450,7 +3450,23 @@ static void dumpMotionStateCallFunc(const iocshArgBuf *args) {
   }
 }
 
+/* Explicit, local startup-only opt-in for privileged MCU-Cmd operations. */
+static const iocshArg allowNetworkHostCommandsArg = { "allow (0 or 1)", iocshArgInt };
+static const iocshArg *const allowNetworkHostCommandsArgs[] = { &allowNetworkHostCommandsArg };
+static const iocshFuncDef allowNetworkHostCommandsFuncDef =
+{ "ecmcAllowNetworkHostCommands", 1, allowNetworkHostCommandsArgs };
+static void allowNetworkHostCommandsCallFunc(const iocshArgBuf *args) {
+  const int error = ecmcSetAllowNetworkHostCommands(args[0].ival);
+  if (error) {
+    printf("ecmcAllowNetworkHostCommands: requires 0 or 1, before iocInit and ECMC runtime (0x%x).\n", error);
+  } else if (args[0].ival) {
+    printf("ecmcAllowNetworkHostCommands: privileged remote configuration enabled; restrict MCU-Cmd write access.\n");
+  }
+  iocshSetError(error);
+}
+
 void ecmcAsynPortDriverRegister(void) {
+  iocshRegister(&allowNetworkHostCommandsFuncDef, allowNetworkHostCommandsCallFunc);
   iocshRegister(&initFuncDef,    initCallFunc);
   iocshRegister(&initFuncDef_2,  initCallFunc_2);
   iocshRegister(&initFuncDef_3,  initCallFunc_3);

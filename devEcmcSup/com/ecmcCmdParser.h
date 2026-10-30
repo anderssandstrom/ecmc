@@ -23,10 +23,17 @@ extern "C" {
                   const char           *argv[],
                   const char           *seperator[],
                 ecmcOutputBufferType *buffer);*/
+/* Trusted startup-only opt-in for host commands over asyn (default disabled).
+ * Must be called before iocInit/iocBuild and before ECMC runtime. */
+int ecmcSetAllowNetworkHostCommands(int allow);
+
+/* Untrusted/asyn transport: host commands require explicit startup opt-in and
+ * are never allowed in runtime. */
 int ecmcCmdParser(const char           *cmdline,
                   int                   inLen,
                   ecmcOutputBufferType *buffer);
 
+/* Trusted local IOC-shell configuration only; never use for network input. */
 int motorHandleOneArg(const char           *myarg_1,
                       ecmcOutputBufferType *buffer);
 

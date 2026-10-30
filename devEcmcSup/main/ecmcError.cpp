@@ -2458,6 +2458,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x2007B:
+    return "ERROR_MAIN_PARSER_CMD_LOCAL_ONLY";
+
   case 0x20063:
     return "ERROR_MAIN_PARSER_CMD_BLOCKED_IN_RUNTIME";
 

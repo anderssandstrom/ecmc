@@ -40,6 +40,7 @@
 #include "ecmcPlugin.h"
 #include "ecmcCppLogicCmd.h"
 #include <iocsh.h>
+#include <iocInit.h>
 
 extern int blockCmdParserInRt;
 
@@ -778,7 +779,39 @@ static int motorHandleADS_ADR(const char *arg, ecmcOutputBufferType *buffer) {
 /**
  * \brief Handles all the configuration commands"
 */
-static int handleCfgCommand(const char *myarg_1) {
+/* Local IOC-shell opt-in. It cannot be changed through MCU-Cmd, after
+ * iocInit/iocBuild, or once ECMC is running. No PV exposes this variable. */
+static int allowNetworkHostCommands = 0;
+
+int ecmcSetAllowNetworkHostCommands(int allow) {
+  if (allow != 0 && allow != 1) return ERROR_MAIN_PARSER_INVALID_FORMAT;
+  if (getIocState() != iocVoid || appModeStat == ECMC_MODE_RUNTIME) {
+    return ERROR_MAIN_PARSER_CMD_LOCAL_ONLY;
+  }
+  allowNetworkHostCommands = allow;
+  return 0;
+}
+
+/* These capabilities operate on host files or executable code. They belong
+ * to trusted IOC configuration. The asyn command transport requires a local
+ * startup opt-in and configuration mode. Match the same literal
+ * command prefixes as the parsers below (after ADSPORT/Cfg normalization). */
+static int cfgCommandRequiresLocalAccess(const char *command) {
+  static const char *const prefixes[] = {
+    "IocshCmd=", "LoadPlugin(", "LoadSafetyPlugin(", "LoadCppLogic(",
+    "AppendCppLogicMacros(", "LoadPLCFile(", "LoadAxisPLCFile(",
+    "LoadPLCLibFile(", "LoadLUTFile(", "LoadAxisEncLookupTable(",
+    "SetPLCExpr(", "AppendPLCExpr(", "AppendAxisPLCExpr(",
+    "ClearPLCExpr(", "CompilePLC(", "CompileAxisPLC(", "SimLoadRecords("
+  };
+  size_t i;
+  for (i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
+    if (!strncmp(command, prefixes[i], strlen(prefixes[i]))) return 1;
+  }
+  return 0;
+}
+
+static int handleCfgCommand(const char *myarg_1, int fromNetwork) {
   int iValue        = 0;
   int iValue2       = 0;
   int iValue3       = 0;
@@ -804,6 +837,12 @@ static int handleCfgCommand(const char *myarg_1) {
   int      cfgFastSetAxisMon   = 0;
   int      cfgFastSetAxisDrv   = 0;
   int      cfgFastSetAxisEnc   = 0;
+
+  if (fromNetwork && cfgCommandRequiresLocalAccess(myarg_1)) {
+    if (!allowNetworkHostCommands) return ERROR_MAIN_PARSER_CMD_LOCAL_ONLY;
+    // Opt-in permits commissioning, never runtime code/file replacement.
+    if (appModeStat == ECMC_MODE_RUNTIME) return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  }
 
   cfgFastSetAxisCntrl = !strncmp(myarg_1, "SetAxisCntrl", 12);
   cfgFastSetAxisMon   = !strncmp(myarg_1, "SetAxisMon", 10);
@@ -4297,11 +4336,11 @@ parse_cfg_setaxisdrv:
                  cExprBuffer);
 
   if (nvals == 1) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendAxisPLCExpr");
     cExprBuffer[0] = '\0';
   }
 
   if (nvals >= 1) {  // allow empty expression
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendAxisPLCExpr");
     // Change all # to ; (since ; is used as command delimiter
     // in tcpip communication)
     size_t str_len = strlen(cExprBuffer);
@@ -4320,11 +4359,11 @@ parse_cfg_setaxisdrv:
   nvals = sscanf(myarg_1, "SetPLCExpr(%d)=%[^\n]", &iValue, cExprBuffer);
 
   if (nvals == 1) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetPLCExpr");
     cExprBuffer[0] = '\0';
   }
 
   if (nvals >= 1) {  // allow empty expression
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("SetPLCExpr");
     // Change all # to ; (since ; is used as command
     // delimiter in tcpip communication)
     size_t str_len = strlen(cExprBuffer);
@@ -4343,11 +4382,11 @@ parse_cfg_setaxisdrv:
   nvals = sscanf(myarg_1, "AppendPLCExpr(%d)=%[^\n]", &iValue, cExprBuffer);
 
   if (nvals == 1) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendPLCExpr");
     cExprBuffer[0] = '\0';
   }
 
   if (nvals >= 1) {  // allow empty expression
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendPLCExpr");
     // Change all # to ; (since ; is used as command
     // delimiter in tcpip communication)
     size_t str_len = strlen(cExprBuffer);
@@ -4367,11 +4406,11 @@ parse_cfg_setaxisdrv:
     sscanf(myarg_1, "AppendAxisPLCExpr(%d)=%[^\n]", &iValue, cExprBuffer);
 
   if (nvals == 1) {
-    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendAxisPLCExpr");
     cExprBuffer[0] = '\0';
   }
 
   if (nvals >= 1) {  // allow empty expression
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("AppendAxisPLCExpr");
     // Change all # to ; (since ; is used as command
     // delimiter in tcpip communication)
     size_t str_len = strlen(cExprBuffer);
@@ -5030,7 +5069,9 @@ static int handleTwincatSyntax(const char           *myarg_1,
   return 0;
 }
 
-int motorHandleOneArg(const char *myarg_1, ecmcOutputBufferType *buffer) {
+static int motorHandleOneArgWithOrigin(const char *myarg_1,
+                                      ecmcOutputBufferType *buffer,
+                                      int fromNetwork) {
   const char *rawCmd = myarg_1;
   int iValue        = 0;
   int iValue2       = 0;
@@ -5123,7 +5164,7 @@ int motorHandleOneArg(const char *myarg_1, ecmcOutputBufferType *buffer) {
   // Check if configuration command
   if (0 == strncmp(myarg_1, Cfg_dot_str, strlen(Cfg_dot_str))) {
     myarg_1 += strlen(Cfg_dot_str);
-    SEND_OK_OR_ERROR_AND_RETURN(handleCfgCommand(myarg_1));
+    SEND_OK_OR_ERROR_AND_RETURN(handleCfgCommand(myarg_1, fromNetwork));
   }
 
   fastGetAxisAny   = !strncmp(myarg_1, "GetAxis", 7);
@@ -6741,6 +6782,12 @@ parse_getaxisdrv:
   SEND_OK_OR_ERROR_AND_RETURN(ERROR_MAIN_PARSER_UNKOWN_CMD);
 }
 
+/* Only local IOC-shell configuration calls this entry point. Origin is an
+ * argument, not mutable global state that another request could overwrite. */
+int motorHandleOneArg(const char *myarg_1, ecmcOutputBufferType *buffer) {
+  return motorHandleOneArgWithOrigin(myarg_1, buffer, 0);
+}
+
 /*int ecmcCmdParser(int             argc,
             const char           *argv[],
             const char           *sepv[],
@@ -6777,7 +6824,7 @@ int ecmcCmdParser(const char           *cmdline,
       multiCmd = 0;
       done     = 1;
     }
-    int errorCode = motorHandleOneArg(nextCmd, buffer);
+    int errorCode = motorHandleOneArgWithOrigin(nextCmd, buffer, 1);
     cmdCounter++;
 
     if (errorCode) {

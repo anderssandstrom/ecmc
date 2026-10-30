@@ -38,7 +38,8 @@ int ecmcCmdParser(const char *, int, ecmcOutputBufferType *);
 static char cOneCommand[ECMC_CMD_MAX_SINGLE_CMD_LENGTH];
 static int calls = 0;
 static size_t lastLength = 0;
-static int motorHandleOneArg(const char *command, ecmcOutputBufferType *buffer) {
+static int motorHandleOneArgWithOrigin(const char *command, ecmcOutputBufferType *buffer, int fromNetwork) {
+  assert(fromNetwork == 1);
   ++calls;
   lastLength = strlen(command);
   return cmd_buf_printf(buffer, "OK");
