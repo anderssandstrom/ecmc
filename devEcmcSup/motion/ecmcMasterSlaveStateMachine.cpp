@@ -34,6 +34,7 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   masterGrp_                = masterGrp;
   slaveGrp_                 = slaveGrp;
   validationOK_             = false;
+  masterTrajectoryStartAllowed_ = false;
   asynInitOk_               = false;  
   status_                   = ECMC_MST_SLV_STATUS_IDLE;
   statusWord_               = ECMC_MST_SLV_STATUS_IDLE;
@@ -78,10 +79,13 @@ ecmcMasterSlaveStateMachine::ecmcMasterSlaveStateMachine(ecmcAsynPortDriver *asy
   int errorCode = initAsyn();
   if (errorCode) {
     setErrorID(errorCode);
+  } else {
+    masterGrp_->setMotionStartPermissive(&masterTrajectoryStartAllowed_);
   }
 };
 
 ecmcMasterSlaveStateMachine::~ecmcMasterSlaveStateMachine(){
+  masterGrp_->setMotionStartPermissive(nullptr);
 };
 
 const char* ecmcMasterSlaveStateMachine::getName(){
@@ -186,6 +190,7 @@ uint32_t ecmcMasterSlaveStateMachine::buildStatusWord() const {
 }
 
 void ecmcMasterSlaveStateMachine::resetMasterRuntimeState() {
+  masterTrajectoryStartAllowed_ = false;
   masterGroupWasBusy_ = false;
   masterGroupReachedTarget_ = false;
   masterDisableInProgress_ = false;
@@ -265,8 +270,13 @@ void ecmcMasterSlaveStateMachine::execute(){
       status_ = ECMC_MST_SLV_STATUS_IDLE;
       resetMasterRuntimeState();
     }
+    masterTrajectoryStartAllowed_ = true;
     controlOld_ = control_;
     return;
+  }
+
+  if (!controlOld_.enable) {
+    masterTrajectoryStartAllowed_ = false;
   }
 
   if(!validationOK_) {
@@ -299,6 +309,7 @@ void ecmcMasterSlaveStateMachine::execute(){
 };
 
 int ecmcMasterSlaveStateMachine::stateIdle(){
+  masterTrajectoryStartAllowed_ = false;
   status_ = ECMC_MST_SLV_STATUS_IDLE;
   
   // Slaved axis busy will stay high for 2 cycles after traj source change.
@@ -348,7 +359,10 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
   } else if(anyMasterEnabled &&
             anySlaveErrorId == 0 ) {
     const bool allSlavesEnabled = slaveStatus.allEnabled;
-    if(allSlavesEnabled && !anySlaveBusy){
+    // Preparing the slaves may be unnecessary after a direct physical move,
+    // but the other virtual masters can still be disabled. Entering MASTER
+    // with a partially enabled master group trips the lost-enable check.
+    if(allSlavesEnabled && masterStatus.allEnabled && !anySlaveBusy){
       const bool anyMasterBusy = masterStatus.anyBusy;
       if(anyMasterBusy) {
         slaveGrp_->setTrajSrc(ECMC_DATA_SOURCE_EXTERNAL);
@@ -430,6 +444,7 @@ int ecmcMasterSlaveStateMachine::stateIdle(){
 }
 
 int ecmcMasterSlaveStateMachine::stateSlave(){
+  masterTrajectoryStartAllowed_ = false;
 
   slaveGrp_->setBlocked(false);
   masterGrp_->setBlocked(true);
@@ -491,6 +506,11 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
   const ecmcAxisGroupStatusSummary slaveStatus = slaveGrp_->getStatusSummary(false);
   const ecmcAxisGroupStatusSummary masterStatus = masterGrp_->getStatusSummary(false);
   const bool slaveAnyError = slaveStatus.firstErrorId > 0;
+  // Reuse the group summary: no extra axis scan in the RT cycle. Physical
+  // axes remain independent; only new master trajectories wait for readiness.
+  masterTrajectoryStartAllowed_ = slaveStatus.allEnabled &&
+                                  slaveStatus.allTrajExternal &&
+                                  !slaveStatus.anyIlocked && !slaveAnyError;
   const bool masterAnyEnabled = masterStatus.anyEnabled;
   const bool masterAnyBusy = masterStatus.anyBusy;
   const bool masterAnyError = masterStatus.firstErrorId > 0;
@@ -537,6 +557,11 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     bool lostEnabled = masterAnyEnabled && !masterStatus.allEnabled;
     lostEnabled = lostEnabled || (slaveStatus.anyEnabled && !slaveStatus.allEnabled);
     if(lostEnabled || masterAnyError) {
+      ecmcRtLoggerLogError(
+        "Master/slave state machine[%d] %s: group state before abort: masters allEnableCmd=%d allEnabled=%d error=0x%x; slaves allEnableCmd=%d allEnabled=%d error=0x%x.\n",
+        index_, name_.c_str(), masterStatus.allEnableCmd, masterStatus.allEnabled,
+        masterStatus.firstErrorId, slaveStatus.allEnableCmd, slaveStatus.allEnabled,
+        slaveStatus.firstErrorId);
       latchFault(masterAnyError ? masterStatus.firstErrorId :
                  ERROR_AXIS_SLAVED_AXIS_INTERLOCK,
                  ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY);
@@ -645,6 +670,9 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
     return 0;
   }
   if((anySlaveIlocked || !allSlaveTrajExternal) && !masterDisableInProgress_){
+    if (anySlaveIlocked) {
+      slaveGrp_->logActiveInterlocks();
+    }
     status_ = ECMC_MST_SLV_STATUS_FORCED_TIMEOUT_RECOVERY;
     latchFault(anySlaveIlocked ? ERROR_AXIS_SLAVED_AXIS_INTERLOCK :
                ERROR_MST_SLV_SM_SLAVE_TRAJ_SRC_TIMEOUT,
@@ -753,6 +781,7 @@ int ecmcMasterSlaveStateMachine::stateMaster(){
 }
 
 int ecmcMasterSlaveStateMachine::stateReset() {
+  masterTrajectoryStartAllowed_ = false;
   slaveGrp_->setEnable(0);
   masterGrp_->setEnable(0);
   slaveGrp_->setMRCnen(0);

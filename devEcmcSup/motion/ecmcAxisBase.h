@@ -87,6 +87,8 @@ public:
   void                       postExecute(bool masterOK);
   int                        setExecute(bool execute);
   int                        setExecute(bool execute, bool ignoreBusy);
+  void setMotionStartPermissive(const bool *permissive) { motionStartPermissive_ = permissive; }
+  int getActiveInterlock() const { return data_.interlocks_.interlockStatus; }
   bool                       getExecute();
   int                        getAxisHomed(bool *homed);
   int                        setAxisHomed(bool homed);
@@ -403,6 +405,8 @@ protected:
   double autoEnableTimoutS_;
   double autoDisableAfterS_;
   bool autoEnableRequest_;
+  const bool *motionStartPermissive_;
+  bool motionStartPending_;
   double autoEnableTimeCounter_;
   double autoDisbleTimeCounter_;
   bool enableAutoEnable_;

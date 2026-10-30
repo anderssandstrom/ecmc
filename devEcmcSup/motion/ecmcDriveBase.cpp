@@ -96,6 +96,7 @@ void ecmcDriveBase::initVars() {
   stateMachineTimeoutCycles_ = 0;
   cycleCounterBase_          = 0;
   localEnabledOld_           = 0;
+  waitForDisableFeedback_    = false;
   minVeloOutput_             = 0;
   maxVeloOutput_             = 0;
   veloPosOutput_             = 0;
@@ -321,13 +322,37 @@ void ecmcDriveBase::writeEntries() {
     enableCmdOld_ = false;
   }
 
+  // A preceding OFF command can still be in flight when enable is requested
+  // again. Keep the amplifier off until that disable is acknowledged, then
+  // start a fresh enable/brake sequence instead of consuming stale feedback.
+  if (!data_->status_.statusWord_.enable && waitForDisableFeedback_) {
+    waitForDisableFeedback_ = false;
+    enableCmdOld_ = false;
+  }
+  if (data_->status_.statusWord_.enable && !enableCmdOld_ &&
+      !enableAmpCmdOld_ && localEnabledOld_ && localEnabled) {
+    waitForDisableFeedback_ = true;
+  }
+  const bool expectedDisableFeedback = waitForDisableFeedback_;
+  if (waitForDisableFeedback_ && !localEnabled) {
+    waitForDisableFeedback_ = false;
+    enableCmdOld_ = false;
+  }
+
   // The brake state machine may clear enable while handling this loss. Capture
   // it first so opening-state losses are reported just like open-state losses.
   const bool enabledLost = !localEnabled && localEnabledOld_ &&
-                           data_->status_.statusWord_.enable;
+                           data_->status_.statusWord_.enable && enableCmdOld_ &&
+                           !expectedDisableFeedback;
 
   // Update enable command
-  if (enableBrake_) {
+  if (waitForDisableFeedback_) {
+    data_->status_.statusWord_.enabled = false;
+    enableAmpCmd_ = false;
+    brakeState_ = ECMC_BRAKE_CLOSED;
+    brakeOutputCmd_ = false;
+    brakeCounter_ = 0;
+  } else if (enableBrake_) {
     // also wait for brakeOutputCmd_
     data_->status_.statusWord_.enabled = localEnabled && brakeOutputCmd_;
     updateBrakeState();
@@ -466,7 +491,7 @@ void ecmcDriveBase::writeEntries() {
   }
 
   // Timeout?
-  if (!localEnabledNow && data_->status_.statusWord_.enable) {
+  if ((!localEnabledNow || waitForDisableFeedback_) && data_->status_.statusWord_.enable) {
     cycleCounterBase_++;
 
     if (cycleCounterBase_ > stateMachineTimeoutCycles_) {
@@ -491,7 +516,16 @@ void ecmcDriveBase::writeEntries() {
   // Enabled lost?
   if (enabledLost) {
     data_->status_.statusWord_.enable = false;
+    data_->control_.controlWord_.enableCmd = false;
     enableAmpCmd_          = false;
+    // Enabled status is updated here, after the axis-level loss check, and
+    // copied to statusOld at the end of this cycle. Latch the fault where the
+    // feedback edge is observed so it cannot disappear between axis checks.
+    // Preserve a more specific hardware or I/O error already reported.
+    if (!getError() && !data_->status_.errorCode) {
+      setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                 ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+    }
     ecmcRtLoggerLogError(
       "%s/%s:%d: WARNING (axis %d): Drive enabled lost while enable cmd is high.\n",
       __FILE__,
@@ -916,7 +950,7 @@ int ecmcDriveBase::updateBrakeState() {
     }
 
     // loose enabled while opening, go directly to closed
-    if (localEnabledOld_ && !getEnabledLocal()) {
+    if (localEnabledOld_ && !getEnabledLocal() && enableCmdOld_) {
       brakeState_     = ECMC_BRAKE_CLOSED;
       enableAmpCmd_   = 0;
       brakeOutputCmd_ = 0;

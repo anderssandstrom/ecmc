@@ -61,6 +61,9 @@ struct Bench {
     drive->writeEntries();
   }
   void open(int delay = 2) {
+    // Ordinary starts use acknowledged OFF feedback. Delayed acknowledgement
+    // and rapid reversals are exercised separately below.
+    if (!drive->getEnable()) tick(false);
     command(true);
     for (int i = 0; i < delay + 3; ++i) tick(true);
     CHECK(brake.value == 1);
@@ -121,12 +124,19 @@ static void feedbackLoss() {
       CHECK(b.brake.value == 0 && !b.drive->getEnable() && !b.drive->getEnabled());
       CHECK(!b.data.status_.statusWord_.enable);
       CHECK(b.drive->getWarningID() == WARNING_DRV_ENABLED_LOST);
+      CHECK(b.drive->getErrorID() == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+      CHECK(b.data.status_.errorCode == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+      CHECK(!b.data.control_.controlWord_.enableCmd);
       // Returning feedback alone must not release the brake or restart power.
       for (int i = 0; i < open + close + 5; ++i) {
         b.tick(true);
         CHECK(b.brake.value == 0 && !b.drive->getEnable());
+        CHECK(b.drive->getErrorID() == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
       }
       b.command(false); b.tick(false);
+      b.drive->errorReset();
+      b.tick(true);
+      CHECK(b.brake.value == 0 && !b.drive->getEnable());
       b.open(open); // a fresh enable edge must recover with the complete delay
     }
     for (int sample = 0; sample <= close + 2; ++sample) {
@@ -136,6 +146,7 @@ static void feedbackLoss() {
       for (int i = 0; i < sample; ++i) b.tick(true);
       b.tick(false);
       CHECK(b.brake.value == 0 && !b.drive->getEnable());
+      CHECK(b.drive->getErrorID() == 0); // commanded shutdown is not enable loss
       b.tick(true);
       CHECK(b.brake.value == 0 && !b.drive->getEnable());
     }
@@ -146,6 +157,33 @@ static void feedbackLoss() {
       CHECK(b.brake.value == 0 && !b.drive->getEnable());
     }
   }
+}
+
+static void feedbackLossWithoutBrake() {
+  context = "lost enable without brake remains a latched axis fault";
+  Bench<> b;
+  CHECK(b.drive->setEnableBrake(false) == 0);
+  b.command(true); b.tick(true);
+  CHECK(b.drive->getEnabled());
+  b.tick(false);
+  CHECK(b.drive->getErrorID() == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+  CHECK(!b.drive->getEnable() && !b.data.control_.controlWord_.enableCmd);
+  for (int i = 0; i < 8; ++i) b.tick(false);
+  CHECK(b.drive->getErrorID() == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+  b.drive->errorReset();
+  CHECK(b.drive->getErrorID() == 0 && !b.drive->getEnable());
+  b.command(true); b.tick(true);
+  CHECK(b.drive->getEnabled());
+  b.command(false); b.tick(false);
+  CHECK(b.drive->getErrorID() == 0);
+
+  context = "enable loss preserves an existing axis error";
+  Bench<> priorError;
+  priorError.open();
+  priorError.data.status_.errorCode = ERROR_ENC_NOT_READY;
+  priorError.tick(false);
+  CHECK(priorError.data.status_.errorCode == ERROR_ENC_NOT_READY);
+  CHECK(priorError.brake.value == 0 && !priorError.drive->getEnable());
 }
 
 static void cancellationAndReenable() {
@@ -166,6 +204,7 @@ static void cancellationAndReenable() {
     b.open(3); b.command(false);
     for (int i = 0; i <= sample; ++i) b.tick(true);
     CHECK(b.brake.value == 0);
+    if (!b.drive->getEnable()) b.tick(false); // completed close, OFF acknowledged
     b.command(true);
     for (int i = 0; i <= 3; ++i) {
       b.tick(true);
@@ -217,6 +256,59 @@ static void interlocksAndTimeout() {
   b.command(false); b.tick(false);
   b.drive->errorReset();
   b.open();
+}
+
+static void delayedDisableAcknowledgement() {
+  // The previous amplifier-OFF command may still be in flight when a new
+  // enable request arrives. Its delayed feedback fall is not a new drive loss.
+  for (bool useBrake : {false, true}) for (int delay : {0, 1, 12, 50}) {
+    context = "restart before previous disable feedback, delay=" + std::to_string(delay);
+    Bench<> b;
+    b.drive->setEnableBrake(useBrake);
+    b.command(true);
+    for (int i = 0; i < 8; ++i) b.tick(true);
+    CHECK(b.drive->getEnabled());
+    b.command(false);
+    for (int i = 0; i < 20 && (b.control.value & 1); ++i) b.tick(true);
+    CHECK(!(b.control.value & 1)); // OFF has been sent, feedback is still high
+    b.command(true);
+    for (int i = 0; i < delay; ++i) {
+      b.tick(true);
+      CHECK(b.drive->getErrorID() == 0 && b.brake.value == 0);
+      CHECK(!b.drive->getEnable());
+    }
+    b.tick(false); // acknowledgement of the previous OFF command
+    CHECK(b.drive->getErrorID() == 0);
+    for (int i = 0; i < 4; ++i) {
+      b.tick(false);
+      CHECK(b.drive->getErrorID() == 0 && b.brake.value == 0);
+    }
+    for (int i = 0; i < 8; ++i) b.tick(true);
+    CHECK(b.drive->getErrorID() == 0 && b.drive->getEnabled());
+    CHECK(!useBrake || b.brake.value == 1);
+    b.tick(false); // real loss after the fresh enable must still latch a fault
+    CHECK(b.drive->getErrorID() == ERROR_AXIS_AMPLIFIER_ENABLED_LOST);
+  }
+
+  context = "missing OFF acknowledgement uses the existing enable timeout";
+  Bench<> timeout;
+  timeout.open(); timeout.command(false);
+  for (int i = 0; i < 10; ++i) timeout.tick(true);
+  CHECK(timeout.drive->setStateMachineTimeout(.003) == 0);
+  timeout.command(true);
+  for (int i = 0; i < 4; ++i) timeout.tick(true);
+  CHECK(timeout.drive->getErrorID() == ERROR_DRV_STATE_MACHINE_TIME_OUT);
+  CHECK(timeout.brake.value == 0 && !timeout.drive->getEnable());
+
+  context = "disable cancels a pending OFF acknowledgement without replay";
+  Bench<> cancelled;
+  cancelled.open(); cancelled.command(false);
+  for (int i = 0; i < 10; ++i) cancelled.tick(true);
+  cancelled.command(true); cancelled.tick(true);
+  CHECK(cancelled.brake.value == 0 && !cancelled.drive->getEnable());
+  cancelled.command(false); cancelled.tick(true); cancelled.tick(false);
+  for (int i = 0; i < 8; ++i) cancelled.tick(true);
+  CHECK(cancelled.drive->getErrorID() == 0 && cancelled.brake.value == 0 && !cancelled.drive->getEnable());
 }
 
 static void configurationAndFaults() {
@@ -311,6 +403,21 @@ static void configurationAndFaults() {
     CHECK(alarmBench.brake.value == 0);
     alarmBench.command(false); alarmBench.tick(false); alarmBench.open();
   }
+  // Slit fixture: enabled bit 1 and hardware fault bit 3 share the status word.
+  // Fault recognition must not depend on whether enabled feedback also drops.
+  for (uint64_t faultWord : {uint64_t(8), uint64_t(10)}) {
+    context = "linked EL70xx fault bit while brake open";
+    Bench<> b;
+    CHECK(b.drive->setEntryAtIndex(&b.status, ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, 1) == 0);
+    CHECK(b.drive->setEntryAtIndex(&b.status, ECMC_DRIVEBASE_ENTRY_INDEX_ALARM_0, 3) == 0);
+    CHECK(b.drive->validate() == 0);
+    b.command(true);
+    for (int i = 0; i < 8; ++i) b.tickWord(2);
+    CHECK(b.brake.value == 1);
+    b.tickWord(faultWord);
+    CHECK(b.drive->getErrorID() == ERROR_DRV_HW_ALARM_0);
+    CHECK(b.brake.value == 0 && b.control.value == 0 && !b.drive->getEnable());
+  }
 }
 
 static void boundedSignalTraces() {
@@ -331,7 +438,11 @@ static void boundedSignalTraces() {
         authorized = request;
         enabledSamples = 0;
       }
-      if (oldFeedback && !feedback) authorized = false;
+      // A fall only revokes authorization during the same ON request while
+      // the amplifier is still commanded on. A pending OFF acknowledgement
+      // belongs to the preceding request and permits a fresh handshake.
+      if (lastRequest && request && oldFeedback && !feedback && b.drive->getEnable()) authorized = false;
+      if (!feedback) enabledSamples = 0;
       if (authorized && feedback) ++enabledSamples;
       b.tick(feedback);
       if (!request || !feedback || !authorized) CHECK(b.brake.value == 0);
@@ -366,7 +477,8 @@ static void ds402Integration() {
     CHECK(b.brake.value == 0 && !b.drive->getEnable());
     b.tickWord(fault ? 0x08 : 0x27);
     CHECK(b.brake.value == 0 && !b.drive->getEnable());
-    if (fault) CHECK(b.drive->getErrorID() == ERROR_DRV_DS402_FAULT_STATE);
+    CHECK(b.drive->getErrorID() == (fault ? ERROR_DRV_DS402_FAULT_STATE
+                                         : ERROR_AXIS_AMPLIFIER_ENABLED_LOST));
     b.command(false); b.drive->errorReset();
     for (int i = 0; i < 3; ++i) b.tickWord(0x40);
     b.command(true);
@@ -389,12 +501,28 @@ static void ds402Integration() {
     for (int i = 0; i < 3; ++i) ds402PlantTick(b);
     CHECK(b.control.value == 0 && b.brake.value == 0);
   }
+  context = "DS402 restart before disable acknowledgement";
+  Bench<ecmcDriveDS402> restart;
+  restart.tickWord(0x40); restart.command(true);
+  for (int i = 0; i < 30 && !restart.brake.value; ++i) ds402PlantTick(restart);
+  CHECK(restart.brake.value == 1);
+  restart.command(false);
+  for (int i = 0; i < 20; ++i) restart.tickWord(0x27);
+  CHECK(restart.control.value == 0);
+  restart.command(true);
+  for (int i = 0; i < 5; ++i) {
+    restart.tickWord(0x27);
+    CHECK(restart.drive->getErrorID() == 0 && restart.brake.value == 0 && !restart.drive->getEnable());
+  }
+  restart.tickWord(0x40);
+  for (int i = 0; i < 30 && !restart.brake.value; ++i) ds402PlantTick(restart);
+  CHECK(restart.drive->getErrorID() == 0 && restart.brake.value == 1);
 }
 
 int main() {
   try {
-    timing(); feedbackLoss(); cancellationAndReenable();
-    interlocksAndTimeout(); configurationAndFaults();
+    timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
+    interlocksAndTimeout(); delayedDisableAcknowledgement(); configurationAndFaults();
     boundedSignalTraces(); ds402Integration();
     std::cout << "Drive brake: " << scenarios << " scenarios, " << cycles
               << " production cycles passed.\n";

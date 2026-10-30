@@ -39,7 +39,7 @@ guards = between(axis, 'int ecmcAxisBase::setExecute(bool execute) {',
 }
 '''
 guards += between(axis, 'int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {',
-                  '  if (execute && data_.control_.command') + '''
+                  '  // Keep coordination in command handling') + '''
   (void)ignoreBusy;
   if (execute) ++motionRequests;
   return 0;

@@ -118,6 +118,7 @@ protected:
 
 private:
   bool localEnabledOld_;
+  bool waitForDisableFeedback_;
   int brakeOpenDelayTime_;
   int brakeCloseAheadTime_;
   bool brakeOutputCmdOld_;

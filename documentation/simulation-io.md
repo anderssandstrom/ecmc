@@ -235,6 +235,13 @@ clients. The generated records still need an IOC integration check.
 
 ## External Python models and discovery
 
+A separate [modular slit acceptance program](../tools/simulation/slit_test/README.md)
+uses the sibling ecmccfg `slit_matrix_sim_test` configuration. Modules cover
+hardware/software limits, missing/lost enable, EL5042 readiness/frozen feedback,
+brake outputs, open/closed-loop motion and master/slave synchronization. It runs its own coupled
+plant and writes JSON/JUnit reports. Offline infrastructure checks do not imply
+that these live IOC acceptance tests have passed.
+
 The ecmccfg `ecmcMain.ui` panel shows **REAL** (green) or **SIMULATED** (amber)
 below the tabs using `$(P)MCU-Cfg-Sim-Mode`. This PV reports the IOC startup
 `SIM` setting (default 0); it does not select a backend or inspect later manual

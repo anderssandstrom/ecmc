@@ -11,12 +11,14 @@
 \*************************************************************************/
 #include "ecmcAxisGroup.h"
 #include "ecmcErrorsList.h"
+#include "ecmcRtLogger.h"
 
 ecmcAxisGroup::ecmcAxisGroup(int index, const char *name){
   name_ = name;
   axesCounter_ = 0;
   index_ = index;
   blocked_ = false;
+  motionStartPermissive_ = nullptr;
   axisInGroup_.assign(ECMC_MAX_AXES, false);
   LOGINFO("%s/%s:%d: INFO: Axis group[%d] %s created.\n",
           __FILE__,
@@ -41,6 +43,9 @@ void ecmcAxisGroup::addAxis(ecmcAxisBase *axis){
   }
   // Keep this container non-null so hot RT loops can avoid per-element null checks.
   axes_.push_back(axis);
+  if (motionStartPermissive_) {
+    axis->setMotionStartPermissive(motionStartPermissive_);
+  }
   const int axisId = axis->getAxisID();
   axesIds_.push_back(axisId);
   if ((axisId >= 0) && (axisId < ECMC_MAX_AXES)) {
@@ -55,6 +60,26 @@ void ecmcAxisGroup::addAxis(ecmcAxisBase *axis){
           index_,
           name_.c_str());
 };
+
+void ecmcAxisGroup::setMotionStartPermissive(const bool *permissive) {
+  motionStartPermissive_ = permissive;
+  for (auto *axis : axes_) {
+    axis->setMotionStartPermissive(permissive);
+  }
+}
+
+void ecmcAxisGroup::logActiveInterlocks() {
+  // Fault path only: capture the reason before halt/disable changes the status.
+  for (auto *axis : axes_) {
+    if (axis->getSumInterlock()) {
+      ECMC_RT_LOG_AXIS_DATA_ERROR(axis->getAxisID(),
+        "Axis[%d] in group %s triggered a coordinated stop: interlock=%d, error=0x%x, enable=%d, enabled=%d, source=%d.\n",
+        axis->getAxisID(), name_.c_str(), axis->getActiveInterlock(),
+        axis->getErrorID(), axis->getEnable(), axis->getEnabledOnly(),
+        static_cast<int>(axis->getTrajDataSourceType()));
+    }
+  }
+}
 
 // Check if all axes in group are enable
 bool ecmcAxisGroup::getEnable(){

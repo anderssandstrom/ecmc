@@ -161,6 +161,7 @@ class ecmcMasterSlaveStateMachine : public ecmcError {
     int index_;
     bool asynInitOk_;
     bool validationOK_;
+    bool masterTrajectoryStartAllowed_;
     bool optionAutoDisableMasters_;
     ecmcAxisGroup *masterGrp_;
     ecmcAxisGroup *slaveGrp_;    

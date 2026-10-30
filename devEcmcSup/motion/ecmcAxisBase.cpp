@@ -447,6 +447,8 @@ void ecmcAxisBase::initVars() {
   autoEnableTimoutS_            = -1.0;
   autoDisableAfterS_            = -1.0;
   autoEnableRequest_            = false;
+  motionStartPermissive_         = nullptr;
+  motionStartPending_            = false;
   autoEnableTimeCounter_        = 0.0;
   autoDisbleTimeCounter_        = 0.0;
   enableAutoEnable_             = 0;
@@ -764,6 +766,9 @@ void ecmcAxisBase::setReset(bool reset) {
   autoEnableTimeCounter_ = 0;
 
   if (reset) {
+    if (motionStartPending_) {
+      setExecute(false, true);
+    }
     errorReset();
 
     if (getMon() != NULL) {
@@ -1411,6 +1416,20 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
   if (execute && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
   }
+  // Keep coordination in command handling: do not start the sequencer or
+  // trajectory until the state machine has prepared the slave group.
+  if (execute && motionStartPermissive_ && !*motionStartPermissive_ &&
+      getEnable() && !getExecute() &&
+      (ignoreBusy || !data_.status_.statusWord_.localBusy) &&
+      !(data_.control_.command == ECMC_CMD_HOMING &&
+        data_.control_.cmdData == ECMC_SEQ_HOME_SET_POS)) {
+    motionStartPending_ = true;
+    autoEnableTimeCounter_ = 0;
+    getSeq()->setGlobalBusy(true);
+    data_.control_.controlWord_.executeCmd = 0;
+    data_.axAsynParams_[ECMC_ASYN_AX_CONTROL_BIN_ID]->refreshParamRT(1);
+    return 0;
+  }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
     bumpMotionCommandExecuteCounter();
   }
@@ -1453,6 +1472,10 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
 
   if(!execute) {
     autoEnableRequest_ = false;
+    if (motionStartPending_) {
+      motionStartPending_ = false;
+      getSeq()->setGlobalBusy(false);
+    }
   }
 
   // Always reset 
@@ -4078,11 +4101,17 @@ bool ecmcAxisBase::getLimitFwd() {
 }
 
 void ecmcAxisBase::autoEnableSM() {
-  if( !enableAutoEnable_) {
+  if (motionStartPending_ &&
+      (!getEnable() || getError() || getBlocked() || getStartupCommandsHeld())) {
+    motionStartPending_ = false;
+    getSeq()->setGlobalBusy(false);
+    return;
+  }
+  if( !enableAutoEnable_ && !motionStartPending_) {
     return;
   }
 
-  if(!autoEnableRequest_) {
+  if(!autoEnableRequest_ && !motionStartPending_) {
     return;
   }
   
@@ -4098,7 +4127,7 @@ void ecmcAxisBase::autoEnableSM() {
     setEnable(true);
   }
 
-  if(autoEnableTimeCounter_ > autoEnableTimoutS_) {
+  if(autoEnableTimoutS_ > 0 && autoEnableTimeCounter_ > autoEnableTimoutS_) {
     setEnable(false);
     autoEnableRequest_= false;
     autoEnableTimeCounter_ = 0;
@@ -4109,9 +4138,12 @@ void ecmcAxisBase::autoEnableSM() {
     autoEnableTimeCounter_ += data_.status_.sampleTime;
   }
 
-  if(data_.status_.statusWord_.enabled && data_.status_.statusWord_.enable && data_.statusOld_.statusWord_.enabled) {
+  if(data_.status_.statusWord_.enabled && data_.status_.statusWord_.enable &&
+     data_.statusOld_.statusWord_.enabled &&
+     (!motionStartPermissive_ || *motionStartPermissive_)) {
     autoEnableTimeCounter_ = 0;
     autoEnableRequest_= false;
+    motionStartPending_ = false;
     if(data_.control_.controlWord_.enableDbgPrintout) {
       ecmcRtLoggerLogDebug("%s/%s:%d: DEBUG: Axis[%d]: autoEnableSM(): axis enabled, triggering motion.\n",
                            __FILE__,

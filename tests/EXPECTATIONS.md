@@ -58,7 +58,44 @@ Tests: [brake_checks.cpp](drive/brake_checks.cpp), built by
 | Waiting for enabled feedback must not consume the opening delay; lost feedback, faults and interlocks demand brake application. No unsolicited feedback or late timeout response may release the brake. | **INFERRED** safety invariants, motivated by the requested state-machine coverage. They are software demand expectations, not proof of physical braking or a complete drive safety specification. |
 | Release on enabled sample N+2; clear internal amplifier request on closing invocation N+2; one-cycle Stepper/output/publication offsets. | **COMPAT / REVIEW B1**: `ecmcDriveBase::getBrakeCmd`, `writeEntries` and Stepper/DS402 cycle ordering. API documents sequencing and units but not these extra samples. |
 | Fresh enable is required after an abandoned sequence; reset alone or recovered feedback/I/O cannot restart it. | **INFERRED / REVIEW B2**: proposed restart policy exercised by `feedbackLoss`, `interlocksAndTimeout`, `configurationAndFaults`. Explicit maintainer confirmation of each path has not been established. |
+| Unexpected loss of enabled feedback while enable remains requested latches `ERROR_AXIS_AMPLIFIER_ENABLED_LOST` (`0x14317`) and clears the enable request. Feedback recovery cannot clear the error; reset and a fresh enable recover. Normal shutdown does not raise this error; an existing hardware/axis error takes precedence. | **INFERRED / REGRESSION**: live slit failure stopped without a persistent diagnostic. The axis-level check already names this error, but misses the drive's later status transition before `postExecute` copies it. `feedbackLoss`, `feedbackLossWithoutBrake` and `ds402Integration` exercise the production drive path with brake opening/open, no brake, normal closing and existing faults. This intentionally replaces the warning-only loss behavior; it is not an EtherCAT frame-loss policy change. |
 | DS402 state/control words, exact warnings/errors, timeouts and captured-output behavior after failed writes. | **COMPAT** against the production state machine and controlled fixture. No external DS402 conformance review was performed. A failed write cannot establish that the physical brake applied. |
+
+**INFERRED / REGRESSION — rapid restart after amplifier OFF:** a live brake
+case reported `0x14317` on both drives after closing the brakes and immediately
+requesting coordinated motion. `delayedDisableAcknowledgement` reproduces a
+delayed fall of feedback from the previous OFF command. With the new request
+pending, keep the amplifier OFF and brake applied until that acknowledgement;
+then start a fresh enable sequence. Waiting must be bounded by the existing
+enable timeout and must cancel on disable. Once enabled again, a genuine loss
+must still latch `0x14317`. Checks cover no brake, brake, 0/1/12/50-cycle delayed
+feedback, cancellation, stuck feedback and DS402 restart. Ordinary `Bench::open`
+now supplies acknowledged OFF feedback; the dedicated restart scenarios supply
+delayed acknowledgements explicitly. The bounded-signal trace distinguishes a
+fall during an ongoing amplifier ON request from a pending OFF acknowledgement.
+
+## Master/slave startup
+
+Master/slave start regressions: `test_master_slave_start.py` couples production
+axis execute/auto-enable and state-machine methods to a production trapezoidal
+trajectory, with controlled sequencer, group and publication boundaries.
+**INFERRED / REGRESSION**: the live slit trace showed master following error
+after initial motion was lost while slave brakes opened. Execute must remain
+pending at the axis until drive/brake readiness and external-source
+acknowledgement; the sequencer and trajectory have not started in this state.
+A negative control removes only the axis start permission and reproduces an
+offset exceeding the live 0.03 mm threshold with a 250 ms brake delay.
+STOP, disable, fault, startup hold and command blocking cancel the pending
+request without replay. Explicitly enabled axes with auto-enable disabled also
+wait correctly. A genuine slave interlock remains fatal and its fault log is
+invoked before cleanup. Timeout codes and transition details are **COMPAT**
+with the production methods. A separate regression starts with both slaves
+enabled, CENTERY enabled/pending and GAPY disabled. The old direct transition
+into MASTER reproduces `0x1432E`; the production IDLE path must instead enable
+the whole master group and wait before transitioning. The regression failed
+before that condition was fixed and completes the move afterward. These tests
+do not establish that live synchronization passes.
+See [master-slave-startup.md](../documentation/master-slave-startup.md).
 
 ## PLC libraries and runner
 
@@ -137,6 +174,55 @@ them nor a claim that the behavior is wrong.
 | F4 | Should list writes be atomic on malformed input, and should storage accept nonfinite samples? Current tests preserve partial commits and acceptance. |
 
 ## Maintaining tests
+
+`test_slit_soft_limits.py` checks **DOC** predictive rejection through sequencer
+soft-limit warnings and monitor interlocks. A valid response can have `ErrId=0`
+and remain near its starting position. The live test must establish an executable
+in-range command path and fresh direction-specific diagnostics before accepting
+the bounded stop. Unrelated errors, a stationary no-op with no diagnostic,
+continued motion, wrong-direction diagnostics and position/setpoint overruns are
+failures. This does not establish live IOC behavior by itself.
+
+The motor soft-limit fixture models rollback of a rejected target and retained
+LVIO on a same-target no-op. The live case must first complete a distinct valid
+move, then establish fresh LVIO for each invalid direction without motion or a
+direct LVIO write. Original bounds must be restored afterward.
+
+Slit configuration schema 2 links EL70xx status bit 3 to alarm 0 and control
+bit 1 to reset. Offline rendering verifies those links, and production drive
+checks require ERROR_DRV_HW_ALARM_0 with the brake applied for fault words with
+and without enabled feedback. The live drive-fault case additionally verifies
+that injection reaches the raw status PV. Older IOC schemas are refused before
+any writes; these checks do not establish that a restarted live IOC passed.
+
+`test_slit_motion_requests.py` checks **DOC / INFERRED** motor put-notify
+semantics: a short configuration-write timeout must not become the motion's
+completion deadline. Fake PyEpics-compatible callbacks establish independent
+request completion, continued motion/final-position checks and rejection
+diagnostics before teardown. A reported completed write alone is insufficient
+to pass a move. These checks do not establish live IOC motion success.
+
+STOP uses an ordinary nonblocking put without notification, so it can interrupt
+an active VAL put-notify rather than queue behind it. The fake PV fixture models
+the EPICS per-record notification queue. Offline checks
+require ramp-down to finish before cleanup disables the amplifier and verify
+that an actual 0x14c08 STOP fault remains a failure. Explicit velocity-ramp
+arithmetic checks both internal and EL5042 encoder updates until standstill;
+there is no plant-level shortcut that freezes position on a STOP request.
+
+`test_slit_acceptance.py` checks **USER / DOC** arithmetic from the supplied slit
+YAML: Q15 velocity at 10 mm/s, 12800 internal counts/mm, 4096 EL5042 counts/mm,
+-1380 mm offset and ready bit 2. The standalone plant and SIM/schema guard use
+controlled PVs. Test enumeration and report serialization are infrastructure
+checks, not evidence that the [live acceptance suite](../tools/simulation/slit_test/README.md)
+passed. Primary not-ready and following-error acceptance expectations reference
+`ecmcEncoder::readHwReady` and `ERROR_MON_MAX_POSITION_LAG_EXCEEDED` respectively.
+
+Slit brake-module enumeration and configuration wiring are also checked offline:
+EL2008 slave 5 channels 01/02, release delay 250 cycles, close lead 200 cycles.
+The live module observes output readbacks without manually writing them. Its CA
+windows check functional order; exact cycle behavior belongs to
+`test_drive_brake.py`, and no physical brake mechanics are inferred.
 
 `test_simulation_terminals.py` uses **DOC** raw fields/widths from ecmccfg EL5042,
 EL5101 variants, EL5102 and EX7062 CSV/CSP mappings. Exact integer writes, native

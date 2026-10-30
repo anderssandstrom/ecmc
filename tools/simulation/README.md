@@ -1,5 +1,8 @@
 # Python simulation models
 
+For modular live slit tests (limits, enable loss, encoder faults and master/slave
+sync), see [the separate slit acceptance setup](slit_test/README.md).
+
 These tools run outside the IOC and use the generated simulation **I/O field**
 records. They do not write axis commands or change the EtherCAT driver. The IOC
 continues to use one cyclic RT thread. Python feedback is asynchronous and is

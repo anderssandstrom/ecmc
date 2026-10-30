@@ -66,6 +66,7 @@ class ecmcAxisGroup : public ecmcError {
     bool getAnyAtLimitBwd();
     // Check if any axes in group is interlocked
     bool getAnyIlocked();
+    void logActiveInterlocks();
     // Check if all axes in group is attarget
     bool getAtTarget();
     // Check if all axes in group are busy
@@ -76,6 +77,7 @@ class ecmcAxisGroup : public ecmcError {
     int getAnyErrorId();
     // Set enable of all axes in group
     int setEnable(bool enable);
+    void setMotionStartPermissive(const bool *permissive);
     // set traj source of all axes in group
     int setTrajSrc(dataSource trajSource);
     // set allow traj source change when enabled
@@ -139,6 +141,7 @@ class ecmcAxisGroup : public ecmcError {
     std::vector<int> axesIds_;
     std::vector<bool> axisInGroup_;
     bool blocked_;
+    const bool *motionStartPermissive_;
 };
 
 #endif  /* ECMCAXISGROUP_H_ */

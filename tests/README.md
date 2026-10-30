@@ -97,6 +97,9 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_ds402_model.py` | Separate DS402 CSV/CSP model: enable sequence, fault reset edge, quick stop, configurable scaling, counter rollover, native PV validation and discovery dispatch; no CA network |
 | `test_simulation_gui.py` | Digital terminal layouts, retained input state, input/output writes, read-only fallback, worker reporting and optional real Tk/Xvfb controls/shutdown smoke test; fake CA |
 | `test_simulation_terminals.py` | Encoder scalar layouts/widths, exact U64 edits, manual drive fields, oversampling notice and independent dual-channel 7062 CSV/CSP dispatch; fake CA |
+| `test_slit_acceptance.py` | Offline infrastructure for the separate live slit suite: coupled stepper/EL5042 arithmetic, injection, brake wiring, fake native PV publication, SIM guard, modular selection and JSON/JUnit reports; never runs live IOC cases |
+| `test_slit_motion_requests.py` | Motor moves use per-request completion; ordinary STOP puts bypass the active record's notify queue; bounded arrival/ramp-down, rejection and pre-cleanup diagnostics; fake PVs |
+| `test_slit_soft_limits.py` | Direction-specific warning/interlock can stop an invalid target before the boundary; unrelated faults, wrong direction, motion, no diagnostic and overruns must not pass; no IOC |
 | `test_simulation_ioc.py` | Prefix-only sparse slave discovery via hardware metadata, supported-model catalog, independent model workers, missing/cyclic metadata and read-only listing; controlled PVs and clocks |
 | `test_simulation_driver.py` | Real memory driver with controlled asyn: shared typed storage/PV buffers, asyn typo-correction aliases/chains/conflicts, scalar/object range checks, explicit health, standard diagnostic names/status/counters with 31 devices, once-per-cycle publication and short enable pulses, and invalidation; no device model |
 | `test_simulation_configuration.py` | Backend locking, C-compatible parser API, actual registry and configuration routes, SDO storage, identical encoder/drive/monitor commands on both backends, feature setup, path aliases and mixed instance selection; controlled hardware/axis endpoints |
@@ -111,6 +114,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_cpp_logic_bindings.py` | Missing/invalid items, size/type and direction mismatches, auto-size preparation and cleanup requests; fake data-item endpoints |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |
 | `test_motor_record_dmov.py` | Completion/abort behavior, fresh samples, counter wraparound and command rearming |
+| `test_master_slave_start.py` | Production state-machine preparation and source acknowledgement coupled to a real trajectory; delayed brakes, negative control for missed motion, timeout, reset and disabled-state-machine behavior |
 | `test_monitor.py` | Real monitor following-error/overspeed thresholds and delays, latching, reset, enable loss, at-target and directional limits |
 | `test_motor_softlimit_restore.py` | IOC restore hooks, limit precedence, MRES, retries and position-load sample acknowledgement |
 | `test_softlimit_pair.py` | Production monitor pair transfer, enable flags, positive/negative ranges, zero sentinel and invalid-input preservation |
