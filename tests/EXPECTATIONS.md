@@ -88,6 +88,7 @@ checks. They do not claim that every branch or integration path was reviewed.
 | [test_simulation_records.py](test_simulation_records.py) | **DOC**: generic simulation I/O field records and native shared storage in [simulation-io.md](../documentation/simulation-io.md). **INFERRED**: reject collisions before registration, never initialize feedback by writing zero, and retain exact 64-bit buffers. Real generator/driver with controlled EPICS static-database calls; no real record processing, asyn conversion, CA/PVA or IOC build. |
 | [test_el7041_model.py](test_el7041_model.py) | **DOC / USER**: scaling of 2000 full steps/s at signed 16-bit full scale, 200 motor steps/rev and 12800 encoder counts/rev; independently calculated expected counts. Control/status mappings follow ecmccfg `ecmcEX70XX.cmd` and `ecmcEL7031-chX.template`, described in [the model README](../tools/simulation/README.md). Checks fractional accumulation, wrapping, enable delay, limits and failure cleanup. No physical drive, CA network or RT timing claim. |
 | [test_simulation_ioc.py](test_simulation_ioc.py) | **DOC**: prefix-only discovery using aliases of normal first-slave/hardware-type/next-slave metadata, exact supported-model selection, independent workers and read-only listing in [the model README](../tools/simulation/README.md). Controlled CA endpoints and per-worker deterministic clocks; no IOC connection or throughput measurement. |
+| [test_ds402_model.py](test_ds402_model.py) | **DOC**: DS402 command/status mappings from `ecmcDriveDS402.cpp` and Beckhoff references in [the model README](../tools/simulation/README.md). Explicit CSV scaling arithmetic; ideal CSP nearest-counter following, instantaneous quick stop and rising-edge fault reset are model assumptions. Native generated-field directions and scanner dispatch use fake CA endpoints. No drive dynamics or live IOC claim. |
 | [test_simulation_driver.py](test_simulation_driver.py) | **DOC**: model-free typed storage, shared values, explicit fault injection and lifetime rules in [simulation-io.md](../documentation/simulation-io.md). Standard diagnostic names/bit layouts follow `ecmcEc`, `ecmcEcSlave`, `ecmcEcDomain` and their ecmccfg records; counts and synthetic health/failure semantics follow [simulation-io.md](../documentation/simulation-io.md). Includes 31-device registration, one publication tick per RT phase independent of scalar-write count/slow work, short enable-pulse observation at a specified sampling rate, `ecN.ok` recovery, asyn typo-correction aliases/chains/conflicts sharing the original parameter, and pointer invalidation. Real driver with controlled asyn registration; no network access, packing or physical device model. |
 | [test_simulation_configuration.py](test_simulation_configuration.py) | **DOC**: configuration-only backend selection, existing names, memory SDO semantics and separate mixed instances in [simulation-io.md](../documentation/simulation-io.md). **INFERRED**: the C command parser must be able to include its API header. Real registry, complete encoder/drive/monitor linking functions and extracted routing/parser branches with controlled hardware and axes; equivalent scalar/bit attachment, brake/torque/home/interlock setup, invalid-source/slot errors and command blocking for both backends. No IOC startup claim. |
 | [test_io_driver.py](test_io_driver.py) | **DOC**: common cyclic I/O contract and timestamp/offset references in [ethercat-simulation-boundary.md](../documentation/ethercat-simulation-boundary.md). **COMPAT**: receive/domain/status order, unchanged integer status, output timestamp forwarding, separate timing readiness, startup reset, slow work and masterless offset forwarding. Real adapter with a controlled endpoint; integration ordering remains covered by `test_startup_gate.py`. No EtherLab/IOC or RT performance claim. |
@@ -136,6 +137,21 @@ them nor a claim that the behavior is wrong.
 | F4 | Should list writes be atomic on malformed input, and should storage accept nonfinite samples? Current tests preserve partial commits and acceptance. |
 
 ## Maintaining tests
+
+`test_simulation_terminals.py` uses **DOC** raw fields/widths from ecmccfg EL5042,
+EL5101 variants, EL5102 and EX7062 CSV/CSP mappings. Exact integer writes, native
+range validation and per-channel independence are checked with fake CA endpoints.
+Manual encoder values have no inferred mechanical coupling, counter/latch
+protocol or oversampling waveform behavior. The GUI test also checks numeric
+64-bit entry without float conversion. See [the tool README](../tools/simulation/README.md).
+
+`test_simulation_gui.py` uses **DOC** channel layouts from ecmccfg EX1004/1008/
+1016 and EX2004/2008 scripts. Input retention, manual input/output writes,
+read-only fallback, stale-value display and background-worker access follow
+[the simulation tool README](../tools/simulation/README.md). Controlled CA
+endpoints establish direction/command behavior, not live IOC latency. Actual
+Tk widgets are smoke-tested under a usable display/Xvfb; that portion reports
+a skip when the environment cannot provide a display.
 
 For new or changed expectations, put the basis near the assertion or case group
 and cite the relevant document/symbol. Calculate arithmetic and trajectory

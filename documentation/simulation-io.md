@@ -81,13 +81,15 @@ field access.
 | Declared field direction | Generated records |
 | --- | --- |
 | Input to ECMC (status, encoder position, switches) | Writable `PREFIXecN:sM:field` plus readback `PREFIXecN:sM:field-RB` |
-| Output from ECMC (control word, setpoint) | Read-only `PREFIXecN:sM:field` |
+| Output from ECMC (control word, setpoint) | Readback `PREFIXecN:sM:field` plus writable `PREFIXecN:sM:field-Set` |
 
 For example, with `ECMC_PREFIX=c6025a-08:` and simulated slave 14:
 
 ```sh
 # Observe the control word produced by the controller.
 caget c6025a-08:SIM:ec0:s14:driveControl01
+# Write a simulated output once; its cyclic owner may overwrite it.
+caput c6025a-08:SIM:ec0:s14:driveControl01-Set 1
 # Inject status: bit 0 ready, bit 1 enabled. This is a test value, not a model.
 caput c6025a-08:SIM:ec0:s14:driveStatus01 3
 caget c6025a-08:SIM:ec0:s14:driveStatus01-RB
@@ -106,7 +108,9 @@ creation instead of losing precision.
 The generated records use private native asyn views (`sim.ecN.sM.field`) sharing
 the original descriptor's buffer. These views have independent asyn metadata so
 legacy scaled/converted records cannot change the model interface's datatype.
-There is no second I/O image. Input views permit writes; output views reject them.
+There is no second I/O image. Private simulation views permit input injection
+and manual output writes through their generated records. Output `-Set` writes
+are single writes to the same buffer, with no cyclic forcing or ownership change.
 Injection records do not process at initialization, preserving preloaded values.
 
 Only declared realtime scalar fields at nonnegative device positions are included;
@@ -231,13 +235,20 @@ clients. The generated records still need an IOC integration check.
 
 ## External Python models and discovery
 
-The [Python simulation tools](../tools/simulation/README.md) provide an EL7041
-model and a discovery runner for supported slaves. They write the generated I/O
+The ecmccfg `ecmcMain.ui` panel shows **REAL** (green) or **SIMULATED** (amber)
+below the tabs using `$(P)MCU-Cfg-Sim-Mode`. This PV reports the IOC startup
+`SIM` setting (default 0); it does not select a backend or inspect later manual
+backend changes. Reinstall ecmccfg and restart the IOC to load the new metadata
+record. No ECMC rebuild is needed for this panel indicator.
+
+The [Python simulation tools](../tools/simulation/README.md) provide stepper and
+DS402 CSV/CSP models with a discovery runner for supported slaves. They write the generated I/O
 field records, independently of axis commands and the memory driver.
 
 ```sh
 python3 tools/simulation/ioc.py --prefix c6025a-08:SIM: --list
 python3 tools/simulation/ioc.py --prefix c6025a-08:SIM:
+python3 tools/simulation/ioc.py --prefix c6025a-08:SIM: --gui
 ```
 
 Discovery uses `FirstSlave`, `ecN:sM:HWType` and `ecN:sM:NxtObjId` aliases under
@@ -251,3 +262,25 @@ The EL7041 defaults use 2000 full steps/s, 200 full steps/rev and 12800 encoder
 counts/rev. Unsupported types are listed and left untouched. A failed model
 connection stops only that external worker; no global simulated bus fault is
 injected. CA feedback and Python worker timing are not cycle-synchronous.
+
+E*72xx hardware selects the separate DS402 model. It infers CSV/CSP from the
+native command fields and implements the drive enable/reset sequence. If both
+command fields exist, select the mode explicitly in the per-slave settings.
+Default position scaling is 2^20 counts/rev and velocity scaling is
+2^31/8000 units per rev/s, matching the repository servo CSV example; override
+these for other motor configurations. See the tool README for field types,
+channel selection and model limitations. No additional IOC records are needed.
+
+The optional Tk window displays live drive values and model status. Basic
+EL1004/1008/1808/1809 digital inputs can be set manually; EL2004/2008/2808
+outputs can also be written through generated `-Set` records. Input display uses generated `-RB`
+records, and existing input values are retained until explicitly changed.
+See the tool README for supported channel layouts and UI requirements.
+
+The GUI also exposes manual scalar fields for EL5042, EL5102 and EL5101 variants,
+including exact 64-bit encoder positions. Every displayed writable simulation
+field can be edited numerically, including drive commands and feedback; active
+models/PLCs may overwrite manual values. Native widths/ranges are validated.
+The 7062 family reuses the DS402 CSV/CSP model with independent configured
+channels 01/02. Encoder/drive coupling, oversampling arrays and real DC timing
+are not inferred or emulated by these Python tools.

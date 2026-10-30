@@ -89,15 +89,20 @@ int main() {
   records.clear(); missingType = "int64in";
   assert(loadSimulationRecords(prefix) == ERROR_MAIN_SIM_RECORDS_LOAD_FAILED && loads == 0);
   missingType.clear();
+  records.insert("TEST:SIM:ec0:s14:driveControl01-Set");
+  assert(loadSimulationRecords(prefix) == ERROR_MAIN_SIM_RECORDS_LOAD_FAILED && loads == 0);
+  records.clear();
   assert(loadSimulationRecords(prefix) == 0 && loads == 1 && dbEntries == 0);
-  assert(records.size() == 9); // Four injection/readback pairs plus one output readback.
+  assert(records.size() == 10); // Input injection/readback pairs and output Set/readback pair.
   assert(records.count("TEST:SIM:ec0:s14:driveStatus01"));
   assert(records.count("TEST:SIM:ec0:s14:driveStatus01-RB"));
   assert(records.count("TEST:SIM:ec0:s14:driveControl01"));
+  assert(records.count("TEST:SIM:ec0:s14:driveControl01-Set"));
   assert(!records.count("TEST:SIM:ec0:s14:driveControl01-RB"));
   assert(!records.count("TEST:SIM:ec0:s14:ZERO") && !records.count("TEST:SIM:ec0:s14:disabled"));
   assert(definitions.find("record(mbboDirect,\"TEST:SIM:ec0:s14:driveStatus01\")") != std::string::npos);
   assert(definitions.find("record(mbbiDirect,\"TEST:SIM:ec0:s14:driveControl01\")") != std::string::npos);
+  assert(definitions.find("record(mbboDirect,\"TEST:SIM:ec0:s14:driveControl01-Set\")") != std::string::npos);
   assert(definitions.find("record(longout,\"TEST:SIM:ec0:s14:positionActual01\")") != std::string::npos);
   assert(definitions.find("record(ao,\"TEST:SIM:ec0:s14:analogInput01\")") != std::string::npos);
   assert(definitions.find("record(int64out,\"TEST:SIM:ec0:s14:timestamp01\")") != std::string::npos);
@@ -109,7 +114,8 @@ int main() {
   auto *status = port.find("sim.ec0.s14.driveStatus01");
   auto *control = port.find("sim.ec0.s14.driveControl01");
   auto *position = port.find("sim.ec0.s14.positionActual01");
-  assert(status && status->writable && control && !control->writable);
+  assert(status && status->writable && control && control->writable);
+  assert(control->data == port.find("ec0.s14.driveControl01")->data);
   assert(position->data == port.find("ec0.s14.positionActual01")->data);
   ecmcDataLink encoder, drive;
   assert(encoder.setDataAtIndex(driver.findEntry(14,"positionActual01")->access,0,-1) == 0);
@@ -123,6 +129,13 @@ int main() {
   assert(drive.writeDataValue(0,1) == 0);
   driver.writeOutputs({});
   assert(control->lastRTValue == 1); // Same storage; no copied model image.
+  uint64_t manual = 0;
+  memcpy(control->data,&manual,sizeof(manual)); // Manual -Set write, same bound buffer.
+  driver.writeOutputs({});
+  assert(control->lastRTValue == 0);
+  assert(drive.writeDataValue(0,1) == 0); // Cyclic owner may overwrite the manual value.
+  driver.writeOutputs({});
+  assert(control->lastRTValue == 1);
   auto *stamp = port.find("sim.ec0.s14.timestamp01");
   uint64_t wide = UINT64_MAX;
   memcpy(stamp->data,&wide,sizeof(wide));

@@ -173,12 +173,15 @@ class EpicsIO:
             pv.disconnect()
 
 
-def run(io, model, period, duration=None, clock=time.monotonic, sleep=time.sleep, stop=None):
+def run(io, model, period, duration=None, clock=time.monotonic, sleep=time.sleep, stop=None,
+        update=None):
     max_gap = max(0.25, period * 5)
     try:
         if stop is not None and stop.is_set():
             return
         io.publish(model.feedback())
+        if update:
+            update(None, None, model.feedback())
         started = previous = clock()
         deadline = started
         while ((duration is None or clock() - started < duration)
@@ -192,7 +195,10 @@ def run(io, model, period, duration=None, clock=time.monotonic, sleep=time.sleep
             elapsed = now - previous
             if elapsed > max_gap:
                 raise RuntimeError(f'feedback loop stalled for {elapsed:.3f}s; stopping model')
-            io.publish(model.step(control, velocity, elapsed))
+            feedback = model.step(control, velocity, elapsed)
+            io.publish(feedback)
+            if update:
+                update(control, velocity, feedback)
             previous = now
             if deadline < now:
                 deadline = now

@@ -25,6 +25,9 @@ python3 tools/simulation/ioc.py --prefix c6025a-08:SIM: --list
 
 # Start a model for each supported discovered slave.
 python3 tools/simulation/ioc.py --prefix c6025a-08:SIM:
+
+# Optional live window with drive values and digital I/O controls.
+python3 tools/simulation/ioc.py --prefix c6025a-08:SIM: --gui
 ```
 
 Discovery reuses normal ecmccfg metadata. Common ecmccfg hooks expose record
@@ -48,16 +51,22 @@ The default master is 0. Use `--master N` for a different master and optionally
 first/next chain stores slave IDs, not master IDs; automatically following chains
 across multiple masters is not implemented. Scan a separate chain per master.
 
-Currently supported velocity-mode hardware descriptors:
+Supported stepper velocity-mode hardware descriptors:
 
 - `EL7041`
 - `EL7041-0052`
 - `EL7031` and `EL7031-…` variants
 - `EL7047`
 
+`E*72xx` descriptors (for example EL7211, EP7211 and ELM7222 variants) select
+the separate **DS402 CSV/CSP** model described below. CST descriptors are skipped.
+The `*7062` family (EL7062, ED7062 and MO7062 variants) uses the same DS402
+model; configured channels 01 and 02 are detected and run independently.
+EL5042, EL5102 and EL5101 variants expose manual raw encoder fields.
+
 Other types are listed as unsupported and left untouched. Supporting a drive
 requires a supported descriptor/family in `model_module()` and compatible generated fields;
-a similar hardware name alone is not sufficient. The shared model uses channel 01. EL7047 CSP/position-interface variants are not
+a similar hardware name alone is not sufficient. The models default to channel 01. EL7047 CSP/position-interface variants are not
 selected: they need a different command model. EL7031 variants must expose the
 same native velocity-mode PVs; record types are checked before feedback writes.
 These types share the supplied default scaling; use per-slave overrides when a
@@ -87,12 +96,114 @@ A settings file maps the normal data-path identity to model settings:
 }
 ```
 
-Other optional keys are `counter_bits`, `lower_limit_revs`, `upper_limit_revs`
+Other stepper optional keys are `counter_bits`, `lower_limit_revs`, `upper_limit_revs`
 and `initial_position_revs`. Without an initial-position override, the model
 preserves the current raw counter readback. That counter does not identify
 previous revolutions after rollover; supply an explicit initial physical
 coordinate if model limits need that history. Counter width must match the
 configured unsigned position field.
+
+## Live window and digital terminals
+
+`--gui` opens a simple Tk window. Slave headings show the hardware model and
+digital channel count/direction. Each slave expands into its live data fields:
+drive control/status words (decimal and hexadecimal), raw command values,
+position counters and available velocity/encoder feedback. Every displayed field
+with a writable simulation record/access can be edited, including drive commands,
+drive feedback, encoder fields and digital I/O. Model failures and
+stopped workers are shown per slave; their last values are marked gray/stale.
+The display refreshes at 10 Hz and coalesces model updates. EPICS reads/writes
+stay in the external model workers, so network calls do not block Tk. Closing
+the window stops those workers and runs the normal drive fault-feedback cleanup.
+
+Configured optional drive diagnostics, digital-input words, secondary positions
+and touch-probe fields are also displayed/editable when their native scalar PVs
+are available. These optional fields remain manual; the CSV/CSP motion model
+does not simulate the probe/sensor protocols or force them to healthy values.
+
+Tkinter and a graphical display are required only for `--gui`. On systems where
+Tk is packaged separately, install the distribution's Python Tk package (often
+`python3-tk` or `python3-tkinter`). Headless usage remains available without Tk.
+The window uses the same discovery, slave selection and settings arguments.
+`--list` remains read-only even when `--gui` is supplied.
+
+The following simple terminals are also recognized:
+
+| Hardware | Channels | Simulation behavior |
+| --- | --- | --- |
+| EL1004 | 4 inputs | Manual input injection |
+| EL1008, EL1808 | 8 inputs | Manual input injection |
+| EL1809 | 16 inputs | Manual input injection |
+| EL2004 | 4 outputs | Manual writes and readback |
+| EL2008, EL2808 | 8 outputs | Manual writes and readback |
+
+Select a `binaryInputNN` or `binaryOutputNN` row and press **Set 0** or **Set 1**.
+For inputs these buttons write the generated simulation input PV; the displayed value
+comes from its `-RB` record. Inputs keep their existing values at startup and
+after this application closes. There is no background zeroing or automatic
+loopback. Digital output writes use `binaryOutputNN-Set`; display reads the
+original `binaryOutputNN` record. Writes happen once per click. An axis or PLC
+that owns an output may overwrite it on its next cycle; there is no force or
+override mode. Drive feedback writes may likewise be replaced by the running
+model. Output write controls require the updated ECMC record
+generator: rebuild/reinstall ECMC and restart the IOC to create `-Set` records.
+With an older IOC those channels remain observable and their controls are disabled.
+
+For a numeric field, select its row, enter an integer, hexadecimal word (`0xff`)
+or decimal/exponent value, then press **Write value** or Enter. The **Set 0** and
+**Set 1** shortcuts also work on numeric fields. Integers remain exact through
+the GUI/CA boundary, including 64-bit values. Native bit widths and signed ranges
+are checked before a write; invalid values are reported without stopping the
+model. Unsigned 64-bit words use the existing signed Int64 wire representation.
+
+Layouts follow the common ecmccfg `EX1004/1008/1016` and `EX2004/2008` scripts.
+The configured native record names and types must match; custom renamed
+channels and other terminal variants are not inferred. Digital terminals accept
+no per-slave drive settings. Headless mode observes these terminals without
+writing inputs; external scripts can still inject their generated PVs. One
+external worker per terminal polls digital readback at 10 Hz. Connection/read
+failures stop only that terminal and mark it unavailable in the window.
+
+## Encoder terminals and dual-channel 7062 drives
+
+EL5042 (including `_DC`) exposes both channels' 64-bit raw positions and status.
+EL5102 exposes both 32-bit counters; EL5101 uses its configured 16- or 32-bit
+scalar layout. EL5101 suffix variants are recognized and the available native
+scalar records determine the fields shown. Encoder control/value words,
+latch-position words (including the historical `encoderLatchPostion` spelling),
+frequency/period and `nextSyncTime` are exposed when configured. Inputs are
+injected through their normal simulation records; outputs use `-Set`, and the
+table always reads the buffer's readback. No values are zeroed at connection.
+
+These encoder fields are manual. No mechanical coupling, automatic counting,
+counter-set acknowledgement or latch protocol is inferred. They can be driven
+by another script/model through the same PVs. EL5101-0011's oversampling arrays
+are not emulated: available scalar control/status/time fields are exposed and
+the missing scalar position is reported explicitly. Neither `_DC` names nor
+the Python loop imply real distributed-clock timing behavior.
+
+For 7062 CSV/CSP drives the scanner probes `driveControl01/02` and creates one
+worker/window row per configured channel, named `ecN.sM.ch01/02`. An absent
+channel is skipped; an incompatible configured channel reports its own failure.
+Both channels use the DS402 model, not the EL7041 Q15 model. CST/CSTCA and
+drive-motion-control modes, touch-probe timing and auto-tuning are not emulated.
+The DS402 scaling assumptions remain configurable; match your motor/configuration
+instead of assuming a stepper shares the EL7041 or E72xx physical scaling.
+
+Per-slave settings apply to both channels; channel settings override them:
+
+```json
+{
+  "ec0.s7": {"encoder_counts_per_rev": 1048576},
+  "ec0.s7.ch01": {"mode": "csv"},
+  "ec0.s7.ch02": {"mode": "csp"}
+}
+```
+
+The `channel` setting on `ecN.sM` selects just that channel when desired. Encoder
+terminals accept no drive settings. Standalone encoder positions are not silently
+linked to a nearby drive; configure their feedback relationship explicitly in
+your model/configuration when a physical relationship is needed.
 
 ## EL7041 scaling and behavior
 
@@ -154,7 +265,76 @@ runs a finite ten-second check. It validates generated record types/directions
 before writing feedback. Existing hardware command records are not changed into
 readback records; observe the generated simulation output PVs.
 
+## DS402 CSV/CSP model
+
+The same IOC command automatically selects `ds402.py` for E*72xx descriptors:
+
+```sh
+python3 tools/simulation/ioc.py --prefix c6025a-08:SIM:
+```
+
+It reads `driveControl01` and either `velocitySetpoint01` (CSV) or
+`positionSetpoint01` (CSP). It writes `driveStatus01`, `positionActual01` and,
+when present, `velocityActual01`. No `encoderStatus01` is required. It checks
+native U16 control/status, S32 commands and U32 position record types before
+any writes. Velocity feedback accepts signed `longout` records and legacy
+unsigned `mbboDirect` records (from `EcAddEntryComplete(...,32,...)`). Negative
+velocities use 32-bit two's-complement words for the unsigned layout. Other
+field layouts fail with a diagnostic.
+
+Mode is inferred from the available command field. When both fields exist,
+specify `mode` explicitly. Settings use the same per-slave JSON file:
+
+```json
+{
+  "ec0.s3": {
+    "mode": "csv",
+    "encoder_counts_per_rev": 1048576,
+    "velocity_units_per_rev_per_second": 268435.456,
+    "channel": "01"
+  }
+}
+```
+
+These scaling defaults match the repository's servo CSV example:
+2^31 velocity units = 8000 rev/s, and 2^20 position counts = one revolution.
+They are configurable assumptions, not values discovered from the motor/SDOs.
+Different motor/configuration scaling must be supplied in the settings file.
+For CSV, counts/s = raw velocity / velocity_units_per_rev_per_second ×
+encoder_counts_per_rev. CSP uses native position counts directly, follows the
+nearest modulo-32 target and derives velocity feedback from the position change.
+`initial_position_revs` overrides the initial raw counter readback; `channel`
+can select another configured channel (run a separate invocation for each).
+
+The state model starts switch-on-disabled and handles shutdown (6), switch-on
+(7), operation enable (15), disable-voltage, disable-operation, quick stop and
+rising-edge fault reset (128). It follows the
+[Beckhoff DS402 commissioning sequence](https://infosys.beckhoff.com/content/1033/ep7211/6910244747.html)
+and [control/status word definitions](https://infosys.beckhoff.com/content/1033/el72x1-001x/1877700363.html).
+Quick stop stops immediately. CSP follows commands ideally; there are no motor
+dynamics, acceleration ramps, following-error model, torque/CST, touch probes,
+STO or homing sensors. Additional diagnostic/encoder inputs remain available
+for another model or manual injection; they are not fabricated here. Dynamic
+SDO/PDO operation-mode changes are not implemented. The shutdown/stall handling
+is shared with the stepper model and clears enabled feedback through a model
+fault. This is functional simulation, not a full hardware emulator.
+
 ## Tests
+
+`tests/test_simulation_gui.py` checks digital channel counts, input retention,
+explicit input/output writes, read-only fallback, type/access failures, bounded UI
+updates and model reporting with fake CA endpoints. It smoke-tests actual Tk
+widgets under Xvfb when available, including input buttons and worker shutdown.
+The Tk portion reports a skip when a usable display is unavailable.
+
+`tests/test_simulation_terminals.py` checks encoder layouts and raw widths,
+exact U64 writes, manual drive editing and independent two-channel 7062 CSV/CSP
+dispatch using fake CA endpoints. It explicitly checks the oversampling notice;
+it does not claim an oversampling, DC or electrical terminal model.
+
+`tests/test_ds402_model.py` checks DS402 transitions/reset edges, CSV scaling,
+CSP rollover, direction/type validation, optional velocity feedback and scanner
+dispatch with fake CA PVs. It does not start an IOC or access the network.
 
 `tests/test_el7041_model.py` checks physical scaling, reverse velocity,
 fractional-count accumulation, rollover, enable delay, fault/reset, optional

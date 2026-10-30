@@ -324,7 +324,7 @@ int ecmcSimulationDriver::prepareSimulationParameter(int position, const char *n
   entry->simulationParameter = parameter;
   parameter->setEcmcDataSize((entry->access->getBits() + 7) / 8);
   parameter->setEcmcBitCount(entry->access->getBits());
-  parameter->setAllowWriteToEcmc(entry->direction == 2);
+  parameter->setAllowWriteToEcmc(true); // Private simulation view; outputs have manual -Set records.
   parameter->refreshParam(1);
   active_ = false; // Rebuild the publication lists before the next RT entry.
   return 0;

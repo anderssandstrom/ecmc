@@ -32,7 +32,8 @@ bool validName(const std::string &name) {
   return true;
 }
 void writeRecord(std::ostream &db, const SignalRecord &signal, bool output) {
-  const std::string pv = signal.pv + (signal.entry->direction == 2 && !output ? "-RB" : "");
+  const std::string pv = signal.pv + (signal.entry->direction == 2 && !output ? "-RB" :
+                                    signal.entry->direction == 1 && output ? "-Set" : "");
   db << "record(" << (output ? signal.writeType : signal.readType) << ",\"" << pv << "\") {\n"
      << " field(DESC,\"Simulated I/O " << (output ? "injection" : "readback") << "\")\n"
      << " field(DTYP,\"" << signal.deviceType << "\")\n"
@@ -91,13 +92,14 @@ int loadSimulationRecords(const char *prefix) {
             signal.deviceType = "asynUInt32Digital"; signal.digital = true;
           }
           // Check every name/type before registering views or adding records.
+          const std::string companion = signal.pv + (entry->direction == 2 ? "-RB" : "-Set");
           if (!recordNames.insert(signal.pv).second ||
-              (entry->direction == 2 && !recordNames.insert(signal.pv + "-RB").second) ||
-              !validName(signal.pv) || signal.pv.size() + (entry->direction == 2 ? 3 : 0) >= PVNAME_STRINGSZ ||
+              !recordNames.insert(companion).second ||
+              !validName(signal.pv) || companion.size() >= PVNAME_STRINGSZ ||
               dbFindRecordType(&dbEntry, signal.readType.c_str()) ||
-              (entry->direction == 2 && dbFindRecordType(&dbEntry, signal.writeType.c_str())) ||
+              dbFindRecordType(&dbEntry, signal.writeType.c_str()) ||
               !dbFindRecord(&dbEntry, signal.pv.c_str()) ||
-              (entry->direction == 2 && !dbFindRecord(&dbEntry, (signal.pv + "-RB").c_str()))) {
+              !dbFindRecord(&dbEntry, companion.c_str())) {
             error = ERROR_MAIN_SIM_RECORDS_LOAD_FAILED; break;
           }
           signals.push_back(std::move(signal));
@@ -111,7 +113,7 @@ int loadSimulationRecords(const char *prefix) {
     for (const auto &signal : signals) {
       error = signal.driver->prepareSimulationParameter(signal.position, signal.name.c_str());
       if (error) return error;
-      if (signal.entry->direction == 2) writeRecord(database, signal, true);
+      writeRecord(database, signal, true);
       writeRecord(database, signal, false);
     }
     const std::string text = database.str();
