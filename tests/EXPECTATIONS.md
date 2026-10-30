@@ -76,6 +76,54 @@ fall during an ongoing amplifier ON request from a pending OFF acknowledgement.
 
 ## Master/slave startup
 
+**INFERRED / REGRESSION**: `test_slit_recovery.py` executes the new live recovery,
+secondary-readiness and brake-cancellation case methods against controlled
+CA/plant boundaries and a virtual clock. Negative controls deliberately restart
+on readiness/reset or release a cancelled brake and must fail. These fixture
+checks validate test assertions, not IOC behavior or atomic CA sampling.
+`test_slit_preparation.py` executes real preparation/reset/SYNC sequencing with
+delayed acknowledgements. It models a stale motor target at zero while actual
+position remains 0.067 mm; preparation must obtain fresh readback and motor
+SYNC acknowledgement before requesting zero. SYNC is **DOC** in the linked
+motor record source. The live setup trace's exact cause remains unconfirmed;
+the fixture does not establish an ECMC defect or validate the independent-axis
+test body, which had not run when preparation failed.
+
+Encoder propagation regression: `test_encoder_error_propagation.py` compiles
+production `readEntries`, `readHwReady` and `hwReady` with controlled transport,
+sub-read and primary-selection boundaries. **INFERRED / REGRESSION**: the live
+closed-loop idle test observed primary encoder not-ready with axis `ErrId=0`.
+The read pipeline saved `ERROR_ENC_NOT_READY` in `encLocalErrorId_` but published
+the final sub-read's successful `errorLocal=0`. The axis must receive the saved
+encoder error; later successful reads must not erase it, and a different later
+sub-read error must not replace the accumulated earlier error. Assertions fail
+before the propagation fix. Primary disabled/enabled behavior, explicit reset
+and secondary isolation are covered; full IOC sequencing remains a live check.
+The subsequent runtime trace reported `0x14417` with enabled feedback and brake
+output still high. A valid-domain not-ready primary encoder must clear both
+the external enable command and the RT `status.enable` flag, including a pending
+enable before brake opening completes. The regression checks these flags and
+couples the production readiness/read methods to the production stepper/brake
+implementation: the brake applies, amplifier command and velocity become zero,
+enabled feedback clears and the encoder error remains. The velocity selection
+and feedback transport are controlled boundaries. A secondary encoder must
+leave the primary axis enable flags intact; an invalid-domain sample retains
+its existing handling rather than becoming a ready-bit fault.
+
+`test_slit_enable_timeout.py` executes the live brake/enable missing-ack cases
+with controlled CA/plant boundaries and a virtual drive timer read from
+`ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME` (15 seconds). **DOC / REGRESSION**:
+`setAxisDrvStateMachineTimeout` controls the direct drive transition; the YAML
+axis auto-enable timeout is separate. The old eight-second case deadline
+expires before the native fault can occur. The cases now allow 20 seconds,
+require `ERROR_DRV_STATE_MACHINE_TIME_OUT` and keep the brake applied during
+the wait. A premature brake release or unrelated fault must still fail.
+The fixture now starts enabled, matching `Rig.prepare()`, and delays OFF
+feedback after command removal. Both missing-enable cases must observe the
+disabled command, axis state, native feedback and brake before injection. A
+missing OFF acknowledgement fails setup without injecting the test fault;
+`0x14317` is not accepted in place of `0x14613`.
+
 Master/slave start regressions: `test_master_slave_start.py` couples production
 axis execute/auto-enable and state-machine methods to a production trapezoidal
 trajectory, with controlled sequencer, group and publication boundaries.
@@ -251,3 +299,63 @@ independently reasoned invariant from COMPAT behavior. Record unresolved choices
 here. Resolve intent before changing uncertain production semantics; update the
 test and its rationale together when a decision is made. Do not weaken an
 assertion simply to make the current implementation pass.
+
+**USER / INFERRED — encoder noise:** `test_slit_noise.py` checks bounded uniform
+measurement noise independently of physical motion and the internal counter,
+including quantization (half a 4096-count/mm step), frozen measurement and reset.
+Live noise cases require primary EL5042 feedback in closed-loop mode: +/-0.001 mm
+preserves at-target; +/-0.014 mm exceeds the configured .01 mm target band but
+stays below the .02 mm lag band. They require loss and recovery of at-target
+without fault/disable, without changing monitor settings. Negative controls
+reject absent target loss, absent recovery, faults and disable. The production
+monitor fixture separately steps both signs of .014 mm disturbance and verifies
+at-target clears, requires 101 good samples to recover with time=100, and does
+not raise a lag error. These offline checks do not establish live CA timing or
+closed-loop stability; the dedicated IOC run remains necessary.
+
+**REGRESSION — motor completion diagnostics:** a live closed-loop setup failure
+reported a motor alarm/limit while its later snapshot contained LVIO=SEVR=0.
+`test_slit_motion_requests.py` injects a one-read nonzero severity or LVIO at
+completion and requires failure with the exact triggering values retained in
+the trace, even if subsequent reads are healthy. This does not classify the
+transient as stale or harmless and does not add an alarm grace period.
+
+**REGRESSION — coherent motor problem publication:** the closed-loop live trace
+reported native ErrId=0 with motor MSTA problem bit 9, STAT=7 and SEVR=2 after
+an intentional encoder fault. `callParamCallbacksUpdateError()` published a
+callback before `poll()` updated `motorStatusProblem_`, allowing old problem
+status to accompany a new error classification. The helper now sets problem
+status before its callback. `test_motor_error_publication.py` compiles the
+production helper and verifies every callback on MCU fault/recovery, local
+errors and soft-limit interlocks; removing the fix reproduces inconsistency.
+The fixture does not emulate motor record processing or prove the full live
+failure is resolved. Preparation also waits for MSTA problem to clear before
+SYNC/motion: native reset completion precedes asynchronous motor polling.
+A problem bit that never clears blocks setup; completion alarms remain failures.
+
+**USER / DOC / COMPAT — reduced torque:** `tests/drive/brake_checks.cpp`
+exercises production drive writes to control bit 2 (the dedicated YAML mapping).
+Internal Busy requires full torque even within deadband; idle internal motion
+uses control deadband. External trajectories use their externally supplied
+deadband flag regardless of Busy, matching the existing implementation and
+master/slave interface. Repeated flag transitions must preserve amplifier
+command and brake release; optional-function disable is also checked. Live
+`cases/torque.py` observes physical/coordinated motion and closed-loop encoder
+noise without manually injecting drive-control output bits. No claim is made
+about physical current/torque or new disable/fault output policy.
+
+**USER / INFERRED — slit boundaries and limit bounce:** directional recovery
+keeps the switch active and requires a blocked request into it plus successful
+motion away without reset. Bounce cases require each low/high edge observable,
+a stop before the old target, and no replay after input recovery. Coordinated
+STOP requires both physical blades stationary, no axis fault, bounded stop
+position and successful fresh coordinated motion. Wrap tests observe native
+16-bit counter rollover both ways within existing soft limits, while rejecting
+position jumps, faults and motor alarms. `test_slit_boundaries.py` executes the
+live methods with controlled CA/plant boundaries and deliberately broken
+responses; these probes validate verdicts, not controller behavior. The real
+monitor fixture separately steps single-cycle directional limit bounce with
+latch on/off, and the real incremental encoder reconstructs 12000 samples
+crossing zero against independently calculated signed counts / 12800. PLC
+limit overrides bypass hardware input filtering. Live CA pulse timing and
+full coordinated ramp-down still require a dedicated IOC run.

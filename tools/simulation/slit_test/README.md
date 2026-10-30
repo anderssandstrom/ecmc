@@ -65,14 +65,16 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 
 | Module | Coverage |
 | --- | --- |
-| `cases/motion.py` | Both physical axes, positive/negative moves, forward kinematics, stop during motion |
-| `cases/limits.py` | Forward/backward hardware switches during motion, motor-record soft-limit rejection, controller soft-limit boundary through axis PVs |
+| `cases/motion.py` | Both physical axes, positive/negative moves, forward kinematics, stop during motion, native 16-bit encoder wrap in both directions |
+| `cases/limits.py` | Forward/backward hardware switches during motion, escape with switch held, bouncing inputs without automatic restart, motor-record soft-limit rejection, controller soft-limit boundary through axis PVs |
 | `cases/enable.py` | Missing enable acknowledgement, lost enabled feedback during motion, drive fault |
-| `cases/feedback.py` | Primary encoder not-ready at idle/during motion, frozen EL5042 following error, independent LO move while HI feedback is invalid |
-| `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion |
-| `cases/brake.py` | Applied when disabled; release after enable; application before power-off; release during physical/coordinated motion; failed/lost enable |
+| `cases/feedback.py` | Primary encoder not-ready at idle/during motion, readiness recovery without automatic restart, unready secondary isolation, frozen EL5042 following error, independent LO move while HI feedback is invalid |
+| `cases/noise.py` | Closed-loop EL5042 measurement noise: small noise preserves at-target; larger noise clears it without fault/disable, followed by stable recovery |
+| `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion, coordinated STOP and fresh-command recovery |
+| `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
+| `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 50 planned test executions with both loop modes selected. Primary
+There are 78 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -80,6 +82,28 @@ injection and stops/disables all axes. A failed setup also leads to the runner's
 final cleanup; `--keep-going` attempts later independent cases instead of the
 default fail-fast behavior. The dedicated IOC configuration is owned by this
 suite; gain/encoder/velocity settings are test settings, not a saved user session.
+
+Preparation waits for the plant's restored ready/fault bits and for the
+state-machine RESET command to finish. Before each physical return-to-zero
+move it requires disabled drive feedback and fresh idle motor readback, then
+uses the motor record's `.SYNC` operation to align record targets with readback.
+This avoids a stale same-target request after fault cleanup or direct axis-PV
+commands. It does not redefine position or silently retry a failed test move.
+The motor record's SYNC behavior is implemented in
+[motorRecord.cc](https://github.com/epics-modules/motor/blob/master/motorApp/MotorSrc/motorRecord.cc).
+Missing reset/SYNC acknowledgement fails preparation; failure snapshots also
+include `.PACT`, `.MIP` and `.SYNC`. A preparation failure does not establish
+that the subsequent test body's independence/recovery behavior failed.
+
+The new recovery case restores encoder readiness while retaining `0x14417`
+and verifies that power stays off. It then resets, verifies that the cancelled
+move does not restart, and sends a fresh zero-position request. The secondary
+case removes EL5042 readiness while the internal counter is primary and
+requires successful motion with no axis fault. The brake-cancellation case
+observes amplifier ON/brake applied, withdraws enable, and requires the brake
+to remain applied for one second before checking a fresh enable can recover.
+These are functional CA observations; per-cycle timing remains covered by the
+standalone production-code tests.
 
 Cleanup requests STOP first and keeps the plant updating both encoder images
 while the IOC ramps velocity down. It waits for trajectory idle and a drive
@@ -143,6 +167,21 @@ not exact cycle counts or atomic signal sampling. The existing
 `tests/test_drive_brake.py` C++ tests retain that cycle-boundary coverage. The
 Python plant does not model brake mechanics or coil/armature feedback.
 
+Missing-enable tests allow 20 seconds for the drive's default 15-second state
+machine timeout, including CA publication margin. This is separate from the
+axis YAML's 2-second automatic-enable timeout: a direct `-EnaCmd` write does
+not start the motion auto-enable timer. Both missing-enable cases require
+`ERROR_DRV_STATE_MACHINE_TIME_OUT` (`0x14613`). The brake case checks that the
+brake stays applied throughout the wait. Sudden feedback-loss tests keep their
+shorter fault-response deadline.
+
+Both missing-enable cases first establish a disabled drive: enable command
+and axis enabled state low, native amplifier command and enabled-feedback bit
+low, and brake applied. Preparation's zero-position moves can leave drives
+enabled; suppressing feedback in that state would test lost enable (`0x14317`)
+instead of a fresh request without acknowledgement (`0x14613`). Failure to
+establish the disabled precondition is reported before injection.
+
 ## Coupled plant and fault meaning
 
 `plant.py` reuses the simple EL70xx model. The supplied YAML scaling is:
@@ -164,7 +203,11 @@ setpoints. EL5042 position is never just copied from the demanded axis position.
 Fault injection is per blade: remove ready, freeze only the absolute feedback,
 remove enable acknowledgement, inject drive fault, or open a hardware limit.
 An invalid primary encoder is expected to raise `ERROR_ENC_NOT_READY` (0x14417)
-and remove enable. Frozen primary feedback during motion is expected to raise
+and remove enable, including the RT request consumed by the drive/brake path.
+This also cancels an enable request while the brake is still opening. The
+test requires brake application and disabled/zero drive commands in addition
+to the error code. Invalid-domain handling is unchanged.
+Frozen primary feedback during motion is expected to raise
 `ERROR_MON_MAX_POSITION_LAG_EXCEEDED` (0x14c08); frozen secondary feedback in
 open-loop mode must not prevent internal-counter motion. These expectations
 come from `ecmcEncoder::readHwReady` and `ecmcMonitor` in the current source.
@@ -221,3 +264,80 @@ electrical dynamics, mechanical backlash or safe stopping distance is modeled.
 The 100 Hz Python plant cannot establish a real RT-performance guarantee.
 Additional terminal/protocol models and scenarios can be added as separate
 modules without adding them to the existing ones.
+
+Encoder noise tests use the existing closed-loop setup (EL5042 primary encoder,
+Kp=2); open-loop runs skip these two cases. Run them separately with:
+
+```sh
+python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case noise --loop closed
+```
+
+The plant accepts `plant.inject('TR_HI', encoder_noise_mm=.014)`: the value is a
+nonnegative peak amplitude in mm, with uniform noise sampled once per plant
+step before EL5042 count quantization. Each blade has a seeded generator
+(default seed: drive slave number; optional profile key `noise_seed`). Sample
+sequences are repeatable; live timing and controller responses are asynchronous.
+Noise affects only the absolute encoder measurement, leaving physical position
+and the internal motor counter separate. Freezing the encoder holds its last
+measurement, including any noise. Clearing faults removes noise.
+
+The small-noise case uses +/-0.001 mm. The disturbance case uses +/-0.014 mm,
+above the configured 0.01 mm at-target band and below the 0.02 mm following-error
+band. It requires observed loss of `-AtTarget`, no fault or disable while noisy,
+and stable at-target recovery after noise removal. Monitor settings stay
+unchanged. At-target may flicker during noise; it need not stay continuously
+false. Snapshots include `-AtTarget`, physical position, measured encoder
+position before quantization, noise amplitude and measurement error. This
+external Python plant tests behavior; it does not reproduce RT noise spectra.
+
+After fault reset, preparation waits for the motor MSTA problem bit to clear
+alongside fresh idle readback before SYNC. Native error reset alone does not
+acknowledge the motor poller's status update. This wait is bounded; a persistent
+motor problem fails setup. The normal motion completion checks still reject
+nonzero LVIO or alarm severity and retain their triggering values.
+
+Run the reduced-torque output tests with:
+
+```sh
+python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case torque
+```
+
+Both dedicated physical-axis YAML files already enable reduced torque and link
+it to drive control bit 2. These cases observe that native control-word readback
+without writing the output. They require the bit high at rest, low during
+physical and coordinated motion, and high again after settling. The encoder
+noise case runs only in closed-loop mode: +/-0.014 mm measurement disturbance
+must clear the bit and at-target without an axis fault, then both recover after
+noise removal. External trajectory handling uses the existing state-machine
+control-deadband signal; Busy alone does not define reduced torque for slaves.
+The plant does not model motor-current or holding-torque physics.
+
+Additional boundary checks are included in the existing modules:
+
+```sh
+python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case limits --case sync --case motion
+```
+
+Directional recovery keeps one hardware switch active: a request into that
+switch must remain stationary, while a fresh move away must succeed without
+resetting or clearing the input. Both directions and both blades are tested.
+Bounce cases interrupt a move with three low/high pulses, waiting for each
+edge to become visible at the axis. After stopping short of the target, the
+axis must stay stationary for one second after the input recovers; only a new
+command can move it. The plant continues publishing throughout deceleration.
+These CA-driven pulses are limited by plant/publication timing; they do not
+represent electrical contact bounce at microsecond resolution. The standalone
+production monitor tests separately step one-cycle pulses and latch policy.
+
+Coordinated STOP is issued to CENTERY after both blades start moving. Both
+native velocity commands and measured velocities must settle, all axes must
+remain fault-free, and both blades must stop short of the old target. The test
+then checks kinematics and a fresh coordinated return move.
+
+The wrap case moves each blade +0.1 -> -0.1 -> +0.1 mm and observes the native
+16-bit internal counter crossing 0/65535 in both directions. Axis position must
+remain in the expected travel interval and reach each target without alarms.
+Existing +/-1 mm soft limits stay unchanged. In open loop this exercises the
+primary incremental encoder; in closed loop EL5042 remains primary and the
+internal counter is secondary. Production encoder reconstruction is also
+checked sample-by-sample offline against an independent signed integer count.

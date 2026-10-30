@@ -229,3 +229,29 @@ else:
     raise AssertionError('post-acceptance axis fault must fail without waiting for arrival')
 assert rig.plant.checks == 3
 print('Coordinated faults: exact error and state-machine/interlock snapshot preserved before cleanup, without an arrival timeout.')
+
+# Live failure: the final snapshot was healthy even though a prior CA read
+# triggered the alarm verdict. Preserve that triggering read and still fail.
+for suffix, value in (('.SEVR', 2), ('.LVIO', 1)):
+    factory, client, rig = setup()
+    original_get = client.get
+    reads = [0]
+    def transient_get(name):
+        if name == 'TEST:TR_LO' + suffix:
+            reads[0] += 1
+            # Acceptance also reads LVIO; inject only at the completion verdict.
+            if reads[0] == (2 if suffix == '.LVIO' else 1):
+                return value
+        return original_get(name)
+    client.get = transient_get
+    try:
+        rig.move('TR_LO', 0, timeout=.1)
+    except AssertionError as error:
+        assert 'Triggering reads' in str(error)
+        verdict = rig.trace[-1]
+        assert verdict['action'] == 'motor completion rejected'
+        assert verdict['verdict'][suffix] == value
+        assert verdict['snapshot']['TR_LO'][suffix] == 0
+    else:
+        raise AssertionError('a transient completion alarm must remain a failure')
+print('Completion verdict: transient alarm/limit triggers retained even when later snapshots are healthy.')

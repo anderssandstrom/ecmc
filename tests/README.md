@@ -98,6 +98,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_simulation_gui.py` | Digital terminal layouts, retained input state, input/output writes, read-only fallback, worker reporting and optional real Tk/Xvfb controls/shutdown smoke test; fake CA |
 | `test_simulation_terminals.py` | Encoder scalar layouts/widths, exact U64 edits, manual drive fields, oversampling notice and independent dual-channel 7062 CSV/CSP dispatch; fake CA |
 | `test_slit_acceptance.py` | Offline infrastructure for the separate live slit suite: coupled stepper/EL5042 arithmetic, injection, brake wiring, fake native PV publication, SIM guard, modular selection and JSON/JUnit reports; never runs live IOC cases |
+| `test_slit_boundaries.py` | Execute live limit recovery/bounce, coordinated STOP and encoder-wrap case methods with controlled responses; negative controls reject ignored limits, replay, failed STOP and missing wraps/jumps |
 | `test_slit_motion_requests.py` | Motor moves use per-request completion; ordinary STOP puts bypass the active record's notify queue; bounded arrival/ramp-down, rejection and pre-cleanup diagnostics; fake PVs |
 | `test_slit_soft_limits.py` | Direction-specific warning/interlock can stop an invalid target before the boundary; unrelated faults, wrong direction, motion, no diagnostic and overruns must not pass; no IOC |
 | `test_simulation_ioc.py` | Prefix-only sparse slave discovery via hardware metadata, supported-model catalog, independent model workers, missing/cyclic metadata and read-only listing; controlled PVs and clocks |
@@ -110,15 +111,21 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_data_binding.py` | Experimental native scalar read binding, metadata rejection, health gating and a PLC-reference-to-axis-setter pilot; no live RT integration |
 | `test_controller_error_scan.py` | Error priority, cached/live scanning, thread isolation and cache rebuilding |
 | `test_drive_brake.py` | Real drive brake opening/closing timing, feedback loss in all states, bounded signal traces, faults, timeouts, Stepper/DS402 output handling and recovery |
+| `test_encoder_error_propagation.py` | Production encoder read ordering/readiness and stepper/brake integration: primary errors propagate and cancel active/pending RT enable; brake/power shutdown, reset, secondary isolation and invalid-domain handling |
 | `test_cpp_logic_loading.py` | Configuration, shared-library/ABI checks, instance creation errors/exceptions and cleanup; stops before item binding/asyn registration |
 | `test_cpp_logic_bindings.py` | Missing/invalid items, size/type and direction mismatches, auto-size preparation and cleanup requests; fake data-item endpoints |
 | `test_ec_port_wiring.py` | Wiring diagnostics, timestamp wraparound, exclusions and unavailable bus information |
 | `test_motor_record_dmov.py` | Completion/abort behavior, fresh samples, counter wraparound and command rearming |
 | `test_master_slave_start.py` | Production state-machine preparation and source acknowledgement coupled to a real trajectory; delayed brakes, negative control for missed motion, timeout, reset and disabled-state-machine behavior |
+| `test_slit_enable_timeout.py` | Live missing-enable case methods with a virtual native drive timer: adequate wait budget, rejection of brake release and wrong errors, and reproduction of the old eight-second deadline failure |
+| `test_slit_recovery.py` | Live case methods with controlled CA/plant state: encoder recovery without replay, secondary isolation, cancellation while a brake opens; negative controls reject automatic restart and late release |
+| `test_slit_noise.py` | Seeded bounded EL5042 measurement noise, unchanged mechanics/internal counts, freeze/reset, invalid amplitudes; negative controls reject missing at-target loss/recovery, faults and disable |
+| `test_slit_preparation.py` | Delayed restored plant bits, state-machine RESET completion, fresh motor readback and acknowledged SYNC before setup's zero move; missing acknowledgements block preparation |
 | `test_monitor.py` | Real monitor following-error/overspeed thresholds and delays, latching, reset, enable loss, at-target and directional limits |
 | `test_motor_softlimit_restore.py` | IOC restore hooks, limit precedence, MRES, retries and position-load sample acknowledgement |
 | `test_softlimit_pair.py` | Production monitor pair transfer, enable flags, positive/negative ranges, zero sentinel and invalid-input preservation |
 | `test_startup_diagnostics.py` | Per-axis/shared hold diagnostics, reason and blocker IDs, independent readiness, full status text and axis-addressed callbacks |
+| `test_motor_error_publication.py` | Production error callback publishes the current problem bit on fault entry/recovery, local errors and soft-limit interlocks; removing the fix fails the callback check |
 | `test_motor_startup_comm_recovery.py` | Stale startup COMM recovery, position-load completion, preserved alarms and runtime faults |
 | `test_motor_startup_execution_gate.py` | Independent physical-axis release, virtual-master dependencies, independent master/slave groups, shared-program hold, rejected commands, deferred enable and absent motor records |
 | `test_plc_loading.py` | File/index errors, alias expansion, append/reload behavior and enable sequencing; no exprtk compilation |

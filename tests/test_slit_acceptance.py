@@ -67,12 +67,15 @@ assert feedback.position == 11200 and raw == 5656064
 # Building/selecting test modules must not import pyepics or access a live IOC.
 suite = make_suite(None, ('open', 'closed'), MODULES)
 tests = list(suite)
-assert len(tests) == 50
+assert len(tests) == 78
 assert {test.loop for test in tests} == {'open', 'closed'}
 assert all(test.rig is None for test in tests)
-assert len(list(make_suite(None, ('closed',), ('limits',)))) == 4
+assert len(list(make_suite(None, ('closed',), ('limits',)))) == 8
 assert len(list(make_suite(None, ('closed',), ('enable',)))) == 3
-assert len(list(make_suite(None, ('closed',), ('brake',)))) == 7
+assert len(list(make_suite(None, ('closed',), ('brake',)))) == 8
+assert len(list(make_suite(None, ('closed',), ('feedback',)))) == 6
+assert len(list(make_suite(None, ('closed',), ('noise',)))) == 2
+assert len(list(make_suite(None, ('closed',), ('torque',)))) == 3
 
 
 class FakeClient:
@@ -166,6 +169,9 @@ if DEFAULT_CONFIG.exists():
     assert 'SIM=1' in startup and 'SIM:SlitTest:Schema' in (DEFAULT_CONFIG / 'test-marker.db').read_text()
     for axis, number in profile['axes'].items():
         if axis not in profile['physical']: continue
+        yaml_path = DEFAULT_CONFIG / f'cfg/axis_ax{number}_{"LO" if axis == "TR_LO" else "HI"}.yaml'
+        axis_yaml = yaml_path.read_text()
+        assert 'reduceTorque: 2' in axis_yaml and 'reduceTorqueEnable: True' in axis_yaml
         brake = profile['physical'][axis]['brake']
         assert f'ec0.s5.binaryOutput{brake["channel"]},ax{number}.drv.brake' in startup
         assert f'Cfg.SetAxisDrvBrakeEnable({number},1)' in startup

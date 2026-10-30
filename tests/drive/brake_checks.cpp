@@ -72,6 +72,33 @@ struct Bench {
   }
 };
 
+// DOC: reduced torque is used at rest. External trajectories use the
+// externally supplied control-deadband flag, even when Busy remains high.
+static void reducedTorque() {
+  context = "reduced torque in control word bit 2";
+  Bench<> b;
+  CHECK(b.drive->setEntryAtIndex(&b.control,
+        ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT, 2) == 0);
+  CHECK(b.drive->setEnableReduceTorque(true) == 0);
+  b.open();
+  for (bool external : {false, true}) for (bool busy : {false, true}) {
+    for (bool within : {false, true, false, true}) {
+      b.data.status_.statusWord_.trajsource = external;
+      b.data.status_.statusWord_.busy = busy;
+      b.data.status_.ctrlWithinDeadband = within;
+      b.tick(true);
+      // Internal motion always needs full torque; otherwise use deadband.
+      const bool expected = external ? within : (busy ? false : within);
+      CHECK(bool(b.control.value & 4) == expected);
+      CHECK((b.control.value & 1) == 1); // Preserve amplifier enable.
+      CHECK(b.brake.value == 1 && b.drive->getErrorID() == 0);
+    }
+  }
+  CHECK(b.drive->setEnableReduceTorque(false) == 0);
+  b.tick(true);
+  CHECK((b.control.value & 4) == 0 && (b.control.value & 1) == 1);
+}
+
 static void timing() {
   // DOC: ecmcMotion.h::setAxisDrvBrakeOpenDelayTime/CloseAheadTime specifies
   // sequencing and cycle units. Exact sample/pipeline offsets are COMPAT B1.
@@ -521,7 +548,7 @@ static void ds402Integration() {
 
 int main() {
   try {
-    timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
+    reducedTorque(); timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
     interlocksAndTimeout(); delayedDisableAcknowledgement(); configurationAndFaults();
     boundedSignalTraces(); ds402Integration();
     std::cout << "Drive brake: " << scenarios << " scenarios, " << cycles

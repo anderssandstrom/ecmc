@@ -1,6 +1,7 @@
 """Coupled stepper/EL5042 plant with independent fault injection per blade."""
 from dataclasses import dataclass
 import math
+import random
 import threading
 import time
 
@@ -15,6 +16,7 @@ class Faults:
     forward_ok: bool = True
     backward_ok: bool = True
     drive_fault: bool = False
+    encoder_noise_mm: float = 0.0  # Peak amplitude of uniform measurement noise.
 
 
 class Blade:
@@ -23,6 +25,9 @@ class Blade:
         self.model = el7041.Model(el7041.Settings(), position_mm * config['internal_counts_per_mm'])
         self.faults = Faults()
         self.held_mm = position_mm
+        self.encoder_mm = position_mm
+        self.encoder_noise_mm = 0.0
+        self.random = random.Random(config.get("noise_seed", config["drive_slave"]))
 
     @property
     def position_mm(self):
@@ -32,8 +37,13 @@ class Blade:
         for name, value in values.items():
             if name not in Faults.__dataclass_fields__:
                 raise ValueError('unknown fault ' + name)
+            if name == 'encoder_noise_mm':
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                    raise ValueError('encoder_noise_mm must be a finite nonnegative amplitude')
+                self.faults.encoder_noise_mm = float(value)
+                continue
             if name == 'frozen' and value and not self.faults.frozen:
-                self.held_mm = self.position_mm
+                self.held_mm = self.encoder_mm
             setattr(self.faults, name, bool(value))
         if values.get('drive_fault') is False:
             self.model.fault = False
@@ -52,7 +62,13 @@ class Blade:
             status &= ~(1 << 12)
         if not self.faults.backward_ok:
             status &= ~(1 << 11)
-        mm = self.held_mm if self.faults.frozen else self.position_mm
+        if self.faults.frozen:
+            mm = self.held_mm
+        else:
+            peak = self.faults.encoder_noise_mm
+            mm = self.position_mm + (self.random.uniform(-peak, peak) if peak else 0.0)
+        self.encoder_mm = mm
+        self.encoder_noise_mm = mm - self.position_mm
         raw = round((mm - self.config['absolute_offset_mm']) * self.config['absolute_counts_per_mm'])
         raw %= 1 << self.config['absolute_bits']
         return (el7041.Feedback(status, feedback.encoder_status, feedback.position),
@@ -77,6 +93,9 @@ class Plant:
                     'seconds_since_publish': time.monotonic() - self.last_published if self.last_published else None,
                     'error': str(self.error) if self.error else None,
                     'blades': {axis: {'position_mm': blade.position_mm,
+                                     'encoder_mm': blade.encoder_mm,
+                                     'encoder_noise_peak_mm': blade.faults.encoder_noise_mm,
+                                     'encoder_measurement_error_mm': blade.encoder_noise_mm,
                                      'encoder_frozen': blade.faults.frozen,
                                      'encoder_ready': blade.faults.ready,
                                      'drive_fault': blade.faults.drive_fault,

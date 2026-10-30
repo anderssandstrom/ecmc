@@ -67,6 +67,15 @@ class Rig:
         slave = self.profile['physical'][axis]['drive_slave']
         return int(self.client.get(self.prefix + f'SIM:ec0:s{slave}:driveStatus01'))
 
+    def internal_counter(self, axis):
+        slave = self.profile['physical'][axis]['drive_slave']
+        return int(self.client.get(self.prefix + f'SIM:ec0:s{slave}:positionActual01-RB')) & 0xffff
+
+    def encoder_status(self, axis):
+        config = self.profile['physical'][axis]
+        return int(self.client.get(self.prefix + f'SIM:ec0:s{config["encoder_slave"]}:'
+                                   f'encoderStatus{config["encoder_channel"]}-RB'))
+
     def guard(self):
         if self.client.get(self.prefix + 'MCU-Cfg-Sim-Mode') != 1:
             raise RuntimeError('refusing test writes: IOC does not report SIM=1')
@@ -94,12 +103,12 @@ class Rig:
         for axis in self.names:
             result[axis] = {}
             for suffix in ('-PosAct', '-PosSet', '-EnaAct', '-EnaCmd', '-EnaCmd-RB', '-ExeCmd-RB',
-                           '-Busy', '-ErrId', '-LimFwd', '-LimBwd', '-TrjSrcTyp-RB',
+                           '-Busy', '-AtTarget', '-ErrId', '-LimFwd', '-LimBwd', '-TrjSrcTyp-RB',
                            '-LastIlock', '-SumIlockFwd', '-SumIlockBwd',
                            '-WrnId', '-SftLimFwdIlock', '-SftLimBwdIlock', '-SftLimFwdEna-RB', '-SftLimBwdEna-RB',
                            '-TgtPosCmd', '-MtnCmd', '-MtnCmdData', '.LLM', '.HLM', '.VAL', '.RBV', '.DVAL',
                            '-Blocked', '-InStartup', '-StartupHeld', '-StartupMotorReady', '-StartupLimitsReady',
-                           '.DMOV', '.MOVN', '.MSTA', '.LVIO', '.STAT', '.SEVR'):
+                           '.DMOV', '.MOVN', '.MSTA', '.LVIO', '.STAT', '.SEVR', '.PACT', '.MIP', '.SYNC'):
                 try: result[axis][suffix] = float(self.get(axis, suffix))
                 except Exception as error: result[axis][suffix] = str(error)
             if 'brake' in self.profile['physical'].get(axis, {}):
@@ -117,6 +126,14 @@ class Rig:
         if hasattr(self.plant, 'snapshot'):
             result['plant'] = self.plant.snapshot()
         return result
+
+    def assert_stays(self, predicate, description, seconds=1):
+        deadline = time.monotonic() + seconds
+        def observed():
+            if not predicate():
+                raise AssertionError(description + '\n' + json.dumps(self.snapshot(), indent=2))
+            return time.monotonic() >= deadline
+        self.wait(observed, description, seconds + 2)
 
     def stop_all(self):
         errors = []
@@ -138,6 +155,19 @@ class Rig:
                 try: self.put(axis, '-EnaCmd', 0)
                 except Exception as error: errors.append(str(error))
         return errors
+
+    def wait_drive_disabled(self, axis, timeout=5):
+        # Missing acknowledgement is a fresh enable test. Removing feedback
+        # from a drive left enabled by preparation instead tests enabled loss.
+        def disabled():
+            error = int(self.get(axis, '-ErrId'))
+            if error:
+                raise AssertionError(f'{axis}: fault while establishing disabled state: 0x{error:x}\n'
+                                     + json.dumps(self.snapshot(), indent=2))
+            return (self.get(axis, '-EnaCmd-RB') == 0 and self.get(axis, '-EnaAct') == 0
+                    and not self.drive_control(axis) & 1 and not self.drive_status(axis) & 2
+                    and ('brake' not in self.profile['physical'][axis] or self.brake(axis) == 0))
+        self.wait(disabled, axis + ' disabled command, feedback and brake before fault injection', timeout)
 
     def _drive_stationary(self, axis):
         slave = self.profile['physical'][axis]['drive_slave']
@@ -172,10 +202,29 @@ class Rig:
         for axis in self.names:
             self.put(axis, '-RstCmd', 1)
         self.client.put(self.prefix + 'SM00-StateCmd', 3)
-        self.wait(lambda: all(self.get(axis, '-ErrId') == 0 for axis in self.names), 'axis fault reset', 5)
+        self.wait(lambda: self.client.get(self.prefix + 'SM00-StateCmd') == 0
+                  and all(self.get(axis, '-ErrId') == 0 for axis in self.names),
+                  'axis fault reset and state-machine RESET completion', 5)
+
+    def sync_motor_record(self, axis):
+        # Fault recovery and axis-PV commands can leave the motor target stale.
+        # Synchronize record targets to fresh readback before setup's zero move;
+        # SYNC does not redefine the physical position or command a move.
+        self.wait(lambda: self.get(axis, '-ErrId') == 0
+                  and not int(self.get(axis, '.MSTA')) & (1 << 9)
+                  and self.get(axis, '.DMOV') == 1 and self.get(axis, '-Busy') == 0
+                  and abs(self.get(axis, '.RBV') - self.get(axis, '-PosAct')) < .001,
+                  axis + ' fresh idle motor readback and cleared problem bit before setup synchronization', 5)
+        self.put(axis, '.SYNC', 1)
+        self.wait(lambda: self.get(axis, '.SYNC') == 0
+                  and abs(self.get(axis, '.VAL') - self.get(axis, '.RBV')) < .001,
+                  axis + ' motor target synchronized to readback', 5)
 
     def prepare(self, mode):
         self.plant.clear_faults()
+        self.wait(lambda: all(self.encoder_status(axis) & 4 and not self.drive_status(axis) & 8
+                              for axis in self.profile['physical']),
+                  'plant publishes restored encoder readiness and cleared drive faults', 5)
         errors = self.stop_all()
         if errors:
             raise RuntimeError('preparation stop failed: ' + '; '.join(errors))
@@ -193,6 +242,8 @@ class Rig:
             self.put(axis, '.ACCL', .4)
         self.reset()
         for axis in self.profile['physical']:
+            self.wait_drive_disabled(axis)
+            self.sync_motor_record(axis)
             self.move(axis, 0)
         self.kinematics()
 
@@ -236,9 +287,18 @@ class Rig:
         self.wait(arrived, f'{axis} reaches {target}', timeout)
         error = self.get(axis, '-ErrId')
         if error: raise AssertionError(f'{axis}: unexpected error 0x{int(error):x}')
-        if self.get(axis, '.LVIO') or self.get(axis, '.SEVR'):
+        # Retain the values that triggered the verdict: independent CA reads
+        # and the later full snapshot can observe different motor polls.
+        verdict = {suffix: self.get(axis, suffix) for suffix in ('.LVIO', '.SEVR')}
+        if verdict['.LVIO'] or verdict['.SEVR']:
+            verdict.update({suffix: self.get(axis, suffix) for suffix in ('.STAT', '.MSTA')})
+            snapshot = self.snapshot()
+            self.trace.append({'action': 'motor completion rejected', 'axis': axis, 'target': target,
+                               'verdict': verdict, 'snapshot': snapshot})
             raise AssertionError(axis + ': motor completed with a limit violation/alarm\n'
-                                 + json.dumps(self.snapshot(), indent=2))
+                                 + 'Triggering reads (before diagnostic snapshot):\n'
+                                 + json.dumps(verdict, indent=2) + '\n'
+                                 + json.dumps(snapshot, indent=2))
         self.trace.append({'action': 'move', 'axis': axis, 'target': target, 'snapshot': self.snapshot()})
 
     def kinematics(self):
@@ -246,9 +306,9 @@ class Rig:
         self.wait(lambda: abs(self.get('CENTERY', '-PosAct') - (lo + hi) / 2) < .02
                   and abs(self.get('GAPY', '-PosAct') - (hi - lo)) < .02, 'forward slit kinematics', 3)
 
-    def fault_stopped(self, axis, code=None):
+    def fault_stopped(self, axis, code=None, timeout=8):
         self.wait(lambda: self.get(axis, '-ErrId') != 0 and self.get(axis, '-EnaAct') == 0,
-                  axis + ' faults and disables', 8)
+                  axis + ' faults and disables', timeout)
         if code is not None and self.get(axis, '-ErrId') != code:
             raise AssertionError(f'{axis}: expected 0x{code:x}, got 0x{int(self.get(axis,"-ErrId")):x}')
         config = self.profile['physical'][axis]

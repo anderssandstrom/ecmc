@@ -16,7 +16,7 @@ sys.path.insert(0, str(SIMULATION))
 from slit_test.plant import Plant
 from slit_test.rig import Client, Rig
 
-MODULES = ('motion', 'limits', 'enable', 'feedback', 'sync', 'brake')
+MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque')
 DEFAULT_CONFIG = (Path(__file__).resolve().parents[4].parent / 'ecmccfg/examples/PSI/lab_setup/'
                   'master_slave/slit_epics_2026/slit_matrix_sim_test')
 

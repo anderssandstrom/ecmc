@@ -1,15 +1,17 @@
-from .base import SlitCase
+from .base import SlitCase, DRIVE_ENABLE_FAILURE_WAIT
 
 
 class EnableTests(SlitCase):
     def test_missing_enable_acknowledgement(self):
         axis = 'TR_LO'
+        self.assertEqual(self.rig.stop_all(), [], 'disable before missing-enable injection')
+        self.rig.wait_drive_disabled(axis)
         self.rig.plant.inject(axis, acknowledge_enable=False)
         try:
             self.rig.put(axis, '-EnaCmd', 1)
         except RuntimeError:
             pass  # A synchronous enable timeout may also surface as a failed put.
-        self.rig.fault_stopped(axis)
+        self.rig.fault_stopped(axis, 0x14613, timeout=DRIVE_ENABLE_FAILURE_WAIT)
 
     def test_lost_enable_during_motion(self):
         axis = 'TR_LO'

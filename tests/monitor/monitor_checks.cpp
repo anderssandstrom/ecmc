@@ -5,6 +5,7 @@
 #include "ecmcErrorsList.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -196,6 +197,35 @@ static void targetDetection() {
   }
 }
 
+// USER: encoder measurement noise can clear at-target without a lag fault.
+// Match the slit profile: .01 mm target band, .02 mm lag band, 100 samples.
+static void noisyTargetDetection() {
+  context = "slit encoder noise and target recovery";
+  Bench b;
+  b.monitor->setAtTargetTol(.01); b.monitor->setAtTargetTime(100);
+  b.monitor->setEnableAtTargetMon(true);
+  b.monitor->setPosLagTol(.02); b.monitor->setPosLagTime(100);
+  b.monitor->setEnableLagMon(true);
+  b.settle();
+  for (int i = 0; i < 1100; ++i) {
+    b.data.status_.cntrlError = (i % 2 ? -.001 : .001);
+    b.tick();
+    if (i > 100) CHECK(b.monitor->getAtTarget());
+    CHECK(b.monitor->getErrorID() == 0);
+  }
+  for (double disturbance : {-.014, .014}) {
+    b.data.status_.cntrlError = disturbance;
+    b.tick(); CHECK(!b.monitor->getAtTarget());
+    CHECK(b.monitor->getErrorID() == 0);
+    b.data.status_.cntrlError = 0;
+    for (int i = 0; i < 100; ++i) {
+      b.tick(); CHECK(!b.monitor->getAtTarget());
+    }
+    b.tick(); CHECK(b.monitor->getAtTarget());
+    CHECK(b.monitor->getErrorID() == 0);
+  }
+}
+
 static void directionalLimits() {
   // DOC: ecmcMotion.h::setAxisMonLatchLimit describes bounce retention.
   // COMPAT/REVIEW M4: clearing on moving-away feedback is not proof that a
@@ -246,6 +276,33 @@ static void directionalLimits() {
     CHECK(b.data.interlocks_.trajSummaryInterlockBWD == (type != ECMC_PLC_INTERLOCK_DIR_FWD));
     b.monitor->setPLCInterlock(false, type); b.tick();
     CHECK(!b.data.interlocks_.trajSummaryInterlockFWD && !b.data.interlocks_.trajSummaryInterlockBWD);
+  }
+}
+
+// USER: one-sample flicker must preserve direction-specific latch policy.
+// PLC overrides isolate monitor behavior; this does not test input filtering.
+static void bouncingLimits() {
+  for (bool forward : {false, true}) for (bool latch : {false, true}) {
+    context = "bouncing directional limit";
+    Bench b;
+    b.monitor->setLatchAtLimit(latch);
+    b.settle();
+    b.data.status_.statusWord_.moving = true;
+    b.data.status_.currentVelocityActual = forward ? 1 : -1;
+    for (bool ok : {false, true, false, true, false, true}) {
+      if (forward) b.monitor->setLimitSwitchFwdPLCOverrideValue(ok);
+      else b.monitor->setLimitSwitchBwdPLCOverrideValue(ok);
+      b.tick();
+      const bool blocked = !ok || latch;
+      CHECK(b.data.interlocks_.trajSummaryInterlockFWD == (forward && blocked));
+      CHECK(b.data.interlocks_.trajSummaryInterlockBWD == (!forward && blocked));
+      CHECK(b.monitor->getErrorID() == 0);
+    }
+    b.data.status_.statusWord_.moving = false;
+    b.data.status_.currentVelocityActual = 0;
+    b.tick();
+    CHECK(!b.data.interlocks_.trajSummaryInterlockFWD);
+    CHECK(!b.data.interlocks_.trajSummaryInterlockBWD);
   }
 }
 
@@ -311,9 +368,51 @@ static void commonDataInputs() {
   CHECK(encoder.getRawPosRegisterDouble() == 99);
 }
 
+// USER: cross the native 16-bit boundary in both directions with continuous
+// reconstructed position. Raw counts are an independent integer reference.
+static void encoderWraparound() {
+  context = "16-bit incremental encoder wraparound";
+  ++scenarios;
+  ecmcAxisData data;
+  data.status_.sampleTime = .001;
+  data.status_.axisId = 1;
+  data.status_.statusWord_.encsource = ECMC_DATA_SOURCE_INTERNAL;
+  ecmcAsynPortDriver port;
+  ecmcEncoder encoder(&port, data, .001, 1);
+  uint16_t raw = 0;
+  int healthy = 1;
+  ecmcDataItem item("test.rawCounter");
+  item.setEcmcDataPointer(reinterpret_cast<uint8_t *>(&raw), sizeof(raw));
+  item.setEcmcDataType(ECMC_EC_U16);
+  item.setAllowWriteToEcmc(false);
+  ecmcDataAccess access;
+  CHECK(ecmcDataAccess::bind(item, &healthy, false, &access));
+  CHECK(encoder.setDataAtIndex(access, ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION, -1) == 0);
+  CHECK(encoder.setBits(16) == 0);
+  CHECK(encoder.setType(ECMC_ENCODER_TYPE_INCREMENTAL) == 0);
+  CHECK(encoder.setScaleNum(1) == 0);
+  CHECK(encoder.setScaleDenom(12800) == 0);
+  CHECK(encoder.setPosFilterEnable(false) == 0);
+  CHECK(encoder.validate() == 0);
+  encoder.readEntries(true);
+  encoder.setActPos(0);
+  int count = 0;
+  for (int target : {2000, -2000, 2000, 0}) {
+    const int direction = target > count ? 1 : -1;
+    while (count != target) {
+      count += direction;
+      raw = static_cast<uint16_t>(count);
+      encoder.readEntries(true);
+      ++samples;
+      CHECK(encoder.getErrorID() == 0);
+      CHECK(std::abs(encoder.getActPos() - count / 12800.0) < 1e-10);
+    }
+  }
+}
+
 int main() {
   try {
-    followingError(); maximumVelocity(); targetDetection(); directionalLimits(); commonDataInputs();
+    followingError(); maximumVelocity(); targetDetection(); noisyTargetDetection(); directionalLimits(); bouncingLimits(); commonDataInputs(); encoderWraparound();
     std::cout << "Monitor: " << scenarios << " scenarios, " << samples << " production samples passed.\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n'; return 1;

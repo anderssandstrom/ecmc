@@ -38,6 +38,89 @@ class LimitTests(SlitCase):
         self.rig.reset()
         self.rig.move(axis, 0)
 
+    def test_forward_limit_allows_backward_escape(self):
+        self.directional_recovery(True)
+
+    def test_backward_limit_allows_forward_escape(self):
+        self.directional_recovery(False)
+
+    def directional_recovery(self, forward):
+        sign = 1 if forward else -1
+        field = 'forward_ok' if forward else 'backward_ok'
+        limit = '-LimFwd' if forward else '-LimBwd'
+        interlock = '-SumIlockFwd' if forward else '-SumIlockBwd'
+        for axis in self.rig.profile['physical']:
+            self.rig.move(axis, 0)
+            self.rig.plant.inject(axis, **{field: False})
+            try:
+                self.rig.wait(lambda: self.rig.get(axis, limit) == 0
+                              and self.rig.get(axis, interlock) == 1,
+                              axis + ' directional hard-limit interlock visible', 3)
+                before = self.rig.get(axis, '-PosAct')
+                # This request may be rejected by the motor record or stopped
+                # by ECMC. Neither response may allow travel into the limit.
+                complete = self.rig.put(axis, '.VAL', sign * .3)
+                def blocked():
+                    self.assertEqual(self.rig.get(axis, '-ErrId'), 0)
+                    self.assertEqual(self.rig.get(axis, limit), 0)
+                    self.assertLessEqual(abs(self.rig.get(axis, '-PosAct') - before), .02)
+                    return (complete.is_set() and self.rig.get(axis, '-Busy') == 0
+                            and self.rig._drive_stationary(axis))
+                self.rig.wait(blocked, axis + ' request into held limit is blocked', 4)
+                self.rig.assert_stays(blocked, axis + ' held limit prevents travel into the active switch', seconds=.3)
+                # Keep the switch active: no reset and no clearing injection.
+                self.rig.move(axis, -sign * .2)
+                self.assertEqual(self.rig.get(axis, limit), 0, 'escape must work with switch still active')
+                self.rig.trace.append({'action': 'escaped held hardware limit', 'axis': axis,
+                                       'forward': forward, 'snapshot': self.rig.snapshot()})
+            finally:
+                self.rig.plant.inject(axis, **{field: True})
+            self.rig.wait(lambda: self.rig.get(axis, limit) == 1, axis + ' limit restored', 3)
+            self.rig.move(axis, 0)
+
+    def test_forward_limit_bounce_does_not_restart_motion(self):
+        self.bouncing_limit(True)
+
+    def test_backward_limit_bounce_does_not_restart_motion(self):
+        self.bouncing_limit(False)
+
+    def bouncing_limit(self, forward):
+        sign = 1 if forward else -1
+        field = 'forward_ok' if forward else 'backward_ok'
+        limit = '-LimFwd' if forward else '-LimBwd'
+        interlock = '-SumIlockFwd' if forward else '-SumIlockBwd'
+        for axis in self.rig.profile['physical']:
+            self.rig.start_move(axis, sign * .7)
+            self.rig.wait(lambda: sign * self.rig.get(axis, '-PosAct') > .06,
+                          axis + ' moving before limit bounce', 4)
+            try:
+                # Observe each edge at the axis, rather than relying on Python
+                # sleeps shorter than the external plant's publication period.
+                for ok in (False, True, False, True, False, True):
+                    self.rig.plant.inject(axis, **{field: ok})
+                    def observed():
+                        self.assertEqual(self.rig.get(axis, '-ErrId'), 0)
+                        self.assertLess(sign * self.rig.get(axis, '-PosAct'), .65)
+                        return (self.rig.get(axis, limit) == int(ok)
+                                and (ok or self.rig.get(axis, interlock) == 1))
+                    self.rig.wait(observed, axis + ' observes bouncing limit edge ' + str(int(ok)), 2)
+                self.rig.wait(lambda: self.rig.get(axis, '-Busy') == 0
+                              and abs(self.rig.get(axis, '-VelAct')) < .01
+                              and self.rig._drive_stationary(axis), axis + ' bounce-triggered stop finishes', 5)
+                stopped = self.rig.get(axis, '-PosAct')
+                self.assertLess(sign * stopped, .65, 'bounce must stop the interrupted move before its target')
+                def remains_stopped():
+                    self.assertEqual(self.rig.get(axis, '-ErrId'), 0)
+                    return (self.rig.get(axis, limit) == 1 and self.rig.get(axis, '-Busy') == 0
+                            and abs(self.rig.get(axis, '-PosAct') - stopped) < .015
+                            and self.rig._drive_stationary(axis))
+                self.rig.assert_stays(remains_stopped, axis + ' limit recovery must not replay interrupted motion')
+                self.rig.trace.append({'action': 'limit bounce stopped without replay', 'axis': axis,
+                                       'forward': forward, 'snapshot': self.rig.snapshot()})
+            finally:
+                self.rig.plant.inject(axis, **{field: True})
+            self.rig.move(axis, 0)
+
     def test_motor_soft_limits(self):
         axis = 'TR_LO'
         low, high = self.rig.get(axis, '.LLM'), self.rig.get(axis, '.HLM')

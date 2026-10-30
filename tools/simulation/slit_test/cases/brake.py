@@ -1,8 +1,23 @@
 """Brake output behavior via native EL2008 readbacks; no manual output injection."""
-from .base import SlitCase
+from .base import SlitCase, DRIVE_ENABLE_FAILURE_WAIT
 
 
 class BrakeTests(SlitCase):
+    def test_cancel_enable_while_brake_opening(self):
+        self.closed()
+        for axis in self.rig.profile['physical']:
+            self.rig.wait_drive_disabled(axis)
+            self.request(axis, True)
+            self.rig.wait(lambda: self.rig.drive_control(axis) & 1 and self.rig.brake(axis) == 0,
+                          axis + ' opening phase before enable cancellation', 3)
+            self.request(axis, False)
+            self.rig.assert_stays(lambda: self.rig.brake(axis) == 0 and self.rig.get(axis, '-ErrId') == 0,
+                                  axis + ' cancelled opening must keep the brake applied')
+            self.rig.wait_drive_disabled(axis)
+            self.enabled(axis)  # A fresh enable must still perform a normal opening.
+            self.request(axis, False)
+            self.rig.wait_drive_disabled(axis)
+
     def request(self, axis, enabled):
         # Observe the transition while the request is pending. A completed,
         # synchronous put could otherwise hide the entire opening/closing phase.
@@ -63,13 +78,14 @@ class BrakeTests(SlitCase):
     def test_failed_enable_never_releases_brake(self):
         self.closed()
         for axis in self.rig.profile['physical']:
+            self.rig.wait_drive_disabled(axis)
             self.rig.plant.inject(axis, acknowledge_enable=False)
             self.request(axis, True)
             def failed():
                 self.assertEqual(self.rig.brake(axis), 0)
                 return self.rig.get(axis, '-ErrId') != 0
-            self.rig.wait(failed, axis + ' enable fails without brake release', 8)
-            self.rig.fault_stopped(axis)
+            self.rig.wait(failed, axis + ' enable fails without brake release', DRIVE_ENABLE_FAILURE_WAIT)
+            self.rig.fault_stopped(axis, 0x14613)  # ERROR_DRV_STATE_MACHINE_TIME_OUT
             self.assertEqual(self.rig.brake(axis), 0)
             self.rig.plant.clear_faults()
             self.rig.reset()

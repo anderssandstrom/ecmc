@@ -12,6 +12,30 @@ class SyncTests(SlitCase):
         self.rig.wait(lambda: all(self.rig.get(axis, '-Busy') == 0 for axis in self.rig.names),
                       'slave fault stops coordinated group', 5)
 
+    def test_stop_during_coordinated_motion(self):
+        self.rig.start_move('CENTERY', .7)
+        self.rig.wait(lambda: self.rig.get('CENTERY', '-Busy') == 1
+                      and all(self.rig.get(axis, '-PosAct') > .06
+                              for axis in self.rig.profile['physical']),
+                      'both blades moving before coordinated STOP', 5)
+        before = {axis: self.rig.get(axis, '-PosAct') for axis in self.rig.profile['physical']}
+        self.rig.stop_motion('CENTERY')
+        def stopped():
+            for axis in self.rig.names:
+                self.assertEqual(self.rig.get(axis, '-ErrId'), 0, axis + ' fault during coordinated STOP')
+            return (self.rig.get('CENTERY', '-Busy') == 0
+                    and all(self.rig._drive_stationary(axis) and abs(self.rig.get(axis, '-VelAct')) < .01
+                            for axis in self.rig.profile['physical']))
+        self.rig.wait(stopped, 'both blades finish coordinated ramp-down without faults', 5)
+        positions = {axis: self.rig.get(axis, '-PosAct') for axis in self.rig.profile['physical']}
+        for axis, position in positions.items():
+            self.assertLess(position, .65, axis + ' must stop before the original target')
+            self.assertGreaterEqual(position, before[axis] - .015, axis + ' must not jump backwards')
+        self.assertAlmostEqual(positions['TR_LO'], positions['TR_HI'], delta=.03)
+        self.rig.assert_stays(stopped, 'coordinated STOP remains stationary and fault-free', seconds=.5)
+        self.rig.kinematics()
+        self.rig.move('CENTERY', 0)  # A fresh command must recover normal coordinated motion.
+
     def test_virtual_center(self):
         self.rig.move('CENTERY', .2)
         for axis in self.rig.profile['physical']:

@@ -2177,6 +2177,11 @@ void ecmcMotorRecordAxis::callParamCallbacksUpdateError() {
     drvlocal.nCommandActiveOld = drvlocal.nCommandActive;
   }
 
+  // Publish error classification and problem status together. In particular,
+  // recovery must not emit a callback with the previous poll's problem bit.
+  setIntegerParam(pC_->motorStatusProblem_,
+                  (drvlocal.eeAxisError != eeAxisErrorNoError) ||
+                  drvlocal.ecmcSoftLimitInterlock);
   callParamCallbacks();
 }
 

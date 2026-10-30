@@ -1082,9 +1082,11 @@ int ecmcEncoder::readHwReady(bool domainOK) {
     }
 
     if ( hwReady_ == 0) {
-      if (data_->status_.statusWord_.enabled && isPrimary()) {
-        // Error when enabled, this is serious, remove power
-        data_->control_.controlWord_.enableCmd = 0;       
+      if (isPrimary()) {
+        // Cancel active and pending enable requests. The RT drive/brake path
+        // consumes status.enable, not just the external command bit.
+        data_->control_.controlWord_.enableCmd = false;
+        data_->status_.statusWord_.enable = false;
       }
       return ERROR_ENC_NOT_READY;
     }
@@ -1155,7 +1157,9 @@ double ecmcEncoder::readEntries(bool masterOK) {
 
   // Only set axis error id if primary
   if(encLocalErrorId_ && isPrimary()) {
-    setErrorID(__FILE__, __FUNCTION__, __LINE__, errorLocal);
+    // Later successful sub-reads can reset errorLocal to zero. Publish the
+    // latched encoder error rather than the result of the last sub-read.
+    setErrorID(__FILE__, __FUNCTION__, __LINE__, encLocalErrorId_);
   }
   
   // update error id asyn param

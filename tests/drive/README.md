@@ -94,3 +94,10 @@ These are controller/drive software expectations. Mechanical brake response,
 electrical polarity/wiring and actual bus delivery are not simulated. In
 particular, a failed brake write or lost bus cannot prove that the physical
 brake applied; tests verify the software demand and error handling.
+
+The reduced-torque probe links output index 4 to control-word bit 2 and steps
+internal/external trajectory, Busy and control-deadband combinations through
+production drive writes. It checks both output transitions and preservation of
+amplifier enable and brake release. External Busy does not suppress reduction
+when its supplied deadband flag is true. Disabling the optional function is
+also covered. This verifies output signaling, not physical motor torque.
