@@ -147,17 +147,21 @@ struct Ethercat {
   void send(timespec) { assert(available); trace.push_back("send"); }
   void setTimeOffest(timespec) { trace.push_back("time-offset"); }
 };
-struct Simulation {
+#include "ecmcIoDriver.h"
+struct Simulation : ecmcIoDriver {
   bool healthy = true;
-  bool isActive() const { return true; }
-  void readInputs(timespec, timespec) { trace.push_back("sim-input"); }
-  int updateIoStatus() { return healthy; }
-  bool timingReady() const { return healthy; }
-  void slowExecute() { trace.push_back("sim-slow"); }
-  void writeOutputs(timespec) { trace.push_back("sim-output"); }
+  bool isActive() const override { return true; }
+  void readInputs(timespec, timespec) override { trace.push_back("sim-input"); }
+  int updateIoStatus() override { return healthy; }
+  bool timingReady() const override { return healthy; }
+  void slowExecute() override { trace.push_back("sim-slow"); }
+  void setTimeOffset(timespec) override {}
+  void resetStartupErrors() override {}
+  void updateDiagnostics() override {}
+  void writeOutputs(timespec) override { trace.push_back("sim-output"); }
 };
-std::vector<Simulation *> configuredSimulations;
-const std::vector<Simulation *> &ecmcSimulationDrivers() { return configuredSimulations; }
+std::vector<ecmcIoDriver *> configuredSimulations;
+const std::vector<ecmcIoDriver *> &ecmcAdditionalIoDrivers() { return configuredSimulations; }
 using ecmcEc = Ethercat;
 #define ECMCEC_H_
 #include "ecmcEthercatDriver.h"

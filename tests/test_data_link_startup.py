@@ -21,6 +21,7 @@ while depth:
 validation = source[start:end]
 fixture = r'''
 #include <cassert>
+#include <cstddef>
 #include <vector>
 #define LOGINFO4(...) ((void)0)
 #define LOGERR(...) ((void)0)

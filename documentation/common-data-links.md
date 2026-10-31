@@ -152,8 +152,12 @@ Conversion argument:
 | `2` | Exact unsigned integer access, for example a PLC status word. Fractional, negative, nonfinite or out-of-range floating values are invalid. |
 
 Use an explicit conversion when a PLC double supplies an integer/Boolean input.
-Encoder, monitor and drive input slots are supported; command/control-output
-slots are rejected by the command. Monitoring feature enable flags, switch
+Encoder, monitor and drive input slots are supported. I/O descriptors with
+`writable` capability also support encoder control/reset and drive output slots,
+for both EtherCAT and simulation. Output links require conversion `0`; floating
+outputs cannot select a bit. PLC and readable-axis sources remain read-only.
+Legacy EtherCAT descriptors retain their existing writable-buffer semantics;
+this capability does not change PDO direction or make a physical input writable. Monitoring feature enable flags, switch
 polarity, encoder scaling and other consumer configuration remain explicit
 existing settings. Linking does not enable motion or enable a monitor feature.
 
@@ -249,9 +253,9 @@ Registered data items can export the neutral descriptor through C++
 EtherCAT entries/bits, PLC static/global sources and readable axis sources.
 Identical signal
 self-links are rejected; different signals on the same axis and reciprocal
-cross-axis links are allowed. Array links, generic command
-destinations, analysis of PLC program dependencies and a simulated I/O driver
-are not implemented.
+cross-axis links are allowed. Array links, generic command destinations and
+analysis of PLC program dependencies are not implemented. The memory-backed
+simulation driver uses the same resolved I/O descriptors.
 
 Tests cover common scalar access/publication, EtherCAT lookup/bit selection,
 filtered/custom health and entry invalidation, on-demand axis names, native
@@ -288,3 +292,31 @@ the fake provider, compiler, host load and cache state affect them. Custom
 `getDomainOK` overrides retain their existing semantics through a compatibility
 callback; their cost needs separate evaluation. Ordinary in-tree EtherCAT
 providers use direct filtered-status pointers.
+
+## Shared resolution and optional capabilities
+
+`ecmcResolveIoEntry(master, slave, name, access)` is the configuration-time
+resolver for EtherCAT and memory I/O. The selected-backend overload retains
+legacy numeric command behavior. PLC I/O variables, `LinkDataToObject`, and
+motion links use this resolver. Position compare, PVT, status output and
+sequencer mode commands now accept either configured backend as well; their
+historical command names and C++ entry setters remain compatibility adapters.
+Resolving an explicit master never changes the selected configuration context.
+
+Native writable scalar descriptors support width-correct integer, floating and
+bit writes. Numeric writes reject nonfinite and out-of-range values before
+modifying storage. Raw integer writes retain the low bits of the destination
+width. Whole-value writes publish through the optional callback; bit writes
+retain the existing no-publication behavior. Existing word-storage descriptors
+keep their historical conversion and publication semantics. Exported PLC/axis
+input views are not made writable by this change.
+
+A descriptor may expose `ecmcSignalTiming`, returning sample/controller times in
+one provider clock, timing quality and uncertainty. EtherCAT resolves the device
+once during binding and retains its cycle/DC calculation in its own timing
+adapter. Axis code reads the capability without consulting a global master or
+looking up slaves. Invalid health or owner invalidation prevents timing reads.
+Providers without this capability report unavailable timing; asynchronous
+simulation values do not borrow the EtherCAT clock or claim a physical sample
+time. Binding a simulation entry to position compare therefore does not by
+itself provide the timing required to schedule physical output events.

@@ -89,6 +89,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 
 | Script | Main checks |
 | --- | --- |
+| `test_signal_timing.py` | Bound provider clocks, cycle timing quality/uncertainty, health and owner invalidation, missing timing capability; controlled EtherCAT state |
 | `test_async_sdo_array.py` | Scalar/array payloads, asynchronous request lifecycle, lookup and PLC/C++ interfaces |
 | `test_axis_startup_restore.py` | Restored position/homed state, encoder initialization, startup targets and references |
 | `test_buffer_boundaries.py` | Command lengths, partial reads, output truncation, storage sizes/indices and buffer modes |

@@ -12,6 +12,7 @@
 
 #include "ecmcPLCDataIF.h"
 #include "ecmcIoConfig.h"
+#include "ecmcErrorsList.h"
 #include "ecmcEc.h"
 #include "ecmcEcSlave.h"
 #include "ecmcRtLogger.h"
@@ -790,77 +791,20 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 
-  if (auto *simulation = ecmcFindSimulation(masterId)) {
-    auto *entry = simulation->findEntry(slaveId, alias);
-    if (!entry) return ERROR_PLC_EC_ENTRY_NULL;
-    if (slaveId < 0) {
-      std::stringstream name;
-      name << ECMC_EC_STR << masterId << "." ECMC_DUMMY_SLAVE_STR << -slaveId << "." << alias;
-      if (bitId >= 0) name << "." << bitId;
-      exprTkVarName_ = name.str();
-    }
-    int error = setDataAtIndex(entry->access, ECMC_PLC_EC_ENTRY_INDEX, bitId);
-    return error ? error : validateData(ECMC_PLC_EC_ENTRY_INDEX);
+  std::shared_ptr<ecmcDataAccess> entry;
+  errorCode = ecmcResolveIoEntry(masterId, slaveId, alias, entry);
+  if (errorCode) {
+    if (errorCode == ERROR_MAIN_EC_INDEX_OUT_OF_RANGE) errorCode = ERROR_PLC_EC_MASTER_INVALID;
+    else if (errorCode == ERROR_MAIN_EC_SLAVE_NULL) errorCode = ERROR_PLC_EC_SLAVE_NULL;
+    else if (errorCode == ERROR_MAIN_EC_ENTRY_NULL) errorCode = ERROR_PLC_EC_ENTRY_NULL;
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
-
-  if (ec_->getMasterIndex() != masterId) {
-    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Master %s not configured (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ecDataSource,
-           ERROR_PLC_EC_MASTER_INVALID);
-    return setErrorID(__FILE__,
-                      __FUNCTION__,
-                      __LINE__,
-                      ERROR_PLC_EC_MASTER_INVALID);
+  if (slaveId < 0) {
+    std::stringstream name;
+    name << ECMC_EC_STR << masterId << "." ECMC_DUMMY_SLAVE_STR << -slaveId << "." << alias;
+    if (bitId >= 0) name << "." << bitId;
+    exprTkVarName_ = name.str();
   }
-
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveId >= 0) {
-    slave = ec_->findSlave(slaveId);
-  } else {
-    // Change exprtk var name ('-' not allowed in var name)
-    std::stringstream ss;
-
-    if (bitId >= 0) {
-      ss << ECMC_EC_STR << masterId << "." ECMC_DUMMY_SLAVE_STR << -slaveId <<
-        "." << alias << "." << bitId;
-    } else {
-      ss << ECMC_EC_STR << masterId << "." ECMC_DUMMY_SLAVE_STR << -slaveId <<
-        "." << alias;
-    }
-    exprTkVarName_ = ss.str();
-    slave          = ec_->getSlave(slaveId);
-  }
-
-  if (slave == NULL) {
-    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Slave %s not configured (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ecDataSource,
-           ERROR_PLC_EC_SLAVE_NULL);
-    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
-                      ERROR_PLC_EC_SLAVE_NULL);
-  }
-
-  std::string sEntryID = alias;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) {
-    ecmcRtLoggerLogError("%s/%s:%d: ERROR: Entry %s not configured (0x%x).\n",
-           __FILE__,
-           __FUNCTION__,
-           __LINE__,
-           ecDataSource,
-           ERROR_PLC_EC_ENTRY_NULL);
-    return setErrorID(__FILE__, __FUNCTION__, __LINE__,
-                      ERROR_PLC_EC_ENTRY_NULL);
-  }
-
   errorCode = setDataAtIndex(entry, ECMC_PLC_EC_ENTRY_INDEX, bitId);
 
   if (errorCode) {

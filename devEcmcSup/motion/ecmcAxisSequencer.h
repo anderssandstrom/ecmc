@@ -115,7 +115,9 @@ public:
   int          getAllowConstVelo();
   int          getAllowHome();
   int          setAutoModeSetEntry(ecmcEcEntry *entry);
+  int setAutoModeSetData(std::shared_ptr<ecmcDataAccess> entry);
   int          setAutoModeActEntry(ecmcEcEntry *entry);
+  int setAutoModeActData(std::shared_ptr<ecmcDataAccess> entry);
   int          setAutoModeHomigCmd(int homing);
   int          setAutoModeMotionCmd(int motion);
   void         setGlobalBusy(bool busy);

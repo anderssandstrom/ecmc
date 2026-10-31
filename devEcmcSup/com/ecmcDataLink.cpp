@@ -350,3 +350,13 @@ std::shared_ptr<ecmcDataAccess> ecmcDataLink::getDataAtIndex(int index, int *bit
   if (bitIndex) *bitIndex = entryInfoArray_[index].bitNumber;
   return accessOwners_[index];
 }
+
+// No shared ownership changes or provider lookup in the cyclic path.
+bool ecmcDataLink::readDataTime(int index, ecmcSignalTime &time) const {
+  time = {};
+  if (index < 0 || index >= ECMC_DATA_LINKS_MAX) return false;
+  const auto *entry = entryInfoArray_[index].entry;
+  if (entry && entry->valid() && entry->timing && entry->timing->read(time)) return true;
+  time = {};
+  return false;
+}

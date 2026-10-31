@@ -49,6 +49,7 @@ public:
   int clearDataAtIndex(int index);
   std::shared_ptr<ecmcDataAccess> getDataAtIndex(int index, int *bitIndex) const;
   int            validateData(int index);
+  bool readDataTime(int index, ecmcSignalTime &time) const;
   int            readDataValue(int       entryIndex,
                                   uint64_t *value);
   int            readDataValueDouble(int     entryIndex,

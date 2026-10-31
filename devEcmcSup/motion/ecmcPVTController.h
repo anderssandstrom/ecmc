@@ -53,6 +53,7 @@ class ecmcPVTController: public ecmcDataLink {
     bool   getBusy();
     void   errorReset();
     int    abortPVT();
+    int    setData(std::shared_ptr<ecmcDataAccess> entry, int entryIndex, int bitIndex);
     int    setEcEntry(ecmcEcEntry *entry, int entryIndex, int bitIndex);
     int    setTriggerInfo(double start, double between,double end, size_t count);
     int    setTriggerDuration(double durationS);

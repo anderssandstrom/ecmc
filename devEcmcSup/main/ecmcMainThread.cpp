@@ -427,7 +427,7 @@ void cyclic_task(void *usr) {
   int masterId                    = ec->getMasterIndex();
   const bool hasRealMaster        = masterId >= 0;
   ecmcEthercatDriver io(*ec);
-  const auto &simulations = ecmcSimulationDrivers();
+  const auto &additionalIo = ecmcAdditionalIoDrivers();
   int diagnosticsUpdateFreqHzCached = -1;
   int slowCycleInterval           = 1;
 
@@ -563,12 +563,12 @@ void cyclic_task(void *usr) {
       ecStat = 1;
     }
 
-    bool simulationReady = true;
-    for (const auto &simulation : simulations) {
-      if (!simulation->isActive()) continue;
-      simulation->readInputs(startTime, masterActivationTimeOffset);
-      simulation->updateIoStatus();
-      simulationReady &= simulation->timingReady();
+    bool additionalIoReady = true;
+    for (auto *driver : additionalIo) {
+      if (!driver->isActive()) continue;
+      driver->readInputs(startTime, masterActivationTimeOffset);
+      driver->updateIoStatus();
+      additionalIoReady &= driver->timingReady();
     }
 
     // Master to master coms
@@ -585,7 +585,7 @@ void cyclic_task(void *usr) {
     if (!startup.axisInitializationReleased && !startup.timedOut &&
         (!waitForIocRunning || iocRunning.load(std::memory_order_acquire))) {
       startup.waitSeconds += mcuPeriod / 1.0e9;
-      const bool timingReady = (!ioActive || io.timingReady()) && simulationReady;
+      const bool timingReady = (!ioActive || io.timingReady()) && additionalIoReady;
       if (ecStat && timingReady) {
         startup.stableSeconds += mcuPeriod / 1.0e9;
       } else {
@@ -631,7 +631,7 @@ void cyclic_task(void *usr) {
         startup.motorWaitSeconds = 0;
       }
 
-      const bool ioReady = ecStat && (!ioActive || io.timingReady()) && simulationReady;
+      const bool ioReady = ecStat && (!ioActive || io.timingReady()) && additionalIoReady;
       for (int group = 0; ioReady && group < runtime.activeMasterSlaveCount; ++group) {
         if (!startup.masterSlaveCommandsReleased[group])
           startup.masterSlaveCommandsReleased[group] = runtime.activeMasterSlaves[group]->getStartupReady();
@@ -770,8 +770,8 @@ void cyclic_task(void *usr) {
         if (ioActive) {
           io.slowExecute();
         }
-        for (const auto &simulation : simulations)
-          if (simulation->isActive()) simulation->slowExecute();
+        for (auto *driver : additionalIo)
+          if (driver->isActive()) driver->slowExecute();
       }
     }
 
@@ -793,8 +793,8 @@ void cyclic_task(void *usr) {
       // Preserve PLC timing without EtherCAT transport in masterless mode.
       io.setTimeOffset(masterActivationTimeOffset);
     }
-    for (const auto &simulation : simulations)
-      if (simulation->isActive()) simulation->writeOutputs(masterActivationTimeOffset);
+    for (auto *driver : additionalIo)
+      if (driver->isActive()) driver->writeOutputs(masterActivationTimeOffset);
     clock_gettime(CLOCK_MONOTONIC, &endTime);
   }  // enc of RT-loop
 

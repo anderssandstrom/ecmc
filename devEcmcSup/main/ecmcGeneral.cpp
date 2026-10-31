@@ -461,28 +461,8 @@ int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, in
 }
 
 namespace {
-int resolveEthercatDataSource(const char *path, int conversion,
-                              std::shared_ptr<ecmcDataAccess> *result) {
-  if (!ec) return ERROR_MAIN_EC_NULL;
-  // Require an explicit master and slave; do not guess from a bare alias.
-  if (strncmp(path, "ec", 2) || !strstr(path, ".s")) return ERROR_MAIN_ECMC_LINK_INVALID;
-  int master = -1, slaveId = -1, bit = -1;
-  char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
-  int error = parseEcPath(const_cast<char *>(path), &master, &slaveId, alias, &bit);
-  if (error) return error;
-  std::shared_ptr<ecmcDataAccess> source;
-  if (auto *simulation = ecmcFindSimulation(master)) {
-    auto *entry = simulation->findEntry(slaveId, alias);
-    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
-    source = entry->access;
-  } else {
-    if (master != ec->getMasterIndex()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
-    auto *slave = slaveId >= 0 ? ec->findSlave(slaveId) : ec->getSlave(slaveId);
-    if (!slave) return ERROR_MAIN_EC_SLAVE_NULL;
-    auto *entry = slave->findEntry(alias);
-    if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
-    source = entry->getDataAccess();
-  }
+int makeIoDataView(std::shared_ptr<ecmcDataAccess> source, int bit, int conversion,
+                   std::shared_ptr<ecmcDataAccess> *result) {
   if (!source || !source->data) return ERROR_MAIN_ECMC_LINK_INVALID;
   if (bit >= source->getBits() || bit >= 64) return ERROR_MAIN_ECMC_LINK_INVALID;
   if (bit >= 0) {
@@ -525,23 +505,21 @@ int linkDataToObject(const char *source, char *destination, int conversion) {
     return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
   if (!plcs || !source || !destination || conversion < 0 || conversion > 2)
     return ERROR_MAIN_ECMC_LINK_INVALID;
-  bool simulationSource = false;
-  int simulationBit = -1;
-  std::shared_ptr<ecmcDataAccess> simulationAccess;
-  if (strncmp(source, "ec", 2) == 0) {
+  const bool ioSource = strncmp(source, "ec", 2) == 0;
+  int ioBit = -1;
+  std::shared_ptr<ecmcDataAccess> ioAccess;
+  if (ioSource) {
     int master = -1, slave = -1;
     char alias[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
-    int parsed = parseEcPath(const_cast<char *>(source), &master, &slave, alias, &simulationBit);
-    if (parsed) return parsed;
-    if (auto *simulation = ecmcFindSimulation(master)) {
-      auto *entry = simulation->findEntry(slave, alias);
-      if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
-      simulationSource = true; simulationAccess = entry->access;
-    }
+    int error = parseEcPath(const_cast<char *>(source), &master, &slave, alias, &ioBit);
+    if (error) return error;
+    error = ecmcResolveIoEntry(master, slave, alias, ioAccess);
+    if (error == ERROR_MAIN_EC_NOT_INITIALIZED) return ERROR_MAIN_EC_NULL;
+    if (error) return error;
   }
   int axisIndex = -1, slot = -1;
   ecmcDataLink *target = nullptr;
-  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot, simulationSource);
+  int error = resolveDataInputTarget(destination, &axisIndex, &target, &slot, ioSource);
   if (error) return error;
   axisSubObjectType sub;
   error = getAxSubObjectType(destination, &sub);
@@ -560,20 +538,21 @@ int linkDataToObject(const char *source, char *destination, int conversion) {
     (sub == ECMC_AX_SUB_OBJ_ENCODER &&
       (slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
        slot == ECMC_ENCODER_ENTRY_INDEX_RESET || slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME));
-  if (simulationSource && outputSlot) {
-    const auto type = simulationAccess->getDataType();
-    if (simulationBit >= 0 && (type == ECMC_EC_F32 || type == ECMC_EC_F64))
+  if (ioSource && outputSlot) {
+    if (!ioAccess->writable) return ERROR_MAIN_ECMC_LINK_INVALID;
+    const auto type = ioAccess->getDataType();
+    if (ioBit >= 0 && (type == ECMC_EC_F32 || type == ECMC_EC_F64))
       return ERROR_MAIN_ECMC_LINK_INVALID;
-    if (conversion || simulationBit < -1 || simulationBit >= simulationAccess->getBits() || simulationBit >= 64)
+    if (conversion || ioBit < -1 || ioBit >= ioAccess->getBits() || ioBit >= 64)
       return ERROR_MAIN_ECMC_LINK_INVALID;
     error = plcs->setAxisArrayPointer(axes[axisIndex], axisIndex);
-    return error ? error : plcs->linkResolvedDataInput(simulationAccess, axisIndex, target, slot, -1, simulationBit);
+    return error ? error : plcs->linkResolvedDataInput(ioAccess, axisIndex, target, slot, -1, ioBit);
   }
 
-  if (strncmp(source, "ec", 2) == 0) {
+  if (ioSource) {
     try {
       std::shared_ptr<ecmcDataAccess> resolved;
-      error = resolveEthercatDataSource(source, conversion, &resolved);
+      error = makeIoDataView(ioAccess, ioBit, conversion, &resolved);
       if (error) return error;
       const auto type = resolved->getDataType();
       if (!numericInput && conversion == 0 && (type == ECMC_EC_F32 || type == ECMC_EC_F64))

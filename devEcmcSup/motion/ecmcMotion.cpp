@@ -4572,22 +4572,21 @@ int linkEcEntryToAxisPositionCompare(int   slaveIndex,
     return ERROR_MAIN_ENCODER_ENTRY_INDEX_OUT_OF_RANGE;
   }
 
-  if (ec == NULL) return ERROR_MAIN_EC_NULL;
-  ecmcEcSlave *slave = ec->findSlave(slaveIndex);
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-  ecmcEcEntry *entry = slave->findEntry(std::string(entryIDString));
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int error = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (error) return error;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
 
-  const int error =
+  error =
     axes[axisIndex]->getPositionCompare()->setDataAtIndex(entry,
                                                            compareEntryIndex,
                                                            bitIndex);
   if (error) {
     return error;
   }
-  slave->setEnableSDOCheck(1);
+  error = ecmcEnableIoMotionChecks(slaveIndex);
+  if (error) return error;
   ecmcPositionCompare *compare = axes[axisIndex]->getPositionCompare();
   if (compare->checkDataExist(ECMC_POS_COMPARE_ENTRY_OUTPUT) &&
       compare->checkDataExist(ECMC_POS_COMPARE_ENTRY_ACTIVATE) &&
@@ -4607,7 +4606,6 @@ int linkEcEntryToAxisPositionComparePath(char *entryPath,
   if ((entryPath == NULL) || (strlen(entryPath) == 0)) {
     return 0;
   }
-  if (ec == NULL) return ERROR_MAIN_EC_NULL;
 
   int masterId = -1;
   int slaveIndex = -1;
@@ -4618,9 +4616,7 @@ int linkEcEntryToAxisPositionComparePath(char *entryPath,
   if (parseError) {
     return parseError;
   }
-  if (masterId != ec->getMasterIndex()) {
-    return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
-  }
+  ecmcIoConfigurationScope scope(masterId);
   return linkEcEntryToAxisPositionCompare(slaveIndex,
                                           entryId,
                                           axisIndex,
@@ -4762,30 +4758,18 @@ int linkEcEntryToAxisStatusOutput(int   slaveIndex,
            entryIDString,
            axisIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int error = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (error) return error;
 
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  error = ecmcEnableIoMotionChecks(slaveIndex);
+  if (error) return error;
 
-  return axes[axisIndex]->setEcStatusOutputEntry(entry);
+  return axes[axisIndex]->setStatusOutputData(entry);
 }
 
 int linkEcEntryToPVTController(int   slaveIndex,
@@ -4801,27 +4785,13 @@ int linkEcEntryToPVTController(int   slaveIndex,
            entryIndex,
            bitIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  if (!pvtCtrl_) return ERROR_PVT_CTRL_NULL;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int error = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (error) return error;
 
-  if(!pvtCtrl_) return ERROR_PVT_CTRL_NULL;
 
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
-
-  return pvtCtrl_->setEcEntry(entry, entryIndex, bitIndex);
+  return pvtCtrl_->setData(entry, entryIndex, bitIndex);
 }
 
 int linkEcEntryToAxisSeqAutoModeSet(int   slaveIndex,
@@ -4835,30 +4805,18 @@ int linkEcEntryToAxisSeqAutoModeSet(int   slaveIndex,
            entryIDString,
            axisIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int error = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (error) return error;
 
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  error = ecmcEnableIoMotionChecks(slaveIndex);
+  if (error) return error;
 
-  return axes[axisIndex]->getSeq()->setAutoModeSetEntry(entry);
+  return axes[axisIndex]->getSeq()->setAutoModeSetData(entry);
 }
 
 int linkEcEntryToAxisSeqAutoModeAct(int   slaveIndex,
@@ -4872,30 +4830,18 @@ int linkEcEntryToAxisSeqAutoModeAct(int   slaveIndex,
            entryIDString,
            axisIndex);
 
-  if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  std::shared_ptr<ecmcDataAccess> entry;
+  int error = ecmcResolveIoEntry(slaveIndex, entryIDString, entry);
+  if (error) return error;
 
-  ecmcEcSlave *slave = NULL;
-
-  if (slaveIndex >= 0) {
-    slave = ec->findSlave(slaveIndex);
-  } else {
-    slave = ec->getSlave(slaveIndex);
-  }
-
-  if (slave == NULL) return ERROR_MAIN_EC_SLAVE_NULL;
-
-  std::string sEntryID = entryIDString;
-
-  ecmcEcEntry *entry = slave->findEntry(sEntryID);
-
-  if (entry == NULL) return ERROR_MAIN_EC_ENTRY_NULL;
 
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex);
 
   // Inform slave that it is used in motion axis (SDO settings check)
-  slave->setEnableSDOCheck(1);
+  error = ecmcEnableIoMotionChecks(slaveIndex);
+  if (error) return error;
 
-  return axes[axisIndex]->getSeq()->setAutoModeActEntry(entry);
+  return axes[axisIndex]->getSeq()->setAutoModeActData(entry);
 }
 
 int setDiagAxisIndex(int axisIndex) {

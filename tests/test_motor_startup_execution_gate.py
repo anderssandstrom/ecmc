@@ -128,7 +128,7 @@ struct Producer {
   int exeRTFunc(int) { ++calls; return 0; }
 };
 struct IoDriver { bool timing = true; bool timingReady() { return timing; } } io;
-bool ioActive = true, ecStat = true, simulationReady = true;
+bool ioActive = true, ecStat = true, additionalIoReady = true;
 bool dataInputsConfigured = false;
 constexpr int ECMC_MAX_PLCS = 16, ECMC_MAX_MST_SLVS_SMS = 16;
 ''' + startup_state + r'''

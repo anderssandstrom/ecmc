@@ -1,4 +1,5 @@
 #include "ecmcIoConfig.h"
+#include "ecmcEthercatSignalTiming.h"
 #include "ecmcGlobalsExtern.h"
 #include "ecmcAsynPortDriverUtils.h"
 #include "ecmcErrorsList.h"
@@ -8,6 +9,7 @@
 namespace {
 struct IoConfiguration {
   std::vector<std::unique_ptr<ecmcSimulationDriver>> simulations;
+  std::vector<ecmcIoDriver *> cyclicDrivers;
   std::set<int> selected;
   int current = -1;
 };
@@ -20,6 +22,9 @@ IoConfiguration &configuration() {
 
 const std::vector<std::unique_ptr<ecmcSimulationDriver>> &ecmcSimulationDrivers() {
   return configuration().simulations;
+}
+const std::vector<ecmcIoDriver *> &ecmcAdditionalIoDrivers() {
+  return configuration().cyclicDrivers;
 }
 ecmcSimulationDriver *ecmcFindSimulation(int id) {
   for (const auto &driver : configuration().simulations) if (driver->id() == id) return driver.get();
@@ -60,6 +65,10 @@ int setIoBackend(int id, int backend) {
           }
         }
       }
+      // Reserve both containers before committing either membership change.
+      configuration().cyclicDrivers.reserve(configuration().cyclicDrivers.size() + 1);
+      configuration().simulations.reserve(configuration().simulations.size() + 1);
+      configuration().cyclicDrivers.push_back(driver.get());
       configuration().simulations.push_back(std::move(driver));
     }
   } catch (...) { return ERROR_MAIN_EXCEPTION; }
@@ -94,32 +103,46 @@ int ecmcValidateSimulations() {
   return 0;
 }
 void ecmcClearSimulations() {
+  configuration().cyclicDrivers.clear();
   configuration().simulations.clear();
   configuration().selected.clear();
   configuration().current = -1;
 }
 
-int ecmcResolveIoEntry(int slave, const char *name,
+int ecmcResolveIoEntry(int master, int slave, const char *name,
                        std::shared_ptr<ecmcDataAccess> &access) {
   access.reset();
   if (!name) return ERROR_MAIN_EC_ENTRY_NULL;
-  if (auto *simulation = ecmcSelectedSimulation()) {
-    if (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG)
-      return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  if (auto *simulation = ecmcFindSimulation(master)) {
     if (!simulation->findDevice(slave)) return ERROR_MAIN_EC_SLAVE_NULL;
     auto *entry = simulation->findEntry(slave, name);
     if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
     access = entry->access;
   } else {
     if (!ec) return ERROR_MAIN_EC_NOT_INITIALIZED;
+    if (master != ec->getMasterIndex()) return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
     auto *device = slave >= 0 ? ec->findSlave(slave) : ec->getSlave(slave);
     if (!device) return ERROR_MAIN_EC_SLAVE_NULL;
     auto *entry = device->findEntry(std::string(name));
     if (!entry) return ERROR_MAIN_EC_ENTRY_NULL;
-    try { access = entry->getDataAccess(); }
+    try {
+      access = entry->getDataAccess();
+      if (access) ecmcBindEthercatTiming(*ec, *device, *access);
+    }
     catch (...) { return ERROR_EC_ENTRY_LINK_FAILED; }
   }
   return access ? 0 : ERROR_MAIN_EC_ENTRY_NULL;
+}
+
+int ecmcResolveIoEntry(int slave, const char *name,
+                       std::shared_ptr<ecmcDataAccess> &access) {
+  const int master = ecmcIoConfigurationId();
+  if (ecmcFindSimulation(master) &&
+      (appModeCmd != ECMC_MODE_CONFIG || appModeStat != ECMC_MODE_CONFIG))
+    return ERROR_MAIN_APP_MODE_ALREADY_RUNTIME;
+  // Legacy numeric commands use the selected backend, or the current real master.
+  return ecmcResolveIoEntry(master < 0 && ec ? ec->getMasterIndex() : master,
+                            slave, name, access);
 }
 
 int ecmcEnableIoMotionChecks(int slave) {

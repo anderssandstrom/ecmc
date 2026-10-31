@@ -3508,12 +3508,20 @@ void ecmcAxisSequencer::setTrajAccAndDec() {
 }
 
 int ecmcAxisSequencer::setAutoModeSetEntry(ecmcEcEntry *entry) {
-  modeSetEntry_ = entry ? entry->getDataAccess() : nullptr;
+  return setAutoModeSetData(entry ? entry->getDataAccess() : nullptr);
+}
+
+int ecmcAxisSequencer::setAutoModeSetData(std::shared_ptr<ecmcDataAccess> entry) {
+  modeSetEntry_ = std::move(entry);
   return 0;
 }
 
 int ecmcAxisSequencer::setAutoModeActEntry(ecmcEcEntry *entry) {
-  modeActEntry_ = entry ? entry->getDataAccess() : nullptr;
+  return setAutoModeActData(entry ? entry->getDataAccess() : nullptr);
+}
+
+int ecmcAxisSequencer::setAutoModeActData(std::shared_ptr<ecmcDataAccess> entry) {
+  modeActEntry_ = std::move(entry);
   return 0;
 }
 

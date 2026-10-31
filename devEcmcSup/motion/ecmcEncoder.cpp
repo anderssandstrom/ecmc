@@ -2456,3 +2456,7 @@ int ecmcEncoder::setAllowOverUnderFlow(bool allow) {
   allowOverUnderFlow_ = allow;
   return 0;
 }
+
+bool ecmcEncoder::getSampleTiming(ecmcSignalTime &time) const {
+  return readDataTime(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION, time);
+}

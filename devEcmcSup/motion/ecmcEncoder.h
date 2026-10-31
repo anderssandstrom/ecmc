@@ -31,6 +31,7 @@
 #include "ecmcMotionUtils.h"
 #include "ecmcLookupTable.h"
 #include "ecmcEcTiming.h"
+#include "ecmcSignalTiming.h"
 
 #define ECMC_FILTER_VELO_DEF_SIZE 100
 #define ECMC_FILTER_POS_DEF_SIZE 10
@@ -83,6 +84,7 @@ public:
   double                getSampleTime();
   double                getActVel();
   int                   getActPosSlaveId();
+  bool getSampleTiming(ecmcSignalTime &time) const;
   void                  setHomed(bool homed);
   bool                  getHomed();
   encoderType           getType();

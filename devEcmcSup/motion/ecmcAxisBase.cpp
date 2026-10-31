@@ -19,8 +19,6 @@
 #include <iostream>
 #include "ecmcMotion.h"
 #include "ecmcErrorsList.h"
-#include "ecmcEc.h"
-#include "ecmcEcSlave.h"
 #include "ecmcGlobalsExtern.h"
 #include "ecmcMainThread.h"
 
@@ -34,33 +32,11 @@
 namespace {
 bool resolveAxisEncoderSampleTimeNs(ecmcEncoder *encoder,
                                     uint64_t *eventTimeNs) {
-  if (!ec || !encoder || !eventTimeNs) {
-    return false;
-  }
-  const int slaveId = encoder->getActPosSlaveId();
-  ecmcEcSlave *slave = ec->findSlave(slaveId);
-  if (!slave) {
-    const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
-    if (!cycle.applicationTimeNs) {
-      return false;
-    }
-    *eventTimeNs = cycle.applicationTimeNs;
-    return true;
-  }
-  const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
-  const ecmcEcEndpointTiming& timing = slave->getInputTiming();
-  if (timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||
-      timing.source == ecmcEcTimingSource::SYNC1_DERIVED) {
-    return ecmcEcResolveScheduledEventNs(cycle.applicationTimeNs, timing,
-                                         slave->getDcConfig(),
-                                         slave->getDcSchedule(),
-                                         cycle.nominalPeriodNs,
-                                         eventTimeNs);
-  }
-  if (timing.source == ecmcEcTimingSource::CYCLE_ONLY) {
-    return ecmcEcResolveCycleEventNs(cycle, timing, eventTimeNs);
-  }
-  return false;
+  if (!encoder || !eventTimeNs) return false;
+  ecmcSignalTime time;
+  if (!encoder->getSampleTiming(time)) return false;
+  *eventTimeNs = time.sampleTimeNs;
+  return true;
 }
 
 const char *axisCommandToString(motionCommandTypes command) {
@@ -678,7 +654,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
 
   for (int i = 0; i < encoderCount; i++) {
     auto *const encoder = encArray_[i];
-    // Avoid the slave lookup and timing calculation when there is nothing
+    // Avoid the timing calculation when there is nothing
     // to publish. Use the same condition as refreshTouchProbeAsyn().
     if (!encoder->hasTouchProbeAsynParams()) {
       continue;
@@ -692,11 +668,11 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   }
 
   if (!getStartupCommandsHeld() && positionCompare_.isActive()) {
-    uint64_t encoderSampleTimeNs = 0;
     ecmcEncoder *encoder = getPrimEnc();
-    const bool sampleTimeValid =
-      resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
-    const uint64_t controllerTimeNs = ec ? ec->getLastSendTimeNs() : 0;
+    ecmcSignalTime signalTime;
+    const bool sampleTimeValid = encoder && encoder->getSampleTiming(signalTime);
+    const uint64_t encoderSampleTimeNs = signalTime.sampleTimeNs;
+    const uint64_t controllerTimeNs = signalTime.controllerTimeNs;
     const double compareVelocity = status.currentVelocitySetpoint;
     double compareAcceleration = 0;
     ecmcAxisPVTSequence *pvt = seq_.getPVTObject();
@@ -1872,7 +1848,11 @@ int ecmcAxisBase::getAxisDebugInfoData(char *buffer,
 }
 
 int ecmcAxisBase::setEcStatusOutputEntry(ecmcEcEntry *entry) {
-  statusOutputEntry_ = entry ? entry->getDataAccess() : nullptr;
+  return setStatusOutputData(entry ? entry->getDataAccess() : nullptr);
+}
+
+int ecmcAxisBase::setStatusOutputData(std::shared_ptr<ecmcDataAccess> entry) {
+  statusOutputEntry_ = std::move(entry);
   return 0;
 }
 

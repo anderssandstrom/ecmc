@@ -584,6 +584,10 @@ void ecmcPVTController::initPVT() {
 }
 
 int ecmcPVTController::setEcEntry(ecmcEcEntry *entry,int entryIndex, int bitIndex) {
+  return setData(entry ? entry->getDataAccess() : nullptr, entryIndex, bitIndex);
+}
+
+int ecmcPVTController::setData(std::shared_ptr<ecmcDataAccess> entry, int entryIndex, int bitIndex) {
   
   int error = setDataAtIndex(entry,
                               entryIndex,

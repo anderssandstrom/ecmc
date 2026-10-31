@@ -359,3 +359,15 @@ latch on/off, and the real incremental encoder reconstructs 12000 samples
 crossing zero against independently calculated signed counts / 12800. PLC
 limit overrides bypass hardware input filtering. Live CA pulse timing and
 full coordinated ramp-down still require a dedicated IOC run.
+
+### Shared I/O resolver and timing capabilities
+
+- DOC: common-data-links.md: EtherCAT and simulation resolve through the same
+  configuration resolver, including PVT, position compare, status output and
+  sequencer mode links (`test_simulation_configuration.py`).
+- DOC: writable I/O outputs use the same common command for both backends;
+  read-only and converted output bindings are rejected. Native writes preserve
+  adjacent storage and reject invalid numeric conversions (`test_common_data_links.py`).
+- DOC/COMPAT: bound timing uses its own provider's clock and existing EtherCAT
+  cycle calculation. Missing timing, invalid health and dead owners prevent
+  access (`test_signal_timing.py`). No physical timing accuracy is asserted.

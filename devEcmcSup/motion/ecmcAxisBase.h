@@ -197,6 +197,7 @@ public:
   void                       printAxisStatus();
   int                        initAsyn();
   int                        setEcStatusOutputEntry(ecmcEcEntry *entry);
+  int setStatusOutputData(std::shared_ptr<ecmcDataAccess> entry);
   motionDirection            getAxisSetDirection();
   int                        setModRange(double mod);
   double                     getModRange();

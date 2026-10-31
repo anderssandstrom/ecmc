@@ -5,6 +5,7 @@
 #include <cstring>
 #include <memory>
 #include "ecmcDataItem.h"
+#include "ecmcSignalTiming.h"
 
 using ecmcDataType = ecmcEcDataType; // Existing enum values and configuration encodings retained.
 
@@ -12,6 +13,7 @@ using ecmcDataType = ecmcEcDataType; // Existing enum values and configuration e
 // Source owners guarantee stable storage/metadata and validity until unbound.
 // Mutable access is on the cyclic thread or under existing external exclusion.
 struct ecmcDataAccess {
+  std::shared_ptr<const ecmcSignalTiming> timing;
   void *identity = nullptr;
   uint8_t *data = nullptr;
   const int *validity = nullptr;
@@ -129,11 +131,13 @@ struct ecmcDataAccess {
     return 0;
   }
   int writeValue(uint64_t value) const {
-    if (!writable || !data || !wordStorage) return 1;
+    if (!writable || !data) return 1;
+    if (!wordStorage) return writeNativeValue(value, true);
     store(value); return publish ? publish(publishContext) : 0;
   }
   int writeDouble(double value) const {
-    if (!writable || !data || !wordStorage) return 1;
+    if (!writable || !data) return 1;
+    if (!wordStorage) return writeNativeNumber(value);
     switch (type) {
       case ECMC_EC_S8: store(static_cast<int8_t>(value)); break;
       case ECMC_EC_S16: store(static_cast<int16_t>(value)); break;
@@ -146,18 +150,23 @@ struct ecmcDataAccess {
     return publish ? publish(publishContext) : 0;
   }
   int writeBit(int bit, uint64_t value) const {
-    if (!writable || !data || !wordStorage || bit < 0 || bit >= 64) return 1;
+    if (!writable || !data || bit < 0 || bit >= 64) return 1;
+    if (!wordStorage) return writeNativeBits(bit, 1, value ? 1 : 0);
     uint64_t raw = load<uint64_t>(), mask = uint64_t(1) << bit;
     store(value ? raw | mask : raw & ~mask); return 0;
   }
   int writeBits(int start, int count, uint64_t value) const {
-    if (!writable || !data || !wordStorage) return 1;
+    if (!writable || !data) return 1;
+    if (!wordStorage) return writeNativeBits(start, count, value);
     if (count <= 0 || start < 0 || start >= 64 || count > 64 || start + count > 64) return 0;
     const uint64_t low = count == 64 ? ~uint64_t(0) : (uint64_t(1) << count) - 1;
     const uint64_t mask = low << start;
     store((load<uint64_t>() & ~mask) | ((value & low) << start)); return 0;
   }
 private:
+  int writeNativeValue(uint64_t value, bool notify) const;
+  int writeNativeNumber(double value) const;
+  int writeNativeBits(int start, int count, uint64_t value) const;
   bool validExtended() const;
   int readExtendedValue(uint64_t *out) const;
 };

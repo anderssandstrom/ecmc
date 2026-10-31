@@ -70,6 +70,7 @@ struct ecmcEc {
   ecmcEcSlave *findSlave(int position) { return position == 3 ? slave : nullptr; }
   ecmcEcSlave *getSlave(int position) { return position == -1 ? sim : nullptr; }
 };
+void ecmcBindEthercatTiming(ecmcEc &, ecmcEcSlave &, ecmcDataAccess &) {}
 ecmcEc *ec = nullptr;
 std::map<int, ecmcSimulationDriver *> simulationRegistry;
 ecmcSimulationDriver *ecmcFindSimulation(int id) {
@@ -211,7 +212,9 @@ for signature in ('int parseEcPath(', 'static bool validObjectPath(', 'int getMa
                   'int getAxSubObjectType(', 'int getAxEncFuncType(',
                   'int getAxMonFuncType(', 'int getAxDriveFuncType('):
     implementation += method(utils, signature)
-for signature in ('int resolveDataInputTarget(', 'int resolveEthercatDataSource(', 'int linkDataToObject(', 'int unlinkDataFromObject('):
+configuration = (SUP / 'main/ecmcIoConfig.cpp').read_text()
+implementation += method(configuration, 'int ecmcResolveIoEntry(int master,')
+for signature in ('int resolveDataInputTarget(', 'int makeIoDataView(', 'int linkDataToObject(', 'int unlinkDataFromObject('):
     implementation += method(general, signature)
 implementation += method(parser, 'static char *trimWhitespace(')
 start = parser.index('  // Bind a scalar source')
@@ -255,6 +258,33 @@ int main() {
   assert(link.writeDataBits(0, 4, 15) == 0);
   assert(link.readDataBits(0, 4, &raw) == 0 && raw == 15);
   assert(published == 2); // Bit writes retain their old no-publication behavior.
+
+
+  // Native writes must not overwrite adjacent values or accept undefined casts.
+  struct { uint8_t before = 0xa5; int16_t value = 0; uint8_t after = 0x5a; } narrow;
+  ecmcDataAccess nativeOutput;
+  nativeOutput.data = reinterpret_cast<uint8_t *>(&narrow.value);
+  nativeOutput.type = ECMC_EC_S16; nativeOutput.bits = 16;
+  nativeOutput.writable = true; nativeOutput.publish = publication;
+  const int beforePublish = published;
+  assert(nativeOutput.writeDouble(-123) == 0 && narrow.value == -123);
+  assert(published == beforePublish + 1);
+  assert(nativeOutput.writeDouble(32768) != 0 && narrow.value == -123);
+  assert(nativeOutput.writeDouble(std::numeric_limits<double>::quiet_NaN()) != 0);
+  assert(nativeOutput.writeValue(0xffff) == 0 && narrow.value == -1);
+  assert(nativeOutput.writeBit(15, 0) == 0 && narrow.value == 32767);
+  assert(nativeOutput.writeBits(15, 2, 0) != 0 && narrow.value == 32767);
+  assert(nativeOutput.writeBit(16, 1) != 0);
+  assert(narrow.before == 0xa5 && narrow.after == 0x5a);
+  assert(published == beforePublish + 2); // Bit writes preserve no-publication behavior.
+  double nativeFloat = 0;
+  nativeOutput.data = reinterpret_cast<uint8_t *>(&nativeFloat);
+  nativeOutput.type = ECMC_EC_F64; nativeOutput.bits = 64;
+  assert(nativeOutput.writeDouble(1.25) == 0 && nativeFloat == 1.25);
+  assert(nativeOutput.writeValue(1) != 0 && nativeFloat == 1.25);
+  assert(nativeOutput.writeBit(0, 1) != 0 && nativeFloat == 1.25);
+  nativeOutput.writable = false;
+  assert(nativeOutput.writeDouble(2) != 0 && nativeFloat == 1.25);
 
   ecmcPLCDataIF global("global.position"), local("static.limit"), enable("enable"), error("error");
   global.value = 12.5; local.value = 1; enable.value = 1;
@@ -535,6 +565,15 @@ int main() {
   assert(parseCommand("LinkDataToObject(ec-1.s-1.ONE,ax2.mon.lowlim,0)") == 0);
   assert(parseCommand("UnlinkDataFromObject(ax2.mon.lowlim)") == 0);
   hardware.master = 0;
+  // Common output binding is capability-based for real and simulated providers.
+  assert(parseCommand("LinkDataToObject(ec0.s3.Position.3,ax2.drv.control,0)") != 0);
+  entryAccess->writable = true;
+  assert(parseCommand("LinkDataToObject(ec0.s3.Position.3,ax2.drv.control,0)") == 0);
+  hardwareWord = 0;
+  assert(axis.drive.writeDataValue(0, 1) == 0 && hardwareWord == 8);
+  assert(parseCommand("UnlinkDataFromObject(ax2.drv.control)") == 0);
+  assert(parseCommand("LinkDataToObject(ec0.s3.Position,ax2.drv.control,1)") != 0);
+  entryAccess->writable = false;
   // Floating sources preserve native reads; integer inputs require conversion.
   uint64_t floatingWord = 0;
   auto floatingAccess = std::make_shared<ecmcDataAccess>(*entryAccess);

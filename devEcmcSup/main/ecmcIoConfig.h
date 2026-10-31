@@ -6,6 +6,7 @@
 
 // Configuration ownership only; none of these functions resolve names in RT.
 const std::vector<std::unique_ptr<ecmcSimulationDriver>> &ecmcSimulationDrivers();
+const std::vector<ecmcIoDriver *> &ecmcAdditionalIoDrivers();
 ecmcSimulationDriver *ecmcFindSimulation(int id);
 ecmcSimulationDriver *ecmcSelectedSimulation();
 void ecmcSelectIoConfiguration(int id);
@@ -21,6 +22,7 @@ private:
   int previous_;
 };
 // Configuration lookup only. Both backends expose the same bound descriptor.
+int ecmcResolveIoEntry(int master, int slave, const char *name, std::shared_ptr<ecmcDataAccess> &access);
 int ecmcResolveIoEntry(int slave, const char *name, std::shared_ptr<ecmcDataAccess> &access);
 int ecmcEnableIoMotionChecks(int slave);
 int ecmcValidateSimulations();

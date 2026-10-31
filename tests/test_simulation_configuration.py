@@ -42,6 +42,9 @@ fixture = r'''
 #include "ecmcEthercat.h"
 #include "ecmcMotion.h"
 #include "ecmcDataLink.h"
+#define ECMC_POS_COMPARE_ENTRY_OUTPUT 0
+#define ECMC_POS_COMPARE_ENTRY_ACTIVATE 1
+#define ECMC_POS_COMPARE_ENTRY_START_TIME 2
 struct ConstantEntry {
   uint64_t value = 0;
   bool failExport = false;
@@ -76,6 +79,7 @@ struct Hardware {
   Constants *getSlave(int position) { return requests && position == -1 ? &device : nullptr; }
   int init(int value) { ++requests; id = value; return 0; }
 } hardware, *ec = &hardware;
+void ecmcBindEthercatTiming(Hardware &, Constants &, ecmcDataAccess &) {}
 ecmcAsynPortDriver *asynPort = nullptr;
 app_mode_type appModeCmd = ECMC_MODE_CONFIG;
 extern app_mode_type appModeStat;
@@ -90,10 +94,27 @@ struct Drive : ecmcDataLink {
   int setEnableBrake(int value) { brake = value; return 0; }
   int setEnableReduceTorque(int value) { reduce = value; return 0; }
 };
+struct ecmcPositionCompare : ecmcDataLink {
+  int validate() { return 0; }
+};
+struct Sequencer {
+  std::shared_ptr<ecmcDataAccess> modeSetEntry_, modeActEntry_;
+  int setAutoModeSetData(std::shared_ptr<ecmcDataAccess> entry) { modeSetEntry_ = entry; return 0; }
+  int setAutoModeActData(std::shared_ptr<ecmcDataAccess> entry) { modeActEntry_ = entry; return 0; }
+};
+struct PVT : ecmcDataLink {
+  int setData(std::shared_ptr<ecmcDataAccess> entry, int index, int bit) { return setDataAtIndex(entry, index, bit); }
+} pvt, *pvtCtrl_ = &pvt;
 struct Axis {
   bool blocked = false, homeEnabled = false, interlockEnabled = false;
   ecmcDataLink encoder, monitor;
   Drive drive;
+  ecmcPositionCompare compare;
+  Sequencer sequencer;
+  std::shared_ptr<ecmcDataAccess> status;
+  ecmcPositionCompare *getPositionCompare() { return &compare; }
+  Sequencer *getSeq() { return &sequencer; }
+  int setStatusOutputData(std::shared_ptr<ecmcDataAccess> entry) { status = entry; return 0; }
   bool getBlockCom() { return blocked; }
   void setExternalCommandBlockedError() {}
   ecmcDataLink *getConfigEnc() { return &encoder; }
@@ -110,7 +131,9 @@ implementation = method(utils, 'int parseEcPath(')
 implementation += method(utils, 'ecmcEcDataType getEcDataTypeFromStr(')
 implementation += method(utils, 'ecmcEcDataType getEcDataType(')
 implementation += registry
-for name in ("linkEcEntryToAxisEnc", "linkEcEntryToAxisDrv", "linkEcEntryToAxisMon"):
+for name in ("linkEcEntryToAxisEnc", "linkEcEntryToAxisDrv", "linkEcEntryToAxisMon", "linkEcEntryToAxisStatusOutput", "linkEcEntryToPVTController",
+             "linkEcEntryToAxisSeqAutoModeSet", "linkEcEntryToAxisSeqAutoModeAct",
+             "linkEcEntryToAxisPositionCompare", "linkEcEntryToAxisPositionComparePath"):
     implementation += method(motion, "int "+name+"(")
 for match in re.finditer(r'^int (ec[A-Z]\w*|readEc\w*|writeEc\w*)\s*\(', api, re.M):
     body = method(api, 'int '+match[1]+'(')
@@ -165,6 +188,21 @@ void checkMotionBindings(Axis &axis, uint64_t &positionValue, uint64_t &controlV
   assert(linkEcEntryToAxisEnc(2,position,0,-1,-1) == ERROR_MAIN_ENCODER_ENTRY_INDEX_OUT_OF_RANGE);
   assert(linkEcEntryToAxisDrv(2,control,0,-1,-1) == ERROR_MAIN_DRIVE_ENTRY_INDEX_OUT_OF_RANGE);
   assert(linkEcEntryToAxisMon(2,control,0,-1,-1) == ERROR_MAIN_MONITOR_ENTRY_INDEX_OUT_OF_RANGE);
+  assert(linkEcEntryToAxisStatusOutput(2, control, 0) == 0);
+  assert(axis.status->writeValue(17) == 0 && controlValue == 17);
+  assert(linkEcEntryToAxisSeqAutoModeSet(2, control, 0) == 0);
+  assert(axis.sequencer.modeSetEntry_ == axis.status);
+  assert(linkEcEntryToAxisSeqAutoModeAct(2, position, 0) == 0);
+  double mode = 0;
+  assert(axis.sequencer.modeActEntry_->readDouble(&mode) == 0 && mode == 123);
+  assert(linkEcEntryToPVTController(2, control, 0, 2) == 0);
+  controlValue = 0;
+  assert(pvt.writeDataValue(0, 1) == 0 && controlValue == 4);
+  assert(linkEcEntryToAxisPositionCompare(2, control, 0, 0, -1) == 0);
+  assert(axis.compare.writeDataValue(0, 23) == 0 && controlValue == 23);
+  assert(linkEcEntryToAxisStatusOutput(2, missing, 0) == ERROR_MAIN_EC_ENTRY_NULL);
+  assert(linkEcEntryToAxisSeqAutoModeSet(99, control, 0) == ERROR_MAIN_EC_SLAVE_NULL);
+  assert(linkEcEntryToPVTController(2, missing, 0, -1) == ERROR_MAIN_EC_ENTRY_NULL);
   axis.blocked = true;
   assert(linkEcEntryToAxisEnc(2,position,0,0,-1) == ERROR_MAIN_AXIS_EXTERNAL_COM_DISABLED);
   assert(linkEcEntryToAxisDrv(2,control,0,0,-1) == ERROR_MAIN_AXIS_EXTERNAL_COM_DISABLED);

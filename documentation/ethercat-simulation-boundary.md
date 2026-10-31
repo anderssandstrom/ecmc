@@ -469,3 +469,24 @@ error priority, plugin ABI and cycle order throughout migration. The
 [expectation inventory](../tests/EXPECTATIONS.md) distinguishes compatibility
 checks from unresolved semantic questions. IOC/hardware validation remains
 necessary; the adapter is intended to preserve existing production behavior.
+
+## Resolver and timing boundary refinements
+
+The configuration layer now provides one explicit-master I/O resolver shared by
+PLC and motion configuration. The remaining position-compare, PVT, axis-status
+and sequencer-mode entry commands resolve neutral descriptors. The generic link
+command checks output writability for either backend rather than selecting its
+output capabilities by simulation identity.
+
+The RT loop sees additional backends through a frozen `ecmcIoDriver *` registry,
+not simulation objects. Backend ownership and selection remain in configuration.
+The concrete EtherCAT adapter remains the primary fast path to preserve
+inlining/devirtualization and existing masterless/startup behavior. EtherCAT
+activation, mailbox configuration and shutdown remain backend-specific; this is
+not yet a dynamically loadable fieldbus framework.
+
+Encoder sample timing is now an optional descriptor capability. Its EtherCAT
+implementation caches the master/device association at bind time; axis consumers
+no longer resolve timing through global EtherCAT state. Missing timing is explicit,
+including for asynchronous memory simulation. See the common-data-link document
+for write and timing capability contracts.
