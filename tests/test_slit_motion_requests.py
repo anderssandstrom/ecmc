@@ -11,7 +11,8 @@ import sys
 import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/simulation'))
-from slit_test.rig import Client, Rig
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integration'))
+from slit.rig import Client, Rig
 
 
 class Factory:

@@ -9,10 +9,11 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/simulation'))
-import slit_test.rig as rig_module
-from slit_test.rig import Rig
-from slit_test.cases.feedback import FeedbackTests
-from slit_test.cases.brake import BrakeTests
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integration'))
+import slit.rig as rig_module
+from slit.rig import Rig
+from slit.cases.feedback import FeedbackTests
+from slit.cases.brake import BrakeTests
 
 
 class Client:

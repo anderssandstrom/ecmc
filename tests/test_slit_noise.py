@@ -9,8 +9,9 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/simulation'))
-from slit_test.plant import Blade, Plant
-from slit_test.cases.noise import NoiseTests
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integration'))
+from slit.plant import Blade, Plant
+from slit.cases.noise import NoiseTests
 
 config = dict(drive_slave=12, internal_counts_per_mm=12800,
               absolute_counts_per_mm=4096, absolute_offset_mm=-1380, absolute_bits=26)

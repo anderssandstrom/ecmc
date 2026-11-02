@@ -1,4 +1,9 @@
-# Hardware-free regression tests
+# ECMC tests
+
+The offline regression scripts are at this directory's top level. Live tests
+requiring the dedicated simulation IOC are under
+[`integration/slit/`](integration/slit/README.md). `run_tests.py` runs only the
+top-level offline scripts and never starts the live suite.
 
 For standalone tests that execute real PLC expressions and storage library
 functions through ExprTk, see [the PLC test executable](../tools/plc-test/README.md).
@@ -99,6 +104,8 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_simulation_gui.py` | Digital terminal layouts, retained input state, input/output writes, read-only fallback, worker reporting and optional real Tk/Xvfb controls/shutdown smoke test; fake CA |
 | `test_simulation_terminals.py` | Encoder scalar layouts/widths, exact U64 edits, manual drive fields, oversampling notice and independent dual-channel 7062 CSV/CSP dispatch; fake CA |
 | `test_slit_acceptance.py` | Offline infrastructure for the separate live slit suite: coupled stepper/EL5042 arithmetic, injection, brake wiring, fake native PV publication, SIM guard, modular selection and JSON/JUnit reports; never runs live IOC cases |
+| `test_slit_native.py` | Execute real native case/helper methods against controlled responses; verify momentary execute requests versus sequencer status and reject early/ignored motion, wrong relative mode, faults and failed STOP |
+| `test_slit_limit_sync.py` | Real live soft-limit-sync case methods with delayed propagation, missing-update negative controls and restoration of original pairs/flags |
 | `test_slit_boundaries.py` | Execute live limit recovery/bounce, coordinated STOP and encoder-wrap case methods with controlled responses; negative controls reject ignored limits, replay, failed STOP and missing wraps/jumps |
 | `test_slit_motion_requests.py` | Motor moves use per-request completion; ordinary STOP puts bypass the active record's notify queue; bounded arrival/ramp-down, rejection and pre-cleanup diagnostics; fake PVs |
 | `test_slit_soft_limits.py` | Direction-specific warning/interlock can stop an invalid target before the boundary; unrelated faults, wrong direction, motion, no diagnostic and overruns must not pass; no IOC |

@@ -235,7 +235,7 @@ clients. The generated records still need an IOC integration check.
 
 ## External Python models and discovery
 
-A separate [modular slit acceptance program](../tools/simulation/slit_test/README.md)
+A separate [modular slit acceptance program](../tests/integration/slit/README.md)
 uses the sibling ecmccfg `slit_matrix_sim_test` configuration. Modules cover
 hardware/software limits, missing/lost enable, EL5042 readiness/frozen feedback,
 brake outputs, open/closed-loop motion and master/slave synchronization. It runs its own coupled

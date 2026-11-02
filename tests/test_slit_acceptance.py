@@ -16,9 +16,10 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/simulation'))
-from slit_test.plant import Blade, Plant
-from slit_test.rig import Rig
-from slit_test.run import DEFAULT_CONFIG, MODULES, make_suite, write_reports
+sys.path.insert(0, str(ROOT / 'tests/integration'))
+from slit.plant import Blade, Plant
+from slit.rig import Rig
+from slit.run import DEFAULT_CONFIG, MODULES, make_suite, write_reports
 
 CONFIG = {'drive_slave': 14, 'encoder_slave': 9, 'encoder_channel': '02',
           'internal_counts_per_mm': 12800, 'absolute_counts_per_mm': 4096,
@@ -67,7 +68,7 @@ assert feedback.position == 11200 and raw == 5656064
 # Building/selecting test modules must not import pyepics or access a live IOC.
 suite = make_suite(None, ('open', 'closed'), MODULES)
 tests = list(suite)
-assert len(tests) == 78
+assert len(tests) == 94
 assert {test.loop for test in tests} == {'open', 'closed'}
 assert all(test.rig is None for test in tests)
 assert len(list(make_suite(None, ('closed',), ('limits',)))) == 8
@@ -76,6 +77,8 @@ assert len(list(make_suite(None, ('closed',), ('brake',)))) == 8
 assert len(list(make_suite(None, ('closed',), ('feedback',)))) == 6
 assert len(list(make_suite(None, ('closed',), ('noise',)))) == 2
 assert len(list(make_suite(None, ('closed',), ('torque',)))) == 3
+assert len(list(make_suite(None, ('closed',), ('native',)))) == 5
+assert len(list(make_suite(None, ('closed',), ('softlimit_sync',)))) == 3
 
 
 class FakeClient:
@@ -196,10 +199,10 @@ if DEFAULT_CONFIG.exists():
             assert data['drive']['error'] == [3] and data['drive']['reset'] == 1
             assert data['drive']['status'] + '.3' in rendered and '.drv.alarm0' in rendered
             assert data['drive']['control'] + '.1' in rendered and '.drv.reset' in rendered
-    subprocess.run([sys.executable, str(ROOT / 'tools/simulation/slit_test/run.py'),
+    subprocess.run([sys.executable, str(ROOT / 'tests/integration/slit/run.py'),
                     '--config', str(DEFAULT_CONFIG), '--case', 'limits'], check=True, stdout=subprocess.DEVNULL)
 else:
     print('SKIP sibling ecmccfg profile check: separate configuration not available.')
-subprocess.run([sys.executable, str(ROOT / 'tools/simulation/slit_test/run.py'), '--help'],
+subprocess.run([sys.executable, str(ROOT / 'tests/integration/slit/run.py'), '--help'],
                check=True, stdout=subprocess.DEVNULL)
 print('Slit acceptance infrastructure: coupled encoder arithmetic, faults, modular selection, SIM guard and report generation passed; no live tests run.')

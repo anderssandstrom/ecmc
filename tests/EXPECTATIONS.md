@@ -262,7 +262,7 @@ there is no plant-level shortcut that freezes position on a STOP request.
 YAML: Q15 velocity at 10 mm/s, 12800 internal counts/mm, 4096 EL5042 counts/mm,
 -1380 mm offset and ready bit 2. The standalone plant and SIM/schema guard use
 controlled PVs. Test enumeration and report serialization are infrastructure
-checks, not evidence that the [live acceptance suite](../tools/simulation/slit_test/README.md)
+checks, not evidence that the [live acceptance suite](integration/slit/README.md)
 passed. Primary not-ready and following-error acceptance expectations reference
 `ecmcEncoder::readHwReady` and `ERROR_MON_MAX_POSITION_LAG_EXCEEDED` respectively.
 
@@ -371,3 +371,35 @@ full coordinated ramp-down still require a dedicated IOC run.
 - DOC/COMPAT: bound timing uses its own provider's clock and existing EtherCAT
   cycle calculation. Missing timing, invalid health and dead owners prevent
   access (`test_signal_timing.py`). No physical timing accuracy is asserted.
+
+**USER / DOC — native motion and live soft-limit sync:** `cases/native.py`
+uses VEL=1, REL=2 and ABS=3 (`ecmcAxisSequencer::setExecute`, core command
+records), command data 0, target position/velocity and a momentary execute request.
+Staging must not move, REL endpoints are independently specified, velocity
+continues after a zero execute command; velocity and position motion stop
+through native StpCmd. The command bit auto-resets and its zero value is not
+a sequencer execute-state acknowledgement.
+Center/gap commands check actual blade positions. The existing motor/native
+interface poll timing difference is allowed for soft-limit synchronization:
+motor user/dial values and ECMC config readbacks must converge, as must native
+and motor-driver enable flags. CfgDLLM/DHLM write the ECMC monitor through the
+motor-driver config interface; they are not raw parser commands. Fixtures use
+DIR=0, OFF=0 and positive MRES; tests enable sync temporarily and restore it. Negative-coordinate transforms,
+sync-disabled behavior and homing are not covered by these new live cases.
+`test_slit_native.py` and `test_slit_limit_sync.py` execute the real harness
+methods with controlled boundaries and negative controls, not production
+controller simulations. Existing production trajectory and motor soft-limit
+fixtures cover that separate layer. A dedicated IOC run remains required.
+
+**REGRESSION — native execute request versus state:** the live center/gap case
+completed both moves, then timed out waiting for ExeCmd-RB=0 after a zero
+command write. `ecmcAxisBase::axisAsynWriteCmd` treats execute as an auto-reset
+request; it starts a new sequencer 0->1 transition for each accepted non-busy
+request. The status bit can remain high at rest. The corrected harness never
+uses that status as command-clear acknowledgement, and uses native STOP for
+velocity motion. Its boundary fixture preserves execute status high at idle,
+accepts repeated requests, and deliberately fails if zero commands stop motion.
+This corrects a test-model assumption; production motion semantics are unchanged.
+The attached live snapshot also had CfgSyncSftLim=0. Live sync cases now register
+cleanup before enabling it, restore original pairs and flags in their existing
+finally blocks, and restore the original sync setting through unittest cleanup.

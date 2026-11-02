@@ -68,6 +68,6 @@ After rebuilding/installing ECMC and restarting the dedicated slit test IOC,
 run from the ECMC repository:
 
 ```sh
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case sync --loop open
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case sync --loop open
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run
 ```

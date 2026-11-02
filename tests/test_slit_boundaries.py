@@ -11,9 +11,10 @@ import sys
 import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/simulation'))
-from slit_test.cases.limits import LimitTests
-from slit_test.cases.motion import MotionTests
-from slit_test.cases.sync import SyncTests
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integration'))
+from slit.cases.limits import LimitTests
+from slit.cases.motion import MotionTests
+from slit.cases.sync import SyncTests
 
 
 class Rig:

@@ -106,7 +106,9 @@ class Rig:
                            '-Busy', '-AtTarget', '-ErrId', '-LimFwd', '-LimBwd', '-TrjSrcTyp-RB',
                            '-LastIlock', '-SumIlockFwd', '-SumIlockBwd',
                            '-WrnId', '-SftLimFwdIlock', '-SftLimBwdIlock', '-SftLimFwdEna-RB', '-SftLimBwdEna-RB',
-                           '-TgtPosCmd', '-MtnCmd', '-MtnCmdData', '.LLM', '.HLM', '.VAL', '.RBV', '.DVAL',
+                           '-TgtPosCmd', '-TgtVelCmd', '-MtnCmd', '-MtnCmdData',
+                           '-CfgDLLM-RB', '-CfgDHLM-RB', '-CfgDLLM-En-RB', '-CfgDHLM-En-RB',
+                           '-CfgSyncSftLim', '.DLLM', '.DHLM', '.LLM', '.HLM', '.VAL', '.RBV', '.DVAL',
                            '-Blocked', '-InStartup', '-StartupHeld', '-StartupMotorReady', '-StartupLimitsReady',
                            '.DMOV', '.MOVN', '.MSTA', '.LVIO', '.STAT', '.SEVR', '.PACT', '.MIP', '.SYNC'):
                 try: result[axis][suffix] = float(self.get(axis, suffix))
@@ -246,6 +248,62 @@ class Rig:
             self.sync_motor_record(axis)
             self.move(axis, 0)
         self.kinematics()
+
+    def stage_native(self, axis, command, position=0, velocity=.4):
+        """Stage an ECMC command with execute low; never write motor VAL."""
+        if command not in (1, 2, 3) or not all(math.isfinite(v) for v in (position, velocity)):
+            raise ValueError('native motion requires VEL=1, REL=2 or ABS=3 and finite targets')
+        if velocity == 0 or (command != 1 and velocity < 0):
+            raise ValueError('position moves require positive speed; velocity moves require nonzero speed')
+        self.wait_native_stopped(axis)
+        # Clear the command trigger before staging. ExeCmd-RB is sequencer
+        # state, not an acknowledgement of this auto-reset command bit; it may
+        # remain high after a completed move. Zero is not a stop request.
+        self.put(axis, '-ExeCmd', 0)
+        for suffix, value in (('-MtnCmd', command), ('-MtnCmdData', 0),
+                              ('-TgtPosCmd', position), ('-TgtVelCmd', velocity)):
+            self.put(axis, suffix, value)
+        self.wait(lambda: self.get(axis, '-MtnCmd') == command and self.get(axis, '-MtnCmdData') == 0
+                  and abs(self.get(axis, '-TgtPosCmd') - position) < 1e-7
+                  and abs(self.get(axis, '-TgtVelCmd') - velocity) < 1e-7,
+                  axis + ' native command and targets staged', 3)
+        self.put(axis, '-EnaCmd', 1)
+        self.wait(lambda: self.get(axis, '-EnaAct') == 1, axis + ' enabled for native command', 6)
+        self.trace.append({'action': 'native command staged', 'axis': axis, 'command': command,
+                           'position': position, 'velocity': velocity, 'snapshot': self.snapshot()})
+
+    def execute_native(self, axis):
+        self.put(axis, '-ExeCmd', 1)
+        def active():
+            self.check_native_error(axis)
+            return self.get(axis, '-Busy') == 1
+        self.wait(active, axis + ' native execute starts motion', 5)
+
+    def check_native_error(self, axis):
+        error = int(self.get(axis, '-ErrId'))
+        if error:
+            snapshot = self.snapshot()
+            self.trace.append({'action': 'native motion failed', 'axis': axis,
+                               'error': error, 'snapshot': snapshot})
+            raise AssertionError(f'{axis}: native motion fault 0x{error:x}\n'
+                                 + json.dumps(snapshot, indent=2))
+
+    def wait_native_stopped(self, axis, target=None, timeout=10):
+        def stopped():
+            self.check_native_error(axis)
+            return (self.get(axis, '-Busy') == 0 and abs(self.get(axis, '-VelAct')) < .01
+                    and (target is None or abs(self.get(axis, '-PosAct') - target) < .015))
+        self.wait(stopped, axis + ' native motion stopped' + ('' if target is None else f' at {target}'), timeout)
+
+    def native_move(self, axis, position, command=3, velocity=.4, expected=None):
+        if command not in (2, 3) or (command == 2 and expected is None):
+            raise ValueError('relative moves require an independently specified expected position')
+        self.stage_native(axis, command, position, velocity)
+        self.execute_native(axis)
+        self.wait_native_stopped(axis, position if expected is None else expected)
+        self.put(axis, '-ExeCmd', 0)
+        self.trace.append({'action': 'native move completed', 'axis': axis, 'command': command,
+                           'position': position, 'snapshot': self.snapshot()})
 
     def start_move(self, axis, target):
         try:

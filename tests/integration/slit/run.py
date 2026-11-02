@@ -11,13 +11,14 @@ import time
 import unittest
 import xml.etree.ElementTree as ET
 
-SIMULATION = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SIMULATION))
-from slit_test.plant import Plant
-from slit_test.rig import Client, Rig
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'tools/simulation'))
+sys.path.insert(0, str(ROOT / 'tests/integration'))
+from slit.plant import Plant
+from slit.rig import Client, Rig
 
-MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque')
-DEFAULT_CONFIG = (Path(__file__).resolve().parents[4].parent / 'ecmccfg/examples/PSI/lab_setup/'
+MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque', 'native', 'softlimit_sync')
+DEFAULT_CONFIG = (ROOT.parent.parent / 'ecmccfg/examples/PSI/lab_setup/'
                   'master_slave/slit_epics_2026/slit_matrix_sim_test')
 
 
@@ -25,7 +26,7 @@ def make_suite(rig, loops, modules):
     tests = []
     for loop in loops:
         for module in modules:
-            loaded = unittest.defaultTestLoader.loadTestsFromModule(importlib.import_module('slit_test.cases.' + module))
+            loaded = unittest.defaultTestLoader.loadTestsFromModule(importlib.import_module('slit.cases.' + module))
             for group in loaded:
                 for test in group:
                     test.rig, test.loop = rig, loop

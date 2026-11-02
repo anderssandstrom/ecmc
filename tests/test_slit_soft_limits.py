@@ -11,7 +11,8 @@ import sys
 import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/simulation'))
-from slit_test.cases.limits import LimitTests, controller_soft_limit_stopped
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'integration'))
+from slit.cases.limits import LimitTests, controller_soft_limit_stopped
 
 sample = {'position': 0, 'setpoint': 0, 'warning': 0x114D00, 'error': 0,
           'interlock': 1, 'busy': 0, 'stationary': True}

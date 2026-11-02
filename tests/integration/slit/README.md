@@ -33,19 +33,19 @@ The installed ecmccfg must include the startup simulation-mode indicator PV.
 From the ECMC repository, first list the plan without any EPICS access:
 
 ```sh
-python3 tools/simulation/slit_test/run.py
-python3 tools/simulation/slit_test/run.py --case limits --loop closed
+python3 tests/integration/slit/run.py
+python3 tests/integration/slit/run.py --case limits --loop closed
 ```
 
 Execute one module or the whole suite:
 
 ```sh
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case limits
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case enable
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case feedback --loop closed
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case sync
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case brake
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case limits
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case enable
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case feedback --loop closed
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case sync
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case brake
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run
 ```
 
 `--case` is repeatable. `--loop open|closed|both` defaults to both. `--config`
@@ -71,10 +71,12 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/feedback.py` | Primary encoder not-ready at idle/during motion, readiness recovery without automatic restart, unready secondary isolation, frozen EL5042 following error, independent LO move while HI feedback is invalid |
 | `cases/noise.py` | Closed-loop EL5042 measurement noise: small noise preserves at-target; larger noise clears it without fault/disable, followed by stable recovery |
 | `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion, coordinated STOP and fresh-command recovery |
+| `cases/native.py` | Native ABS/REL/VEL commands, staging before execute, repeated execute requests, native STOP, center/gap commands |
+| `cases/softlimit_sync.py` | Motor-to-ECMC and ECMC-config-to-motor limit values; enable-flag propagation in both interfaces |
 | `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
 | `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 78 planned test executions with both loop modes selected. Primary
+There are 94 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -269,7 +271,7 @@ Encoder noise tests use the existing closed-loop setup (EL5042 primary encoder,
 Kp=2); open-loop runs skip these two cases. Run them separately with:
 
 ```sh
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case noise --loop closed
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case noise --loop closed
 ```
 
 The plant accepts `plant.inject('TR_HI', encoder_noise_mm=.014)`: the value is a
@@ -299,7 +301,7 @@ nonzero LVIO or alarm severity and retain their triggering values.
 Run the reduced-torque output tests with:
 
 ```sh
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case torque
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case torque
 ```
 
 Both dedicated physical-axis YAML files already enable reduced torque and link
@@ -315,7 +317,7 @@ The plant does not model motor-current or holding-torque physics.
 Additional boundary checks are included in the existing modules:
 
 ```sh
-python3 tools/simulation/slit_test/run.py --prefix SIMSLIT: --run --case limits --case sync --case motion
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case limits --case sync --case motion
 ```
 
 Directional recovery keeps one hardware switch active: a request into that
@@ -341,3 +343,39 @@ Existing +/-1 mm soft limits stay unchanged. In open loop this exercises the
 primary incremental encoder; in closed loop EL5042 remains primary and the
 internal counter is secondary. Production encoder reconstruction is also
 checked sample-by-sample offline against an independent signed integer count.
+
+Native motion and soft-limit synchronization can be run separately:
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case native --case softlimit_sync
+```
+
+These modules run in both loop modes. Native motion stages `-MtnCmd` (1 VEL,
+2 REL, 3 ABS), `-MtnCmdData=0`, `-TgtPosCmd` and `-TgtVelCmd` with execute low,
+enables the axis, then writes `-ExeCmd=1`. The execute command bit auto-resets
+after each request. Writing `-ExeCmd=0` only clears the command trigger; it
+does not acknowledge or clear sequencer `-ExeCmd-RB` and does not stop motion.
+The sequencer status may remain high at idle. Use `-StpCmd=1` to stop. Native arrival
+checks use axis Busy, velocity, position and error, without requiring a motor
+VAL put-notify. Normal test preparation still uses motor-record return-to-zero
+moves; the native test bodies issue their commands through axis PVs only.
+
+Coverage includes no motion before execute, ABS both directions, repeated REL
+commands with independent expected absolute positions, signed velocity moves
+that continue after a zero execute write and stop through `-StpCmd`, position
+motion interrupted by native STOP, and native center/gap commands.
+These are moderate nonzero moves so the Busy transition can be observed over
+CA. This is behavioral coverage, not an RT command-latency benchmark.
+
+Limit synchronization tests temporarily enable `-CfgSyncSftLim` and restore its
+original setting using test cleanup, including after a failure. They require
+coherent initial motor/ECMC limit pairs, positive MRES and the fixture's
+DIR=0/OFF=0 coordinates. They change motor `.LLM/.HLM` and require
+`.DLLM/.DHLM` plus `-CfgDLLM-RB/-CfgDHLM-RB` to agree. Conversely, writes to
+`-CfgDLLM/-CfgDHLM` configure the ECMC monitor through the existing motor-driver
+configuration interface and must propagate back to motor user/dial limits.
+Enable writes through native `-SftLimBwdEna/-SftLimFwdEna` and motor-driver
+`-CfgDLLM-En/-CfgDHLM-En` must agree on both readbacks. Only one side is disabled
+at a time; the tests make no unbounded move. Original pairs and enable flags
+are restored in `finally`, including after a failed assertion. Polling waits
+allow the motor record to update more slowly than the native ECMC state.

@@ -11,10 +11,11 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/simulation'))
-from slit_test.cases.base import DRIVE_ENABLE_FAILURE_WAIT
-from slit_test.cases.brake import BrakeTests
-from slit_test.cases.enable import EnableTests
-from slit_test.rig import Rig
+sys.path.insert(0, str(ROOT / 'tests/integration'))
+from slit.cases.base import DRIVE_ENABLE_FAILURE_WAIT
+from slit.cases.brake import BrakeTests
+from slit.cases.enable import EnableTests
+from slit.rig import Rig
 
 header = (ROOT / 'devEcmcSup/motion/ecmcDriveBase.h').read_text()
 DRIVE_SECONDS = float(re.search(r'#define ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME\s+(\d+)', header)[1])
