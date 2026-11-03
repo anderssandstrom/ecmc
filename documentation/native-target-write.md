@@ -66,8 +66,10 @@ keeps its existing field names; its implementation reads the new word.
 
 ecmccfg exposes `-AutoExecuteOnTargetPos-RB` from status bit 24 and `-StatExt`
 from status2. Existing `-SeqState` and `-LastIlock` PV names decode the new word.
-The main, native and expert axis panels show **Execute required** or
-**Write starts move** beside the native controls. The mode indicator is read-only.
+The main and native axis panels show a compact amber **NO EXEC** badge only
+when target-write mode is enabled. The expert panel shows **NO EXEC needed**.
+The tooltip explains that a target write starts motion. The read-only badges
+leave the problem indicator visible and preserve existing panel dimensions.
 One additional asyn parameter per axis is used for status2.
 
 ## Tests and installation
