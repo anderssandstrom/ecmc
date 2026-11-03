@@ -21,13 +21,17 @@ class EncoderPowerTests(SlitCase):
         self.config('SelectAxisEncConfig', self.encoder, full=True)
         self.saved = {key: self.query(key) for key in (
             'EncPwrEnable', 'EncPwrPol', 'EncPwrDelay', 'EncPwrTimeout', 'EncPwrOffDelay',
-            'EnableAutoDisable', 'EnableAutoEnable', 'AutoEnableTimeout',
+            'EnableAutoDisable', 'AutoDisableAfterTime', 'EnableAutoEnable', 'AutoEnableTimeout',
             'CntrlDeadband', 'CntrlDeadbandTime')}
         self.assertEqual(self.saved['EncPwrEnable'], 0, 'fixture starts in ordinary encoder mode')
         self.kp = self.rig.get(self.axis, '-Ctrl-Kp')
         self.assertFalse(self.rig.stop_all())
         self.rig.wait_drive_disabled(self.axis)
-        self.config('EnableAutoDisable', 0)
+        # The slit SM immediately disables a completed physical group when any
+        # member has axis auto-disable disabled. Retain that policy and give
+        # this axis a long idle timeout, beyond the encoder dwell checks.
+        self.config('AutoDisableAfterTime', 60)
+        self.config('EnableAutoDisable', 1)
         self.config('EnableAutoEnable', 1)
         self.config('AutoEnableTimeout', 5)
         self.config('EncPwrPol', 1)
@@ -65,11 +69,16 @@ class EncoderPowerTests(SlitCase):
         return True
 
     def wait_off(self):
-        self.rig.wait(lambda: self.state() == 1 and self.raw() == self.off_raw
-                      and not self.rig.encoder_status(self.axis) & 4,
-                      'encoder off publishes configured invalid raw word and not-ready', 5)
-        self.healthy()
-        self.assertEqual(self.relay(), 1 - self.query('EncPwrPol'))
+        expected_relay = 1 - self.query('EncPwrPol')
+        # A polarity change keeps logical state=Off. Old raw/ready readbacks
+        # can therefore satisfy the off predicate before the RT relay output
+        # and its CA readback have updated. Require the physical output too.
+        self.rig.wait(lambda: self.healthy() and self.state() == 1
+                      and self.raw() == self.off_raw
+                      and not self.rig.encoder_status(self.axis) & 4
+                      and self.relay() == expected_relay,
+                      'encoder off with matching relay polarity, invalid raw word and not-ready', 5)
+        self.assertEqual(self.relay(), expected_relay)
 
     def restore(self):
         errors = self.rig.stop_all()
@@ -87,7 +96,7 @@ class EncoderPowerTests(SlitCase):
             self.config('EncPwrTimeout', max(self.saved['EncPwrTimeout'], self.query('EncPwrDelay')) + 1)
             for key in ('EncPwrDelay', 'EncPwrTimeout', 'EncPwrOffDelay', 'EncPwrPol',
                         'CntrlDeadband', 'CntrlDeadbandTime', 'AutoEnableTimeout',
-                        'EnableAutoEnable', 'EnableAutoDisable'):
+                        'EnableAutoEnable', 'AutoDisableAfterTime', 'EnableAutoDisable'):
                 self.config(key, self.saved[key])
             if hasattr(self, 'kp'): self.rig.put(self.axis, '-Ctrl-Kp', self.kp)
             self.rig.reset()
@@ -190,10 +199,13 @@ class EncoderPowerTests(SlitCase):
         self.rig.wait(lambda: self.healthy() and self.rig.get(self.axis, '-Busy') == 1,
                       'motor target queues automatic power-up', 4)
         self.arrive(.25)
+        # The encoder timer starts at native settling, not the next motor poll.
+        # Checking slow DMOV/MOVN first would consume part of the dwell and
+        # incorrectly require another full interval after the motor catches up.
+        self.dwell_then_off(1)
         self.rig.wait(lambda: self.rig.get(self.axis, '.DMOV') == 1
                       and self.rig.get(self.axis, '.MOVN') == 0,
                       'motor flags settle after powered move', 4)
-        self.dwell_then_off(1)
 
     def test_power_up_delay_even_when_ready_arrives_early(self):
         self.config('EncPwrDelay', .7)

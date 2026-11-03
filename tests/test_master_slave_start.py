@@ -157,7 +157,8 @@ public:
   void setMRSync(bool) {}
   void setMRIgnoreDisableStatusCheck(bool) {}
   void setEnableAutoDisable(bool) {}
-  bool getAxisAutoDisableEnabled() { return true; }
+  bool autoDisableEnabled = true;
+  bool getAxisAutoDisableEnabled() { return autoDisableEnabled; }
   void resetPendingStallChecks() {}
   void armStallCheckForAxesNotAtTarget(uint64_t) {}
   void setAxisIsWithinCtrlDBExtTraj(bool) {}
@@ -190,6 +191,20 @@ void ecmcMasterSlaveStateMachine::setMrIgnoreEnableAlarm() {}
 '''
 main = r'''
 int main() {
+  // Encoder-power live fixture: disabling the axis auto-disable flag invokes
+  // the physical group's immediate-disable fallback when SLAVE completes.
+  // A long positive timeout retains enable without changing that SM policy.
+  for (bool axisAutoDisable : {false,true}) {
+    ecmcAxisGroup masters, slaves;
+    slaves.status.allEnabled = slaves.status.anyEnabled = slaves.status.allEnableCmd = true;
+    slaves.autoDisableEnabled = axisAutoDisable;
+    ecmcMasterSlaveStateMachine machine(nullptr, 0, "physical completion", .001, &masters, &slaves, 0, 0);
+    machine.state_ = ECMC_MST_SLV_STATE_SLAVES;
+    machine.stateSlave();
+    assert(machine.state_ == ECMC_MST_SLV_STATE_IDLE);
+    assert(slaves.enableCalls == (axisAutoDisable ? 0 : 1));
+    if (!axisAutoDisable) assert(!slaves.enableRequested);
+  }
   // Live failure: slaves are already enabled after physical preparation, CEN
   // receives enable/move, and the idle GAP master is still disabled. The fast
   // path must prepare the whole master group before entering MASTER state.

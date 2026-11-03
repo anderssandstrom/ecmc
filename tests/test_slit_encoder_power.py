@@ -109,3 +109,129 @@ cases = list(make_suite(None, ('open', 'closed'), ('encoder_power',)))
 assert len(cases) == 22 and {c.loop for c in cases} == {'open', 'closed'}
 assert all(c.rig is None for c in cases)
 print('Slit encoder power: zero on EL5042 PV while off, warmup, polarities, physical counter isolation, and 22 live cases pass offline checks.')
+
+# Exercise the live fixture's actual setup/cleanup with configuration/CA
+# boundaries. The production SM behavior of these flags is checked separately
+# by test_master_slave_start.py, including the original failing flag value.
+from types import SimpleNamespace
+from slit.cases.encoder_power import EncoderPowerTests
+
+for original_flag in (0, 1):
+    settings = dict(EncConfigIndex=1, EncPwrEnable=0, EncPwrPol=1,
+                    EncPwrDelay=.1, EncPwrTimeout=5, EncPwrOffDelay=2,
+                    EnableAutoDisable=original_flag, AutoDisableAfterTime=2,
+                    EnableAutoEnable=1, AutoEnableTimeout=2,
+                    CntrlDeadband=.01, CntrlDeadbandTime=100)
+    original = dict(settings)
+    calls = []
+    class Fixture(EncoderPowerTests):
+        def query(self, key): return settings[key]
+        def config(self, key, value, full=False):
+            calls.append((key, value))
+            if full:
+                assert key == 'SelectAxisEncConfig'
+                settings['EncConfigIndex'] = value
+            else:
+                settings[key] = value
+                if key == 'AutoDisableAfterTime': settings['EnableAutoDisable'] = int(value > 0)
+        def state(self): return 1
+        def wait_off(self): assert settings['EncPwrEnable'] == 1
+    def wait(predicate, description, timeout): assert predicate(), description
+    def configure(*args, **kwargs): calls.append(('plant supply', kwargs))
+    case = Fixture('test_active_low_relay')
+    case.loop = 'open'
+    case.rig = SimpleNamespace(
+        profile={'axes': {'TR_HI': 6}, 'physical': {'TR_HI': config}},
+        prepare=lambda loop: calls.append(('prepare', loop)),
+        open_text_commands=lambda: {}, close_text_commands=lambda saved: None,
+        get=lambda axis, field: 2 if field == '-Ctrl-Kp' else 0,
+        put=lambda axis, field, value: calls.append((field, value)),
+        stop_all=lambda: [], wait_drive_disabled=lambda axis: None,
+        wait=wait, drive_status=lambda axis: 0, encoder_status=lambda axis: 4,
+        reset=lambda: calls.append(('reset', None)),
+        plant=SimpleNamespace(configure_encoder_power=configure))
+    case.setUp()
+    assert settings['EnableAutoDisable'] == 1
+    assert settings['AutoDisableAfterTime'] >= 60 > settings['EncPwrOffDelay']
+    assert settings['EncPwrEnable'] == 1
+    assert case.doCleanups()
+    assert settings == original, (settings, original)
+print('Encoder-power fixture: long positive drive idle timeout retains SM policy; native settings and encoder selection restore independently.')
+
+# Logical Off/raw zero/ready low can all predate a polarity change. A bounded
+# wait must include the new relay output; a permanently wrong output must fail.
+for relay_words, accepted in (((0, 0, 1), True), ((0, 0, 0), False)):
+    relay_word = [0]
+    attempts = []
+    case = EncoderPowerTests('test_active_low_relay')
+    case.off_raw = 0
+    case.query = lambda key: 0  # active-low: physical off must be output 1
+    case.state = lambda: 1
+    case.raw = lambda: 0
+    case.relay = lambda: relay_word[0]
+    def observe(predicate, description, timeout):
+        for value in relay_words:
+            relay_word[0] = value
+            attempts.append(value)
+            if predicate(): return
+        raise AssertionError('timeout: ' + description)
+    case.rig = SimpleNamespace(wait=observe, check_native_error=lambda axis: None,
+                               encoder_status=lambda axis: 0)
+    try:
+        case.wait_off()
+    except AssertionError:
+        assert not accepted
+    else:
+        assert accepted and attempts == [0, 0, 1]
+print('Encoder relay polarity: stale Off/ready/raw snapshots wait for the new output; a stuck wrong output still fails.')
+
+# Execute the actual motor case and dwell assertion with independent native
+# settling/power timing and deliberately slower motor fields. A prematurely
+# powered-off encoder must still fail the same dwell assertion.
+from slit.rig import Rig
+import slit.cases.encoder_power as power_cases
+
+for power_off_time, accepted in ((1.0, True), (.4, False)):
+    clock = Clock()
+    clock.now = 0.
+    observations = []
+    class MotorRig:
+        def get(self, axis, suffix):
+            if suffix == '-Busy': return 1
+            if suffix in ('-AtTarget', '-EnaAct'): return 1
+            if suffix == '.DMOV': return int(clock.now >= 1.3)
+            if suffix == '.MOVN': return int(clock.now < 1.3)
+            raise AssertionError(suffix)
+        def put(self, axis, suffix, value): assert (suffix, value) == ('.VAL', .25)
+        def encoder_status(self, axis): return 4 if clock.now < power_off_time else 0
+        def check_native_error(self, axis): pass
+        def snapshot(self): return {'time': clock.now}
+        def wait(self, predicate, description, timeout=15):
+            end = clock.now + timeout
+            while clock.now < end:
+                if predicate():
+                    observations.append((description, clock.now))
+                    return
+                clock.advance(.025)
+            raise AssertionError('timeout: ' + description)
+        assert_stays = Rig.assert_stays
+    case = EncoderPowerTests('test_motor_request_auto_enables_after_encoder_ready')
+    case.rig = MotorRig()
+    case.off_raw = 0
+    case.arrive = lambda target: observations.append(('native atTarget', clock.now))
+    case.query = lambda key: 1
+    case.state = lambda: 3 if clock.now < power_off_time else 1
+    case.raw = lambda: 123 if clock.now < power_off_time else 0
+    case.relay = lambda: int(clock.now < power_off_time)
+    with patch.object(power_cases.time, 'monotonic', clock.monotonic):
+        try:
+            case.test_motor_request_auto_enables_after_encoder_ready()
+        except AssertionError:
+            assert not accepted
+        else:
+            assert accepted
+            assert observations[-1][0] == 'motor flags settle after powered move'
+            assert observations[-1][1] >= 1.3
+            assert any('post-settling dwell' in name and when < 1.0
+                       for name, when in observations)
+print('Motor power dwell: native timing precedes delayed DMOV/MOVN; premature encoder power-off remains a failure.')

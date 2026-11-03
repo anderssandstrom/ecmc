@@ -703,6 +703,12 @@ false following error. Test cleanup restores ordinary feedback before removing
 idle error suppression, then restores native settings and configuration-encoder
 selection. Fault/STOP cases must never replay the cancelled target.
 
+During these cases the drive auto-disable policy remains enabled with a temporary
+60-second timeout. Disabling that policy would make the slit state machine
+immediately disable its physical group at motion completion, preventing the
+encoder-only idle power test. Cleanup restores both the original drive timeout
+and its enable flag; the encoder's configured dwell is checked independently.
+
 The configured power-off delay starts after the completed move is atTarget and,
 when smaller, inside the controller deadband. Encoder power must remain on for
 this dwell; losing qualification restarts it. CA timing checks allow 0.2 seconds
