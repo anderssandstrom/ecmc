@@ -670,7 +670,13 @@ int getAxEncFuncType(char *objPath,
         return 0;
       }
 
-      // Ready
+      // Encoder supply relay output
+      if (!strcmp(objectFunctionStr, ECMC_ENC_POWER_STR)) {
+        *objectFunction = ECMC_ENCODER_ENTRY_INDEX_POWER;
+        return 0;
+      }
+
+      // Ready input
       nvals = strcmp(objectFunctionStr, ECMC_ENC_READY_STR);
 
       if (nvals == 0) {

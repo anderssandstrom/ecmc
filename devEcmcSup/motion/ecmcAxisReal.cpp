@@ -564,7 +564,14 @@ void ecmcAxisReal::execute(bool masterOK) {
     double cntrOutput = 0;
     mon_->setEnable(true);
 
-    if (data_.control_.drvMode == ECMC_DRV_MODE_CSV) {
+    if (!encoderPowerReady() || encoderPowerEnablePending_) {
+      // Feedback is intentionally unavailable while holding torque or warming
+      // up. Never integrate the retained (stale) encoder position.
+      cntrl_->reset();
+      if (data_.control_.drvMode == ECMC_DRV_MODE_CSV) drv_->setVelSet(0);
+      // CSP retains its last drive command, including any outer-loop offset.
+      // Removing that offset here would itself command a position change.
+    } else if (data_.control_.drvMode == ECMC_DRV_MODE_CSV) {
       
       // ***************** CSV *****************
       // Controller deadband

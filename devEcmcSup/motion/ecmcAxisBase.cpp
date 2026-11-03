@@ -424,6 +424,9 @@ void ecmcAxisBase::initVars() {
   autoEnableTimoutS_            = -1.0;
   autoDisableAfterS_            = -1.0;
   autoEnableRequest_            = false;
+  encoderPowerEnablePending_    = false;
+  encoderPowerInitPending_      = false;
+  encoderPowerMoveCompleted_    = false;
   motionStartPermissive_         = nullptr;
   motionStartPending_            = false;
   autoEnableTimeCounter_        = 0.0;
@@ -487,9 +490,19 @@ void ecmcAxisBase::preExecute(bool masterOK) {
 
   const int encoderCount = status.encoderCount;
   for (int i = 0; i < encoderCount; i++) {
+    if (encArray_[i]->getPowerEnable()) {
+      encArray_[i]->requestPower(encoderPowerEnablePending_ || autoEnableRequest_ ||
+                                 ((statusWord.enable || statusWord.enabled) &&
+                                  !encArray_[i]->getPowerIdleOff()));
+    }
     encArray_[i]->readEntries(masterOK);
+    if (encArray_[i]->getPowerEnable() && encArray_[i]->getPowerError()) {
+      setEnable(false);
+      setErrorID(encArray_[i]->getPowerError());
+    }
   }
   
+  syncEncoderPowerPosition();
   hwReady_ = getHwReady();
 
   // Axis state machine
@@ -641,6 +654,8 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   auto &status = data_.status_;
   auto &statusWord = status.statusWord_;
   statusWord.busy = getBusy();
+  encoderPowerIdleSM();
+  if (encoderPowerEnablePending_) encoderPowerEnableSM();
   autoEnableSM();
   autoDisableSM();
 
@@ -1075,6 +1090,10 @@ void ecmcAxisBase::errorReset() {
 }
 
 int ecmcAxisBase::validateBase() {
+  for (int i = 0; i < data_.status_.encoderCount; ++i)
+    if (encArray_[i]->getPowerEnable() &&
+        (!mon_->getEnableAtTargetMon() || mon_->getAtTargetTol() <= 0))
+      return setErrorID(ERROR_ENC_POWER_CONFIG);
   return 0;
 }
 
@@ -1398,6 +1417,10 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
   }
   // Keep coordination in command handling: do not start the sequencer or
   // trajectory until the state machine has prepared the slave group.
+  // Encoder wake-up is independent of drive auto-enable: an amplifier may
+  // already be holding torque while its absolute feedback is powered down.
+  if (execute && getEnable() && !encoderPowerReady())
+    return prepareEncoderPowerMotion();
   if (execute && motionStartPermissive_ && !*motionStartPermissive_ &&
       getEnable() && !getExecute() &&
       (ignoreBusy || !data_.status_.statusWord_.localBusy) &&
@@ -1411,6 +1434,7 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
     return 0;
   }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
+    encoderPowerMoveCompleted_ = false;
     bumpMotionCommandExecuteCounter();
   }
 
@@ -1451,6 +1475,11 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
   }
 
   if(!execute) {
+    if (autoEnableRequest_ && encoderPowerEnablePending_) {
+      encoderPowerEnablePending_ = false;
+      if (!getEnable()) data_.control_.controlWord_.enableCmd = false;
+      getSeq()->setGlobalBusy(false);
+    }
     autoEnableRequest_ = false;
     if (motionStartPending_) {
       motionStartPending_ = false;
@@ -2039,7 +2068,13 @@ int ecmcAxisBase::setEnable(bool enable) {
   if (enable && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
   }
-  if (data_.status_.statusWord_.enable == enable) return 0;
+  if (!enable && encoderPowerEnablePending_) {
+    encoderPowerEnablePending_ = false;
+    data_.control_.controlWord_.enableCmd = false;
+    setExecute(false);
+  }
+  if (data_.status_.statusWord_.enable == enable &&
+      (!enable || encoderPowerReady())) return 0;
 
   if (ecmcRtLoggerPortDriverGetCountEnableCommands(data_.status_.axisId)) {
     bumpMotionCommandRequestCounter();
@@ -2054,7 +2089,19 @@ int ecmcAxisBase::setEnable(bool enable) {
     return getErrorID();
   }
 
-  if (!getEnc()->hwReady()) {
+  if (enable && !encoderPowerReady()) {
+    if (getErrorID()) return getErrorID();
+    if (getBlockCom()) return setExternalCommandBlockedError();
+    if (getBlocked()) return setMasterSlaveCommandBlockedError();
+    encoderPowerEnablePending_ = true;
+    data_.control_.controlWord_.enableCmd = true;
+    for (int i = 0; i < data_.status_.encoderCount; ++i)
+      if (encArray_[i]->getPowerEnable()) encArray_[i]->wakePower();
+    data_.axAsynParams_[ECMC_ASYN_AX_CONTROL_BIN_ID]->refreshParamRT(1);
+    return 0;
+  }
+
+  if (enable && !getEnc()->hwReady()) {
     data_.control_.controlWord_.enableCmd = false;
     data_.status_.statusWord_.enable = false;
     return setErrorID(ERROR_ENC_NOT_READY);
@@ -2722,6 +2769,10 @@ int ecmcAxisBase::setPosition(double homePositionSet) {
 }
 
 int ecmcAxisBase::stopMotion(int killAmplifier) {
+  if (encoderPowerEnablePending_) {
+    encoderPowerEnablePending_ = false;
+    if (!getEnable()) data_.control_.controlWord_.enableCmd = false;
+  }
   int errorCode = setExecute(0);
   data_.interlocks_.noExecuteInterlock = true;
   data_.refreshInterlocks();
@@ -3834,7 +3885,9 @@ bool ecmcAxisBase::getHwReady() {
   /* Only check prim encoder (allow encoders to be in error state 
   if they are not used) */
   auto * const primEnc = getPrimEnc();
-  bool ready = primEnc->hwReady();
+  // An intentionally unpowered encoder does not prevent IOC/axis startup.
+  // setEnable has a separate strict power/readiness gate before drive enable.
+  bool ready = (primEnc->getPowerOff() && !encoderPowerEnablePending_) || primEnc->hwReady();
   if (!ready) {
     return false;
   }
@@ -3848,6 +3901,7 @@ bool ecmcAxisBase::getHwReady() {
 }
 
 void ecmcAxisBase::initEncoders() {
+  encoderPowerInitPending_ = false;
   // set all relative encoders to 0
   for (int i = 0; i < data_.status_.encoderCount; i++) {
     encArray_[i]->setToZeroIfRelative();
@@ -3862,6 +3916,10 @@ void ecmcAxisBase::initEncoders() {
     }
 
     if (encArray_[encRefIndex] == NULL) {
+      continue;
+    }
+    if (encArray_[encRefIndex]->getPowerOff() || encArray_[i]->getPowerOff()) {
+      encoderPowerInitPending_ = true;
       continue;
     }
     encArray_[i]->setActPos(encArray_[encRefIndex]->getActPos());
@@ -4147,7 +4205,89 @@ bool ecmcAxisBase::getLimitFwd() {
   return data_.status_.statusWord_.limitfwd;
 }
 
+void ecmcAxisBase::syncEncoderPowerPosition() {
+  if (!encoderPowerReady()) return;
+  if (encoderPowerInitPending_) initEncoders();
+  if (getPrimEnc()->consumePowerPositionSync()) {
+    // Rebase on the fresh absolute sample before drive enable. A REL request
+    // must use this position, not the last sample retained while powered off.
+    const double position = getPrimEnc()->getActPos();
+    data_.status_.currentPositionActual = position;
+    data_.status_.currentPositionSetpoint = position;
+    data_.status_.currentTargetPosition = position;
+    data_.status_.currentVelocitySetpoint = 0;
+    traj_->setStartPos(position);
+    traj_->setCurrentPosSet(position);
+    traj_->setTargetPos(position);
+    if (autoEnableRequest_ && data_.control_.command != ECMC_CMD_HOMING)
+      setTargetPos(data_.control_.positionTarget);
+  }
+}
+
+int ecmcAxisBase::prepareEncoderPowerMotion() {
+  if (getErrorID()) return getErrorID();
+  if (getBlockCom()) return setExternalCommandBlockedError();
+  if (getBlocked()) return setMasterSlaveCommandBlockedError();
+  encoderPowerMoveCompleted_ = false;
+  encoderPowerEnablePending_ = true;
+  autoEnableRequest_ = true;
+  motionStartPending_ = true;
+  autoEnableTimeCounter_ = 0;
+  getSeq()->setGlobalBusy(true);
+  for (int i = 0; i < data_.status_.encoderCount; ++i)
+    if (encArray_[i]->getPowerEnable()) encArray_[i]->wakePower();
+  return 0;
+}
+
+void ecmcAxisBase::encoderPowerIdleSM() {
+  const auto &word = data_.status_.statusWord_;
+  if (data_.statusOld_.statusWord_.localBusy && !word.localBusy)
+    encoderPowerMoveCompleted_ = true;
+  if (!word.enable && !word.enabled) encoderPowerMoveCompleted_ = false;
+  const double deadband = mon_->getCtrlDeadband();
+  const bool settled = encoderPowerMoveCompleted_ && !word.busy &&
+    !autoEnableRequest_ && !motionStartPending_ && !encoderPowerEnablePending_ &&
+    !getErrorID() && word.attarget && mon_->getEnableAtTargetMon() &&
+    mon_->getAtTargetTol() > 0 &&
+    (deadband <= 0 || deadband >= mon_->getAtTargetTol() || mon_->getCtrlInDeadband()) &&
+    word.trajsource == ECMC_DATA_SOURCE_INTERNAL;
+  for (int i = 0; i < data_.status_.encoderCount; ++i) {
+    if (!encArray_[i]->getPowerEnable()) continue;
+    if (!mon_->getEnableAtTargetMon() || mon_->getAtTargetTol() <= 0) {
+      setEnable(false);
+      setErrorID(ERROR_ENC_POWER_CONFIG);
+      return;
+    }
+    encArray_[i]->updatePowerIdle(settled);
+  }
+}
+
+bool ecmcAxisBase::encoderPowerReady() {
+  for (int i = 0; i < data_.status_.encoderCount; ++i) {
+    if (encArray_[i]->getPowerEnable() && !encArray_[i]->getPowerReady()) return false;
+  }
+  return true;
+}
+
+void ecmcAxisBase::encoderPowerEnableSM() {
+  int error = getErrorID();
+  for (int i = 0; i < data_.status_.encoderCount && !error; ++i)
+    error = encArray_[i]->getPowerError();
+  if (error || getStartupCommandsHeld() || getBlockCom() || getBlocked() ||
+      !data_.control_.controlWord_.enableCmd) {
+    setEnable(false);
+    if (error) setErrorID(error);
+    return;
+  }
+  if (!encoderPowerReady()) return;
+
+  encoderPowerEnablePending_ = false;
+  const int enableError = setEnable(true);
+  if (enableError) setErrorID(enableError);
+}
+
 void ecmcAxisBase::autoEnableSM() {
+  if (encoderPowerEnablePending_) return;
   if (motionStartPending_ &&
       (!getEnable() || getError() || getBlocked() || getStartupCommandsHeld())) {
     motionStartPending_ = false;
@@ -4172,6 +4312,9 @@ void ecmcAxisBase::autoEnableSM() {
     }
 
     setEnable(true);
+    // The encoder has its own power timeout. Start the normal drive-enable
+    // timer only after fresh encoder feedback permits enabling the amplifier.
+    if (encoderPowerEnablePending_) return;
   }
 
   if(autoEnableTimoutS_ > 0 && autoEnableTimeCounter_ > autoEnableTimoutS_) {

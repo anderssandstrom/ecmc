@@ -440,7 +440,8 @@ int resolveDataInputTarget(char *path, int *axisIndex, ecmcDataLink **target, in
     // Input slots only; commands/control outputs must retain their handlers.
     if (!allowOutputs && (*slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL ||
         *slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
-        *slot == ECMC_ENCODER_ENTRY_INDEX_RESET || *slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME))
+        *slot == ECMC_ENCODER_ENTRY_INDEX_RESET || *slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME ||
+        *slot == ECMC_ENCODER_ENTRY_INDEX_POWER))
       return ERROR_MAIN_ECMC_LINK_INVALID;
     *target = axis->getConfigEnc();
   } else if (sub == ECMC_AX_SUB_OBJ_MONITOR) {
@@ -537,7 +538,8 @@ int linkDataToObject(const char *source, char *destination, int conversion) {
        slot == ECMC_DRIVEBASE_ENTRY_INDEX_REDUCE_TORQUE_OUTPUT || slot == ECMC_DRIVEBASE_ENTRY_INDEX_RESET)) ||
     (sub == ECMC_AX_SUB_OBJ_ENCODER &&
       (slot == ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL || slot == ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL ||
-       slot == ECMC_ENCODER_ENTRY_INDEX_RESET || slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME));
+       slot == ECMC_ENCODER_ENTRY_INDEX_RESET || slot == ECMC_ENCODER_ENTRY_INDEX_TRIGG_HOME ||
+       slot == ECMC_ENCODER_ENTRY_INDEX_POWER));
   if (ioSource && outputSlot) {
     if (!ioAccess->writable) return ERROR_MAIN_ECMC_LINK_INVALID;
     const auto type = ioAccess->getDataType();

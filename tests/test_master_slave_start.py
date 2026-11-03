@@ -66,6 +66,9 @@ public:
   ecmcAsynDataItem publication;
   bool blocked = false, startupHeld = false;
   bool enableAutoEnable_ = true, autoEnableRequest_ = false, motionStartPending_ = false;
+  bool encoderPowerEnablePending_ = false, encoderPowerMoveCompleted_ = false;
+  bool encoderPowerReady() { return true; }
+  int prepareEncoderPowerMotion() { assert(false); return 0; }
   const bool *motionStartPermissive_ = nullptr;
   double autoEnableTimeCounter_ = 0, autoEnableTimoutS_ = 5;
   int executed = 0;

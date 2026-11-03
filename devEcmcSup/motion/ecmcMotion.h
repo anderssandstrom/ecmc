@@ -1792,6 +1792,28 @@ int setAxisEncScaleNum(int    axisIndex,
 int setAxisEncInvHwReady(int axisIndex,
                          int invert);
 
+/** Encoder relay power control on the selected configuration encoder.
+ * Off by default. Link axN.enc.power to a digital output, configure an absolute
+ * encoder, then enable. Delays/timeouts are seconds. Polarity 1 is active high.
+ * Requires enabled atTarget monitoring and positive tolerance. After a move,
+ * power turns off after OffDelay continuously settled seconds, even if the
+ * drive remains enabled. A tighter positive controller deadband also applies.
+ * Power/readiness is established before drive enable and every new move;
+ * an off encoder retains its last valid sample and feedback control pauses.
+ * Ready inversion uses SetAxisEncInvHwReady separately.
+ */
+int setAxisEncPwrEnable(int axisIndex, int enable);
+int setAxisEncPwrPol(int axisIndex, int activeHigh);
+int setAxisEncPwrDelay(int axisIndex, double seconds);
+int setAxisEncPwrTimeout(int axisIndex, double seconds);
+int setAxisEncPwrOffDelay(int axisIndex, double seconds);
+int getAxisEncPwrOffDelay(int axisIndex, double *value);
+int getAxisEncPwrEnable(int axisIndex, int *value);
+int getAxisEncPwrPol(int axisIndex, int *value);
+int getAxisEncPwrDelay(int axisIndex, double *value);
+int getAxisEncPwrTimeout(int axisIndex, double *value);
+int getAxisEncPwrState(int axisIndex, int *value);
+
 /** \brief Set axis home reference position setpoint.\n
  *
  * The home reference position setpoint is only used during referencing/homing

@@ -74,7 +74,8 @@ void ecmcAxisVirt::execute(bool masterOK) {
 
   // No drive object so update needed variables
   data_.status_.currentvelocityFFRaw = 0;
-  data_.status_.statusWord_.enabled  = data_.control_.controlWord_.enableCmd;
+  // A queued encoder power-up request has not enabled the virtual axis yet.
+  data_.status_.statusWord_.enabled = getEnable();
 
   ecmcAxisBase::postExecute(masterOK);
 }

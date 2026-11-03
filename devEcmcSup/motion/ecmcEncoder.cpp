@@ -15,6 +15,7 @@
 #include "ecmcRtLogger.h"
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 
 namespace {
 asynStatus asynWriteTouchProbeArmCmd(void *data,
@@ -161,6 +162,23 @@ void ecmcEncoder::initVars() {
   hwReady_                = 0;
   hwReadyOld_             = 0;
   hwReadyInvert_          = 0;
+  powerEnabled_ = false;
+  powerRequested_ = false;
+  powerOn_ = false;
+  powerActiveHigh_ = true;
+  powerPositionSync_ = false;
+  powerFirstSample_ = false;
+  powerState_ = 0;
+  powerStateOld_ = -1;
+  powerError_ = 0;
+  powerReadyCycles_ = 0;
+  powerDelayS_ = 0.1;
+  powerTimeoutS_ = 5;
+  powerElapsedS_ = 0;
+  powerOffDelayS_ = 2;
+  powerIdleElapsedS_ = 0;
+  powerIdleOff_ = false;
+  powerStateParam_ = nullptr;
   hwSumAlarmOld_          = false;
   hwSumAlarm_             = false;
   homeParamsValid_        = 0;
@@ -737,6 +755,15 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
     }
   }
 
+  if (powerFirstSample_) {
+    // A changed absolute position after a power cycle is not a velocity step.
+    positionFilter_->initFilter(actPosLocal_);
+    velocityFilter_->initFilter(0);
+    actPosOld_ = actPosLocal_;
+    delayCompStateValid_ = false;
+    powerFirstSample_ = false;
+    powerPositionSync_ = true;
+  }
   if (enablePositionFilter_) {
     actPosLocal_ = positionFilter_->getFiltPos(actPosLocal_,
                                                moduloRange);
@@ -1082,6 +1109,9 @@ int ecmcEncoder::readHwReady(bool domainOK) {
     }
 
     if ( hwReady_ == 0) {
+      // Loss of ready is expected only while deliberately off or warming up.
+      // Once ready, retain the normal active-feedback fault handling.
+      if (powerEnabled_ && powerState_ != 3) return 0;
       if (isPrimary()) {
         // Cancel active and pending enable requests. The RT drive/brake path
         // consumes status.enable, not just the external command bit.
@@ -1095,7 +1125,139 @@ int ecmcEncoder::readHwReady(bool domainOK) {
   return 0;
 }
 
+int ecmcEncoder::setPowerEnable(bool enable) {
+  if (powerOn_ || data_->status_.statusWord_.enable || data_->status_.statusWord_.enabled)
+    return ERROR_AXIS_BUSY;
+  // Power cycling incremental feedback loses its reference. The first version
+  // intentionally supports absolute encoders, including BiSS, only.
+  if (enable && (encType_ != ECMC_ENCODER_TYPE_ABSOLUTE ||
+                 !checkDataExist(ECMC_ENCODER_ENTRY_INDEX_POWER) ||
+                 validateData(ECMC_ENCODER_ENTRY_INDEX_POWER)))
+    return ERROR_ENC_POWER_CONFIG;
+  powerEnabled_ = enable;
+  powerIdleOff_ = false;
+  powerIdleElapsedS_ = 0;
+  powerRequested_ = false;
+  powerOn_ = false;
+  powerState_ = enable ? 1 : 0;
+  powerElapsedS_ = 0;
+  powerReadyCycles_ = 0;
+  publishPowerState();
+  return 0;
+}
+
+int ecmcEncoder::setPowerPolarity(bool activeHigh) {
+  if (powerOn_ || data_->status_.statusWord_.enable || data_->status_.statusWord_.enabled)
+    return ERROR_AXIS_BUSY;
+  powerActiveHigh_ = activeHigh;
+  return 0;
+}
+
+int ecmcEncoder::setPowerDelay(double seconds) {
+  if (powerOn_) return ERROR_AXIS_BUSY;
+  if (!std::isfinite(seconds) || seconds < 0 || seconds >= powerTimeoutS_)
+    return ERROR_ENC_POWER_CONFIG;
+  powerDelayS_ = seconds;
+  return 0;
+}
+
+int ecmcEncoder::setPowerTimeout(double seconds) {
+  if (powerOn_) return ERROR_AXIS_BUSY;
+  if (!std::isfinite(seconds) || seconds <= powerDelayS_)
+    return ERROR_ENC_POWER_CONFIG;
+  powerTimeoutS_ = seconds;
+  return 0;
+}
+
+int ecmcEncoder::setPowerOffDelay(double seconds) {
+  if (powerOn_) return ERROR_AXIS_BUSY;
+  if (!std::isfinite(seconds) || seconds < 0) return ERROR_ENC_POWER_CONFIG;
+  powerOffDelayS_ = seconds;
+  return 0;
+}
+
+void ecmcEncoder::wakePower() {
+  powerIdleOff_ = false;
+  powerIdleElapsedS_ = 0;
+  powerRequested_ = true;
+}
+
+void ecmcEncoder::updatePowerIdle(bool settled) {
+  if (!powerEnabled_ || powerIdleOff_) return;
+  if (powerState_ != 3 || !settled) {
+    powerIdleElapsedS_ = 0;
+    return;
+  }
+  powerIdleElapsedS_ += data_->status_.sampleTime;
+  if (powerIdleElapsedS_ >= powerOffDelayS_) powerIdleOff_ = true;
+}
+
+void ecmcEncoder::publishPowerState() {
+  if (powerStateParam_ && powerState_ != powerStateOld_) {
+    powerStateParam_->refreshParamRT(1);
+    powerStateOld_ = powerState_;
+  }
+}
+
+bool ecmcEncoder::consumePowerPositionSync() {
+  const bool pending = powerPositionSync_;
+  powerPositionSync_ = false;
+  return pending;
+}
+
+bool ecmcEncoder::updatePower(bool masterOK, bool domainOK) {
+  if (powerError_) {
+    if (!data_->status_.statusWord_.enabled) powerOn_ = false;
+    powerState_ = 4;
+    return false;
+  }
+  // A completed, settled move may release feedback power while holding torque.
+  // Ordinary disable still retains feedback until amplifier ramp-down finishes.
+  if (!powerRequested_ && (powerIdleOff_ || !data_->status_.statusWord_.enabled)) {
+    powerOn_ = false;
+    powerState_ = 1;
+    powerElapsedS_ = 0;
+    powerReadyCycles_ = 0;
+    hwReady_ = 0;
+    encInitilized_ = false;
+    return false;
+  }
+  if (!powerOn_) {
+    powerOn_ = true;
+    powerState_ = 2;
+    powerElapsedS_ = 0;
+    powerReadyCycles_ = 0;
+    powerFirstSample_ = true;
+    encInitilized_ = false;
+    return false; // Transmit the relay command before crediting elapsed time.
+  }
+  if (powerState_ == 3) return true;
+  powerElapsedS_ += data_->status_.sampleTime;
+  if (masterOK && domainOK) {
+    const int error = readHwReady(domainOK);
+    if (error) {
+      powerError_ = error;
+      encLocalErrorId_ = error;
+      return false;
+    }
+    if (powerElapsedS_ >= powerDelayS_ && (!hwReadyBitDefined_ || hwReady_)) {
+      if (++powerReadyCycles_ >= 2) {
+        powerState_ = 3;
+        return true; // readEntries must obtain a valid position in this cycle.
+      }
+    } else powerReadyCycles_ = 0;
+  } else powerReadyCycles_ = 0;
+  if (powerElapsedS_ >= powerTimeoutS_) {
+    powerError_ = ERROR_ENC_POWER_TIMEOUT;
+    encLocalErrorId_ = powerError_;
+    powerState_ = 4;
+    powerOn_ = false;
+  }
+  return false;
+}
+
 int ecmcEncoder::hwReady() {
+  if (powerEnabled_ && powerState_ != 3) return 0;
   if (getErrorID()) {
     return 0;
   }
@@ -1117,36 +1279,49 @@ double ecmcEncoder::readEntries(bool masterOK) {
 
   domainOK_ = checkAllDataValid();
 
-  // Ensure that no errors
-  errorLocal = readHwWarningError(domainOK_);
+  const bool readFeedback = !powerEnabled_ || updatePower(masterOK, domainOK_);
+  if (readFeedback) {
+    // Ensure that no errors
+    errorLocal = readHwWarningError(domainOK_);
 
-  if (errorLocal) {
-    encLocalErrorId_ = errorLocal;
+    if (errorLocal) {
+      encLocalErrorId_ = errorLocal;
+    }
+
+    errorLocal = readHwReady(domainOK_);
+
+    if (errorLocal && !encLocalErrorId_) {
+      encLocalErrorId_ = errorLocal;
+    }
+
+    errorLocal = readHwActPos(masterOK, domainOK_);
+
+    if (errorLocal && !encLocalErrorId_) {
+      encLocalErrorId_ = errorLocal;
+    }
+
+    errorLocal = readHwLatch(domainOK_);
+
+    if (errorLocal && !encLocalErrorId_) {
+      encLocalErrorId_ = errorLocal;
+    }
+
+    errorLocal = readHwTouchProbe(domainOK_);
+
+    if (errorLocal && !encLocalErrorId_) {
+      encLocalErrorId_ = errorLocal;
+    }
+  } else {
+    // Unpowered hardware may report zero/garbage. Retain the last valid sample.
+    actPosLocal_ = actPos_;
+    actVelLocal_ = 0;
   }
 
-  errorLocal = readHwReady(domainOK_);
-
-  if (errorLocal && !encLocalErrorId_) {
-    encLocalErrorId_ = errorLocal;
+  if (powerEnabled_ && encLocalErrorId_) {
+    powerError_ = encLocalErrorId_;
+    powerState_ = 4;
   }
-
-  errorLocal = readHwActPos(masterOK, domainOK_);
-
-  if (errorLocal && !encLocalErrorId_) {
-    encLocalErrorId_ = errorLocal;
-  }
-
-  errorLocal = readHwLatch(domainOK_);
-
-  if (errorLocal && !encLocalErrorId_) {
-    encLocalErrorId_ = errorLocal;
-  }
-
-  errorLocal = readHwTouchProbe(domainOK_);
-
-  if (errorLocal && !encLocalErrorId_) {
-    encLocalErrorId_ = errorLocal;
-  }
+  publishPowerState();
 
   actPos_ = actPosLocal_;
   actVel_ = actVelLocal_;
@@ -1176,6 +1351,17 @@ double ecmcEncoder::readEntries(bool masterOK) {
 int ecmcEncoder::writeEntries() {
   if (!domainOK_) {
     return 0;
+  }
+
+  if (powerEnabled_) {
+    const uint64_t value = powerOn_ == powerActiveHigh_;
+    if (writeDataValue(ECMC_ENCODER_ENTRY_INDEX_POWER, value)) {
+      powerError_ = ERROR_ENC_ENTRY_WRITE_FAIL;
+      encLocalErrorId_ = powerError_;
+      powerState_ = 4;
+      publishPowerState();
+      return powerError_;
+    }
   }
 
   const bool latchTouchProbeMode = touchProbeAutoRearm_ &&
@@ -1272,6 +1458,13 @@ int ecmcEncoder::writeEntries() {
 
 int ecmcEncoder::validate() {
   int errorCode = 0;
+
+  if (powerEnabled_ &&
+      (encType_ != ECMC_ENCODER_TYPE_ABSOLUTE ||
+       !checkDataExist(ECMC_ENCODER_ENTRY_INDEX_POWER) ||
+       validateData(ECMC_ENCODER_ENTRY_INDEX_POWER))) {
+    return setErrorID(ERROR_ENC_POWER_CONFIG);
+  }
 
   if (sampleTimeMs_ <= 0) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__,
@@ -1835,6 +2028,13 @@ void ecmcEncoder::errorReset() {
   }
   
   encLocalErrorId_ = 0;
+  const bool restartPower = powerError_ != 0;
+  powerError_ = 0;
+  if (powerEnabled_ && restartPower) {
+    powerState_ = powerOn_ ? 2 : 1;
+    powerReadyCycles_ = 0;
+    powerElapsedS_ = 0;
+  }
     
   ecmcDataLink::errorReset();
   ecmcError::errorReset();
@@ -2027,7 +2227,9 @@ int ecmcEncoder::initAsyn() {
   paramTemp->setAllowWriteToEcmc(false);
   paramTemp->refreshParam(1);
   encErrId_ = paramTemp;
-  return 0;
+  return createAsynParam("enc.powerstate", asynParamInt32, ECMC_EC_S32,
+                         reinterpret_cast<uint8_t*>(&powerState_), sizeof(powerState_),
+                         &powerStateParam_);
 }
 
 int ecmcEncoder::createTouchProbeAsynParams() {
@@ -2045,7 +2247,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
   }
 
   int error = 0;
-  error = createTouchProbeAsynParam("enc.touchprobe.valid",
+  error = createAsynParam("enc.touchprobe.valid",
                                     asynParamInt32,
                                     ECMC_EC_S32,
                                     reinterpret_cast<uint8_t*>(
@@ -2053,7 +2255,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynValid_),
                                     &touchProbeAsynValidParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.sequence",
+  error = createAsynParam("enc.touchprobe.sequence",
                                     asynParamInt64,
                                     ECMC_EC_U64,
                                     reinterpret_cast<uint8_t*>(
@@ -2061,7 +2263,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynSequence_),
                                     &touchProbeAsynSequenceParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.position",
+  error = createAsynParam("enc.touchprobe.position",
                                     asynParamFloat64,
                                     ECMC_EC_F64,
                                     reinterpret_cast<uint8_t*>(
@@ -2069,7 +2271,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynPosition_),
                                     &touchProbeAsynPositionParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.timestampvalid",
+  error = createAsynParam("enc.touchprobe.timestampvalid",
                                     asynParamInt32,
                                     ECMC_EC_S32,
                                     reinterpret_cast<uint8_t*>(
@@ -2077,7 +2279,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynTimestampValid_),
                                     &touchProbeAsynTimestampValidParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.timestampraw",
+  error = createAsynParam("enc.touchprobe.timestampraw",
                                     asynParamInt64,
                                     ECMC_EC_U64,
                                     reinterpret_cast<uint8_t*>(
@@ -2085,7 +2287,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynTimestampRaw_),
                                     &touchProbeAsynTimestampRawParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.eventtimens",
+  error = createAsynParam("enc.touchprobe.eventtimens",
                                     asynParamInt64,
                                     ECMC_EC_U64,
                                     reinterpret_cast<uint8_t*>(
@@ -2093,7 +2295,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynEventTimeNs_),
                                     &touchProbeAsynEventTimeParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.armed",
+  error = createAsynParam("enc.touchprobe.armed",
                                     asynParamInt32,
                                     ECMC_EC_S32,
                                     reinterpret_cast<uint8_t*>(
@@ -2101,7 +2303,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynArmed_),
                                     &touchProbeAsynArmedParam_);
   if (error) return error;
-  error = createTouchProbeAsynParam("enc.touchprobe.armcmd",
+  error = createAsynParam("enc.touchprobe.armcmd",
                                     asynParamInt32,
                                     ECMC_EC_S32,
                                     reinterpret_cast<uint8_t*>(
@@ -2118,7 +2320,7 @@ int ecmcEncoder::createTouchProbeAsynParams() {
   return 0;
 }
 
-int ecmcEncoder::createTouchProbeAsynParam(
+int ecmcEncoder::createAsynParam(
   const char *name,
   asynParamType asynType,
   ecmcEcDataType ecmcType,

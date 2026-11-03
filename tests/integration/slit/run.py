@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'tests/integration'))
 from slit.plant import Plant, PlantThread
 from slit.rig import Client, Rig
 
-MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque', 'native', 'softlimit_sync', 'homing', 'interfaces', 'motor', 'isolation', 'target_write')
+MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque', 'native', 'softlimit_sync', 'homing', 'interfaces', 'motor', 'isolation', 'target_write', 'encoder_power')
 DEFAULT_REPORT = ROOT / 'test-results/slit/slit-report.json'
 DEFAULT_CONFIG = (ROOT.parent.parent / 'ecmccfg/examples/PSI/lab_setup/'
                   'master_slave/slit_epics_2026/slit_matrix_sim_test')

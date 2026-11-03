@@ -365,6 +365,11 @@ protected:
   void initControlWord();
   void initEncoders();  
   void autoEnableSM();
+  bool encoderPowerReady();
+  void encoderPowerEnableSM();
+  void encoderPowerIdleSM();
+  int prepareEncoderPowerMotion();
+  void syncEncoderPowerPosition();
   void autoDisableSM();
   void refreshAsynTargetValue();
   void bumpMotionCommandRequestCounter();
@@ -409,6 +414,9 @@ protected:
   double autoEnableTimoutS_;
   double autoDisableAfterS_;
   bool autoEnableRequest_;
+  bool encoderPowerEnablePending_;
+  bool encoderPowerInitPending_;
+  bool encoderPowerMoveCompleted_;
   const bool *motionStartPermissive_;
   bool motionStartPending_;
   double autoEnableTimeCounter_;

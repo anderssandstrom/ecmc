@@ -1453,6 +1453,60 @@ int setAxisEncScaleDenom(int axisIndex, double value) {
   return 0;
 }
 
+int setAxisEncPwrEnable(int axisIndex, int enable) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  if (enable && (!axes[axisIndex]->getMon()->getEnableAtTargetMon() ||
+                 axes[axisIndex]->getMon()->getAtTargetTol() <= 0))
+    return ERROR_ENC_POWER_CONFIG;
+  return axes[axisIndex]->getConfigEnc()->setPowerEnable(enable != 0);
+}
+int setAxisEncPwrOffDelay(int axisIndex, double seconds) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->getConfigEnc()->setPowerOffDelay(seconds);
+}
+int getAxisEncPwrOffDelay(int axisIndex, double *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerOffDelay();
+  return 0;
+}
+int setAxisEncPwrPol(int axisIndex, int activeHigh) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->getConfigEnc()->setPowerPolarity(activeHigh != 0);
+}
+int setAxisEncPwrDelay(int axisIndex, double seconds) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->getConfigEnc()->setPowerDelay(seconds);
+}
+int setAxisEncPwrTimeout(int axisIndex, double seconds) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->getConfigEnc()->setPowerTimeout(seconds);
+}
+int getAxisEncPwrEnable(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerEnable();
+  return 0;
+}
+int getAxisEncPwrPol(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerPolarity();
+  return 0;
+}
+int getAxisEncPwrDelay(int axisIndex, double *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerDelay();
+  return 0;
+}
+int getAxisEncPwrTimeout(int axisIndex, double *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerTimeout();
+  return 0;
+}
+int getAxisEncPwrState(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getConfigEnc()->getPowerState();
+  return 0;
+}
+
 int setAxisEncInvHwReady(int axisIndex, int invert) {
   LOGINFO4("%s/%s:%d axisIndex=%d invert=%d\n",
            __FILE__,

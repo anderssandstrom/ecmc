@@ -4117,7 +4117,18 @@ parse_cfg_setaxisdrv:
       return setAxisEncTouchProbeArmControlWord(iValue,u64Value,iValue2);
     }
 
-    /*int Cfg.SetAxisEncInvHwReady(int axis_no, int count);*/
+    /* Per-encoder relay power configuration (selected configuration encoder). */
+    nvals = sscanf(myarg_1, "SetAxisEncPwrEnable(%d,%d)", &iValue, &iValue2);
+    if (nvals == 2) return setAxisEncPwrEnable(iValue, iValue2);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrOffDelay(%d,%lf)", &iValue, &dValue);
+    if (nvals == 2) return setAxisEncPwrOffDelay(iValue, dValue);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrPol(%d,%d)", &iValue, &iValue2);
+    if (nvals == 2) return setAxisEncPwrPol(iValue, iValue2);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrDelay(%d,%lf)", &iValue, &dValue);
+    if (nvals == 2) return setAxisEncPwrDelay(iValue, dValue);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrTimeout(%d,%lf)", &iValue, &dValue);
+    if (nvals == 2) return setAxisEncPwrTimeout(iValue, dValue);
+
     nvals = sscanf(myarg_1,
                    "SetAxisEncInvHwReady(%d,%d)",
                    &iValue,
@@ -5980,6 +5991,31 @@ parse_getaxisenc:
     }
 
     /*int GetAxisEncAbsBits(int axis_no);*/
+    nvals = sscanf(myarg_1, "GetAxisEncPwrEnable(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrEnable(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrOffDelay(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisEncPwrOffDelay(motor_axis_no, &fValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrPol(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrPol(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrState(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrState(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrDelay(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisEncPwrDelay(motor_axis_no, &fValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrTimeout(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisEncPwrTimeout(motor_axis_no, &fValue));
+    }
+
     nvals = sscanf(myarg_1, "GetAxisEncAbsBits(%d)", &motor_axis_no);
 
     if (nvals == 1) {

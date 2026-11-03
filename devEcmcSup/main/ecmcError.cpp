@@ -789,6 +789,12 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x1441D:
+    return "ERROR_ENC_POWER_TIMEOUT";
+
+  case 0x1441E:
+    return "ERROR_ENC_POWER_CONFIG";
+
   case 0x14418:
     return "ERROR_ENC_HOME_TRIGG_LINKS_INVALID";
 

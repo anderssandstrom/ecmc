@@ -69,6 +69,7 @@ class ecmcAxisBase {
   bool autoExecuteOnTargetPos_=false, enableAutoEnable_=true, autoEnableRequest_=false;
   double autoEnableTimoutS_=1, autoEnableTimeCounter_=0;
   bool motionStartPending_=false; bool *motionStartPermissive_=nullptr;
+  bool encoderPowerEnablePending_=false;
   bool blocked=false, blockCom=false, startup=false, busy=false, execute=false;
   int error=0, source=0, starts=0, requests=0, targetWrites=0, staged=0;
   double applied=0;

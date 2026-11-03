@@ -117,6 +117,10 @@ class Rig:
             if 'brake' in self.profile['physical'].get(axis, {}):
                 try: result[axis]['brake_output'] = int(self.brake(axis))
                 except Exception as error: result[axis]['brake_output'] = str(error)
+            if 'encoder_power' in self.profile['physical'].get(axis, {}):
+                for suffix in ('-Enc02-PwrState', '-Enc02-PosAct'):
+                    try: result[axis][suffix] = self.get(axis, suffix)
+                    except Exception as error: result[axis][suffix] = str(error)
             if axis in self.profile['physical']:
                 slave = self.profile['physical'][axis]['drive_slave']
                 for field in ('driveControl01', 'driveStatus01', 'velocitySetpoint01'):

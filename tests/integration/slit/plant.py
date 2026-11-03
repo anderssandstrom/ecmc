@@ -40,6 +40,7 @@ class Faults:
     backward_ok: bool = True
     drive_fault: bool = False
     encoder_noise_mm: float = 0.0  # Peak amplitude of uniform measurement noise.
+    encoder_bias_mm: float = 0.0  # Deterministic measurement disturbance.
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,13 @@ class Blade:
         self.homing_inputs = None
         self.encoder_mm = position_mm
         self.encoder_noise_mm = 0.0
+        self.encoder_power_polarity = None
+        self.encoder_power_delay = 0.0
+        self.encoder_power_off_raw = 0
+        self.encoder_supply_seconds = 0.0
+        self.encoder_powered = True
+        self.encoder_raw = None
+        self.encoder_ready = True
         self.random = random.Random(config.get("noise_seed", config["drive_slave"]))
 
     @property
@@ -81,10 +89,10 @@ class Blade:
         for name, value in values.items():
             if name not in Faults.__dataclass_fields__:
                 raise ValueError('unknown fault ' + name)
-            if name == 'encoder_noise_mm':
-                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-                    raise ValueError('encoder_noise_mm must be a finite nonnegative amplitude')
-                self.faults.encoder_noise_mm = float(value)
+            if name in ('encoder_noise_mm', 'encoder_bias_mm'):
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or (name == 'encoder_noise_mm' and value < 0):
+                    raise ValueError(name + ' must be finite, with nonnegative noise amplitude')
+                setattr(self.faults, name, float(value))
                 continue
             if name == 'frozen' and value and not self.faults.frozen:
                 self.held_mm = self.encoder_mm
@@ -92,7 +100,7 @@ class Blade:
         if values.get('drive_fault') is False:
             self.model.fault = False
 
-    def step(self, control, velocity, seconds):
+    def step(self, control, velocity, seconds, encoder_power=True):
         if self.faults.drive_fault:
             self.model.trip()
             control = el7041.word16(control) & ~3  # Fault injection persists through reset/enable requests.
@@ -120,13 +128,20 @@ class Blade:
             mm = self.held_mm
         else:
             peak = self.faults.encoder_noise_mm
-            mm = self.position_mm + (self.random.uniform(-peak, peak) if peak else 0.0)
+            mm = self.position_mm + self.faults.encoder_bias_mm + (self.random.uniform(-peak, peak) if peak else 0.0)
         self.encoder_mm = mm
         self.encoder_noise_mm = mm - self.position_mm
         raw = round((mm - self.config['absolute_offset_mm']) * self.config['absolute_counts_per_mm'])
         raw %= 1 << self.config['absolute_bits']
+        self.encoder_powered = (self.encoder_power_polarity is None or
+                                bool(encoder_power) == self.encoder_power_polarity)
+        self.encoder_supply_seconds = (self.encoder_supply_seconds + seconds
+                                       if self.encoder_powered else 0.0)
+        valid_supply = self.encoder_powered and self.encoder_supply_seconds >= self.encoder_power_delay
+        self.encoder_raw = raw if valid_supply else self.encoder_power_off_raw
+        self.encoder_ready = valid_supply and self.faults.ready
         return (el7041.Feedback(status, feedback.encoder_status, feedback.position),
-                raw, 4 if self.faults.ready else 0)
+                self.encoder_raw, 4 if self.encoder_ready else 0)
 
 
 class Plant:
@@ -157,7 +172,13 @@ class Plant:
                                      'encoder_noise_peak_mm': blade.faults.encoder_noise_mm,
                                      'encoder_measurement_error_mm': blade.encoder_noise_mm,
                                      'encoder_frozen': blade.faults.frozen,
-                                     'encoder_ready': blade.faults.ready,
+                                     'encoder_ready': blade.encoder_ready,
+                                     'encoder_powered': blade.encoder_powered,
+                                     'encoder_raw': blade.encoder_raw,
+                                     'encoder_power_off_raw': blade.encoder_power_off_raw,
+                                     'encoder_supply_seconds': blade.encoder_supply_seconds,
+                                     'encoder_power_delay_seconds': blade.encoder_power_delay,
+                                     'encoder_bias_mm': blade.faults.encoder_bias_mm,
                                      'drive_fault': blade.faults.drive_fault,
                                      'acknowledge_enable': blade.faults.acknowledge_enable,
                                      **self.last_commands.get(axis, {})}
@@ -166,6 +187,20 @@ class Plant:
     def inject(self, axis, **values):
         with self.lock:
             self.blades[axis].inject(**values)
+
+    def configure_encoder_power(self, axis, active_high=None, startup_delay=0.0, off_raw=0):
+        if active_high is not None and not isinstance(active_high, bool):
+            raise ValueError('encoder relay polarity must be boolean or None')
+        if not math.isfinite(startup_delay) or startup_delay < 0:
+            raise ValueError('encoder startup delay must be finite and nonnegative')
+        if isinstance(off_raw, bool) or not isinstance(off_raw, int) or not 0 <= off_raw < 2**63:
+            raise ValueError('off-state raw word must fit the nonnegative EL5042 int64 output')
+        with self.lock:
+            blade = self.blades[axis]
+            blade.encoder_power_off_raw = off_raw
+            blade.encoder_power_polarity = active_high
+            blade.encoder_power_delay = startup_delay
+            blade.encoder_supply_seconds = 0.0
 
     def configure_homing(self, axis, inputs=None):
         if inputs is not None and not isinstance(inputs, HomingInputs):
@@ -208,7 +243,7 @@ class Plant:
         self.check()
 
     def run(self):
-        ios, encoders, owned = {}, {}, []
+        ios, encoders, power_pvs, owned = {}, {}, {}, []
         try:
             for axis, config in self.profile['physical'].items():
                 io = el7041.EpicsIO(self.prefix, 0, config['drive_slave'], '01', self.timeout, self.factory)
@@ -242,10 +277,23 @@ class Plant:
                     raise RuntimeError(axis + ': internal/absolute encoder images disagree; restart dedicated test IOC')
                 self.blades[axis] = Blade(config, mm)
                 encoders[axis] = fields
+                power = config.get('encoder_power')
+                if power:
+                    name = self.prefix + f'ec0:s{power["slave"]}:binaryOutput{power["channel"]}'
+                    pv = self.factory(name, auto_monitor=False)
+                    owned.append(pv)
+                    if not pv.wait_for_connection(timeout=self.timeout) or not pv.read_access:
+                        raise RuntimeError('cannot read encoder relay: ' + name)
+                    power_pvs[axis] = pv
             previous = time.monotonic()
             self.started.set()
             while not self.stop.is_set():
                 commands = {axis: self.io_call(axis + ' command read', io.read) for axis, io in ios.items()}
+                powers = {axis: self.io_call(axis + ' encoder relay read', pv.get,
+                                             use_monitor=False, timeout=self.timeout)
+                          for axis, pv in power_pvs.items()}
+                if any(value is None or value not in (0, 1) for value in powers.values()):
+                    raise RuntimeError('invalid encoder relay output readback')
                 now = time.monotonic()
                 elapsed = now - previous
                 with self.lock:
@@ -258,7 +306,7 @@ class Plant:
                     raise RuntimeError(f'plant loop stalled for {elapsed:.3f}s; slowest latest I/O: '
                                        f'{slowest} ({self.io_seconds[slowest]:.3f}s)')
                 with self.lock:
-                    feedback = {axis: self.blades[axis].step(*command, elapsed) for axis, command in commands.items()}
+                    feedback = {axis: self.blades[axis].step(*command, elapsed, encoder_power=powers.get(axis, True)) for axis, command in commands.items()}
                 for axis, (drive, position, status) in feedback.items():
                     for key, value in (('position', position), ('status', status)):
                         pv = encoders[axis][key]

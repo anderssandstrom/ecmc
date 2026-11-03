@@ -67,6 +67,7 @@ public:
   Filter velocity, position;
   Filter *velocityFilter_ = &velocity, *positionFilter_ = &position;
   bool actPosEntryUsesFloatingPoint() { return floatingPoint; }
+  bool getPowerOff() { return false; }
   int getRefToOtherEncAtStartup() { return reference; }
   double getActPos();
   void setActPos(double pos);
@@ -100,7 +101,7 @@ public:
   Sequence seq_;
   int axisState_ = ECMC_AXIS_STATE_STARTUP, error = 0;
   bool hwReady_ = false, hwReadyOld_ = false, mrEnable = false;
-  bool startupEnablePending_ = false;
+  bool startupEnablePending_ = false, encoderPowerInitPending_ = false;
   bool getStartupCommandsHeld() const { return commandsHeld; }
   int syncs = 0, targetRefreshes = 0;
   ecmcEncoder *getPrimEnc() { return encArray_[data_.control_.primaryEncIndex]; }

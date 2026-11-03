@@ -39,6 +39,10 @@ class ecmcEncoder : public ecmcError {
 public:
   ecmcAxisData *data_;
   bool primary, domainOK_ = true, masterOKOld_ = true;
+  bool powerEnabled_ = false;
+  int powerState_ = 0, powerError_ = 0;
+  bool updatePower(bool, bool) { assert(false); return false; }
+  void publishPowerState() {}
   bool hwReadyBitDefined_ = true, hwReadyInvert_ = false, encInitilized_ = true;
   uint64_t hwReady_ = 1, readyInput = 1;
   int readyReadError = 0, encLocalErrorId_ = 0, encLocalErrorIdOld_ = 0;

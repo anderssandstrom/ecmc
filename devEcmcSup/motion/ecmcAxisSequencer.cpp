@@ -3666,6 +3666,15 @@ int ecmcAxisSequencer::setTrajDataSourceType(dataSource refSource) {
 
 int ecmcAxisSequencer::setTrajDataSourceTypeInternal(dataSource refSource,
                                                 int        force) {
+  // External setpoints bypass the native execute/wake-up queue. Require valid
+  // feedback before handing control to that source, including forced changes.
+  if (refSource != ECMC_DATA_SOURCE_INTERNAL) {
+    for (int i = 0; i < data_->status_.encoderCount; ++i) {
+      if (encArray_[i]->getPowerEnable() &&
+          (!encArray_[i]->getPowerReady() || encArray_[i]->getPowerIdleOff()))
+        return ERROR_AXIS_BUSY;
+    }
+  }
   if (refSource == data_->status_.statusWord_.trajsource) {     
     return 0;
   };

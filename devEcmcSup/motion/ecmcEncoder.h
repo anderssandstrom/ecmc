@@ -149,6 +149,25 @@ public:
   double                getMaxPosDiffToPrimEnc();
   int                   hwReady();
   int                   setInvHwReady(int invert);
+  int                   setPowerEnable(bool enable);
+  int                   setPowerPolarity(bool activeHigh);
+  int                   setPowerDelay(double seconds);
+  int                   setPowerTimeout(double seconds);
+  int                   setPowerOffDelay(double seconds);
+  double                getPowerOffDelay() const { return powerOffDelayS_; }
+  bool                  getPowerIdleOff() const { return powerIdleOff_; }
+  void                  updatePowerIdle(bool settled);
+  void                  wakePower();
+  bool                  getPowerEnable() const { return powerEnabled_; }
+  bool                  getPowerReady() const { return !powerEnabled_ || powerState_ == 3; }
+  bool                  getPowerOff() const { return powerEnabled_ && powerState_ == 1; }
+  int                   getPowerError() const { return powerError_; }
+  int                   getPowerState() const { return powerState_; }
+  int                   getPowerPolarity() const { return powerActiveHigh_; }
+  double                getPowerDelay() const { return powerDelayS_; }
+  double                getPowerTimeout() const { return powerTimeoutS_; }
+  void                  requestPower(bool request) { powerRequested_ = request; }
+  bool                  consumePowerPositionSync();
 
   // For homing (just storing data)
   int                   getHomeParamsValid();
@@ -217,7 +236,7 @@ protected:
   uint8_t* getActPosPtr();
   uint8_t* getActVelPtr();
   int      initAsyn();
-  int      createTouchProbeAsynParam(const char *name,
+  int      createAsynParam(const char *name,
                                      asynParamType asynType,
                                      ecmcEcDataType ecmcType,
                                      uint8_t *data,
@@ -229,6 +248,27 @@ protected:
   int      readHwLatch(bool domainOK);
   int      readHwTouchProbe(bool domainOK);
   int      readHwReady(bool domainOK);
+  bool     updatePower(bool masterOK, bool domainOK);
+  void     publishPowerState();
+
+  // 0: ordinary encoder, 1: intentionally off, 2: warm-up, 3: ready, 4: fault.
+  bool powerEnabled_;
+  bool powerRequested_;
+  bool powerOn_;
+  bool powerActiveHigh_;
+  bool powerPositionSync_;
+  bool powerFirstSample_;
+  int powerState_;
+  int powerStateOld_;
+  int powerError_;
+  int powerReadyCycles_;
+  double powerDelayS_;
+  double powerTimeoutS_;
+  double powerElapsedS_;
+  double powerOffDelayS_;
+  double powerIdleElapsedS_;
+  bool powerIdleOff_;
+  ecmcAsynDataItem *powerStateParam_;
   
   encoderType encType_;
   ecmcFilter *velocityFilter_;

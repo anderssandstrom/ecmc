@@ -85,8 +85,9 @@ struct ecmcAxisBase {
   int getAxisID() { return id; }
   bool getStartupCommandsHeld() const;
   bool inStartup = false, startupEnablePending_ = false, enabled = false;
+  bool encoderPowerEnablePending_ = false;
   int motionRequests = 0, samples = 0;
-  struct { struct { bool enableAtStartup = true; } control_; } data_;
+  struct { struct { bool enableAtStartup = true; struct { bool enableCmd = false; } controlWord_; } control_; } data_;
   bool getInStartupPhase() { return inStartup; }
   void execute(bool ok) { ++samples; preExecute(ok); }
   void setMRCnen(bool) {}

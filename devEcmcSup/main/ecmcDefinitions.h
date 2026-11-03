@@ -120,6 +120,7 @@ typedef struct {
 #define ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE 14
 #define ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL 15
 #define ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP 16
+#define ECMC_ENCODER_ENTRY_INDEX_POWER 17
 
 // Encoders
 #define ECMC_MAX_ENCODERS 8
@@ -497,6 +498,7 @@ enum axisSubObjectType {
 #define ECMC_ENC_ALARM_2_STR "alarm2"
 #define ECMC_ENC_WARNING_STR "warning"
 #define ECMC_ENC_READY_STR "ready"
+#define ECMC_ENC_POWER_STR "power"
 #define ECMC_ENC_TRIGG_HOME_STR "homing_trigg"
 #define ECMC_ENC_STAT_HOME_STR "homing_stat"
 

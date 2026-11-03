@@ -45,6 +45,7 @@ python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case enable
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case feedback --loop closed
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case sync
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case brake
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case encoder_power
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run
 ```
 
@@ -53,7 +54,7 @@ overrides the configuration-directory location. PyEpics is required only for
 live execution (`python3 -m pip install pyepics`). The usual Channel Access
 environment selects the IOC host. The runner checks both `MCU-Cfg-Sim-Mode=1`
 and the dedicated `SIM:SlitTest:Schema` marker matching `profile.json` (currently
-schema 2), plus axis IDs and motor coordinate
+schema 3), plus axis IDs and motor coordinate
 conventions **before any writes**. It refuses a normal/non-test IOC.
 
 Do not run `ioc.py`, its GUI or another plant on these same simulation fields
@@ -69,6 +70,7 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/limits.py` | Forward/backward hardware switches during motion, escape with switch held, bouncing inputs without automatic restart, motor-record soft-limit rejection, controller soft-limit boundary through axis PVs |
 | `cases/enable.py` | Missing enable acknowledgement, lost enabled feedback during motion, drive fault |
 | `cases/feedback.py` | Primary encoder not-ready at idle/during motion, readiness recovery without automatic restart, unready secondary isolation, frozen EL5042 following error, independent LO move while HI feedback is invalid |
+| `cases/encoder_power.py` | EL5042 raw zero/ready low while off, both relay polarities, short/long post-settling delays, motor auto-enable, native relative wake with drive still enabled and auto-enable off, early/late readiness, wake timeout, STOP cancellation, atTarget/deadband dwell reset |
 | `cases/noise.py` | Closed-loop EL5042 measurement noise: small noise preserves at-target; larger noise clears it without fault/disable, followed by stable recovery |
 | `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion, coordinated STOP and fresh-command recovery |
 | `cases/homing.py` | Motor/native homing 1–10, encoder-configured 14, manual reference, absolute 21/22; STOP/disable/fault/missing-cam aborts and motor status flags |
@@ -78,7 +80,7 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
 | `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 220 planned test executions with both loop modes selected. Primary
+There are 242 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -421,7 +423,7 @@ are restored.
 21/22 skip in open-loop mode because that mode's primary incremental encoder
 has no absolute bits. Encoder-not-ready abort cases also skip there. Thus the
 homing module alone plans 88 cases across both modes with 6 expected skips;
-the complete suite plans 220 cases with 15 expected mode-specific skips.
+the complete suite plans 242 cases with 17 expected mode-specific skips.
 Mode-specific skips are decided before setup writes or cleanup registration.
 Index-latch 11/12 and external-drive 26 require additional hardware handshakes
 and are not claimed as covered by the current slit plant.
@@ -501,8 +503,9 @@ python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case interfaces
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing
 ```
 
-Both modes now plan 220 executions with the same 15 mode-specific skips. No
-new ecmccfg records or configuration installation is required for these cases.
+The interface cases use existing IOC records. The current full suite plans
+242 executions with 17 mode-specific skips and uses the schema-3 fixture
+described under encoder supply relay tests below.
 
 
 Motor coordinate and completion controls
@@ -596,8 +599,9 @@ and a fresh coordinated move are checked afterward; jog settings are restored.
 Rejection of blocked commands may report write errors at the requested record;
 that must not become a latched controller error on the virtual or physical axes.
 
-The complete default plan is 220 executions, with the same 15 mode-specific
-skips. These additions are Python-only and require no new IOC configuration.
+The complete default plan is 242 executions, with 17 mode-specific skips.
+The isolation cases themselves are Python-only; the current default fixture
+also includes the encoder relay links described below.
 
 After restoring encoder references and returning physically to zero, homing
 cleanup waits for the motor record's fresh readback and synchronizes its target
@@ -681,3 +685,36 @@ now 235 (`1003 & 0xff`) in `-SeqState`. Existing status flags 0–23 retain thei
 positions. See [native target-write mode](../../../documentation/native-target-write.md)
 for the setting, status layout and packed-status compatibility requirements.
 The main/native/expert panels show the mode without changing panel dimensions.
+
+## Encoder supply relay tests
+
+The `encoder_power` group requires the updated dedicated fixture (schema 3),
+ECMC encoder-power support, and the ecmccfg `Enc02-PwrState` record. Restart the
+IOC after updating its configuration. The fixture links EL2008 output 03 to
+LO encoder 2 and output 04 to HI encoder 2; the relay mode stays disabled outside
+these cases. The plant couples supply to those outputs only while a power test
+opts in, and restores its ordinary continuously powered model during cleanup.
+
+During a power test, an off supply publishes **EL5042 positionActual = 0 and
+encoder-ready = 0**. Power-on also models a physical startup delay. The physical
+position and drive's internal counter are preserved; ECMC must retain its last
+valid encoder position, gate the next move until fresh feedback, and avoid a
+false following error. Test cleanup restores ordinary feedback before removing
+idle error suppression, then restores native settings and configuration-encoder
+selection. Fault/STOP cases must never replay the cancelled target.
+
+The configured power-off delay starts after the completed move is atTarget and,
+when smaller, inside the controller deadband. Encoder power must remain on for
+this dwell; losing qualification restarts it. CA timing checks allow 0.2 seconds
+for observation latency; exact cycle timing is covered by `tests/test_encoder_power.py`.
+Two disturbance cases require closed-loop EL5042 feedback and are skipped in
+open-loop mode. The remaining cases also run with the internal counter primary.
+
+The rollover case also alternates zero and the configured raw counter's all-ones
+word while supply is off. It verifies that the jump exceeds ECMC's rollover
+threshold, retained position stays unchanged, and repeated wake/relative moves
+reach their expected physical and encoder positions without resetting/homing
+between cycles. The standalone production checks also place the valid sample
+near the top of the raw counter and test zero during power-off, covering both
+rollover directions with and without a ready input. They assert the actual raw
+register and multi-turn value as well as position and velocity.
