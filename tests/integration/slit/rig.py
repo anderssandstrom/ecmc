@@ -49,9 +49,9 @@ class Rig:
     def name(self, axis, suffix): return self.prefix + axis + suffix
     def get(self, axis, suffix): return self.client.get(self.name(axis, suffix))
     def put(self, axis, suffix, value):
-        # STOP must be an ordinary put: a second put-notify on the same motor
-        # would queue behind the outstanding VAL put-notify until motion ends.
-        if suffix == '.STOP':
+        # Interrupt/resume fields must be ordinary puts: a second put-notify
+        # on the same motor queues behind the active VAL request until it ends.
+        if suffix in ('.STOP', '.SPMG', '.JOGF', '.JOGR'):
             return self.client.put(self.name(axis, suffix), value, wait=False, notify=False)
         return self.client.put(self.name(axis, suffix), value, wait=suffix != '.VAL')
 
@@ -103,12 +103,13 @@ class Rig:
         for axis in self.names:
             result[axis] = {}
             for suffix in ('-PosAct', '-PosSet', '-EnaAct', '-EnaCmd', '-EnaCmd-RB', '-ExeCmd-RB',
-                           '-Busy', '-AtTarget', '-ErrId', '-LimFwd', '-LimBwd', '-TrjSrcTyp-RB',
+                           '-Busy', '-AtTarget', '-Homed', '-HomeSwitch', '-SeqState', '-ErrId', '-LimFwd', '-LimBwd', '-TrjSrcTyp-RB',
                            '-LastIlock', '-SumIlockFwd', '-SumIlockBwd',
                            '-WrnId', '-SftLimFwdIlock', '-SftLimBwdIlock', '-SftLimFwdEna-RB', '-SftLimBwdEna-RB',
                            '-TgtPosCmd', '-TgtVelCmd', '-MtnCmd', '-MtnCmdData',
                            '-CfgDLLM-RB', '-CfgDHLM-RB', '-CfgDLLM-En-RB', '-CfgDHLM-En-RB',
                            '-CfgSyncSftLim', '.DLLM', '.DHLM', '.LLM', '.HLM', '.VAL', '.RBV', '.DVAL',
+                           '.SPDB', '.MRES', '.RDBD', '.BDST',
                            '-Blocked', '-InStartup', '-StartupHeld', '-StartupMotorReady', '-StartupLimitsReady',
                            '.DMOV', '.MOVN', '.MSTA', '.LVIO', '.STAT', '.SEVR', '.PACT', '.MIP', '.SYNC'):
                 try: result[axis][suffix] = float(self.get(axis, suffix))
@@ -363,6 +364,40 @@ class Rig:
         lo, hi = (self.get(axis, '-PosAct') for axis in ('TR_LO', 'TR_HI'))
         self.wait(lambda: abs(self.get('CENTERY', '-PosAct') - (lo + hi) / 2) < .02
                   and abs(self.get('GAPY', '-PosAct') - (hi - lo)) < .02, 'forward slit kinematics', 3)
+
+    def open_text_commands(self):
+        """Configure the existing MCU-Cmd asyn record; caller restores fields."""
+        name = self.prefix + 'MCU-Cmd'
+        saved = {field: self.client.get(name + field) for field in ('.TMOD', '.IFMT', '.OFMT')}
+        try:
+            for field, value in (('.TMOD', 'Write/Read'), ('.IFMT', 'ASCII'), ('.OFMT', 'ASCII')):
+                self.client.put(name + field, value)
+        except Exception:
+            self.close_text_commands(saved)
+            raise
+        return saved
+
+    def close_text_commands(self, saved):
+        for field, value in saved.items():
+            self.client.put(self.prefix + 'MCU-Cmd' + field, value)
+
+    def text_command(self, command, query=False):
+        """One synchronous command/reply; never accept parser errors as success."""
+        if len(command.encode('utf-8')) >= 40:
+            raise ValueError('MCU-Cmd.AOUT accepts at most 39 bytes; use a shorter command: ' + command)
+        name = self.prefix + 'MCU-Cmd'
+        self.client.put(name + '.AOUT', command)
+        reply = self.client.pv(name + '.AINP').get(as_string=True, use_monitor=False,
+                                                 timeout=self.client.timeout)
+        if reply is None or self.client.get(name + '.SEVR'):
+            raise AssertionError('MCU-Cmd transport failed: ' + command)
+        reply = reply.strip(' ;\r\n\x00')
+        if query:
+            value = float(reply)
+            if not math.isfinite(value): raise AssertionError('nonfinite MCU-Cmd reply: ' + reply)
+            return value
+        if reply != 'OK':
+            raise AssertionError(f'MCU-Cmd rejected {command!r}: {reply!r}')
 
     def fault_stopped(self, axis, code=None, timeout=8):
         self.wait(lambda: self.get(axis, '-ErrId') != 0 and self.get(axis, '-EnaAct') == 0,

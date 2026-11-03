@@ -3007,6 +3007,17 @@ static int handleCfgCommand(const char *myarg_1, int fromNetwork) {
     return setAxisAutoEnableTimeout(iValue, dValue);
   }
 
+  /*int Cfg.SetAxisAutoExecuteOnTargetPos(int axis_no, int enable);*/
+  nvals = sscanf(myarg_1, "SetAxisAutoExec(%d,%d)", &iValue, &iValue2);
+  if (nvals == 2) {
+    return setAxisAutoExecuteOnTargetPos(iValue, iValue2);
+  }
+
+  nvals = sscanf(myarg_1, "SetAxisAutoExecuteOnTargetPos(%d,%d)", &iValue, &iValue2);
+  if (nvals == 2) {
+    return setAxisAutoExecuteOnTargetPos(iValue, iValue2);
+  }
+
   /*int Cfg.SetAxisEnableAutoEnable(int axis_no, int enable);*/
   nvals = sscanf(myarg_1,
                  "SetAxisEnableAutoEnable(%d,%d)",
@@ -6337,6 +6348,16 @@ parse_getaxisdrv:
   if (nvals == 1) {
     SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getMasterSlaveSMMasterAtTargetTimeout(
                                            iValue, &fValue));
+  }
+
+  nvals = sscanf(myarg_1, "GetAxisAutoExec(%d)", &motor_axis_no);
+  if (nvals == 1) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisAutoExecuteOnTargetPos(motor_axis_no, &iValue));
+  }
+
+  nvals = sscanf(myarg_1, "GetAxisAutoExecuteOnTargetPos(%d)", &motor_axis_no);
+  if (nvals == 1) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisAutoExecuteOnTargetPos(motor_axis_no, &iValue));
   }
 
   /*int GetAxisTweakDist(int axis_no);*/

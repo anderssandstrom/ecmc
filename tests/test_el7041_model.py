@@ -44,7 +44,17 @@ for _ in range(256):
     model.step(1,1,.001)
 assert model.position_counts == 1 and model.feedback().position == 1
 
+# Requested 10 ms minimum starts at command observation, not an old dt.
+delayed = Model(Settings(enable_delay=.01))
+assert not delayed.step(1, 16384, 1).drive_status & 2
+assert not delayed.step(1, 16384, .009).drive_status & 2
+assert delayed.position_counts == 0
+assert delayed.step(1, 16384, .002).drive_status & 2
+assert not delayed.step(0, 16384, 0).drive_status & 2
+assert not delayed.step(1, 16384, 1).drive_status & 2
+
 model = Model(Settings(enable_delay=.05))
+assert not model.step(1,16384,1).drive_status & 2  # First observation cannot credit old elapsed time.
 assert not model.step(1,16384,.04).drive_status & 2
 feedback = model.step(1,16384,.02)
 assert feedback.drive_status & 2 and math.isclose(model.position_counts,640)

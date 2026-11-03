@@ -1126,7 +1126,22 @@ int setAxisTargetPos(int axisIndex, double value) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
   CHECK_AXIS_SEQ_RETURN_IF_ERROR(axisIndex)
 
+  if (axes[axisIndex]->getAutoExecuteOnTargetPos()) {
+    return axes[axisIndex]->moveOnTargetPosWrite(value);
+  }
   axes[axisIndex]->setTargetPosAndCmd(value);
+  return 0;
+}
+
+int setAxisAutoExecuteOnTargetPos(int axisIndex, int enable) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  axes[axisIndex]->setAutoExecuteOnTargetPos(enable != 0);
+  return 0;
+}
+
+int getAxisAutoExecuteOnTargetPos(int axisIndex, int *enable) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *enable = axes[axisIndex]->getAutoExecuteOnTargetPos();
   return 0;
 }
 

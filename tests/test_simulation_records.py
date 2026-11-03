@@ -92,7 +92,13 @@ int main() {
   records.insert("TEST:SIM:ec0:s14:driveControl01-Set");
   assert(loadSimulationRecords(prefix) == ERROR_MAIN_SIM_RECORDS_LOAD_FAILED && loads == 0);
   records.clear();
+  const size_t originalCount = port.parameterCount();
+  port.capacity = static_cast<int>(originalCount); // Main table is completely full.
   assert(loadSimulationRecords(prefix) == 0 && loads == 1 && dbEntries == 0);
+  auto *simulationPort = port.auxiliary("SIM_TEST_SIM0");
+  assert(simulationPort && simulationPort != &port);
+  assert(port.parameterCount() == originalCount);
+  assert(!port.find("sim.ec0.s14.driveStatus01"));
   assert(records.size() == 10); // Input injection/readback pairs and output Set/readback pair.
   assert(records.count("TEST:SIM:ec0:s14:driveStatus01"));
   assert(records.count("TEST:SIM:ec0:s14:driveStatus01-RB"));
@@ -106,14 +112,14 @@ int main() {
   assert(definitions.find("record(longout,\"TEST:SIM:ec0:s14:positionActual01\")") != std::string::npos);
   assert(definitions.find("record(ao,\"TEST:SIM:ec0:s14:analogInput01\")") != std::string::npos);
   assert(definitions.find("record(int64out,\"TEST:SIM:ec0:s14:timestamp01\")") != std::string::npos);
-  assert(definitions.find("@asynMask(SIM_TEST,0,0xffffffff,1)") != std::string::npos);
+  assert(definitions.find("@asynMask(SIM_TEST_SIM0,0,0xffffffff,1)") != std::string::npos);
   assert(definitions.find("field(NOBT,\"16\")") != std::string::npos);
   assert(definitions.find("field(PINI,\"NO\")") != std::string::npos);
   assert(loadSimulationRecords(prefix) == 0 && loads == 1); // No duplicates on repeat.
   assert(loadSimulationRecords("OTHER:") == ERROR_MAIN_IO_BACKEND_LOCKED);
-  auto *status = port.find("sim.ec0.s14.driveStatus01");
-  auto *control = port.find("sim.ec0.s14.driveControl01");
-  auto *position = port.find("sim.ec0.s14.positionActual01");
+  auto *status = simulationPort->find("sim.ec0.s14.driveStatus01");
+  auto *control = simulationPort->find("sim.ec0.s14.driveControl01");
+  auto *position = simulationPort->find("sim.ec0.s14.positionActual01");
   assert(status && status->writable && control && control->writable);
   assert(control->data == port.find("ec0.s14.driveControl01")->data);
   assert(position->data == port.find("ec0.s14.positionActual01")->data);
@@ -136,11 +142,12 @@ int main() {
   assert(drive.writeDataValue(0,1) == 0); // Cyclic owner may overwrite the manual value.
   driver.writeOutputs({});
   assert(control->lastRTValue == 1);
-  auto *stamp = port.find("sim.ec0.s14.timestamp01");
+  auto *stamp = simulationPort->find("sim.ec0.s14.timestamp01");
   uint64_t wide = UINT64_MAX;
   memcpy(stamp->data,&wide,sizeof(wide));
   uint64_t exact = 0;
   assert(driver.findEntry(14,"timestamp01")->access->readValue(&exact) == 0 && exact == wide);
+  port.capacity += 1; // Existing legacy entry registration remains on the main port.
   assert(driver.addEntry(14,2,123,2,3,0,0,0,ECMC_EC_U8,"later",true) == 0);
   failLoad = true;
   assert(loadSimulationRecords(prefix) == ERROR_MAIN_SIM_RECORDS_LOAD_FAILED);

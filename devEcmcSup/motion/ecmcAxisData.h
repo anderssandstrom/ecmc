@@ -85,9 +85,17 @@ typedef struct {
   unsigned char localBusy       : 1;   // traj busy
   unsigned char globalBusy      : 1;   // sequence busy, like PVT
   unsigned char blocked         : 1;   // Blocked by master/slave state machine
-  unsigned char seqstate        : 3;
-  unsigned char lastilock       : 5;
+  unsigned char autoExecuteOnTargetPos : 1;
+  unsigned char reserved        : 7;
 } ecmcAxisStatusWordType;
+
+typedef struct {
+  unsigned int seqstate  : 8;
+  unsigned int lastilock : 8;
+  unsigned int reserved : 16;
+} ecmcAxisStatusWord2Type;
+static_assert(sizeof(ecmcAxisStatusWordType) == sizeof(uint32_t), "Axis status must remain 32 bits");
+static_assert(sizeof(ecmcAxisStatusWord2Type) == sizeof(uint32_t), "Axis status2 must be 32 bits");
 
 typedef struct {
   double  externalTrajectoryPosition;
@@ -127,6 +135,7 @@ typedef struct {
   axisTypes axisType;
   double  sampleTime;
   ecmcAxisStatusWordType statusWord_;  
+  ecmcAxisStatusWord2Type statusWord2_;
 } ecmcAxisDataStatus;
 
 typedef struct {

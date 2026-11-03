@@ -29,7 +29,7 @@ def enable(model):
     assert model.step(15, 0, 0).drive_status == 0x27
 
 
-model = ds402.Model(ds402.Settings(encoder_counts_per_rev=1000,
+model = ds402.Model(ds402.Settings(enable_delay=0, encoder_counts_per_rev=1000,
                                    velocity_units_per_rev_per_second=100))
 assert model.step(15, 100, 1).drive_status == 0x40  # no skipped startup sequence
 enable(model)
@@ -52,10 +52,10 @@ enable(model)
 assert model.step(0, 100, 1).drive_status == 0x40
 
 # Repository CSV example: 2^31 raw = 8000 rev/s, 2^20 counts/rev.
-model = ds402.Model()
+model = ds402.Model(ds402.Settings(enable_delay=0))
 enable(model)
 assert model.step(15, 268435456, .125).position == 131072000
-model = ds402.Model(ds402.Settings(mode='csp'), (1 << 32) - 5)
+model = ds402.Model(ds402.Settings(mode='csp', enable_delay=0), (1 << 32) - 5)
 enable(model)
 assert model.step(15, 10, .01).position == 10
 assert model.position_counts == (1 << 32) + 10  # nearest wrapped target
@@ -66,6 +66,38 @@ for bad in (None, float('nan'), 1.5, 1 << 32, -(1 << 31) - 1):
 rejects(lambda: ds402.Settings(mode='cst'))
 rejects(lambda: ds402.Settings(velocity_units_per_rev_per_second=0))
 rejects(lambda: model.step(15, 0, -1))
+
+
+# Default enable handshake: each command must first be observed, then remain
+# stable for >=10 ms. Large old elapsed intervals cannot instantly acknowledge.
+for mode in ('csv', 'csp'):
+    model = ds402.Model(ds402.Settings(mode=mode))
+    assert model.settings.enable_delay == .01
+    for command, before, after in ((6, 0x40, 0x21), (7, 0x21, 0x23), (15, 0x23, 0x27)):
+        assert model.step(command, 0, 1).drive_status == before
+        assert model.step(command, 0, .009).drive_status == before
+        assert model.step(command, 0, .002).drive_status == after
+    assert model.step(0, 100, 0).drive_status == 0x40  # Disable is immediate.
+    assert model.step(6, 0, 1).drive_status == 0x40
+    assert model.step(6, 0, .009).drive_status == 0x40
+    model.step(0, 0, .5)  # Cancel pending shutdown -> ready.
+    assert model.step(6, 0, .5).drive_status == 0x40
+    assert model.step(6, 0, .009).drive_status == 0x40
+    model.trip()
+    assert model.step(6, 0, 1).drive_status == 8
+    assert model.step(128, 0, 0).drive_status == 0x40
+
+# Only time after the enabled acknowledgement contributes to CSV motion.
+model = ds402.Model(ds402.Settings(encoder_counts_per_rev=1000,
+                                  velocity_units_per_rev_per_second=100))
+for command in (6, 7, 15):
+    model.step(command, 100, .5)
+    model.step(command, 100, .01)
+assert model.state == 'enabled' and model.position_counts == 0
+assert model.step(15, 100, .02).position == 20
+assert model.step(11, 100, 0).drive_status == 7  # Quick stop is immediate.
+for value in (-.01, float('nan'), float('inf')):
+    rejects(lambda: ds402.Settings(enable_delay=value))
 
 
 class PV:
@@ -114,7 +146,7 @@ for mode in ('csv', 'csp'):
     assert io.mode == mode and io.initial_position() == 0
     model = ds402.Model(ds402.Settings(mode=io.mode))
     io.publish(model.feedback())
-    for _ in range(5):
+    for _ in range(9):
         io.publish(model.step(*io.read(), .01))
     assert factory.values[factory.base + 'positionActual01'] > 0
     assert factory.values[factory.base + 'driveStatus01'] == 0x27

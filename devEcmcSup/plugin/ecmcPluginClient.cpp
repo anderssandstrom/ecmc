@@ -328,8 +328,8 @@ int getEcmcAxisStatus(int axisIndex, struct ecmcCppAxisStatus* status) {
 
   status->valid = 1u;
   status->status_word = packAxisStatusWord(source->statusWord_);
-  status->seq_state = source->statusWord_.seqstate;
-  status->last_interlock = source->statusWord_.lastilock;
+  status->seq_state = source->statusWord2_.seqstate;
+  status->last_interlock = source->statusWord2_.lastilock;
   status->traj_source = source->statusWord_.trajsource;
   status->enc_source = source->statusWord_.encsource;
   status->axis_id = source->axisId;

@@ -52,7 +52,18 @@ class PV:
     def put(self, value, **kwargs):
         f = self.factory
         f.calls.append((self.pvname, value, kwargs))
-        if self.pvname.endswith('.STOP'):
+        if self.pvname.endswith('.SPMG'):
+            if f.result != 1: return f.result
+            notify = kwargs.get('use_complete') or kwargs.get('callback') or kwargs['wait']
+            if notify and f.values['TEST:TR_LO-Busy']:
+                # As with STOP, a second put-notify cannot pause the active VAL.
+                return -1
+            f.values[self.pvname] = value
+            if value in (0, 1) and f.values['TEST:TR_LO-Busy']:
+                timer = threading.Timer(.01, f.finish_stop)
+                f.timers.append(timer)
+                timer.start()
+        elif self.pvname.endswith('.STOP'):
             if f.result != 1: return f.result
             notify = kwargs.get('use_complete') or kwargs.get('callback') or kwargs['wait']
             if notify and f.values['TEST:TR_LO-Busy']:
@@ -256,3 +267,23 @@ for suffix, value in (('.SEVR', 2), ('.LVIO', 1)):
     else:
         raise AssertionError('a transient completion alarm must remain a failure')
 print('Completion verdict: transient alarm/limit triggers retained even when later snapshots are healthy.')
+
+
+from slit.cases.motor import MotorTests
+for value in (0, 1):
+    factory, client, rig = setup()
+    request = rig.start_move('TR_LO', .7)
+    try:
+        client.put('TEST:TR_LO.SPMG', value, wait=True)
+    except RuntimeError: pass  # Reproduce the original queued-notify failure.
+    else: raise AssertionError('boundary must reject notify behind active VAL')
+    c = MotorTests('test_spmg_pause_resume_and_stop_cancel')
+    c.axis, c.rig = 'TR_LO', rig
+    c.set_spmg(value)
+    for timer in factory.timers: timer.join()
+    assert request.is_set() and rig.get('TR_LO', '-Busy') == 0
+    c.set_spmg(3)
+    calls = [call for call in factory.calls if call[0].endswith('.SPMG')]
+    for _, _, options in calls[1:]:
+        assert options['wait'] is False and not options.get('callback') and not options.get('use_complete')
+print('SPMG: ordinary Pause/Stop/Go puts avoid active VAL put-notify queue; readback acknowledgement is checked.')

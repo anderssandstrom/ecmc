@@ -346,3 +346,19 @@ sparse discovery, invalid metadata, support selection, per-slave workers and
 read-only listing with controlled CA endpoints and deterministic worker clocks.
 Neither test contacts an IOC or requires PyEpics. Live multi-drive CA operation
 and actual achieved update rates still need testing on the target system.
+
+Enable acknowledgement timing
+----------------------------
+
+The DS402 model defaults to `enable_delay: 0.01` seconds for each forward
+handshake (ready, switched on, operation enabled, and re-enable after quick
+stop). The EL70xx stepper model retains its 0.05-second enable delay. Both start
+timing when a new command is first observed; elapsed time preceding that
+observation is not credited. A cancelled enable discards the pending delay.
+Faults, disabling and quick stop remain immediate model actions.
+
+The `enable_delay` JSON setting can override the model delay, including zero
+for intentionally instantaneous tests. CA transport, polling and Python
+scheduling add variable latency beyond the model delay; these models provide
+functional sequence timing, not deterministic RT timing. Position integration
+uses only time after the enable acknowledgement.

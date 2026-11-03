@@ -271,7 +271,7 @@ void ecmcAxisSequencer::executeInternal() {
     modeAct_ = (int)tempRaw;
   }
 
-  statusWord.seqstate = seqState_;
+  status.statusWord2_.seqstate = seqState_;
 
   if (traj_ == NULL) {
     setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_SEQ_TRAJ_NULL);

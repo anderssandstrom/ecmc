@@ -32,3 +32,6 @@ ecmc.Makefile
 .codex/
 **/.codex
 **/.codex/
+
+# Generated test reports
+/test-results/

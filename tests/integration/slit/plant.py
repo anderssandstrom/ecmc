@@ -8,6 +8,29 @@ import time
 import el7041
 
 
+class PlantThread(threading.Thread):
+    """Keep plant traffic on a CA connection separate from test commands."""
+    def run(self):
+        from epics import ca
+        # CAThread attaches the caller's initial context. A new context gives
+        # this client its own IOC circuit, so motor processing on the test
+        # connection cannot hold up plant requests on that same circuit.
+        ca.create_context()
+        try:
+            super().run()
+        finally:
+            # disconnect() removes PV callbacks, but PyEpics 3.5.x retains the
+            # underlying channels in its process-wide chid cache. Clear them
+            # while their context is alive; otherwise atexit may clear invalid
+            # handles after context destruction and crash inside libca.
+            context = ca.current_context()
+            for entry in list(ca._cache.get(context, {}).values()):
+                if entry.chid is not None:
+                    ca.clear_channel(entry.chid)
+            ca.flush_io()
+            ca.destroy_context()
+
+
 @dataclass
 class Faults:
     ready: bool = True
@@ -19,12 +42,33 @@ class Faults:
     encoder_noise_mm: float = 0.0  # Peak amplitude of uniform measurement noise.
 
 
+@dataclass(frozen=True)
+class HomingInputs:
+    """Position-based sensors in the unchanged physical coordinate system."""
+    low_mm: float = -.4
+    high_mm: float = .4
+    cam_low_mm: float = -.08
+    cam_high_mm: float = .08
+    cam_enabled: bool = True
+    travel_bound_mm: float = .8
+
+    def __post_init__(self):
+        coordinates = (self.low_mm, self.cam_low_mm, self.cam_high_mm, self.high_mm)
+        if not all(math.isfinite(v) for v in coordinates + (self.travel_bound_mm,)):
+            raise ValueError('homing sensor coordinates must be finite')
+        if not self.low_mm < self.cam_low_mm < self.cam_high_mm < self.high_mm:
+            raise ValueError('homing cam must lie strictly between end switches')
+        if self.travel_bound_mm <= max(abs(self.low_mm), abs(self.high_mm)):
+            raise ValueError('homing travel bound must extend beyond end switches')
+
+
 class Blade:
     def __init__(self, config, position_mm=0):
         self.config = config
         self.model = el7041.Model(el7041.Settings(), position_mm * config['internal_counts_per_mm'])
         self.faults = Faults()
         self.held_mm = position_mm
+        self.homing_inputs = None
         self.encoder_mm = position_mm
         self.encoder_noise_mm = 0.0
         self.random = random.Random(config.get("noise_seed", config["drive_slave"]))
@@ -54,6 +98,16 @@ class Blade:
             control = el7041.word16(control) & ~3  # Fault injection persists through reset/enable requests.
         feedback = self.model.step(control, velocity, seconds)
         status = feedback.drive_status
+        if self.homing_inputs is not None:
+            sensors = self.homing_inputs
+            position = self.position_mm
+            if abs(position) > sensors.travel_bound_mm:
+                raise RuntimeError('homing plant exceeded physical travel bound')
+            if position <= sensors.low_mm: status &= ~(1 << 11)
+            if position >= sensors.high_mm: status &= ~(1 << 12)
+            # Dedicated fixture links status bit 13 as an active-high home cam.
+            if sensors.cam_enabled and sensors.cam_low_mm <= position <= sensors.cam_high_mm:
+                status |= 1 << 13
         if self.faults.drive_fault:
             status = (status | 8) & ~3
         if not self.faults.acknowledge_enable:
@@ -86,13 +140,19 @@ class Plant:
         self.blades = {}
         self.last_elapsed, self.max_elapsed, self.last_commands = 0.0, 0.0, {}
         self.last_published = None
+        self.io_phase = 'initializing'
+        self.io_seconds, self.io_max_seconds = {}, {}
+        self.failure_details = None
 
     def snapshot(self):
         with self.lock:
             return {'last_step_seconds': self.last_elapsed, 'max_step_seconds': self.max_elapsed,
                     'seconds_since_publish': time.monotonic() - self.last_published if self.last_published else None,
                     'error': str(self.error) if self.error else None,
+                    'io_phase': self.io_phase, 'io_seconds': dict(self.io_seconds),
+                    'io_max_seconds': dict(self.io_max_seconds), 'failure': self.failure_details,
                     'blades': {axis: {'position_mm': blade.position_mm,
+                                     'homing_inputs': vars(blade.homing_inputs) if blade.homing_inputs else None,
                                      'encoder_mm': blade.encoder_mm,
                                      'encoder_noise_peak_mm': blade.faults.encoder_noise_mm,
                                      'encoder_measurement_error_mm': blade.encoder_noise_mm,
@@ -107,11 +167,33 @@ class Plant:
         with self.lock:
             self.blades[axis].inject(**values)
 
+    def configure_homing(self, axis, inputs=None):
+        if inputs is not None and not isinstance(inputs, HomingInputs):
+            raise ValueError('homing inputs must be HomingInputs or None')
+        with self.lock:
+            self.blades[axis].homing_inputs = inputs
+
+    def physical_position(self, axis):
+        with self.lock:
+            return self.blades[axis].position_mm
+
     def clear_faults(self):
         with self.lock:
             for blade in self.blades.values():
                 blade.faults = Faults()
+                blade.homing_inputs = None
                 blade.model.fault = False
+
+    def io_call(self, phase, operation, *args, **kwargs):
+        with self.lock: self.io_phase = phase
+        started = time.monotonic()
+        try:
+            return operation(*args, **kwargs)
+        finally:
+            duration = time.monotonic() - started
+            with self.lock:
+                self.io_seconds[phase] = duration
+                self.io_max_seconds[phase] = max(self.io_max_seconds.get(phase, 0), duration)
 
     def check(self):
         if self.error is not None:
@@ -163,7 +245,7 @@ class Plant:
             previous = time.monotonic()
             self.started.set()
             while not self.stop.is_set():
-                commands = {axis: io.read() for axis, io in ios.items()}
+                commands = {axis: self.io_call(axis + ' command read', io.read) for axis, io in ios.items()}
                 now = time.monotonic()
                 elapsed = now - previous
                 with self.lock:
@@ -172,21 +254,31 @@ class Plant:
                     self.last_commands = {axis: {'control': int(command[0]), 'velocity': int(command[1])}
                                           for axis, command in commands.items()}
                 if elapsed > max(.25, self.period * 5):
-                    raise RuntimeError(f'plant loop stalled for {elapsed:.3f}s')
+                    slowest = max(self.io_seconds, key=self.io_seconds.get)
+                    raise RuntimeError(f'plant loop stalled for {elapsed:.3f}s; slowest latest I/O: '
+                                       f'{slowest} ({self.io_seconds[slowest]:.3f}s)')
                 with self.lock:
                     feedback = {axis: self.blades[axis].step(*command, elapsed) for axis, command in commands.items()}
                 for axis, (drive, position, status) in feedback.items():
                     for key, value in (('position', position), ('status', status)):
                         pv = encoders[axis][key]
-                        if not pv.connected or pv.put(value, wait=True, timeout=self.timeout) != 1:
+                        if not pv.connected or self.io_call(axis + ' absolute ' + key + ' write', pv.put,
+                                                           value, wait=True, timeout=self.timeout) != 1:
                             raise RuntimeError('encoder write failed: ' + pv.pvname)
-                    ios[axis].publish(drive)
+                    self.io_call(axis + ' drive feedback write', ios[axis].publish, drive)
                 with self.lock:
                     self.last_published = time.monotonic()
                 previous = now
                 self.stop.wait(max(0, self.period - (time.monotonic() - now)))
         except Exception as error:
             self.error = error
+            # Capture timing before withdrawal deliberately trips both drives.
+            with self.lock:
+                self.failure_details = {'reason': str(error), 'io_phase': self.io_phase,
+                                        'step_seconds': self.last_elapsed,
+                                        'io_seconds': dict(self.io_seconds),
+                                        'seconds_since_publish': (time.monotonic()-self.last_published
+                                                                  if self.last_published is not None else None)}
         finally:
             self.started.set()
             for axis, io in ios.items():

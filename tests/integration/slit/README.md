@@ -71,12 +71,14 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/feedback.py` | Primary encoder not-ready at idle/during motion, readiness recovery without automatic restart, unready secondary isolation, frozen EL5042 following error, independent LO move while HI feedback is invalid |
 | `cases/noise.py` | Closed-loop EL5042 measurement noise: small noise preserves at-target; larger noise clears it without fault/disable, followed by stable recovery |
 | `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion, coordinated STOP and fresh-command recovery |
+| `cases/homing.py` | Motor/native homing 1–10, encoder-configured 14, manual reference, absolute 21/22; STOP/disable/fault/missing-cam aborts and motor status flags |
 | `cases/native.py` | Native ABS/REL/VEL commands, staging before execute, repeated execute requests, native STOP, center/gap commands |
+| `cases/isolation.py` | Blocked virtual motor/native command bursts during physical motion; both-direction physical jog release/STOP with no virtual controller errors and fresh coordinated recovery |
 | `cases/softlimit_sync.py` | Motor-to-ECMC and ECMC-config-to-motor limit values; enable-flag propagation in both interfaces |
 | `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
 | `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 94 planned test executions with both loop modes selected. Primary
+There are 220 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -229,8 +231,11 @@ tests additionally check valid position/velocity feedback.
 
 ## Evidence and limitations
 
-The runner writes `slit-report.json` and `slit-report.xml` (JUnit), or paths
-selected by `--report`. Reports include test/mode/status, elapsed time, failure
+The runner writes `test-results/slit/slit-report.json` and
+`test-results/slit/slit-report.xml` (JUnit) under the ECMC repository, regardless
+of the working directory. This generated directory is ignored by Git and created
+on demand. Use `--report /path/to/report.json` to choose another location; the
+matching XML is written alongside it. Runs overwrite the selected report pair. Reports include test/mode/status, elapsed time, failure
 details, axis diagnostics and move snapshots. Plant errors, bounded-wait
 timeouts and cleanup write failures produce a nonzero process exit. Ctrl+C or
 SIGTERM stops/disables axes and withdraws enabled plant feedback; reports retain
@@ -379,3 +384,300 @@ Enable writes through native `-SftLimBwdEna/-SftLimFwdEna` and motor-driver
 at a time; the tests make no unbounded move. Original pairs and enable flags
 are restored in `finally`, including after a failed assertion. Polling waits
 allow the motor record to update more slowly than the native ECMC state.
+
+## Homing coverage
+
+Restart the dedicated IOC with the updated `slit_matrix_sim_test/startup.cmd`
+and `test-marker.db` before running homing. Both physical-axis YAML files must declare `encoder.homing` so ecmccfg loads
+the motor homing records, including `-HomProc.OMSL`. Startup Cfg commands alone
+do not create these PVs. No ECMC rebuild is required by these test additions. The new `SIM:SlitTest:HomingSchema=2` capability marker prevents
+homing against an old setup that still links the home sensor to constant ONE.
+The base fixture schema stays 2 so other modules keep their existing guard.
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing --loop closed
+```
+
+The homing module contains 44 cases per loop mode. Both motor `.HOMF/.HOMR`
+and native `MtnCmd=10`, command data and momentary execute are covered. Motor
+HomProc is put in supervisory mode during each case so its normal DOL link
+cannot override the selected procedure. The UI cmdData calcout is also disabled
+during these explicit sequence tests so it cannot asynchronously replace the
+native sequence number. Original parameters, OMSL and calcout disable fields
+are restored.
+
+| Procedures | Reference checked |
+|---|---|
+| 1, 2 | Backward/forward end switch on the departure edge |
+| 3, 4 | First home-cam edge after leaving the backward/forward limit |
+| 5, 6 | Cam midpoint after leaving the backward/forward limit |
+| 7, 8 | First cam edge during backward/forward search |
+| 9, 10 | Cam midpoint during backward/forward search |
+| 14 | Delegates internally to encoder procedure 1; `-MtnCmdData` retains request 14; reference must match the backward-limit edge |
+| Native 15 / motor 25 | Reference changes without physical travel; 25 is the motor-record alias for 15 |
+| 21, 22 | Absolute phase relative to the next/previous turn, using EL5042 scaling |
+
+21/22 skip in open-loop mode because that mode's primary incremental encoder
+has no absolute bits. Encoder-not-ready abort cases also skip there. Thus the
+homing module alone plans 88 cases across both modes with 6 expected skips;
+the complete suite plans 220 cases with 15 expected mode-specific skips.
+Mode-specific skips are decided before setup writes or cleanup registration.
+Index-latch 11/12 and external-drive 26 require additional hardware handshakes
+and are not claimed as covered by the current slit plant.
+
+Only while a homing case runs, physical HI uses end switches at +/-0.4 mm and
+an active-high cam from -0.08 to +0.08 mm on drive-status bit 13. The plant
+continues publishing during reversal, stopping and faults. It does not jump
+encoder counts to complete a sequence. An independent +/-0.8 mm physical bound
+stops the plant if a search runs away. Other modules retain their ordinary
+fault-controlled limit inputs. Successful references are checked against these
+physical edges/midpoint, not merely a Homed flag.
+
+Moving searches must show native Busy=1, motor DMOV=0/MOVN=1 and Homed=0, allowing
+for the motor poller's slower updates. Completion must show Busy=0, DMOV=1,
+MOVN=0, SeqState=0 and Homed=1, with no motor alarm/limit violation. Immediate
+manual reference changes need not expose a moving transient, but must complete
+their request, set Homed, update position and leave the physical plant still.
+Full IOC snapshots are collected after completion or abort, so diagnostic PV
+reads do not delay observation of motion or the intended abort phase.
+The motor adapter must clear its previously latched Done state when native
+Busy is observed, even when no motor-record command handler ran. The regression
+fix for this requires rebuilding ECMC and restarting the IOC; updating only
+the Python harness does not correct native-motion DMOV/MOVN reporting.
+
+Abort cases stop a search during its initial leg, its reversed leg, or between
+cam edges; they also test disable, drive fault, primary encoder-not-ready and
+missing cam (unexpected end switch, error 0x14d04). An aborted search must clear
+Busy, return DMOV/MOVN to idle and leave Homed false. Restoring inputs/reset
+must not replay it. Each case then issues a fresh search and requires success.
+After reset, motor completion flags have up to five seconds to settle before
+the sustained idle check. Throughout that interval, native Busy/SeqState must
+stay zero, Homed must stay false, the drive must remain stationary and physical
+position must remain within 0.015 mm of the aborted position. A transient
+native restart fails immediately; persistent incorrect motor flags time out.
+
+21/22 produce large engineering coordinates with this encoder's 26 absolute
+bits. Those cases temporarily widen both synchronized coordinate limits to
++/-20000 mm; the physical bound remains +/-0.8 mm. Their expected phase is
+computed from the physical position, 4096 counts/mm, -1380 mm encoder offset,
+and the 2^26-count period. After every homing case, cleanup stops the plant's
+motion while maintaining feedback, references each encoder back to the actual
+physical position using manual homing, restores the loop's primary encoder,
+returns physically to zero, and restores homing parameters and limits. Cleanup
+never overwrites the raw plant counters to conceal a reference error.
+The cleanup return requires standstill and both physical and encoder positions
+within 2 micrometres of zero. It does not require a new Busy pulse for an
+already-zero move; the substantive native motion tests still require Busy.
+
+
+Runtime configuration and interface bursts
+-----------------------------------------
+
+The existing `MCU-Cmd` asyn record is used for synchronous text commands and
+numeric queries. Parser errors, missing replies and transport alarms fail the
+case. The test restores the record's transfer/format fields afterward. Do not
+use that command record interactively while a test owns it.
+
+Motor and native post-home cases enable a 0.2 mm post-home target on the primary
+encoder at runtime, verify the settings by query, and use encoder-configured procedure 14 to home to the backward
+switch. They require Busy=1, DMOV=0, MOVN=1 during internal sequencer state 1003 (published as 235 in the
+eight-bit SeqState PV) while Homed is already true, then verify the new-coordinate target and the
+independent physical position. Encoder configuration selection, post-home
+settings and the usual references are restored afterward. Cleanup uses 14 again
+to reload restored settings into the sequencer before manual re-referencing.
+
+`--case interfaces` runs five cases in each loop mode: physical motor/native
+moves with the state machine disabled, repeated motor VAL writes, repeated
+native requests, alternating motor/native requests, and text-command requests
+through `MCU-Cmd`. Each burst starts from verified motion, repeats both equal
+and alternating bounded targets, requests STOP, verifies no queued restart,
+and proves both interfaces accept fresh moves. Motor bursts use ordinary
+asynchronous CA writes rather than serializing put-notify completion callbacks.
+These are finite correctness/stress cases, not RT throughput measurements.
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case interfaces
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing
+```
+
+Both modes now plan 220 executions with the same 15 mode-specific skips. No
+new ecmccfg records or configuration installation is required for these cases.
+
+
+Motor coordinate and completion controls
+---------------------------------------
+
+`--case motor` adds four cases per loop mode. OFF=0.3 and both DIR values are
+checked using the independent mapping `user = OFF + sign * dial`; native dial
+position must remain unchanged by coordinate edits and must reach each commanded
+user target with the correct sign. SPMG Pause must stop and Go must resume its
+saved target; SPMG Stop must cancel that target so Go cannot replay it. A fresh
+move is required afterward. Saved coordinate/SPMG settings are restored.
+
+The two zero-tolerance cases temporarily set `Cfg.SetAxisMonAtTargetTol(axis,0)`
+through MCU-Cmd and query it back. The production monitor uses strict `<`, so
+AtTarget cannot become true at zero tolerance. After the trajectory is stationary,
+DMOV and the motor request's callback must remain incomplete. STOP must still
+complete the operation; restoring the original tolerance must allow fresh normal
+moves. The native case checks the same motor completion behavior without a
+motor-request callback. Neither case waits indefinitely for AtTarget.
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case motor
+```
+
+Homing cleanup restores the original SyncSoftLimits setting before restoring
+limits. With sync enabled it requires motor user/dial limits to acknowledge the
+restored controller pair. With sync disabled it restores the saved motor pair
+independently and verifies that controller limits and enable flags remain
+unchanged. Cleanup never enables synchronization solely to restore independent
+pairs. Setup requires matching pairs only when synchronization is enabled.
+
+
+Post-home cleanup reinstates the position-based switch scene before its
+configuration-reload search: unittest teardown runs before registered cleanups
+and clears that scene. Reference cleanup refuses to start further motion when
+physical position has already exceeded the independent travel bound. After a
+previous run exceeded that bound, restart the dedicated SIM IOC to reload its
+known initial encoder/reference state before rerunning.
+
+Switch-reference checks include ramp-down: `physical_final - encoder_final`
+identifies the latched physical switch edge after ECMC applies its reference
+correction. The position PV has up to three seconds to publish that correction
+after completion/Homed, with the same edge and 0.025 mm tolerance. Errors, loss
+of Homed or restarted motion fail immediately. Recent physical/encoder/offset
+samples are retained in the report to distinguish publication lag from a
+persistent wrong reference.
+
+
+The text-command burst retargets the running move with `Main.M6.fPosition=...`
+and repeats `Main.M6.bExecute=1` (48 command/reply transactions). It does not
+clear text bExecute between requests: text bExecute=0 requests ramp-down, unlike
+the momentary axis-PV trigger. Immediate re-execute during that ramp-down can
+legitimately return ERROR_AXIS_BUSY. The final explicit STOP and no-replay/fresh-
+command checks remain required; command errors are not ignored.
+
+SPMG writes use ordinary asynchronous CA puts, like STOP, so they can interrupt
+a pending motor VAL put-notify. Field acknowledgement is checked separately;
+Pause must actually stop the trajectory, Go must expose resumed native Busy and
+reach the original target, and Stop followed by Go must not replay it.
+
+Before Go after SPMG Stop, the test also requires the motor record's cancellation
+acknowledgement: DMOV=1, MOVN=0, MIP=0 and user/dial targets synchronized to
+readback. Native standstill alone is insufficient. The axis must stay stationary
+and fault-free throughout this bounded callback wait; stale targets still fail.
+
+
+Blocked command and jog isolation
+--------------------------------
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case isolation
+```
+
+Four cases run in both loop modes. The motor/native blocked-command cases first
+prove that physical HI is moving and both virtual axes are blocked. They submit
+24 requests to center/gap and require their record-completion callbacks while
+physical motion continues. Throughout, virtual Busy and ErrId must remain zero,
+the physical target/trajectory ownership must remain unchanged, and the other
+blade must remain still. After physical STOP, no rejected request may execute
+later. A fresh physical move and center move prove recovery without resetting
+away controller faults.
+
+The jog cases use motor JOGF/JOGR on each physical axis, in both directions,
+with JVEL=0.2 and JAR=1. They verify signed displacement/velocity and moving
+Busy/DMOV/MOVN, then stop either by releasing the jog button or via motor STOP.
+Jog writes are ordinary asynchronous puts, so release cannot queue behind a
+motion put-notify. Virtual controller ErrId must stay zero during travel,
+ramp-down and sustained standstill. Completion also requires cleared jog buttons
+and MIP, idle Busy/DMOV/MOVN, an unchanged other blade and no replay. Kinematics
+and a fresh coordinated move are checked afterward; jog settings are restored.
+Rejection of blocked commands may report write errors at the requested record;
+that must not become a latched controller error on the virtual or physical axes.
+
+The complete default plan is 220 executions, with the same 15 mode-specific
+skips. These additions are Python-only and require no new IOC configuration.
+
+After restoring encoder references and returning physically to zero, homing
+cleanup waits for the motor record's fresh readback and synchronizes its target
+before restoring narrow soft limits. This avoids applying them while motor RBV
+still reflects the large absolute-homing coordinate. A stale motor readback
+blocks cleanup; LVIO checks remain strict and are never manually cleared.
+
+Manual homing 15/25 also requires publication of the requested encoder position
+before completion is accepted. Idle/Homed may already be true before the command,
+so those flags alone are insufficient. During this wait the physical plant must
+remain within 0.003 mm of its pre-command position; unchanged/incorrect encoder
+reference still fails. The same acknowledgement is used for cleanup re-referencing.
+
+For a quick rerun of one failing case, use the repeatable `--test` substring
+filter. Setup, plant startup, guards and cleanup still run normally:
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing --loop open --test test_native_sequence_15
+```
+
+Omit `--loop open` to check both modes. Repeat `--test` to select multiple names
+with OR matching (for example `--test test_native_sequence_15 --test test_motor_sequence_25`).
+Module, loop and name filters are combined. Omitting `--run` previews the selected
+tests without connecting. An empty selection is an error before any IOC writes,
+so a typo cannot silently report a successful zero-test run. Omit all filters
+for the complete suite.
+
+Plant timing failures during command bursts
+------------------------------------------
+
+The plant watchdog remains `max(0.25 seconds, five model periods)`. If it trips,
+shutdown deliberately sets a drive fault on both simulated drives. A subsequent
+ERROR_DRV_HW_ALARM_0 therefore does not by itself show that a blocked command
+faulted ECMC. Isolation checks inspect plant health before classifying axis errors.
+The report records latest/maximum command-read and feedback-write times and a
+failure-time snapshot captured before shutdown injection. A healthy plant plus
+an axis error still fails.
+
+Blocked bursts retain all 24 requests, with isolation scans between four-command
+batches instead of before every individual write. Cheap plant liveness checks
+remain before each request. This reduces synchronous observer traffic competing
+with feedback; it does not relax the watchdog or error requirements. Use
+`--test test_blocked_motor_commands_during_physical_move --loop open` for a short
+rerun. The generated field PVs should use the dedicated simulation asyn port after
+installing the earlier ECMC port-separation change.
+
+The plant also uses a separate Channel Access context (and IOC connection) from
+the test-command client. Previously `CAThread` attached both to the initial
+context: a dedicated asyn port alone did not separate their CA connection.
+A fresh-build live run still measured a 399 ms command read during motor spam.
+Connection separation prevents plant reads from queuing behind motor processing
+on that same client connection; the live rerun must confirm whether it resolves
+this stall. The context closes after the plant disconnects its PVs, including on
+failure. The watchdog, all 24 blocked requests, and fault assertions are unchanged.
+This is a Python runner change; no IOC rebuild or restart is needed to try it.
+
+Plant context cleanup explicitly clears its cached CA channels before destroying
+the context. In PyEpics 3.5.x, disconnecting a PV removes callbacks but retains
+the channel in a process-wide cache. Destroying its context first leaves invalid
+handles for Python's exit cleanup, which can crash after an otherwise successful
+test run. The cleanup only clears channels belonging to the plant context; the
+test-command context remains intact. This correction is Python-only.
+
+## Native target-write mode
+
+`target_write` adds six cases per loop mode (12 live executions): PV and text
+ABS/REL moves with repeated identical relative writes; retargeting an active
+absolute move; and target-triggered auto-enable from a disabled drive. It also
+checks that mode selection does not run an old target, default staged writes
+remain idle, motor DMOV/MOVN settle, and the panel readback follows selection.
+Temporary mode/auto-enable settings and command transport fields are restored.
+
+```bash
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case target_write
+```
+
+This feature requires rebuilding/installing ECMC, installing matching ecmccfg
+records/panels and restarting the SIM IOC. Status bits 24–31 changed: mode is
+bit 24; sequence/interlock bytes moved to `axN.status2`. The post-home phase is
+now 235 (`1003 & 0xff`) in `-SeqState`. Existing status flags 0–23 retain their
+positions. See [native target-write mode](../../../documentation/native-target-write.md)
+for the setting, status layout and packed-status compatibility requirements.
+The main/native/expert panels show the mode without changing panel dimensions.

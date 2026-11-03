@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <new>
 #include <iostream>
+#include <cmath>
 #include "ecmcMotion.h"
 #include "ecmcErrorsList.h"
 #include "ecmcGlobalsExtern.h"
@@ -432,6 +433,8 @@ void ecmcAxisBase::initVars() {
   autoDisableAtTgtLtchEnable_   = false;
   autoDisableAtTargetLatched_   = false;
   positionTargetAsyn_           = 0;
+  autoExecuteOnTargetPos_       = false;
+  statusWord2Param_            = nullptr;
   invSampleTime_                = 1000.0;
   masterSlaveBlocked_           = false;
   data_.status_.statusWord_.blocked = 0;
@@ -704,6 +707,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
   data_.axAsynParams_[ECMC_ASYN_AX_ACT_VEL_ID]->refreshParamRT(0);
   data_.axAsynParams_[ECMC_ASYN_AX_POS_ERR_ID]->refreshParamRT(0);
   data_.axAsynParams_[ECMC_ASYN_AX_STATUS_ID]->refreshParamRT(0);
+  statusWord2Param_->refreshParamRT(0);
   data_.axAsynParams_[ECMC_ASYN_AX_CONTROL_BIN_ID]->refreshParamRT(0);
   data_.axAsynParams_[ECMC_ASYN_AX_ERROR_ID]->refreshParamRT(0);
   data_.axAsynParams_[ECMC_ASYN_AX_WARNING_ID]->refreshParamRT(0);
@@ -1351,9 +1355,9 @@ void ecmcAxisBase::printAxisStatus() {
     getErrorID(),
     data_.status_.command,
     data_.status_.cmdData,
-    data_.status_.statusWord_.seqstate,
+    data_.status_.statusWord2_.seqstate,
     (int)data_.interlocks_.interlockStatus,
-    data_.status_.statusWord_.lastilock,
+    data_.status_.statusWord2_.lastilock,
     data_.status_.statusWord_.trajsource,
     data_.status_.statusWord_.encsource,
     data_.status_.statusWord_.enable,
@@ -1648,6 +1652,16 @@ int ecmcAxisBase::initAsyn() {
   paramTemp->refreshParam(1);
   data_.axAsynParams_[ECMC_ASYN_AX_TARG_POS_ID] = paramTemp;
 
+  errorCode = createAsynParam(ECMC_AX_STR "%d.status2",
+                              asynParamInt32,
+                              ECMC_EC_U32,
+                              (uint8_t *)&data_.status_.statusWord2_,
+                              sizeof(data_.status_.statusWord2_),
+                              &statusWord2Param_);
+  if (errorCode) return errorCode;
+  statusWord2Param_->setAllowWriteToEcmc(false);
+  statusWord2Param_->refreshParam(1);
+
   // Acceleration
   errorCode = createAsynParam(ECMC_AX_STR "%d." ECMC_ASYN_AX_ACC_NAME,
                               asynParamFloat64,
@@ -1824,9 +1838,9 @@ int ecmcAxisBase::getAxisDebugInfoData(char *buffer,
                      data_.status_.errorCode,
                      (int)data_.status_.command,
                      data_.status_.cmdData,
-                     data_.status_.statusWord_.seqstate,
+                     data_.status_.statusWord2_.seqstate,
                      (int)data_.interlocks_.interlockStatus,
-                     data_.status_.statusWord_.lastilock,
+                     data_.status_.statusWord2_.lastilock,
                      data_.status_.statusWord_.trajsource,
                      data_.status_.statusWord_.encsource,
                      data_.status_.statusWord_.enable,
@@ -2014,8 +2028,11 @@ void ecmcAxisBase::refreshStatusWd() {
   // bit 23 blocked
   data_.status_.statusWord_.blocked = getBlocked();
 
-  // bit 26..31 lastActiveInterlock type
-  data_.status_.statusWord_.lastilock =
+  // bit 24: native target writes trigger position moves.
+  data_.status_.statusWord_.autoExecuteOnTargetPos = autoExecuteOnTargetPos_;
+
+  // The second status word carries sequence state and last interlock bytes.
+  data_.status_.statusWord2_.lastilock =
     (unsigned char)data_.interlocks_.lastActiveInterlock;
 }
 int ecmcAxisBase::setEnable(bool enable) {
@@ -3437,6 +3454,10 @@ asynStatus ecmcAxisBase::axisAsynWriteTargetPos(void         *data,
   double pos = 0;
   memcpy(&pos, data, bytes);
 
+  if (autoExecuteOnTargetPos_) {
+    return moveOnTargetPosWrite(pos) ? asynError : asynSuccess;
+  }
+
   data_.control_.positionTarget = pos;
   ecmcRtLoggerLogInfo(
     "%s/%s:%d: INFO: Axis[%d]: Target position set to %lf.\n",
@@ -3855,6 +3876,52 @@ int ecmcAxisBase::setAllowSourceChangeWhenEnabled(bool allow) {
 
 int ecmcAxisBase::getAllowSourceChangeWhenEnabled() {
   return data_.control_.allowSourceChangeWhenEnabled;
+}
+
+void ecmcAxisBase::setAutoExecuteOnTargetPos(bool enable) {
+  autoExecuteOnTargetPos_ = enable;
+  data_.status_.statusWord_.autoExecuteOnTargetPos = enable;
+  if (data_.axAsynParams_[ECMC_ASYN_AX_STATUS_ID]) {
+    data_.axAsynParams_[ECMC_ASYN_AX_STATUS_ID]->refreshParamRT(1);
+  }
+}
+
+bool ecmcAxisBase::getAutoExecuteOnTargetPos() const {
+  return autoExecuteOnTargetPos_;
+}
+
+int ecmcAxisBase::moveOnTargetPosWrite(double posTarget) {
+  // Only external native target writes enter here. Internal setpoint updates
+  // must not retrigger moves (in particular relative moves) every RT scan.
+  if (getBlockCom()) return setExternalCommandBlockedError();
+  if (getBlocked()) return setMasterSlaveCommandBlockedError();
+  if (getStartupCommandsHeld()) return ERROR_AXIS_BUSY;
+  if (getErrorID()) return getErrorID();
+  if (!std::isfinite(posTarget)) return ERROR_SEQ_TARGET_POS_OUT_OF_RANGE;
+  const motionCommandTypes command = data_.control_.command;
+  if (command != ECMC_CMD_MOVEABS && command != ECMC_CMD_MOVEREL) {
+    return ERROR_SEQ_COMMAND_NOT_SUPPORTED;
+  }
+  if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
+    return ERROR_MAIN_TRAJ_SOURCE_NOT_INTERNAL;
+  }
+  // Retarget only a position move of the same type; never interrupt homing,
+  // jogging, or a pending enable/start sequence with a target write.
+  if (getBusy() && !(getExecute() && getCommand() == command &&
+                    data_.status_.statusWord_.localBusy)) {
+    return ERROR_AXIS_BUSY;
+  }
+  if (!getEnable() && !(enableAutoEnable_ && autoEnableTimoutS_ > 0)) {
+    return ERROR_AXIS_NOT_ENABLED;
+  }
+  if (command == ECMC_CMD_MOVEABS) {
+    return moveAbsolutePosition(posTarget, data_.control_.velocityTarget,
+                                data_.control_.accelerationTarget,
+                                data_.control_.decelerationTarget);
+  }
+  return moveRelativePosition(posTarget, data_.control_.velocityTarget,
+                              data_.control_.accelerationTarget,
+                              data_.control_.decelerationTarget);
 }
 
 void ecmcAxisBase::setTargetPos(double posTarget) {
@@ -4519,7 +4586,7 @@ int ecmcAxisBase::readDataSource(ecmcAxisDataType source, double *value) {
     break;
 
   case ECMC_AXIS_DATA_SEQ_STATE:
-    *value = static_cast<double>(axisData->statusWord_.seqstate);
+    *value = static_cast<double>(axisData->statusWord2_.seqstate);
     break;
 
   case ECMC_AXIS_DATA_INTERLOCK_TYPE:

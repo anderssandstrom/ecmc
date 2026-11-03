@@ -121,8 +121,22 @@ Name/type collisions are preflighted. A subsequent EPICS database-load failure
 is reported; restart the IOC after resolving it because EPICS may have loaded
 part of that batch. Creation is refused after runtime or the IOC-running hook.
 The ecmccfg default prefix is `${ECMC_PREFIX}SIM:` and can be overridden with
-`ECMC_SIM_PREFIX` before `setAppMode.cmd`. Raw asyn views require additional
-parameter slots; increase `MAX_PARAM_COUNT` at startup if the table is too small.
+`ECMC_SIM_PREFIX` before `setAppMode.cmd`. Private simulation views are registered on an automatically created dedicated
+asyn port, `<ECMC_ASYN_PORT>_SIM<master-id>` (for example `MC_CPU1_SIM0`). Its
+parameter table is sized from the declared fields and grows during configuration
+if later loads add entries. These views do not consume slots in the main port's
+`MAX_PARAM_COUNT` table. Normal `ecN.sM.field`, axis and PLC parameters remain
+on the main ECMC port and still require their usual capacity.
+
+PV names, record types and raw `sim.ecN.sM.field` parameter names are unchanged;
+only the generated records' asyn port changes. Clients with handwritten asyn
+links to private simulation parameters must use the new port name. There is no
+second I/O image or second RT thread. The auxiliary port follows the main port's
+RT communication/EPICS state gates and receives its scalar callbacks from the
+same publication path; allocation/resizing occurs only during configuration.
+No new startup command or ecmccfg template change is required. Install the rebuilt
+ECMC library and restart the IOC to regenerate the links. `asynReport` on the
+auxiliary port shows its separate parameter table.
 
 The loader uses the standard [EPICS static database API](https://docs.epics-controls.org/projects/base/en/b7.0.10/dbStaticLib_h.html)
 from configuration code. It allocates records before RT, without device models

@@ -144,6 +144,35 @@ void testCommandRearming() {
   }
 }
 
+void testNativeMotionAfterIdle() {
+  // Native/PLC motion bypasses move()/home()/moveVelocity(), so no motor
+  // command latch runs. An idle motor must still reflect native Busy.
+  for (bool monitor : {false, true}) {
+    ecmcMotorRecordAxis axis;
+    axis.drvlocal.ecmcAtTargetMonEnable = monitor;
+    axis.drvlocal.status_.statusWord_.attarget = true;
+    axis.drvlocal.status_.cycleCounter = 1;
+    axis.expect(true);
+    assert(!axis.waitingForStatusAfterCommand_);
+    axis.drvlocal.ecmcBusy = true;
+    axis.drvlocal.status_.cycleCounter = 2;
+    axis.expect(false); // Busy wins even with a stale AtTarget indication.
+    axis.drvlocal.status_.statusWord_.attarget = false;
+    axis.expect(false);
+    axis.drvlocal.ecmcBusy = false;
+    axis.expect(!monitor); // Preserve normal settling after the native move.
+    axis.drvlocal.status_.statusWord_.attarget = true;
+    axis.expect(true);
+    // A second native search must also clear the completed state.
+    axis.drvlocal.ecmcBusy = true;
+    axis.expect(false);
+    axis.drvlocal.ecmcBusy = false;
+    axis.drvlocal.status_.statusWord_.attarget = false;
+    axis.drvlocal.status_.statusWord_.execute = false;
+    axis.expect(true); // Native abort completes without AtTarget.
+  }
+}
+
 void testCompletionReasons() {
   // Each termination reason must work independently, with AtTarget false
   // except for successful arrival. Busy must win even if a reason is present.
@@ -186,9 +215,10 @@ void testCompletionReasons() {
 int main() {
   testFreshSamples();
   testCommandRearming();
+  testNativeMotionAfterIdle();
   testCompletionReasons();
   puts("Motor-record DMOV: fresh samples, wraparound, idle, command rearming, "
-       "completion, stops, errors, and interlocks passed.");
+       "native motion after idle, completion, stops, errors, and interlocks passed.");
 }
 '''
 

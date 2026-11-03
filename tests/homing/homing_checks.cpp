@@ -1,0 +1,169 @@
+// Production axis/sequencer/encoder/monitor/trajectory; ideal velocity follower.
+// No EPICS motor record, drive electronics, network, PID dynamics or RT thread.
+#include "ecmcAxisVirt.h"
+#include "ecmcDataAccess.h"
+#include "ecmcDataItem.h"
+#include <cmath>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+asynUser *pPrintOutAsynUser = nullptr;
+unsigned int debug_print_flags = 0, die_on_error_flags = 0;
+void ecmcRtLoggerLogError(const char *, ...) {}
+static std::string context;
+#define CHECK(x) do { if (!(x)) throw std::runtime_error(context + ": line " + std::to_string(__LINE__) + ": " #x); } while (0)
+struct Bench {
+  ecmcAsynPortDriver port;
+  std::unique_ptr<ecmcAxisVirt> axis;
+  uint32_t raw=0;
+  int healthy=1;
+  ecmcDataItem item{"test.counter"};
+  double physical=0;
+  bool absolute=false, cam=true;
+  Bench(bool abs, double start) : physical(start), absolute(abs) {
+    axis=std::make_unique<ecmcAxisVirt>(&port,1,.001,ECMC_TRAPETZ);
+    auto *enc=axis->getPrimEnc();
+    item.setEcmcDataPointer(reinterpret_cast<uint8_t *>(&raw),sizeof(raw));
+    item.setEcmcDataType(ECMC_EC_U32); item.setAllowWriteToEcmc(false);
+    ecmcDataAccess access;
+    CHECK(ecmcDataAccess::bind(item,&healthy,false,&access));
+    CHECK(enc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,-1)==0);
+    CHECK(enc->setBits(abs ? 32 : 16)==0);
+    CHECK(enc->setAbsBits(abs ? 26 : 0)==0);
+    CHECK(enc->setType(abs ? ECMC_ENCODER_TYPE_ABSOLUTE : ECMC_ENCODER_TYPE_INCREMENTAL)==0);
+    CHECK(enc->setScaleNum(1)==0); CHECK(enc->setScaleDenom(abs ? 4096 : 12800)==0);
+    CHECK(enc->setPosFilterEnable(false)==0);
+    enc->setHomeSeqId(1);
+    enc->setHomeVelTowardsCam(.2); enc->setHomeVelOffCam(.1);
+    enc->setHomeAcc(1); enc->setHomeDec(1);
+    enc->setHomePosition(0); enc->setHomeLatchCountOffset(1);
+    CHECK(axis->setEncDataSourceType(ECMC_DATA_SOURCE_INTERNAL)==0);
+    axis->setAllowMotionFunctions(true,true,true);
+    axis->setAcc(1); axis->setDec(1);
+    auto *mon=axis->getMon();
+    mon->setLimitSwitchBwdPLCOverride(true); mon->setLimitSwitchFwdPLCOverride(true);
+    mon->setHomeSwitchPLCOverride(true);
+    mon->setAtTargetTol(.01); mon->setAtTargetTime(100); mon->setEnableAtTargetMon(true);
+    mon->setPosLagTol(.02); mon->setPosLagTime(100); mon->setEnableLagMon(true);
+    CHECK(axis->validate()==0);
+    for(int i=0;i<10;++i) tick();
+    CHECK(!axis->getInStartupPhase());
+    CHECK(!axis->getAxisStatusDataPtr()->statusWord_.instartup);
+    CHECK(!axis->getAutoExecuteOnTargetPos());
+    CHECK(axis->setPosition(start)==0);
+    CHECK(axis->setEnable(true)==0);
+    for(int i=0;i<10;++i) tick();
+    CHECK(axis->getErrorID()==0);
+  }
+  void tick() {
+    physical+=axis->getAxisStatusDataPtr()->currentVelocitySetpoint*.001;
+    CHECK(std::abs(physical)<.8);
+    raw=absolute ? uint32_t(std::llround((physical+1380)*4096)) : uint16_t(std::llround(physical*12800));
+    auto *mon=axis->getMon();
+    mon->setLimitSwitchBwdPLCOverrideValue(physical>-.4);
+    mon->setLimitSwitchFwdPLCOverrideValue(physical<.4);
+    mon->setHomeSwitchPLCOverrideValue(cam && physical>=-.08 && physical<=.08);
+    axis->execute(true);
+  }
+  void start(int seq) { CHECK(axis->moveHome(seq,0,.2,.1,1,1)==0); }
+  void finish() {
+    for(int i=0;i<15000;++i) {
+      tick(); CHECK(axis->getErrorID()==0);
+      if(i>2 && !axis->getBusy() && axis->getPrimEnc()->getHomed()) return;
+    }
+    CHECK(!axis->getBusy()); CHECK(axis->getPrimEnc()->getHomed());
+  }
+};
+int main() {
+  try {
+    int scenarios=0;
+    for(bool absolute : {false,true}) for(int seq : {1,2,3,4,5,6,7,8,9,10,14,15,21,22}) {
+      if(!absolute && (seq==21 || seq==22)) continue;
+      context="home="+std::to_string(seq)+" abs="+std::to_string(absolute);
+      double start=(seq==7 || seq==9) ? .25 : ((seq==8 || seq==10) ? -.25 : (seq==15 ? .2 : 0));
+      Bench b(absolute,start); b.start(seq);
+      // Encoder-configured request 14 resolves only in sequencer status;
+      // the request-backed asyn PV must not be confused with this value.
+      CHECK(b.axis->getSeq()->getCmdData()==(seq==14 ? 1 : seq));
+      b.finish();
+      double actual=b.axis->getPrimEnc()->getActPos();
+      if(seq==15) { CHECK(std::abs(b.physical-.2)<.001); CHECK(std::abs(actual)<.001); }
+      else if(seq==21 || seq==22) {
+        double phase=b.physical+1380;
+        CHECK(std::abs(actual-(seq==21 ? phase-16384 : phase))<.005);
+      } else {
+        double edge=(seq==1 || seq==14) ? -.4 : (seq==2 ? .4 :
+          ((seq==3 || seq==8) ? -.08 : ((seq==4 || seq==7) ? .08 : 0)));
+        CHECK(std::abs(b.physical-actual-edge)<.005);
+      }
+      ++scenarios;
+    }
+    for(bool absolute : {false,true}) {
+      context="post-home move abs="+std::to_string(absolute);
+      Bench b(absolute,0);
+      b.axis->getPrimEnc()->setHomePostMoveTargetPosition(.2);
+      b.axis->getPrimEnc()->setHomePostMoveEnable(1);
+      b.start(14);
+      bool postMove=false, postMotion=false;
+      for(int i=0;i<15000;++i) {
+        b.tick(); CHECK(b.axis->getErrorID()==0);
+        if(b.axis->getSeq()->getSeqState()==1003) {
+          postMove=true;
+          // State 1003 is entered before the next trajectory sample and
+          // remains active while settling. Require Busy during real travel.
+          if(std::abs(b.axis->getAxisStatusDataPtr()->currentVelocitySetpoint)>.001) {
+            postMotion=true; CHECK(b.axis->getBusy());
+          }
+          CHECK(b.axis->getPrimEnc()->getHomed());
+        }
+        if(i>2 && !b.axis->getBusy() && b.axis->getPrimEnc()->getHomed()
+           && b.axis->getSeq()->getSeqState()==0) break;
+      }
+      if(!postMove) std::cerr << "post state=" << b.axis->getSeq()->getSeqState() << " busy=" << b.axis->getBusy() << " physical=" << b.physical << " actual=" << b.axis->getPrimEnc()->getActPos() << "\n";
+      CHECK(postMove); CHECK(postMotion); CHECK(!b.axis->getBusy());
+      CHECK(b.axis->getPrimEnc()->getHomed());
+      CHECK(std::abs(b.axis->getPrimEnc()->getActPos()-.2)<.005);
+      CHECK(std::abs(b.physical+.2)<.005);
+      ++scenarios;
+    }
+    for(bool absolute : {false,true}) {
+      for(int mode=0; mode<4; ++mode) {
+        const int sequence=mode==1 ? 3 : (mode==2 ? 9 : 1);
+        const int phase=mode==1 ? 3 : (mode==2 ? 2 : 1);
+        context="abort="+std::to_string(mode)+" abs="+std::to_string(absolute);
+        Bench b(absolute,sequence==9 ? .25 : 0);
+        b.start(sequence);
+        bool reached=false;
+        for(int i=0;i<10000;++i) {
+          b.tick(); CHECK(b.axis->getErrorID()==0);
+          if(b.axis->getSeq()->getSeqState()==phase) { reached=true; break; }
+        }
+        CHECK(reached); CHECK(!b.axis->getPrimEnc()->getHomed());
+        CHECK(b.axis->stopMotion(mode==3)==0);
+        for(int i=0;i<1000;++i) b.tick();
+        CHECK(!b.axis->getBusy()); CHECK(!b.axis->getPrimEnc()->getHomed());
+        CHECK(b.axis->getSeq()->getSeqState()==0);
+        CHECK(b.axis->getMon()->getEnableLagMon());
+        const double stopped=b.physical;
+        for(int i=0;i<1000;++i) b.tick();
+        CHECK(std::abs(b.physical-stopped)<.001);
+        CHECK(!b.axis->getPrimEnc()->getHomed());
+        CHECK(b.axis->setEnable(true)==0);
+        for(int i=0;i<10;++i) b.tick();
+        b.start(1); b.finish();
+        ++scenarios;
+      }
+      context="missing cam abs="+std::to_string(absolute);
+      Bench b(absolute,.25); b.cam=false; b.start(7);
+      for(int i=0;i<10000 && !b.axis->getErrorID();++i) b.tick();
+      CHECK(b.axis->getErrorID()==ERROR_SEQ_SEQ_FAILED);
+      CHECK(!b.axis->getPrimEnc()->getHomed());
+      for(int i=0;i<1000;++i) b.tick();
+      CHECK(!b.axis->getBusy()); CHECK(b.axis->getSeq()->getSeqState()==0);
+      CHECK(b.axis->getMon()->getEnableLagMon());
+      ++scenarios;
+    }
+    std::cout<<"Production homing: "<<scenarios<<" success/abort scenarios passed.\n";
+  } catch(const std::exception &e) { std::cerr<<e.what()<<"\n"; return 1; }
+}

@@ -59,6 +59,7 @@ public:
   int setValue(int position, const char *name, const char *value);
   int prepareSimulationParameter(int position, const char *name);
   const char *portName() const;
+  const char *simulationPortName() const;
   int validate();
   int configurationError() const { return configurationError_; }
   void setHealthy(bool healthy) { *healthy_ = healthy; }
@@ -83,6 +84,7 @@ private:
   ecmcAsynDataItem *healthParameter_ = nullptr;
   int id_;
   ecmcAsynPortDriver *port_;
+  ecmcAsynPortDriver *simulationPort_ = nullptr;
   std::shared_ptr<int> healthy_;
   bool active_ = false;
   timespec inputTime_{}, offset_{};

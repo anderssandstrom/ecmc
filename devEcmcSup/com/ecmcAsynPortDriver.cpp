@@ -121,12 +121,17 @@ int initHook(void) {
 /** Constructor for the ecmcAsynPortDriver class.
   * Calls constructor for the asynPortDriver base class.
   * \param[in] portName The name of the asyn port driver to be created. */
+ecmcAsynPortDriver::ecmcAsynPortDriver(const char *portName, int paramTableSize,
+                                     int autoConnect, int priority, double defaultSampleRateMS)
+  : ecmcAsynPortDriver(portName, paramTableSize, autoConnect, priority, defaultSampleRateMS, true) {}
+
 ecmcAsynPortDriver::ecmcAsynPortDriver(
   const char *portName /*, int maxPoints*/,
   int         paramTableSize,
   int         autoConnect,
   int         priority,
-  double      defaultSampleRateMS)
+  double      defaultSampleRateMS,
+  bool        initializeEcmc)
   : asynPortDriver(portName,
                    1,
 
@@ -234,6 +239,8 @@ ecmcAsynPortDriver::ecmcAsynPortDriver(
     exit(1);
   }
 
+  if (!initializeEcmc) return;
+
   int errorCode = ecmcInit((void *)this);
 
   if (errorCode) {
@@ -243,6 +250,50 @@ ecmcAsynPortDriver::ecmcAsynPortDriver(
               errorCode);
     exit(1);
   }
+}
+
+ecmcAsynPortDriver *ecmcAsynPortDriver::createAuxiliaryPort(const char *name, int paramTableSize) {
+  if (!name || !*name || paramTableSize < 2) return nullptr;
+  for (const auto &port : auxiliaryPorts_) {
+    if (!strcmp(port->portName, name)) {
+      port->reserveParamTable(paramTableSize);
+      return port.get();
+    }
+  }
+  // Do not attach simulation records to an unrelated existing port.
+  if (findAsynPortDriver(name)) return nullptr;
+  std::unique_ptr<ecmcAsynPortDriver> port(new ecmcAsynPortDriver(
+    name, paramTableSize, autoConnect_, priority_, defaultSampleTimeMS_, false));
+  port->setAllowRtThreadCom(allowRtThreadCom_);
+  port->setEpicsState(epicsState_);
+  auto *result = port.get();
+  auxiliaryPorts_.push_back(std::move(port));
+  return result;
+}
+
+asynStatus ecmcAsynPortDriver::callParamCallbacks(int list, int addr) {
+  asynStatus status = asynPortDriver::callParamCallbacks(list, addr);
+  for (const auto &port : auxiliaryPorts_) {
+    const asynStatus childStatus = port->callParamCallbacks(list, addr);
+    if (childStatus != asynSuccess) status = childStatus;
+  }
+  return status;
+}
+
+void ecmcAsynPortDriver::reserveParamTable(int size) {
+  if (size <= paramTableSize_) return;
+  // Called only during simulation-record configuration, before IOC/RT use.
+  std::unique_ptr<ecmcAsynDataItem *[]> available(new ecmcAsynDataItem *[size]());
+  std::unique_ptr<ecmcAsynDataItem *[]> inUse(new ecmcAsynDataItem *[size]());
+  for (int i = 0; i < paramTableSize_; ++i) {
+    available[i] = pEcmcParamAvailArray_[i];
+    inUse[i] = pEcmcParamInUseArray_[i];
+  }
+  delete[] pEcmcParamAvailArray_;
+  delete[] pEcmcParamInUseArray_;
+  pEcmcParamAvailArray_ = available.release();
+  pEcmcParamInUseArray_ = inUse.release();
+  paramTableSize_ = size;
 }
 
 ecmcAsynPortDriver::~ecmcAsynPortDriver() {
@@ -278,6 +329,7 @@ int ecmcAsynPortDriver::getEpicsState() {
 
 void ecmcAsynPortDriver::setEpicsState(int state) {
   epicsState_ = state;
+  for (const auto &port : auxiliaryPorts_) port->setEpicsState(state);
 }
 
 /** Append parameter to in-use list\n
@@ -1041,6 +1093,7 @@ asynStatus ecmcAsynPortDriver::readInt64Array(asynUser   *pasynUser,
 
 void ecmcAsynPortDriver::setAllowRtThreadCom(bool allowRtCom) {
   allowRtThreadCom_ = allowRtCom;
+  for (const auto &port : auxiliaryPorts_) port->setAllowRtThreadCom(allowRtCom);
 }
 
 bool ecmcAsynPortDriver::getAllowRtThreadCom() {
@@ -1328,6 +1381,10 @@ int32_t ecmcAsynPortDriver::calcFastestUpdateRate() {
       }
     }
   }
+  for (const auto &port : auxiliaryPorts_) {
+    const int32_t cycles = port->calcFastestUpdateRate();
+    if (cycles >= 0 && cycles < fastestParamUpdateCycles_) fastestParamUpdateCycles_ = cycles;
+  }
   return fastestParamUpdateCycles_;
 }
 
@@ -1495,6 +1552,7 @@ static void reportParamValueYaml(FILE *fp, ecmcAsynDataItem *param) {
 }
 
 void ecmcAsynPortDriver::refreshAllInUseParamsRT() {
+  for (const auto &port : auxiliaryPorts_) port->refreshAllInUseParamsRT();
   const int paramCount = ecmcParamInUseCount_;
   for (int i = 0; i < paramCount; i++) {
     ecmcAsynDataItem * const param = pEcmcParamInUseArray_[i];

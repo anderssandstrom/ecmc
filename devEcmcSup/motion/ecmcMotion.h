@@ -1617,6 +1617,15 @@ int setAxisJerk(int    axisIndex,
 int setAxisTargetPos(int    axisIndex,
                      double value);
 
+/** Opt in to motion on native target-position writes (default disabled).
+ * ABS/REL moves use configured velocity, acceleration/deceleration and normal
+ * auto-enable. Internal PLC setpoint updates and motor-record VAL are unchanged.
+ * Cfg.SetAxisAutoExec(axis,1), or 0 for staged execution.
+ */
+int setAxisAutoExecuteOnTargetPos(int axisIndex, int enable);
+/** Read the setting through GetAxisAutoExec(axis). */
+int getAxisAutoExecuteOnTargetPos(int axisIndex, int *enable);
+
 /** \brief Set axis target velocity setpoint.\n
  *
  * The target velocity is the desired velocity of a motion.\n

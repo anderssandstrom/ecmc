@@ -305,6 +305,9 @@ public:
   void       setTargetVel(double velTarget);
   void       setTargetPos(double posTarget);
   void       setTargetPosAndCmd(double posTarget);
+  void       setAutoExecuteOnTargetPos(bool enable);
+  bool       getAutoExecuteOnTargetPos() const;
+  int        moveOnTargetPosWrite(double posTarget);
   void       setTargetPosToCurrSetPos();
   void       setTweakDist(double dist);
   double     getTweakDist();
@@ -415,6 +418,8 @@ protected:
   bool autoDisableAtTgtLtchEnable_;
   bool autoDisableAtTargetLatched_;
   double positionTargetAsyn_;
+  bool autoExecuteOnTargetPos_;
+  ecmcAsynDataItem *statusWord2Param_;
   double invSampleTime_;
   bool masterSlaveBlocked_;
   bool enableAutoResetError_;

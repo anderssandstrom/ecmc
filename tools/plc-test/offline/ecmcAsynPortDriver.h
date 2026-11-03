@@ -43,8 +43,24 @@ class ecmcAsynDataItem {
 class ecmcAsynPortDriver {
  public:
   const char *portName = "SIM_TEST";
+  int capacity = 100000;
+  ecmcAsynPortDriver *createAuxiliaryPort(const char *name, int size) {
+    auto found = children_.find(name);
+    if (found == children_.end()) {
+      children_[name] = std::unique_ptr<ecmcAsynPortDriver>(new ecmcAsynPortDriver);
+      found = children_.find(name);
+      found->second->portName = found->first.c_str();
+    }
+    found->second->capacity = size;
+    return found->second.get();
+  }
+  size_t parameterCount() const { return items_.size(); }
+  ecmcAsynPortDriver *auxiliary(const char *name) {
+    auto found = children_.find(name); return found == children_.end() ? nullptr : found->second.get();
+  }
   ecmcAsynDataItem *addNewAvailParam(const char *name, asynParamType,
                                     uint8_t *data, size_t bytes, int, int) {
+    if (items_.size() >= static_cast<size_t>(capacity)) return nullptr;
     items_.emplace_back(new ecmcAsynDataItem);
     items_.back()->setEcmcDataPointer(data, bytes);
     names_[name] = items_.back().get();
@@ -63,6 +79,7 @@ class ecmcAsynPortDriver {
   }
   void callParamCallbacks(int, int) {}
  private:
+  std::map<std::string, std::unique_ptr<ecmcAsynPortDriver>> children_;
   std::vector<std::unique_ptr<ecmcAsynDataItem>> items_;
   std::map<std::string, ecmcAsynDataItem *> names_;
 };

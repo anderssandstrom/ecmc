@@ -14,21 +14,24 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/simulation'))
 sys.path.insert(0, str(ROOT / 'tests/integration'))
-from slit.plant import Plant
+from slit.plant import Plant, PlantThread
 from slit.rig import Client, Rig
 
-MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque', 'native', 'softlimit_sync')
+MODULES = ('motion', 'limits', 'enable', 'feedback', 'noise', 'sync', 'brake', 'torque', 'native', 'softlimit_sync', 'homing', 'interfaces', 'motor', 'isolation', 'target_write')
+DEFAULT_REPORT = ROOT / 'test-results/slit/slit-report.json'
 DEFAULT_CONFIG = (ROOT.parent.parent / 'ecmccfg/examples/PSI/lab_setup/'
                   'master_slave/slit_epics_2026/slit_matrix_sim_test')
 
 
-def make_suite(rig, loops, modules):
+def make_suite(rig, loops, modules, patterns=()):
     tests = []
     for loop in loops:
         for module in modules:
             loaded = unittest.defaultTestLoader.loadTestsFromModule(importlib.import_module('slit.cases.' + module))
             for group in loaded:
                 for test in group:
+                    if patterns and not any(pattern in test.id() for pattern in patterns):
+                        continue
                     test.rig, test.loop = rig, loop
                     tests.append(test)
     return unittest.TestSuite(tests)
@@ -70,6 +73,7 @@ class Result(unittest.TextTestResult):
 
 def write_reports(path, document):
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document, indent=2) + '\n')
     suite = ET.Element('testsuite', name='ECMC slit simulation', tests=str(len(document['tests'])))
     for item in document['tests']:
@@ -86,27 +90,34 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG, help='separate slit_matrix_sim_test directory')
     parser.add_argument('--loop', choices=('open', 'closed', 'both'), default='both')
     parser.add_argument('--case', choices=MODULES, action='append', help='select modules; repeatable')
+    parser.add_argument('--test', action='append', default=[],
+                        help='select test ID/name containing this substring; repeatable (OR)')
     parser.add_argument('--run', action='store_true', help='connect, start the coupled plant and execute motion/fault tests')
     parser.add_argument('--plant-only', action='store_true', help='run the coupled plant without issuing motion test commands')
     parser.add_argument('--keep-going', action='store_true', help='continue after a failed test (default: fail fast)')
-    parser.add_argument('--report', default='slit-report.json', help='JSON report; matching JUnit XML is also written')
+    parser.add_argument('--report', type=Path, default=DEFAULT_REPORT,
+                        help='JSON report (default: repo test-results/slit/slit-report.json); matching JUnit XML is also written')
     args = parser.parse_args(argv)
     if args.run and args.plant_only:
         parser.error('choose --run or --plant-only')
     profile = json.loads((args.config / 'profile.json').read_text())
     loops = ('open', 'closed') if args.loop == 'both' else (args.loop,)
     modules = args.case or MODULES
+    if args.plant_only and args.test:
+        parser.error('--test cannot be used with --plant-only')
+    selected = make_suite(None, loops, modules, args.test)
+    if not args.plant_only and selected.countTestCases() == 0:
+        parser.error('no tests match the requested module/name filters')
     if not (args.run or args.plant_only):
-        for test in make_suite(None, loops, modules):
+        for test in selected:
             print(f'[{test.loop}] {test.id()}')
         print('Plan only; no EPICS connection or writes. Add --prefix IOC: --run to execute.')
         return 0
     if not args.prefix or not args.prefix.endswith(':'):
         parser.error('--prefix ending in : is required for live tests')
     from epics import PV
-    from epics.ca import CAThread
     client = Client(PV)
-    plant = Plant(profile, args.prefix + 'SIM:', PV, CAThread)
+    plant = Plant(profile, args.prefix + 'SIM:', PV, PlantThread)
     rig = Rig(profile, args.prefix, client, plant)
     document = {'utc': datetime.now(timezone.utc).isoformat(), 'prefix': args.prefix,
                 'profile': profile, 'tests': [], 'cleanup_errors': []}
@@ -126,7 +137,7 @@ def main(argv=None):
             while True:
                 plant.check()
                 time.sleep(.2)
-        suite = make_suite(rig, loops, modules)
+        suite = make_suite(rig, loops, modules, args.test)
         def make_result(*args):
             nonlocal result
             result = Result(*args)

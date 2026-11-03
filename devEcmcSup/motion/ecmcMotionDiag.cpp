@@ -507,8 +507,9 @@ void writeAxisStatusWord(FILE *fp, const ecmcAxisDataStatus &status) {
   writeJsonBool(fp, 8, "local_busy", status.statusWord_.localBusy);
   writeJsonBool(fp, 8, "global_busy", status.statusWord_.globalBusy);
   writeJsonBool(fp, 8, "blocked", status.statusWord_.blocked);
-  writeJsonInt(fp, 8, "seq_state", status.statusWord_.seqstate);
-  writeJsonInt(fp, 8, "last_interlock", status.statusWord_.lastilock, false);
+  writeJsonBool(fp, 8, "auto_execute_on_target_pos", status.statusWord_.autoExecuteOnTargetPos);
+  writeJsonInt(fp, 8, "seq_state", status.statusWord2_.seqstate);
+  writeJsonInt(fp, 8, "last_interlock", status.statusWord2_.lastilock, false);
   fputs("      },\n", fp);
 }
 
@@ -1155,9 +1156,10 @@ private:
     B(trajsource); B(encsource); B(plccmdallowed); B(softlimfwdena);
     B(softlimbwdena); B(instartup); B(sumilockfwd); B(sumilockbwd);
     B(softlimilockfwd); B(softlimilockbwd); B(localBusy); B(globalBusy);
-    B(blocked);
-    value(child(wp, "seqstate"), static_cast<long long>(w.seqstate));
-    value(child(wp, "lastilock"), static_cast<long long>(w.lastilock));
+    B(blocked); B(autoExecuteOnTargetPos);
+    const std::string wp2 = child(p, "statusWord2_");
+    value(child(wp2, "seqstate"), static_cast<long long>(o.statusWord2_.seqstate));
+    value(child(wp2, "lastilock"), static_cast<long long>(o.statusWord2_.lastilock));
 #undef B
 #undef E
 #undef D

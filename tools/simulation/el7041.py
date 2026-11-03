@@ -61,6 +61,7 @@ class EL7041:
         self.enabled = False
         self.fault = False
         self.enable_seconds = 0.0
+        self.enable_requested = False
         self.torque_reduced = False
 
     def trip(self):
@@ -68,6 +69,7 @@ class EL7041:
         self.torque_reduced = False
         self.enabled = False
         self.enable_seconds = 0.0
+        self.enable_requested = False
 
     def feedback(self):
         s = self.settings
@@ -91,12 +93,15 @@ class EL7041:
         self.torque_reduced = bool(control & 4) and not self.fault
         moving_seconds = 0.0
         if control & 1 and not self.fault:
-            self.enable_seconds += seconds
+            if self.enable_requested or self.settings.enable_delay == 0:
+                self.enable_seconds += seconds
+            self.enable_requested = True
             self.enabled = self.enable_seconds >= self.settings.enable_delay
             moving_seconds = min(seconds, max(0.0, self.enable_seconds - self.settings.enable_delay))
         else:
             self.enabled = False
             self.enable_seconds = 0.0
+            self.enable_requested = False
         signed_velocity = velocity - 65536 if velocity & 0x8000 else velocity
         s = self.settings
         counts_per_second = (signed_velocity / 32768.0 * s.full_steps_per_second

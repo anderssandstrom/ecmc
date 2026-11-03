@@ -2295,7 +2295,11 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
   // Wait once for an RT sample after accepting a command.
   if (dataIsSampledAfterNewCmd()) {
-    if(!drvlocal.moveReady && !drvlocal.ecmcBusy) {
+    if (drvlocal.ecmcBusy) {
+      // Native/PLC commands bypass the motor command handlers. Observed
+      // motion must clear a previously latched completion in that case too.
+      drvlocal.moveReady = false;
+    } else if (!drvlocal.moveReady) {
       // DMOV reports that the operation has terminated. AtTarget and the
       // alarm/problem status distinguish successful arrival from an abort.
       const bool terminalFailure =
@@ -2341,10 +2345,10 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
     syncSoftLimitInterfaces(false);
   }
 
-  if (drvlocal.statusOld_.statusWord_.lastilock !=
-      drvlocal.status_.statusWord_.lastilock) {
-    updateIlockTxtFromDriver(drvlocal.status_.statusWord_.lastilock);
-    updateIlockShortTxtFromDriver(drvlocal.status_.statusWord_.lastilock);
+  if (drvlocal.statusOld_.statusWord2_.lastilock !=
+      drvlocal.status_.statusWord2_.lastilock) {
+    updateIlockTxtFromDriver(drvlocal.status_.statusWord2_.lastilock);
+    updateIlockShortTxtFromDriver(drvlocal.status_.statusWord2_.lastilock);
   }
 
   setIntegerParam(pC_->motorStatusHomed_,

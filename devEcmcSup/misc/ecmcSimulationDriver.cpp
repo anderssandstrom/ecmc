@@ -302,6 +302,10 @@ int ecmcSimulationDriver::setObjectTyped(int position, int index, int subIndex,
 
 const char *ecmcSimulationDriver::portName() const { return port_ ? port_->portName : nullptr; }
 
+const char *ecmcSimulationDriver::simulationPortName() const {
+  return simulationPort_ ? simulationPort_->portName : nullptr;
+}
+
 int ecmcSimulationDriver::prepareSimulationParameter(int position, const char *name) {
   auto *entry = findEntry(position, name);
   if (!entry || !port_) return ERROR_MAIN_EC_ENTRY_NULL;
@@ -317,8 +321,16 @@ int ecmcSimulationDriver::prepareSimulationParameter(int position, const char *n
 #endif
   } else if (type == ECMC_EC_S8 || type == ECMC_EC_S16 || type == ECMC_EC_S32)
     asynType = asynParamInt32;
+  size_t count = 0;
+  for (const auto &device : devices_) count += device.second.entries.size();
+  // Reserve for the default access parameter and future record connections.
+  if (count > (static_cast<size_t>(std::numeric_limits<int>::max()) - 2) / 2)
+    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  const std::string portName = std::string(port_->portName) + "_SIM" + std::to_string(id_);
+  simulationPort_ = port_->createAuxiliaryPort(portName.c_str(), static_cast<int>(2 * count + 2));
+  if (!simulationPort_) return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
   const std::string path = "sim.ec" + std::to_string(id_) + ".s" + std::to_string(position) + "." + name;
-  auto *parameter = port_->addNewAvailParam(path.c_str(), asynType,
+  auto *parameter = simulationPort_->addNewAvailParam(path.c_str(), asynType,
     entry->access->data, sizeof(entry->value), type, 0);
   if (!parameter) return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
   entry->simulationParameter = parameter;

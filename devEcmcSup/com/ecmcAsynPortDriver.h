@@ -18,6 +18,8 @@
 #include <epicsTime.h>
 #include <map>
 #include <string>
+#include <memory>
+#include <vector>
 
 #include "asynPortDriver.h"
 #ifndef VERSION_INT
@@ -46,6 +48,11 @@ public:
                      int         priority,
                      double      defaultSampleRateMS);
   ~ecmcAsynPortDriver();
+  // Configuration-time auxiliary data port; does not initialize ECMC again.
+  ecmcAsynPortDriver *createAuxiliaryPort(const char *name, int paramTableSize);
+  void reserveParamTable(int paramTableSize);
+  using asynPortDriver::callParamCallbacks;
+  asynStatus callParamCallbacks(int list, int addr) override;
   virtual asynStatus writeOctet(asynUser   *pasynUser,
                                 const char *value,
                                 size_t      maxChars,
@@ -161,6 +168,9 @@ public:
   int               addParamAlias(const char *name, const char *alias);
 
 private:
+  ecmcAsynPortDriver(const char *portName, int paramTableSize, int autoConnect,
+                    int priority, double defaultSampleRateMS, bool initializeEcmc);
+  std::vector<std::unique_ptr<ecmcAsynPortDriver>> auxiliaryPorts_;
   void              initVars();
   const char*       resolveParamAlias(const char *name) const;
   asynStatus        checkParamNameAndId(int         paramIndex,

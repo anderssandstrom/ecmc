@@ -403,3 +403,358 @@ This corrects a test-model assumption; production motion semantics are unchanged
 The attached live snapshot also had CfgSyncSftLim=0. Live sync cases now register
 cleanup before enabling it, restore original pairs and flags in their existing
 finally blocks, and restore the original sync setting through unittest cleanup.
+
+**USER / DOC / INFERRED — homing:** the live homing matrix exercises procedures
+1–10, encoder-configured 14, native manual 15 / motor alias 25, and 21/22 on
+absolute feedback through both motor home fields and native commands. Procedure
+definitions come from `ecmcDefinitions.h` and `ecmcAxisSequencer::seqHoming*`.
+Geometry provides independent reference edges at +/-0.4 mm, cam edges +/-0.08
+and midpoint zero. Absolute expectations use a 16384 mm period and measured
+phase `(physical + 1380) modulo period`: sequence 21 selects phase-period,
+22 phase (home offset zero, turn count one, positive scale). Native Busy and
+motor DMOV/MOVN are allowed asynchronous propagation but must all expose motion
+and settle correctly; Homed must be cleared during search, set only on success,
+and remain false after STOP/disable/fault/missing cam until a fresh command.
+The standalone production probe drives real virtual-axis, sequencer, integer
+encoder, monitor and trapezoidal code using an ideal velocity follower and PLC
+sensor overrides. It covers 26 success combinations, 2 post-home moves and 10 STOP/disable/missing
+cam abort scenarios with monitor restoration/retries; it does not emulate a
+motor record, real drive, network or PID plant dynamics. Boundary probes check
+live harness flag verdicts and the optional physical sensor scene. Procedures
+11/12 (latch handshake) and 26 (external-drive handshake) are not yet covered.
+The homing capability marker is required; the dedicated fixture needs restart.
+
+**REGRESSION — homing record load dependency:** a live case could not connect
+HomProc.OMSL because epicsMotorRecord.jinja2 loads ecmcMotorRecordhome.template
+only when the YAML declares homing. Configuring defaults using startup Cfg
+commands alone was insufficient. Both physical test-axis YAMLs now declare
+encoder.homing and the capability marker is 2. test_slit_homing.py renders the
+real template section from both YAMLs, requires its dbLoadRecords, and removes
+the section as a negative control to reproduce the missing record-load path.
+
+**REGRESSION — homing request versus resolved procedure:** the live motor
+sequence-14 case read MtnCmdData=14 during motion. That is correct: its asyn
+parameter binds control.cmdData, whereas readHomingParamsFromEnc changes only
+status.cmdData through sequencer setCmdData. The live assertion now requires
+the requested ID, including 14, rather than expecting the resolved ID on that
+PV. The existing reference-geometry check still requires the configured
+backward-limit result. The production homing fixture separately checks that
+getSeq()->getCmdData resolves request 14 to 1 for both encoder representations.
+
+**REGRESSION — homing observation and cleanup:** collecting a full IOC snapshot
+immediately after triggering a search delayed observation until native sequence
+9 had completed, preventing its intended cam-phase abort. Start diagnostics now
+record request metadata; full snapshots follow completion/abort. Busy, DMOV,
+MOVN and Homed motion assertions remain required. A boundary probe rejects full
+snapshots during either motor or native start. Mode-inapplicable cases skip
+before IOC setup/cleanup. Cleanup verifies physical and encoder zero within
+2 micrometres and standstill without requiring a new Busy pulse for an already
+zero move; an ignored displaced return remains a failure.
+
+**REGRESSION — post-reset homing motor status:** after a drive-fault abort,
+native Busy/SeqState/Homed and drive velocity were zero, but motor DMOV/MOVN
+had changed back to 0/1 during reset recovery. The harness now allows bounded
+motor-status settling before its sustained idle check, while checking native
+standstill, no errors, false Homed and stable physical position on every
+observation. Boundary controls reject persistent motor flags, native restart,
+sequencer restart, false Homed, errors, velocity and physical drift during
+settling. Live rerun is required to distinguish transient propagation from a
+persistent motor-interface defect.
+
+**REGRESSION — native motion after latched motor completion:** native sequence-9
+abort still failed its moving-flag check after removing the snapshot delay.
+Production poll() only re-evaluated completion when moveReady was already false;
+native/PLC commands bypass the motor handlers that clear it. Thus native Busy
+could coexist with motor Done after an idle period. Observed Busy now clears
+moveReady before completion is considered. test_motor_record_dmov.py reproduces
+the failure against extracted production code before the fix, then checks native
+start/restart, stale AtTarget, monitor enabled/disabled, settling and native abort
+alongside existing command-latch and wraparound checks. This is a confirmed
+motor-adapter logic bug; the live homing rerun still needs the rebuilt library.
+
+
+**USER / DOC / INFERRED — runtime configuration and interface tests:** the
+post-home cases use the existing MCU-Cmd asyn record, query/save encoder
+configuration selection and post-home settings, enable target 0.2, and use
+procedure 14 so the sequencer actually reloads those settings. Real positioning
+must expose Busy/DMOV/MOVN, retain Homed and finish at the new-coordinate target;
+physical position independently verifies the reference. Cleanup restores stored
+settings, reloads them and restores references. The standalone production probe
+adds incremental/absolute post-home scenarios (38 total). Busy is required during
+actual post-home travel; sequencer state 1003 also includes entry and settling.
+
+Interface bursts issue 24 motor VAL writes, 72 native writes, 48 text writes, or 48 mixed
+writes, including identical targets. Ordinary motor puts avoid put-notify queue
+serialization. STOP must terminate motion and motor activity, there must be no
+queued restart, and fresh motor/native moves must succeed. Disabled-state-machine
+cases require independent physical motor/native motion and an unchanged other
+blade. Boundary negative controls reject failed STOP, replay, native faults,
+out-of-bound travel and coupled blades. These do not measure RT performance or
+prove real EPICS motor-record behavior; live execution remains necessary.
+
+Motor OFF/DIR cases independently derive dial position from user coordinates;
+SPMG Pause/Go resumes while Stop/Go must cancel. Zero AtTarget tolerance is a
+user-requested stimulus: the monitor uses strict less-than, so even zero error
+cannot satisfy tolerance zero. Motor DMOV/callback must not complete on arrival,
+but STOP must terminate the request and restored tolerance must allow new motion.
+Boundary controls reject premature completion and ignored STOP. Coordinate/SPMG
+behavior itself is covered by the live cases, not an offline motor-record build.
+
+**REGRESSION — absolute-homing limit restoration:** sequence-22 setup found
+motor LLM=0 and native low=-1 after the preceding absolute procedure. Cleanup
+previously waited only for native config values. It now temporarily enables
+SyncSoftLimits and requires motor user/dial limits to acknowledge the original
+native pair before restoring the previous sync flag. Persistent disagreement
+still fails; this is a harness restoration fix pending live confirmation, not
+proof that controller-side synchronization has no defect.
+
+
+**REGRESSION — homing with independent soft limits:** the first homing case
+failed before motion with SyncSoftLimits=0, motor limits 0/0 and controller
+limits -1/+1 enabled. Requiring equality while sync is disabled was a harness
+error. Setup now only requires equality when sync is enabled and saves both
+user/dial motor values independently. After homing restoration, cleanup restores
+the original sync flag and, if disabled, restores the motor pair while checking
+that controller limits and enable flags remain unchanged. Boundary checks accept
+the independent 0/0 pair and reject accidental controller overwrite. No production
+controller policy changed for this correction.
+
+
+**REGRESSION — preserve disabled sync throughout cleanup:** a later disable-abort
+case failed only because cleanup unnecessarily enabled sync and waited for motor
+0/0 to change to controller -1/+1. Cleanup now restores the original sync flag
+before restoring either pair, and requires cross-interface equality only when
+that original flag is enabled. The full cleanup boundary now models no implicit
+propagation with sync disabled and explicitly rejects attempts to enable it.
+This preserves independent controller/motor limits and avoids exercising an
+unrequested flag transition. Inspection of local motorECMC suggests unchanged
+numeric limits may not be reapplied on a sync-flag-only transition; that separate
+behavior remains unmodified and needs independent live verification. Explicit
+soft-limit synchronization tests retain their equality requirements.
+
+
+**REGRESSION — MCU-Cmd ASCII input field:** the live post-home case could not
+connect to MCU-Cmd.AIN. The standard asyn record uses AOUT for ASCII output and
+AINP for ASCII input, as documented in
+[asyn Record](https://epics-modules.github.io/asyn/asynRecord.html).
+The harness now reads AINP and the controlled transport rejects any other reply
+field name, rather than accepting arbitrary fake PV names. No database, driver
+or motorECMC change is needed.
+
+
+**REGRESSION — post-home phase representation and teardown ordering:** a live
+post-home move finished at axis 0.2 / physical approximately -0.2, but the test
+waited for SeqState=1003. ecmcAxisStatusWordType.seqstate has three bits and the
+record extracts `(status >> 24) & 7`, so internal 1003 is published as 3. The
+predicate now requires encoded 3 together with Homed=1 and moving Busy/DMOV/MOVN
+flags, rejecting the identically encoded search phase while unhomed. The
+standalone production fixture continues checking the full internal phase.
+The failure cleanup then searched with no simulated limit switches because
+unittest tearDown clears the sensor scene before registered cleanup callbacks.
+Cleanup now rearms HomingInputs before reloading the original config with
+procedure 14. A boundary test executes the actual callback after clearing its
+scene and requires sensors before the cleanup search. Reference cleanup also
+rejects starting further motion after a physical-bound violation. No production
+motion or motorECMC code is changed for these harness fixes.
+
+**USER — simulated enable timing:** DS402 now defaults to 10 ms per forward
+ready/switched/enabled handshake, including re-enable after quick stop. EL70xx
+retains its 50 ms default. Timing starts when each command is first observed,
+without counting the elapsed interval preceding that observation. Cancellation
+and faults discard pending handshakes; fault, disable and quick-stop reactions
+are immediate. Configured zero remains available for isolated arithmetic tests.
+Model tests reject acknowledgement before 10 ms, exercise cancellation/re-enable
+and fault interruption, and check that CSV integration excludes pre-enable time.
+Controlled PV tests advance all delayed handshake steps before expecting motion.
+CA/scheduling latency is additional and no deterministic wall-clock claim is made.
+
+**REGRESSION / unresolved live cause — final homing reference publication:**
+native sequence 1 completed but one immediate sample gave physical-actual near
+zero instead of -0.4. Ramp-down is already included: production homing calculates
+final position as final encoder minus latched edge plus home offset. Consequently
+physical minus actual identifies the edge regardless of stopping distance. The
+harness now allows up to three seconds for the separately published final
+position to agree with the unchanged edge expectation and 0.025 mm tolerance,
+while requiring no errors, continued Homed and standstill. Reference samples are
+retained in the report even if the wait fails. Boundary controls accept delayed
+position publication but reject a persistent 0.4 mm error or restarted motion.
+This does not establish the live cause; a persistent mismatch still requires
+controller/configuration investigation.
+
+
+**REGRESSION — text execute is a level, not the native-PV request bit:** the
+text burst returned Error: 82716 (ERROR_AXIS_BUSY, 0x1431c) on bExecute=1 after
+bExecute=0 requested STOP and deceleration was still active. This was an invalid
+unconditional-success assumption in the harness. The moving text burst now uses
+24 pairs of target updates and execute-high writes; it does not stop/restart
+between targets. A controlled boundary rejects any execute-low write inside that
+burst and checks every target/repeated execute is sent. Explicit STOP, sustained
+standstill, motor/native recovery and strict parser-reply checking are unchanged.
+This correction does not weaken the controller's busy guard or modify motorECMC.
+
+**REGRESSION — SPMG during pending motor put-notify:** live Pause timed out on
+a synchronous SPMG put while the VAL request was still active. Like STOP, SPMG
+must use an ordinary asynchronous put so it can interrupt or resume that record.
+The harness checks the field readback separately, then verifies standstill,
+resumed native Busy and final position, or cancellation with no replay. The
+controlled CA boundary reproduces failure of the old notify write behind VAL,
+then exercises actual set_spmg() with ordinary Stop/Pause/Go writes and explicit
+acknowledgement. No timeout extension or motorECMC change is used.
+
+**REGRESSION — SPMG Stop cancellation acknowledgement:** Go after Stop resumed
+the previous -0.7 target. The test switched to Go after native standstill but
+before checking the motor record's cancellation callback. motorRecord do_work()
+documents that Stop aligns drive/target fields with readback when the motor stops.
+The test now keeps SPMG=Stop until DMOV=1, MOVN=0, MIP=0 and both user/dial targets
+match readback within 0.015 mm. During this bounded wait native Busy, errors,
+drive movement or physical drift fail immediately. Boundary tests accept delayed
+motor cancellation, but reject persistent stale target, restart, drift and faults.
+The subsequent Go/no-replay assertion remains unchanged. No motorECMC changes.
+
+
+**USER — dedicated simulation record port:** generated model injection/readback
+views now use `<main-port>_SIM<master-id>`, sized from declared fields independently
+of the main port's fixed parameter table. Original ec/axis/PLC parameters remain
+on the main port. PV names and sim.ec parameter names/types/shared buffers remain
+the same; custom private asyn links must select the new port. The main port owns
+auxiliaries and propagates communication gates/EPICS state, calculates publication
+cadence including their subscriptions and forwards scalar callbacks/initial
+refreshes. Auxiliary construction bypasses ECMC initialization and creates no RT
+thread. Resizing occurs at configuration time and preserves registered pointers.
+The generator fixture fills the main table before loading generated records,
+requires the dedicated links/registrations and unchanged main count, and checks
+repeated/later loads and bidirectional shared-storage publication. Extracted real
+port constructors/lifecycle methods verify single initialization, collision
+rejection, independent capacity/growth, state gates, sampling and callbacks with
+controlled asyn calls. These tests do not run EPICS device support or benchmark
+RT timing. Rebuild ECMC and restart the IOC for this change; no ecmccfg changes.
+
+
+**USER — blocked-command and physical-jog isolation:** cases/isolation.py adds
+motor/native bursts of 24 blocked center/gap requests while a physical axis
+owns motion, and motor JOGF/JOGR release/STOP on both blades in both directions.
+Moving physical target and internal trajectory ownership must remain unchanged;
+other-blade position must remain stable. Submitted blocked record operations
+must complete, virtual Busy/ErrId must stay zero, and rejected commands must not
+replay after physical STOP. Jog verdicts require signed travel and velocity,
+moving Busy/DMOV/MOVN, ramp-down with no virtual ErrId, idle motor flags/MIP and
+cleared jog fields. Both routes prove fresh coordinated recovery without a fault
+reset. Ordinary jog press/release puts avoid put-notify serialization. Controlled
+boundary tests execute actual case methods and reject pending/accepted/queued
+blocked requests, virtual faults during travel or stopping, other-blade motion,
+changed physical target, ignored stop, travel overrun and replay. These checks do
+not establish live IOC or motor-record behavior; run --case isolation on the
+dedicated SIM IOC. The default both-mode plan now has 208 executions/15 expected
+mode-specific skips. No production or motorECMC change is made by these additions.
+
+**REGRESSION / unresolved live LVIO cause — motor acknowledgement before limit
+restoration:** preparation for closed-loop motor procedure 25 rejected its zero
+move with LVIO=1, although the displayed motor/native limits were -1/+1 and the
+axis was already near zero without a controller fault. The preceding absolute
+procedures change coordinates by roughly 1380 mm. Cleanup previously validated
+native/physical zero but did not wait for motor RBV and synchronize its target
+before restoring narrow limits. That ordering can expose a stale absolute motor
+readback to restored limits; the local motor record also retains LVIO on some
+no-op paths. Cleanup now calls the existing guarded sync_motor_record() before
+restoring limits. The boundary executes that real method inside full cleanup
+with motor RBV delayed at 1380 while native position is zero: limits must wait,
+and a readback that never updates blocks restoration. Existing LVIO rejection
+and completion verdicts remain strict; no flag is manually cleared. Snapshot
+now includes SPDB/MRES/RDBD/BDST for persistent/no-op/backlash diagnosis. The
+specific live cause is not proven by the single snapshot; rerun from a clean
+SIM IOC. No controller, database or motorECMC changes for this correction.
+
+**REGRESSION / unresolved live cause — manual home acknowledgement:** native
+procedure 15 returned old actual position ~0.2001 after finish_home accepted idle
+flags/Homed. Manual reference can retain Homed=1 and expose no moving transient,
+so those pre-command flags alone cannot acknowledge the new request. Manual
+success and reference cleanup now include the requested actual position (same
+0.002 mm tolerance) in the bounded completion predicate, while continuously
+requiring physical position to stay within 0.003 mm of its starting position.
+Boundary tests begin already idle/homed, delay only position publication and
+require waiting; ignored references and physical movement fail. Motor completion
+callbacks are still required for motor-triggered requests. Persistent wrong
+position remains a failure and requires live configuration/controller diagnosis;
+no production command semantics or reference values were changed here.
+
+**USER — targeted live reruns:** --test selects IDs containing a substring and
+may be repeated with OR matching, combined with existing module/loop filters.
+An empty selection fails before EPICS import/connection/writes; setup/cleanup and
+SIM guards remain active for selected live cases. Boundary/CLI checks select the
+single native manual-reference case, both manual-reference routes across modes,
+and reject an unmatched live filter before connection.
+
+**REGRESSION / unresolved live stall — blocked burst versus plant watchdog:**
+a blocked-motor burst reported TR_LO error 83470 (ERROR_DRV_HW_ALARM_0) and a
+405 ms plant-loop stall. The plant shutdown path deliberately trips both models
+and publishes that alarm, so the controller assertion may be secondary. Isolation
+checks now inspect plant health before and after error reads. Full synchronous
+isolation scans run between four-request batches instead of before every request,
+retaining all 24 requests, completion acknowledgements and no-replay/recovery
+verdicts; liveness is still checked per request. The watchdog threshold is unchanged.
+Per-phase latest/max CA read/write timings and failure context are captured before
+withdrawal. A controlled test runs the actual plant loop with normal and 400 ms
+feedback-write latency, verifies unchanged watchdog behavior and pre-injection
+cause retention, and distinguishes a failed plant from a real error with a healthy
+plant. A rebuilt/restarted IOC still reported a 410 ms loop with a 399 ms command
+read. The runner now uses a separate CA context/connection for the plant instead
+of attaching it to the test-command context with CAThread. The offline context
+test checks independent ownership, PV cleanup before destruction, and destruction
+on target failure. This does not prove the live contention cause or establish RT
+performance; a live rerun is needed to validate the connection separation.
+
+**USER / COMPAT — opt-in native target-write motion and status layout:**
+the axis defaults to staged target writes. `Cfg.SetAxisAutoExecuteOnTargetPos`
+opts into ABS/REL on each native target write, including identical values, with
+normal auto-enable and same-type retargeting. Internal PLC/sequencer setters
+remain unchanged. The standalone production-method fixture verifies both native
+routes, disabled default, status readback, parsed configuration/query commands,
+finite input, command type, ownership/communication/startup/error/trajectory
+checks, disabled-axis rejection, stable enable acknowledgement and enable timeout.
+Trajectory integration and live record processing remain integration-test scope.
+
+Per user request the original status word retains flags 0–23, assigns bit 24 to
+the mode and reserves 25–31. Sequence state and last interlock move to status2
+bytes 0 and 1; the upper 16 bits are reserved. Compile-time size checks and raw
+bit tests verify both words remain 32 bits and every original flag stays at its
+old bit. ECMC internal consumers and ecmccfg record decoders use the second word.
+This explicitly changes the packed ABI, requiring matching installation and
+plugin rebuilds for consumers of internal axis structures. The eight-bit public
+sequence readback now encodes post-home state 1003 as 235, replacing the historical
+three-bit value 3 described above; the post-home tests follow that new encoding.
+
+The `target_write` integration group has six cases per loop: PV/text ABS/REL,
+identical REL writes, active retargeting and normal auto-enable, with panel mode
+readback and motor flags checked. The suite now plans 220 executions with the
+same 15 mode-specific skips. Main/native/expert panel dimensions are unchanged.
+Offline checks do not establish live timing or prove an IOC run has passed.
+
+**REGRESSION — PyEpics exit crash after context separation:** a successful 208-case
+live run ended in SIGSEGV; another pre-test startup timeout ended in invalidMutex
+during shutdown. Installed PyEpics 3.5.1 disconnects PV callbacks without clearing
+channel handles from its global cache. Destroying the plant context before
+clearing those handles lets the exit finalizer use invalid channels. A separate
+subprocess with one nonexistent loopback PV reproduced exit -11 with the old
+order and exit 0 after clear-channel/flush/context-destroy, without IOC writes.
+The plant thread now uses that ordering for its own context only. The offline
+context fixture models both caches and requires clearing before destruction on
+normal and exceptional exits, while preserving the main client's channels.
+The separate startup timeout is not established as fixed by this cleanup change.
+
+**REGRESSION — mode indicator competing with the primary status reader:**
+native `Main.M6.bBusy?` returned 0 while `-Stat` retained 0x61e6c8 and the
+derived Busy/InStartup PVs stayed 1. The new mode bi had requested the existing
+status parameter through UInt32Digital; the existing longin uses Int32. The
+first record to bind selects the parameter's publication type, so initialization
+order can leave the other interface's callbacks stale. The mode indicator now
+derives bit 24 through a calc and soft bi in the existing status forward-link
+chain, keeping one Int32 reader. The ecmccfg regression exercises the report's
+raw word followed by idle/mode transitions, independently updates status2, and
+rejects additional asyn status readers. No native startup gate was weakened.
+
+**COMPAT — command record string length:** MCU-Cmd.AOUT is 40 bytes including
+the terminator, regardless of OMAX. New short commands `Cfg.SetAxisAutoExec`
+and `GetAxisAutoExec` remain within that limit for four-digit axis numbers;
+the original long spellings remain aliases. Live target-write tests use the
+short forms. The command transport now rejects requests over 39 UTF-8 bytes
+before any put. Boundary tests accept 39 and reject 40 without writing.

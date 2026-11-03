@@ -38,7 +38,7 @@ void writeRecord(std::ostream &db, const SignalRecord &signal, bool output) {
      << " field(DESC,\"Simulated I/O " << (output ? "injection" : "readback") << "\")\n"
      << " field(DTYP,\"" << signal.deviceType << "\")\n"
      << " field(" << (output ? "OUT" : "INP") << ",\"@" << (signal.digital ? "asynMask(" : "asyn(")
-     << signal.driver->portName() << ",0," << (signal.digital ? "0xffffffff," : "")
+     << signal.driver->simulationPortName() << ",0," << (signal.digital ? "0xffffffff," : "")
      << "1)T_SMP_MS=10/TYPE=" << signal.deviceType << "/sim." << signal.path << (output ? "=" : "?") << "\")\n"
      << " field(PINI,\"" << (output ? "NO" : "YES") << "\")\n"
      << " field(SCAN,\"" << (output ? "Passive" : "I/O Intr") << "\")\n"

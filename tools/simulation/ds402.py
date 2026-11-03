@@ -8,10 +8,13 @@ from el7041 import EpicsIO as BaseIO, run, word16
 @dataclass(frozen=True)
 class Settings:
     mode: str = 'csv'
+    enable_delay: float = .01
     encoder_counts_per_rev: int = 1048576
     velocity_units_per_rev_per_second: float = 268435.456
 
     def __post_init__(self):
+        if not math.isfinite(self.enable_delay) or self.enable_delay < 0:
+            raise ValueError('enable_delay must be finite and nonnegative')
         if self.mode not in ('csv', 'csp'):
             raise ValueError('mode must be csv or csp')
         for value in (self.encoder_counts_per_rev, self.velocity_units_per_rev_per_second):
@@ -42,10 +45,14 @@ class Model:
         self.state = 'disabled'
         self.previous_control = 0
         self.velocity = 0
+        self.pending_enable = None
+        self.enable_seconds = 0.0
 
     def trip(self):
         self.state = 'fault'
         self.velocity = 0
+        self.pending_enable = None
+        self.enable_seconds = 0.0
 
     def feedback(self):
         status = {'disabled': 0x40, 'ready': 0x21, 'switched': 0x23,
@@ -78,16 +85,38 @@ class Model:
                 self.state = 'enabled'
             elif control & 0x8f == 7:
                 self.state = 'switched'
+        target = self.state
+        forward = ((state, target) in (('disabled', 'ready'), ('ready', 'switched'),
+                                       ('switched', 'enabled'), ('quickstop', 'enabled')))
+        moving_seconds = seconds
+        if forward and self.settings.enable_delay > 0:
+            pending = (state, target, control & 0x8f)
+            if self.pending_enable != pending:
+                # seconds precedes first observation of this command. Do not
+                # credit that old interval toward its feedback delay.
+                self.pending_enable = pending
+                self.enable_seconds = 0.0
+            else:
+                self.enable_seconds += seconds
+            if self.enable_seconds < self.settings.enable_delay:
+                self.state = state
+            else:
+                moving_seconds = max(0.0, self.enable_seconds - self.settings.enable_delay)
+                self.pending_enable = None
+                self.enable_seconds = 0.0
+        else:
+            self.pending_enable = None
+            self.enable_seconds = 0.0
         self.velocity = 0
         if self.state == 'enabled':
             s = self.settings
             if s.mode == 'csv':
                 self.velocity = setpoint
-                self.position_counts += setpoint / s.velocity_units_per_rev_per_second * s.encoder_counts_per_rev * seconds
-            elif seconds > 0:
+                self.position_counts += setpoint / s.velocity_units_per_rev_per_second * s.encoder_counts_per_rev * moving_seconds
+            elif moving_seconds > 0:
                 # Follow the nearest modulo-32 target, including counter rollover.
                 delta = (setpoint - self.position_counts + (1 << 31)) % (1 << 32) - (1 << 31)
-                raw_velocity = delta / seconds / s.encoder_counts_per_rev * s.velocity_units_per_rev_per_second
+                raw_velocity = delta / moving_seconds / s.encoder_counts_per_rev * s.velocity_units_per_rev_per_second
                 self.velocity = max(-(1 << 31), min((1 << 31) - 1, round(raw_velocity)))
                 self.position_counts += delta
         return self.feedback()

@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / 'tools/simulation'))
 sys.path.insert(0, str(ROOT / 'tests/integration'))
 from slit.plant import Blade, Plant
 from slit.rig import Rig
-from slit.run import DEFAULT_CONFIG, MODULES, make_suite, write_reports
+from slit.run import DEFAULT_CONFIG, DEFAULT_REPORT, MODULES, make_suite, write_reports
 
 CONFIG = {'drive_slave': 14, 'encoder_slave': 9, 'encoder_channel': '02',
           'internal_counts_per_mm': 12800, 'absolute_counts_per_mm': 4096,
@@ -28,6 +28,7 @@ CONFIG = {'drive_slave': 14, 'encoder_slave': 9, 'encoder_channel': '02',
 blade = Blade(CONFIG)
 drive, absolute, status = blade.step(0, 0, 0)
 assert absolute == 5652480 and status == 4 and drive.position == 0
+blade.step(1, 0, 0)  # Observe enable before timing its acknowledgement.
 blade.step(1, 0, .05)  # Complete the specified enable delay without motion.
 drive, absolute, status = blade.step(1, 16384, 1)
 assert blade.position_mm == 5 and drive.position == 64000
@@ -57,6 +58,7 @@ assert absolute != held and status == 4
 # STOP is not an input to the plant: an enabled drive's declining velocity
 # must continue updating BOTH encoder images throughout deceleration.
 ramp = Blade(CONFIG)
+ramp.step(1, 0, 0)
 ramp.step(1, 0, .05)
 for velocity, counter, absolute in ((16384, 6400, 5654528), (8192, 9600, 5655552),
                                     (4096, 11200, 5656064), (0, 11200, 5656064)):
@@ -66,9 +68,10 @@ feedback, raw, ready = ramp.step(0, 0, .1)
 assert feedback.position == 11200 and raw == 5656064
 
 # Building/selecting test modules must not import pyepics or access a live IOC.
+assert DEFAULT_REPORT == ROOT / 'test-results/slit/slit-report.json'
 suite = make_suite(None, ('open', 'closed'), MODULES)
 tests = list(suite)
-assert len(tests) == 94
+assert len(tests) == 220
 assert {test.loop for test in tests} == {'open', 'closed'}
 assert all(test.rig is None for test in tests)
 assert len(list(make_suite(None, ('closed',), ('limits',)))) == 8
@@ -79,6 +82,20 @@ assert len(list(make_suite(None, ('closed',), ('noise',)))) == 2
 assert len(list(make_suite(None, ('closed',), ('torque',)))) == 3
 assert len(list(make_suite(None, ('closed',), ('native',)))) == 5
 assert len(list(make_suite(None, ('closed',), ('softlimit_sync',)))) == 3
+assert len(list(make_suite(None, ('closed',), ('homing',)))) == 44
+
+assert len(list(make_suite(None, ('closed',), ('interfaces',)))) == 5
+assert len(list(make_suite(None, ('closed',), ('motor',)))) == 4
+assert len(list(make_suite(None, ('closed',), ('isolation',)))) == 4
+assert len(list(make_suite(None, ('closed',), ('target_write',)))) == 6
+
+
+single = list(make_suite(None, ('open',), ('homing',), ('test_native_sequence_15',)))
+assert len(single) == 1 and single[0].id().endswith('.test_native_sequence_15')
+manual = list(make_suite(None, ('open','closed'), ('homing',),
+                         ('test_native_sequence_15', 'test_motor_sequence_25')))
+assert len(manual) == 4
+assert len(list(make_suite(None, ('open',), ('homing',), ('does_not_exist',)))) == 0
 
 
 class FakeClient:
@@ -155,7 +172,8 @@ assert values['TEST:SIM:ec0:s14:driveStatus01'] & 8
 assert not values['TEST:SIM:ec0:s14:driveStatus01'] & 2
 
 with tempfile.TemporaryDirectory() as directory:
-    path = Path(directory) / 'report.json'
+    path = Path(directory) / 'nested/slit/report.json'
+    assert not path.parent.exists()
     document = {'tests': [{'test': 'limits.forward', 'loop': 'closed', 'seconds': .1,
                            'status': 'failed', 'detail': 'expected limit', 'snapshot': {}}]}
     write_reports(path, document)
@@ -206,3 +224,17 @@ else:
 subprocess.run([sys.executable, str(ROOT / 'tests/integration/slit/run.py'), '--help'],
                check=True, stdout=subprocess.DEVNULL)
 print('Slit acceptance infrastructure: coupled encoder arithmetic, faults, modular selection, SIM guard and report generation passed; no live tests run.')
+
+
+if DEFAULT_CONFIG.exists():
+    command = [sys.executable, str(ROOT/'tests/integration/slit/run.py'),
+               '--config', str(DEFAULT_CONFIG), '--case', 'homing', '--loop', 'open']
+    planned = subprocess.run(command + ['--test', 'test_native_sequence_15'],
+                             capture_output=True, text=True, check=True)
+    assert planned.stdout.count('[open]') == 1 and 'test_native_sequence_15' in planned.stdout
+    assert '[closed]' not in planned.stdout
+    # Invalid live filters must fail before importing EPICS/connecting/writing.
+    rejected = subprocess.run(command + ['--prefix','TEST:', '--run', '--test','does_not_exist'],
+                              capture_output=True, text=True)
+    assert rejected.returncode == 2 and 'no tests match' in rejected.stderr
+print('Slit test selection: exact-name substring, repeatable OR filters, loop selection and pre-connection empty-filter rejection passed.')
