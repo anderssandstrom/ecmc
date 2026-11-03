@@ -122,3 +122,9 @@ case alternates this with zero and checks retained position and repeated
 relative moves after wake-up, without rehoming between cycles. Standalone tests
 verify the raw register/multi-turn value for both overflow and underflow sized
 jumps, including encoders without a ready input.
+
+The wake-position-jump case injects a measurement change greater than five
+atTarget tolerances while powered off. It checks both signs, retained standby
+feedback, fresh-position relative targeting, and physical travel without an
+extra correction for the injected measurement shift. Production stepping checks
+also cover ABS/REL starts with following-error monitoring enabled.

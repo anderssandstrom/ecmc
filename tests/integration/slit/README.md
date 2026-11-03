@@ -80,7 +80,7 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
 | `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 242 planned test executions with both loop modes selected. Primary
+There are 244 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -423,7 +423,7 @@ are restored.
 21/22 skip in open-loop mode because that mode's primary incremental encoder
 has no absolute bits. Encoder-not-ready abort cases also skip there. Thus the
 homing module alone plans 88 cases across both modes with 6 expected skips;
-the complete suite plans 242 cases with 17 expected mode-specific skips.
+the complete suite plans 244 cases with 18 expected mode-specific skips.
 Mode-specific skips are decided before setup writes or cleanup registration.
 Index-latch 11/12 and external-drive 26 require additional hardware handshakes
 and are not claimed as covered by the current slit plant.
@@ -504,7 +504,7 @@ python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing
 ```
 
 The interface cases use existing IOC records. The current full suite plans
-242 executions with 17 mode-specific skips and uses the schema-3 fixture
+244 executions with 18 mode-specific skips and uses the schema-3 fixture
 described under encoder supply relay tests below.
 
 
@@ -599,7 +599,7 @@ and a fresh coordinated move are checked afterward; jog settings are restored.
 Rejection of blocked commands may report write errors at the requested record;
 that must not become a latched controller error on the virtual or physical axes.
 
-The complete default plan is 242 executions, with 17 mode-specific skips.
+The complete default plan is 244 executions, with 18 mode-specific skips.
 The isolation cases themselves are Python-only; the current default fixture
 also includes the encoder relay links described below.
 
@@ -713,7 +713,7 @@ The configured power-off delay starts after the completed move is atTarget and,
 when smaller, inside the controller deadband. Encoder power must remain on for
 this dwell; losing qualification restarts it. CA timing checks allow 0.2 seconds
 for observation latency; exact cycle timing is covered by `tests/test_encoder_power.py`.
-Two disturbance cases require closed-loop EL5042 feedback and are skipped in
+Three feedback-change cases require closed-loop EL5042 feedback and are skipped in
 open-loop mode. The remaining cases also run with the internal counter primary.
 
 The rollover case also alternates zero and the configured raw counter's all-ones
@@ -724,3 +724,15 @@ between cycles. The standalone production checks also place the valid sample
 near the top of the raw counter and test zero during power-off, covering both
 rollover directions with and without a ready input. They assert the actual raw
 register and multi-turn value as well as position and velocity.
+
+`test_wake_position_jump_exceeds_five_at_target_tolerances` injects positive and
+negative EL5042 measurement steps while power is off, using six times the
+configured atTarget tolerance. Standby feedback must remain retained. A relative
+request with the amplifier already enabled must wait for wake-up and use the
+fresh shifted encoder position; physical travel must equal only the requested
+relative distance. The test leaves following-error monitoring unchanged and
+finishes powered off before cleanup removes the measurement shift.
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case encoder_power --test wake_position_jump --loop closed
+```

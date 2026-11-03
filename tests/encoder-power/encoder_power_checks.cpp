@@ -308,6 +308,33 @@ int main() {
       }
       r.disable(); ++count;
     }
+    for(bool relative : {false,true}) for(double sign : {-1.0,1.0}) {
+      scenario="wake jump exceeds five atTarget tolerances";
+      Rig r; r.idle(); r.sleepAfterMove();
+      auto *mon=r.axis->getMon();
+      const double tolerance=mon->getAtTargetTol();
+      mon->setEnableLagMon(true); mon->setPosLagTol(2*tolerance); mon->setPosLagTime(1);
+      const double retained=r.axis->getPrimEnc()->getActPos();
+      r.physical+=sign*6*tolerance;
+      const double fresh=r.physical;
+      CHECK(std::abs(fresh-retained)>5*tolerance);
+      CHECK(std::abs(fresh-retained)>mon->getPosLagTol());
+      r.ticks(20);
+      CHECK(std::abs(r.axis->getPrimEnc()->getActPos()-retained)<.001);
+      CHECK(!r.axis->getErrorID());
+      CHECK(r.axis->setEnableAutoEnable(false)==0);
+      const double target=fresh+.08;
+      CHECK((relative ? r.axis->moveRelativePosition(.08,.2,1,1) :
+                        r.axis->moveAbsolutePosition(target,.2,1,1))==0);
+      r.ticks(30);
+      CHECK(!r.axis->getExecute()); CHECK(r.axis->getEnable());
+      CHECK(std::abs(r.axis->getAxisStatusDataPtr()->currentVelocitySetpoint)<1e-12);
+      r.waitMotion();
+      CHECK(std::abs(r.axis->getPrimEnc()->getActVel())<.01);
+      CHECK(std::abs(r.axis->getSeq()->getTargetPos()-target)<.001);
+      CHECK(std::abs(r.axis->getAxisStatusDataPtr()->currentPositionSetpoint-fresh)<.002);
+      r.finishMove(); CHECK(!r.axis->getErrorID()); r.disable(); ++count;
+    }
     std::cout<<"Encoder relay power: "<<count<<" production axis/encoder scenarios passed.\n";
   } catch(const std::exception &error) { std::cerr<<error.what()<<'\n'; return 1; }
 }

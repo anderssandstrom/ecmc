@@ -193,6 +193,46 @@ class EncoderPowerTests(SlitCase):
                                    msg='power cycle must not add or remove a raw-counter turn')
             self.dwell_then_off(.6)
 
+    def test_wake_position_jump_exceeds_five_at_target_tolerances(self):
+        if self.loop != 'closed': self.skipTest('wake jump requires primary EL5042 feedback')
+        tolerance = self.query('MonAtTargetTol')
+        self.assertGreater(tolerance, 0)
+        self.config('EncPwrOffDelay', .8)
+        self.start(.15)
+        self.arrive(.15)
+        self.dwell_then_off(.8)
+        self.config('EnableAutoEnable', 0)
+        for sign in (1, -1):
+            retained = self.rig.get(self.axis, '-Enc02-PosAct')
+            physical = self.rig.plant.physical_position(self.axis)
+            bias = sign * 6 * tolerance
+            fresh = physical + bias
+            self.assertGreater(abs(fresh - retained), 5 * tolerance)
+            self.rig.plant.inject(self.axis, encoder_bias_mm=bias)
+            self.rig.wait(lambda: abs(self.rig.plant.snapshot()['blades'][self.axis]['encoder_mm']
+                                     - fresh) < .001,
+                          'encoder measurement changed while its power is off', 3)
+            self.rig.assert_stays(lambda: self.healthy() and self.state() == 1
+                                  and self.raw() == 0
+                                  and abs(self.rig.get(self.axis, '-Enc02-PosAct') - retained) < .001,
+                                  'off-state feedback stays retained despite a greater-than-5-tolerance jump', .2)
+            relative = sign * 4 * tolerance
+            self.start(relative, command=2)
+            self.rig.assert_stays(lambda: self.healthy() and self.state() == 2
+                                  and abs(self.rig.plant.physical_position(self.axis) - physical) < .002,
+                                  'pending relative move waits for fresh shifted feedback', .15)
+            expected = fresh + relative
+            self.rig.wait_native_stopped(self.axis, expected, timeout=12)
+            self.rig.wait(lambda: self.healthy() and self.rig.get(self.axis, '-AtTarget') == 1,
+                          'relative move settles using shifted encoder reference', 4)
+            self.assertAlmostEqual(self.rig.get(self.axis, '-Enc02-PosAct'), expected, delta=.005,
+                                   msg='REL target must use wake position, not retained position')
+            self.assertAlmostEqual(self.rig.plant.physical_position(self.axis), physical + relative,
+                                   delta=.015, msg='measurement jump must not cause a compensating physical move')
+            self.dwell_then_off(.8)
+        # The case finishes powered off, so ordinary teardown can remove the
+        # measurement bias before restoring continuously powered feedback.
+
     def test_motor_request_auto_enables_after_encoder_ready(self):
         # Ordinary motor puts, bypassing Rig.start_move's explicit enable.
         self.rig.put(self.axis, '.VAL', .25)

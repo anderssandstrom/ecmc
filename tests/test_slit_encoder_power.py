@@ -106,9 +106,9 @@ for high, off_raw in product((False, True), (0, 0xffffffff)):
     assert status[0] == status[4] == 0
 
 cases = list(make_suite(None, ('open', 'closed'), ('encoder_power',)))
-assert len(cases) == 22 and {c.loop for c in cases} == {'open', 'closed'}
+assert len(cases) == 24 and {c.loop for c in cases} == {'open', 'closed'}
 assert all(c.rig is None for c in cases)
-print('Slit encoder power: zero on EL5042 PV while off, warmup, polarities, physical counter isolation, and 22 live cases pass offline checks.')
+print('Slit encoder power: zero on EL5042 PV while off, warmup, polarities, physical counter isolation, and 24 live cases pass offline checks.')
 
 # Exercise the live fixture's actual setup/cleanup with configuration/CA
 # boundaries. The production SM behavior of these flags is checked separately
