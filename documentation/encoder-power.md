@@ -308,8 +308,9 @@ report their raw channel condition; suppression applies to ECMC's encoder path.
 Both parsers accept `encoder.power` on the axis's initial encoder or in a
 separate encoder YAML loaded with `loadYamlEnc.cmd`. Put the group on the
 encoder whose supply is switched; its index becomes the handover source.
-The optional backup index identifies an already-configured, always-powered
-incremental encoder. No hardware type is inferred from an index.
+The optional backup index identifies an always-powered incremental encoder.
+The backup may be configured later during startup. No hardware type is inferred
+from an index.
 
 For example, in the YAML loaded as encoder 2, after configuring counter 1 and
 positive, enabled axis atTarget monitoring:
@@ -338,7 +339,7 @@ encoder:
 | `startupDelay` | Minimum warm-up time in seconds, including when ready is linked | `0.1` |
 | `startupTimeout` | Maximum wake time in seconds; must exceed startupDelay | `5.0` |
 | `idleDelay` | Continuous settled atTarget/tighter-deadband time before power-off, seconds | `2.0` |
-| `backup.encoder` | Existing tracking encoder index, 1…8; must differ from source | none |
+| `backup.encoder` | Tracking encoder index, 1…8; must differ from source | none |
 | `backup.maxPositionDifference` | Positive permitted source/backup discrepancy on wake, engineering units | none |
 
 Omitting `power` generates no power commands. An empty group or `enable: false`
@@ -358,11 +359,15 @@ external-feedback source, an invalid timeout/delay relation, or zero discrepancy
 tolerance. Native validation also rejects missing/disabled atTarget monitoring,
 invalid links, a nonexistent/self/unsuitable backup, CSP handover and modulo axes.
 
-The backup must be loaded before the powered encoder's YAML is applied. There is
-one handover pair per axis. Startup remains in Auto power mode; fixed encoder
+Encoder files may be loaded in either order. Final axis validation checks that
+both encoders exist and have suitable types, power settings and drive mode
+before runtime starts. Runtime mapping changes require a complete valid pair
+and a stopped, disabled axis, with the source not ready. There is one handover
+pair per axis. Startup remains in Auto power mode; fixed encoder
 selection and the inspection Force ON hold are operator controls, not YAML keys.
-Deploy the updated ecmccfg templates/schema files; no ECMC C++ changes are needed
-for YAML support beyond the already implemented encoder-power native commands.
+Deploy the updated ecmccfg templates/schema files. Order-independent startup
+requires ECMC with deferred encoder-pair validation; rebuild/install ECMC and
+restart the IOC when upgrading from the earlier implementation.
 
 Simulation client and live integration commands shown here now run from the
 **ecmccfg repository root**. The dedicated IOC is in

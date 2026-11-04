@@ -1805,7 +1805,9 @@ int setAxisEncInvHwReady(int axisIndex,
 /** Optional axis handover: selected absolute encoder -> always-on incremental
  * backup before power-off; validated absolute return before motion. CSV/linear
  * axes only. backup=0 disables handover; tolerance is positive engineering units.
- * Configure stopped/disabled with source power control enabled and source off.
+ * Startup stores the mapping; final axis validation checks the complete pair
+ * after all encoders and the drive are configured. Either encoder order works.
+ * Runtime changes require a valid pair, stopped/disabled axis and source not ready.
  */
 /** Generic feedback mode: 0 Auto power (default), 1..encoderCount fixed index.
  * Change only while stopped/disabled; powered selection waits for valid feedback.

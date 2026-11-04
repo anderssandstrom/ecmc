@@ -373,6 +373,7 @@ protected:
   void initControlWord();
   void initEncoders();  
   void autoEnableSM();
+  int validateEncoderPowerBackup(int source, int backup);
   bool encoderPowerReady();
   bool encoderPowerFeedbackReady();
   void switchEncoderPowerFeedback(int index);

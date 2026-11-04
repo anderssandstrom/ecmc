@@ -46,6 +46,7 @@
 
 #include "ecmcMainThread.h"
 #include "ecmcEthercat.h"
+#include "ecmcEc.h"
 #include "ecmcGeneral.h"
 #include "ecmcCom.h"
 #include "ecmcRtLogger.h"
@@ -55,6 +56,8 @@
 
 static const char *driverName = "ecmcAsynPortDriver";
 
+extern ecmcEc *ec;
+extern app_mode_type appModeStat;
 extern double mcuFrequency;
 extern double mcuPeriod;
 extern int allowCallbackEpicsState;
@@ -3523,7 +3526,69 @@ static void allowNetworkHostCommandsCallFunc(const iocshArgBuf *args) {
   iocshSetError(error);
 }
 
+/** Read any VISIBLE_STRING SDO into startup environment variables. */
+static const iocshArg sdoStringEnvArg = { "Environment variable", iocshArgString };
+static const iocshArg sdoStringSlaveArg = { "Slave position", iocshArgInt };
+static const iocshArg sdoStringIndexArg = { "SDO index", iocshArgInt };
+static const iocshArg sdoStringSubArg = { "SDO subindex", iocshArgInt };
+static const iocshArg sdoStringLimitArg = { "Character limit (0 = 255)", iocshArgInt };
+static const iocshArg *const sdoStringArgs[] = {
+  &sdoStringEnvArg, &sdoStringSlaveArg, &sdoStringIndexArg,
+  &sdoStringSubArg, &sdoStringLimitArg
+};
+static const iocshFuncDef sdoStringFuncDef = {
+  "ecmcEpicsEnvSetSdoString", 5, sdoStringArgs
+};
+static void sdoStringCallFunc(const iocshArgBuf *args) {
+  if (!args[0].sval || !*args[0].sval) return;
+  const std::string name(args[0].sval);
+  epicsEnvSet(name.c_str(), "");
+  epicsEnvSet((name + "_DB_VALUE").c_str(), "Unknown");
+  epicsEnvSet((name + "_STATUS").c_str(), "Unavailable/read failed");
+  const int limit = args[4].ival ? args[4].ival : 255;
+  if (!ecmcAsynPortObj || args[1].ival < 0 || args[1].ival > 65535 ||
+      args[2].ival < 0 || args[2].ival > 65535 ||
+      args[3].ival < 0 || args[3].ival > 255 || limit < 1 || limit > 255) {
+    epicsEnvSet((name + "_STATUS").c_str(), "Invalid arguments");
+    return;
+  }
+  uint8_t bytes[256] = {};
+  size_t size = 0;
+  uint32_t abortCode = 0;
+  ecmcAsynPortObj->lock();
+  ec_master_t *master = ec ? ec->getMaster() : NULL;
+  const int error = appModeStat == ECMC_MODE_CONFIG && master
+      ? ecrt_master_sdo_upload(master, args[1].ival, args[2].ival,
+                               args[3].ival, bytes, sizeof(bytes), &size, &abortCode)
+      : -1;
+  ecmcAsynPortObj->unlock();
+  if (error || abortCode || size > sizeof(bytes)) return;
+  size_t length = 0;
+  while (length < size && bytes[length]) {
+    if (bytes[length] < 32 || bytes[length] > 126) {
+      epicsEnvSet((name + "_STATUS").c_str(), "Non-text SDO value");
+      return;
+    }
+    ++length;
+  }
+  if (!length) {
+    epicsEnvSet((name + "_STATUS").c_str(), "Empty SDO value");
+    return;
+  }
+  std::string value(reinterpret_cast<const char *>(bytes), length);
+  if (value.size() > static_cast<size_t>(limit)) value.resize(limit);
+  epicsEnvSet(name.c_str(), value.c_str());
+  // Raw text remains available above. Also supply a conservative macro-safe
+  // form for IOC-shell/dbLoadRecords use, without interpreting device text.
+  const bool safe = value.find_first_of("\"'\\$,;") == std::string::npos;
+  epicsEnvSet((name + "_DB_VALUE").c_str(), safe ? value.c_str() : "Unknown");
+  epicsEnvSet((name + "_STATUS").c_str(), !safe ? "Unsupported database text"
+      : length > static_cast<size_t>(limit) ? "Truncated" : "Available");
+}
+
 void ecmcAsynPortDriverRegister(void) {
+  epicsEnvSet("ECMC_SDO_STRING_SUPPORTED", "1");
+  iocshRegister(&sdoStringFuncDef, sdoStringCallFunc);
   iocshRegister(&allowNetworkHostCommandsFuncDef, allowNetworkHostCommandsCallFunc);
   iocshRegister(&initFuncDef,    initCallFunc);
   iocshRegister(&initFuncDef_2,  initCallFunc_2);

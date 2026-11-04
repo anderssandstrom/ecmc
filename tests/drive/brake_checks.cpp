@@ -33,6 +33,7 @@ struct Bench {
     brake.bits = 1;
     drive = std::make_unique<Drive>(&publication, data);
     CHECK(drive->getErrorID() == 0);
+    CHECK(data.control_.drvMode == ECMC_DRV_MODE_NONE);
     CHECK(drive->setEntryAtIndex(&control, ECMC_DRIVEBASE_ENTRY_INDEX_CONTROL_WORD, -1) == 0);
     CHECK(drive->setEntryAtIndex(&velocity, ECMC_DRIVEBASE_ENTRY_INDEX_VELOCITY_SETPOINT, -1) == 0);
     CHECK(drive->setEntryAtIndex(&status, ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD, -1) == 0);
@@ -42,7 +43,9 @@ struct Bench {
     CHECK(drive->setEnableBrake(true) == 0);
     CHECK(drive->setBrakeOpenDelayTime(open) == 0);
     CHECK(drive->setBrakeCloseAheadTime(close) == 0);
+    CHECK(data.control_.drvMode == ECMC_DRV_MODE_NONE);
     CHECK(drive->validate() == 0);
+    CHECK(data.control_.drvMode == ECMC_DRV_MODE_CSV);
   }
   void command(bool enable) {
     requested = enable;

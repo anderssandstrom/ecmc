@@ -35,7 +35,7 @@ struct Rig {
   bool withReady;
   ecmcDataItem position{"position"}, status{"ready"}, alarmItem{"alarm"}, output{"relay"};
   ecmcDataItem counterItem{"counter"}, counterStatus{"counterReady"};
-  Rig(bool high=true, bool invert=false, bool readyLink=true, bool backup=false)
+  Rig(bool high=true, bool invert=false, bool readyLink=true, bool backup=false, bool startRuntime=true)
     : activeHigh(high), invertedReady(invert), withReady(readyLink) {
     relay=high ? 0 : 1;
     axis=std::make_unique<PowerTestAxis>(&port,1,.001,ECMC_TRAPETZ);
@@ -67,24 +67,28 @@ struct Rig {
     CHECK(axis->validate()==0);
     if(backup) {
       withBackup=true;
-      CHECK(axis->addEncoder()==0);
-      int error=0;
-      auto *counterEnc=axis->getEnc(1,&error); CHECK(counterEnc && !error);
-      ecmcDataAccess access;
-      counterItem.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counter),sizeof(counter));
-      counterItem.setEcmcDataType(ECMC_EC_U32); counterItem.setAllowWriteToEcmc(false);
-      CHECK(ecmcDataAccess::bind(counterItem,&counterHealthy,0,&access));
-      CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,-1)==0);
-      counterStatus.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counterReady),sizeof(counterReady));
-      counterStatus.setEcmcDataType(ECMC_EC_U32); counterStatus.setAllowWriteToEcmc(false);
-      CHECK(ecmcDataAccess::bind(counterStatus,&counterHealthy,0,&access));
-      CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_READY,0)==0);
-      CHECK(counterEnc->setBits(32)==0);
-      CHECK(counterEnc->setType(ECMC_ENCODER_TYPE_INCREMENTAL)==0);
-      CHECK(counterEnc->setScaleNum(1)==0); CHECK(counterEnc->setScaleDenom(1000)==0);
+      addCounter();
       CHECK(axis->setEncoderPowerBackup(1,2,.01)==0);
       CHECK(axis->validate()==0);
     }
+    if (startRuntime) CHECK(axis->setRealTimeStarted(true)==0);
+  }
+  void addCounter() {
+    CHECK(axis->addEncoder()==0);
+    int error=0;
+    auto *counterEnc=axis->getEnc(1,&error); CHECK(counterEnc && !error);
+    ecmcDataAccess access;
+    counterItem.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counter),sizeof(counter));
+    counterItem.setEcmcDataType(ECMC_EC_U32); counterItem.setAllowWriteToEcmc(false);
+    CHECK(ecmcDataAccess::bind(counterItem,&counterHealthy,0,&access));
+    CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,-1)==0);
+    counterStatus.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counterReady),sizeof(counterReady));
+    counterStatus.setEcmcDataType(ECMC_EC_U32); counterStatus.setAllowWriteToEcmc(false);
+    CHECK(ecmcDataAccess::bind(counterStatus,&counterHealthy,0,&access));
+    CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_READY,0)==0);
+    CHECK(counterEnc->setBits(32)==0);
+    CHECK(counterEnc->setType(ECMC_ENCODER_TYPE_INCREMENTAL)==0);
+    CHECK(counterEnc->setScaleNum(1)==0); CHECK(counterEnc->setScaleDenom(1000)==0);
   }
   void bind(ecmcDataItem &item, uint32_t &value, int slot, bool write, int bit=-1) {
     item.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&value),sizeof(value));
@@ -616,6 +620,29 @@ int main() {
       CHECK(powerState(value)==3); CHECK(value & ECMC_ENC_STATUS_READY);
       r.lostReady=true; r.ticks(5); value=sourceStatus->lastRTValue;
       CHECK(powerState(value)==4); CHECK(!(value & ECMC_ENC_STATUS_READY)); ++count;
+    }
+    {
+      scenario="configure powered source before the backup exists";
+      Rig r(true,false,true,false,false);
+      CHECK(r.axis->setEncoderPowerBackup(1,2,.01)==0);
+      CHECK(r.axis->getEncoderPowerBackup()==2);
+      CHECK(r.axis->validate()==ERROR_ENC_POWER_CONFIG); // no null dereference
+      r.addCounter(); r.withBackup=true;
+      r.axis->errorReset(); CHECK(r.axis->validate()==0);
+      CHECK(r.axis->setRealTimeStarted(true)==0); r.ticks(50);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0);
+      r.waitMotion(); r.finishMove(); r.ticks(2100);
+      CHECK(!r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="final validation rejects an unsuitable later encoder";
+      Rig r(true,false,true,false,false);
+      CHECK(r.axis->setEncoderPowerBackup(1,2,.01)==0);
+      r.addCounter(); int error=0; auto *backup=r.axis->getEnc(1,&error);
+      CHECK(backup->setType(ECMC_ENCODER_TYPE_ABSOLUTE)==0);
+      CHECK(r.axis->validate()==ERROR_ENC_POWER_CONFIG);
+      CHECK(!r.axis->getEnable()); ++count;
     }
     std::cout<<"Encoder relay power: "<<count<<" production axis/encoder scenarios passed.\n";
   } catch(const std::exception &error) { std::cerr<<error.what()<<'\n'; return 1; }

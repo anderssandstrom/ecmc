@@ -1104,13 +1104,7 @@ void ecmcAxisBase::errorReset() {
 
 int ecmcAxisBase::validateBase() {
   if (encoderPowerBackupIndex_ >= 0 &&
-      (!encArray_[encoderPowerSourceIndex_]->getPowerEnable() ||
-       encArray_[encoderPowerBackupIndex_]->getPowerEnable() ||
-       encArray_[encoderPowerSourceIndex_]->getType() != ECMC_ENCODER_TYPE_ABSOLUTE ||
-       encArray_[encoderPowerBackupIndex_]->getType() != ECMC_ENCODER_TYPE_INCREMENTAL ||
-       data_.control_.moduloRange != 0 ||
-       (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV) ||
-       data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL))
+      validateEncoderPowerBackup(encoderPowerSourceIndex_, encoderPowerBackupIndex_))
     return setErrorID(ERROR_ENC_POWER_CONFIG);
   for (int i = 0; i < data_.status_.encoderCount; ++i)
     if (encArray_[i]->getPowerEnable() &&
@@ -4254,6 +4248,7 @@ int ecmcAxisBase::setEncoderForceOn(int force) {
   if (force < 0 || force > 1) return ERROR_ENC_POWER_CONFIG;
   if (getBlockCom() || masterSlaveBlocked_) return ERROR_AXIS_BLOCKED;
   const int index = encoderPowerSourceIndex_ >= 0 ? encoderPowerSourceIndex_ : data_.control_.primaryEncIndex;
+  if (!encArray_[index]) return ERROR_ENC_POWER_CONFIG;
   int error = encArray_[index]->setPowerControl(force);
   if (!error) {
     data_.control_.controlWord_.encoderForceOn = force;
@@ -4294,6 +4289,33 @@ int ecmcAxisBase::setEncoderMode(int mode) {
   return 0;
 }
 
+// Indices here are zero-based. This validator is called after the real drive's
+// validate() has established CSV/CSP, and before startup releases motion.
+int ecmcAxisBase::validateEncoderPowerBackup(int source, int backup) {
+  if (source < 0 || backup < 0 || source >= data_.status_.encoderCount ||
+      backup >= data_.status_.encoderCount || source == backup ||
+      !encArray_[source] || !encArray_[backup]) {
+    ecmcRtLoggerLogError("Axis[%d]: Encoder power source %d and backup %d must be distinct configured encoders (count=%d).\n",
+      data_.status_.axisId, source+1, backup+1, data_.status_.encoderCount);
+    return ERROR_ENC_POWER_CONFIG;
+  }
+  if (!encArray_[source]->getPowerEnable() || encArray_[backup]->getPowerEnable() ||
+      encArray_[source]->getType() != ECMC_ENCODER_TYPE_ABSOLUTE ||
+      encArray_[backup]->getType() != ECMC_ENCODER_TYPE_INCREMENTAL) {
+    ecmcRtLoggerLogError("Axis[%d]: Encoder power handover requires a power-controlled absolute source and an always-powered incremental backup.\n",
+      data_.status_.axisId);
+    return ERROR_ENC_POWER_CONFIG;
+  }
+  if (data_.control_.moduloRange != 0 ||
+      data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL ||
+      (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV)) {
+    ecmcRtLoggerLogError("Axis[%d]: Encoder power handover requires internal encoder feedback, no modulo and a validated CSV drive.\n",
+      data_.status_.axisId);
+    return ERROR_ENC_POWER_CONFIG;
+  }
+  return 0;
+}
+
 int ecmcAxisBase::setEncoderPowerBackup(int source, int backup, double tolerance) {
   if (getEnable() || getEnabled() || getBusy()) return ERROR_AXIS_BUSY;
   if (!std::isfinite(tolerance) || tolerance <= 0) return ERROR_ENC_POWER_CONFIG;
@@ -4307,17 +4329,18 @@ int ecmcAxisBase::setEncoderPowerBackup(int source, int backup, double tolerance
     encoderPowerBackupAligned_ = false;
     return 0;
   }
-  if (source < 1 || backup < 1 || source > data_.status_.encoderCount ||
-      backup > data_.status_.encoderCount || source == backup ||
-      !encArray_[source-1]->getPowerEnable() ||
-      encArray_[source-1]->getPowerState() == 3 ||
-      data_.control_.moduloRange != 0 ||
-      encArray_[source-1]->getType() != ECMC_ENCODER_TYPE_ABSOLUTE ||
-      encArray_[backup-1]->getType() != ECMC_ENCODER_TYPE_INCREMENTAL ||
-      encArray_[backup-1]->getPowerEnable() ||
-      data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL ||
-      (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV))
+  // During CONFIG, subsequent YAML files may still create/configure either
+  // encoder and the drive has not necessarily classified its setpoint mode.
+  // Store bounded, distinct indices; final axis validation checks the pair.
+  if (source < 1 || backup < 1 || source > ECMC_MAX_ENCODERS ||
+      backup > ECMC_MAX_ENCODERS || source == backup)
     return ERROR_ENC_POWER_CONFIG;
+  // Once realtime has started, a change must be valid immediately. Never let
+  // a runtime request install missing pointers or an unsupported drive mode.
+  if (getRealTimeStarted()) {
+    if (validateEncoderPowerBackup(source-1, backup-1)) return ERROR_ENC_POWER_CONFIG;
+    if (encArray_[source-1]->getPowerState() == 3) return ERROR_ENC_POWER_CONFIG;
+  }
   encoderPowerSourceIndex_ = source-1;
   encoderPowerBackupIndex_ = backup-1;
   encoderPowerDiffTol_ = tolerance;
