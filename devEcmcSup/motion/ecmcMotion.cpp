@@ -1453,6 +1453,43 @@ int setAxisEncScaleDenom(int axisIndex, double value) {
   return 0;
 }
 
+int setAxisEncMode(int axisIndex, int mode) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->setEncoderMode(mode);
+}
+int getAxisEncMode(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getEncoderMode();
+  return 0;
+}
+int setAxisEncPwrBackup(int axisIndex, int backup, double tolerance) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->setEncoderPowerBackup(axes[axisIndex]->getConfigEncoderIndex(), backup, tolerance);
+}
+int getAxisEncPwrSource(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getEncoderPowerSource();
+  return 0;
+}
+int getAxisEncPwrBackup(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getEncoderPowerBackup();
+  return 0;
+}
+int getAxisEncPwrDiffTol(int axisIndex, double *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getEncoderPowerDiffTol();
+  return 0;
+}
+int setAxisEncPwrCtrl(int axisIndex, int control) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->setEncoderForceOn(control);
+}
+int getAxisEncPwrCtrl(int axisIndex, int *value) {
+  CHECK_AXIS_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getEncoderForceOn();
+  return 0;
+}
 int setAxisEncPwrEnable(int axisIndex, int enable) {
   CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
   if (enable && (!axes[axisIndex]->getMon()->getEnableAtTargetMon() ||

@@ -1802,6 +1802,27 @@ int setAxisEncInvHwReady(int axisIndex,
  * an off encoder retains its last valid sample and feedback control pauses.
  * Ready inversion uses SetAxisEncInvHwReady separately.
  */
+/** Optional axis handover: selected absolute encoder -> always-on incremental
+ * backup before power-off; validated absolute return before motion. CSV/linear
+ * axes only. backup=0 disables handover; tolerance is positive engineering units.
+ * Configure stopped/disabled with source power control enabled and source off.
+ */
+/** Generic feedback mode: 0 Auto power (default), 1..encoderCount fixed index.
+ * Change only while stopped/disabled; powered selection waits for valid feedback.
+ * Uses axis control bits 14..17 and status bits 25..28; no new asyn parameter.
+ */
+int setAxisEncMode(int axisIndex, int mode);
+int getAxisEncMode(int axisIndex, int *value);
+int setAxisEncPwrBackup(int axisIndex, int backup, double tolerance);
+int getAxisEncPwrSource(int axisIndex, int *value);
+int getAxisEncPwrBackup(int axisIndex, int *value);
+int getAxisEncPwrDiffTol(int axisIndex, double *value);
+/** Diagnostic hold: 0 release to Auto, 1 Force ON. Applies to configured power
+ * source, or current primary without a handover pair. No motion is started.
+ * Uses axis control bit 18 and status bit 29.
+ */
+int setAxisEncPwrCtrl(int axisIndex, int control);
+int getAxisEncPwrCtrl(int axisIndex, int *value);
 int setAxisEncPwrEnable(int axisIndex, int enable);
 int setAxisEncPwrPol(int axisIndex, int activeHigh);
 int setAxisEncPwrDelay(int axisIndex, double seconds);

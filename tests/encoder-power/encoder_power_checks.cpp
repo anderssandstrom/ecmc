@@ -4,6 +4,7 @@
 #include "ecmcDataItem.h"
 #include "ecmcErrorsList.h"
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -15,20 +16,29 @@ void ecmcRtLoggerLogError(const char *, ...) {}
 static const char *scenario = "";
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(std::string(scenario)+":"+std::to_string(__LINE__)+": " #x); } while(0)
 
+struct PowerTestAxis : ecmcAxisVirt {
+  using ecmcAxisVirt::ecmcAxisVirt;
+  ecmcAxisData *dataForTest() { return &data_; }
+  bool feedbackAvailable() { return encoderPowerFeedbackReady(); }
+};
+
 struct Rig {
   ecmcAsynPortDriver port;
-  std::unique_ptr<ecmcAxisVirt> axis;
+  std::unique_ptr<PowerTestAxis> axis;
   uint32_t raw=10000, ready=0, alarm=1, relay=0, offRaw=0;
-  uint32_t rawBias=0;
-  int healthy=1;
+  uint32_t rawBias=0, counter=0, counterReady=1;
+  int sourceShift=0;
+  bool withBackup=false;
+  int healthy=1, counterHealthy=1;
   double physical=10, supplySeconds=0;
   bool activeHigh, invertedReady, neverReady=false, lostReady=false;
   bool withReady;
   ecmcDataItem position{"position"}, status{"ready"}, alarmItem{"alarm"}, output{"relay"};
-  Rig(bool high=true, bool invert=false, bool readyLink=true)
+  ecmcDataItem counterItem{"counter"}, counterStatus{"counterReady"};
+  Rig(bool high=true, bool invert=false, bool readyLink=true, bool backup=false)
     : activeHigh(high), invertedReady(invert), withReady(readyLink) {
     relay=high ? 0 : 1;
-    axis=std::make_unique<ecmcAxisVirt>(&port,1,.001,ECMC_TRAPETZ);
+    axis=std::make_unique<PowerTestAxis>(&port,1,.001,ECMC_TRAPETZ);
     bind(position,raw,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,false);
     bind(output,relay,ECMC_ENCODER_ENTRY_INDEX_POWER,true,0);
     if(withReady) bind(status,ready,ECMC_ENCODER_ENTRY_INDEX_READY,false,0);
@@ -55,6 +65,26 @@ struct Rig {
     CHECK(axis->setAutoEnableTimeout(.02)==0);
     CHECK(axis->setEnableAutoEnable(true)==0);
     CHECK(axis->validate()==0);
+    if(backup) {
+      withBackup=true;
+      CHECK(axis->addEncoder()==0);
+      int error=0;
+      auto *counterEnc=axis->getEnc(1,&error); CHECK(counterEnc && !error);
+      ecmcDataAccess access;
+      counterItem.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counter),sizeof(counter));
+      counterItem.setEcmcDataType(ECMC_EC_U32); counterItem.setAllowWriteToEcmc(false);
+      CHECK(ecmcDataAccess::bind(counterItem,&counterHealthy,0,&access));
+      CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,-1)==0);
+      counterStatus.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&counterReady),sizeof(counterReady));
+      counterStatus.setEcmcDataType(ECMC_EC_U32); counterStatus.setAllowWriteToEcmc(false);
+      CHECK(ecmcDataAccess::bind(counterStatus,&counterHealthy,0,&access));
+      CHECK(counterEnc->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_READY,0)==0);
+      CHECK(counterEnc->setBits(32)==0);
+      CHECK(counterEnc->setType(ECMC_ENCODER_TYPE_INCREMENTAL)==0);
+      CHECK(counterEnc->setScaleNum(1)==0); CHECK(counterEnc->setScaleDenom(1000)==0);
+      CHECK(axis->setEncoderPowerBackup(1,2,.01)==0);
+      CHECK(axis->validate()==0);
+    }
   }
   void bind(ecmcDataItem &item, uint32_t &value, int slot, bool write, int bit=-1) {
     item.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&value),sizeof(value));
@@ -71,8 +101,14 @@ struct Rig {
     ready=(invertedReady ? !valid : valid);
     // Off-state hardware alarms must not generate false idle/startup alarms.
     alarm=powered() ? 0 : 1;
-    raw=powered() ? uint32_t(std::llround(physical*1000) + rawBias) : offRaw;
+    raw=powered() ? uint32_t(std::llround(physical*1000) + rawBias + sourceShift) : offRaw;
+    counter=uint32_t(std::llround(physical*1000)+100000);
+    const bool wasPowered=powered();
     axis->execute(true);
+    if(withBackup && wasPowered && !powered() && !axis->getErrorID()) {
+      CHECK(axis->getPrimaryEncoderIndex()==2); // reference/select before relay drops
+      CHECK(axis->feedbackAvailable());
+    }
     physical+=axis->getAxisStatusDataPtr()->currentVelocitySetpoint*.001;
   }
   void ticks(int count) { for(int i=0;i<count;++i) tick(); }
@@ -106,7 +142,9 @@ struct Rig {
   void disable() {
     CHECK(axis->stopMotion(1)==0);
     ticks(10);
-    CHECK(!axis->getEnable()); CHECK(!axis->getBusy()); CHECK(!powered());
+    CHECK(!axis->getEnable()); CHECK(!axis->getBusy());
+    if(withBackup) ticks(2100); // independent encoder dwell survives drive disable
+    CHECK(!powered());
   }
 };
 
@@ -334,6 +372,250 @@ int main() {
       CHECK(std::abs(r.axis->getSeq()->getTargetPos()-target)<.001);
       CHECK(std::abs(r.axis->getAxisStatusDataPtr()->currentPositionSetpoint-fresh)<.002);
       r.finishMove(); CHECK(!r.axis->getErrorID()); r.disable(); ++count;
+    }
+    for(bool readyInput : {false,true}) {
+      scenario="counter handover and wake";
+      Rig r(true,false,readyInput,true); r.ticks(50);
+      int error=0; auto *source=r.axis->getEnc(0,&error); auto *backup=r.axis->getEnc(1,&error);
+      CHECK(r.axis->getPrimaryEncoderIndex()==2); CHECK(!r.powered());
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0);
+      r.waitMotion(); CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      r.finishMove(); r.ticks(2100);
+      CHECK(!r.powered()); CHECK(r.axis->getEnable());
+      CHECK(r.axis->getPrimaryEncoderIndex()==2); CHECK(r.axis->feedbackAvailable());
+      CHECK(std::abs(backup->getActPos()-source->getActPos())<.001);
+      const double previous=backup->getActPos(); r.physical+=.003; r.ticks(10);
+      CHECK(backup->getActPos()>previous+.002); // feedback is live, not held
+      CHECK(std::abs(backup->getActVel())<1);
+      CHECK(r.axis->moveRelativePosition(.08,.2,1,1)==0);
+      r.ticks(20); CHECK(r.axis->feedbackAvailable());
+      CHECK(r.axis->getPrimaryEncoderIndex()==2); // counter still controls during warmup
+      r.waitMotion(); CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      CHECK(std::abs(r.axis->getSeq()->getTargetPos()-(previous+.003+.08))<.002);
+      r.finishMove(); CHECK(!r.axis->getErrorID()); r.disable(); ++count;
+    }
+    for(int mismatch : {-30,30}) {
+      scenario="counter/absolute wake mismatch blocks motion";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
+      CHECK(r.axis->getPrimaryEncoderIndex()==2); r.sourceShift=mismatch;
+      const double previous=r.physical;
+      CHECK(r.axis->moveRelativePosition(.08,.2,1,1)==0); r.ticks(100);
+      CHECK(r.axis->getErrorID()==ERROR_ENC_POWER_MISMATCH);
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(std::abs(r.physical-previous)<.001);
+      r.sourceShift=0; r.axis->errorReset(); r.ticks(100);
+      CHECK(!r.axis->getExecute()); CHECK(!r.axis->getBusy());
+      CHECK(r.axis->moveRelativePosition(.08,.2,1,1)==0); r.waitMotion(); r.finishMove();
+      CHECK(!r.axis->getErrorID()); r.disable(); ++count;
+    }
+    {
+      scenario="unready backup prevents relay handover";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove();
+      r.counterReady=0; r.ticks(5);
+      CHECK(r.axis->getErrorID()!=0); CHECK(!r.axis->getEnable());
+      CHECK(!r.axis->getExecute()); ++count;
+    }
+    {
+      scenario="within-limit handover rebases without following error";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
+      r.sourceShift=5; // .005 mm mismatch, below .01 handover tolerance
+      auto *mon=r.axis->getMon();
+      mon->setEnableLagMon(true); mon->setPosLagTol(.002); mon->setPosLagTime(1);
+      CHECK(r.axis->moveRelativePosition(.08,.2,1,1)==0); r.waitMotion();
+      CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      CHECK(std::abs(r.axis->getSeq()->getTargetPos()-10.285)<.002);
+      r.finishMove(); CHECK(!r.axis->getErrorID()); r.disable(); ++count;
+    }
+    {
+      scenario="handover configuration rejects invalid backup";
+      Rig r; r.idle();
+      CHECK(r.axis->setEncoderPowerBackup(1,1,.01)==ERROR_ENC_POWER_CONFIG);
+      CHECK(r.axis->setEncoderPowerBackup(1,2,.01)==ERROR_ENC_POWER_CONFIG);
+      CHECK(r.axis->setEncoderPowerBackup(1,1,0)==ERROR_ENC_POWER_CONFIG);
+      CHECK(r.axis->getEncoderPowerBackup()==0);
+      CHECK(r.axis->setEncoderPowerBackup(1,0,.03)==0);
+      CHECK(r.axis->getEncoderPowerDiffTol()==.03); ++count;
+    }
+    {
+      scenario="handover dwell is independent of normal drive disable";
+      Rig r(true,false,true,true); r.ticks(50);
+      int error=0; auto *source=r.axis->getEnc(0,&error);
+      CHECK(source->setPowerOffDelay(.08)==0);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove();
+      CHECK(r.axis->setEnable(false)==0); r.ticks(30);
+      CHECK(!r.axis->getEnable()); CHECK(r.powered());
+      CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      r.ticks(100); CHECK(!r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="invalid counter transport cannot remain in control";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
+      CHECK(r.axis->getPrimaryEncoderIndex()==2); r.counterHealthy=0; r.ticks(5);
+      CHECK(r.axis->getErrorID()==ERROR_ENC_NOT_READY);
+      CHECK(!r.axis->feedbackAvailable());
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute()); ++count;
+    }
+    for(bool backup : {false,true}) {
+      scenario="Force ON persists until explicit Auto release";
+      Rig r(true,false,true,backup); r.ticks(50);
+      int error=0; auto *source=r.axis->getEnc(0,&error);
+      CHECK(source->setPowerOffDelay(.08)==0);
+      CHECK(source->setPowerControl(1)==0); r.ticks(100);
+      CHECK(source->getPowerReady()); CHECK(r.powered());
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      r.ticks(300); CHECK(r.powered());
+      CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove();
+      r.ticks(300); CHECK(r.powered()); CHECK(source->getPowerControl()==1);
+      CHECK(source->setPowerControl(0)==0); r.ticks(30); CHECK(r.powered());
+      r.ticks(100); CHECK(!r.powered()); CHECK(!r.axis->getErrorID());
+      r.disable(); ++count;
+    }
+    for(bool backup : {false,true}) {
+      scenario="manual release without a move waits full settling delay";
+      Rig r(true,false,true,backup); r.ticks(50);
+      int error=0; auto *source=r.axis->getEnc(0,&error);
+      CHECK(source->setPowerOffDelay(.08)==0);
+      CHECK(source->setPowerControl(1)==0); r.ticks(200);
+      CHECK(r.powered()); CHECK(!r.axis->getEnable());
+      CHECK(source->setPowerControl(0)==0); r.ticks(30); CHECK(r.powered());
+      r.ticks(100); CHECK(!r.powered()); CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="manual release during motion cannot cut encoder power";
+      Rig r; r.ticks(50); auto *source=r.axis->getPrimEnc();
+      CHECK(source->setPowerOffDelay(.08)==0);
+      CHECK(source->setPowerControl(1)==0); r.ticks(100);
+      CHECK(r.axis->moveAbsolutePosition(10.4,.2,1,1)==0); r.waitMotion();
+      CHECK(source->setPowerControl(0)==0); r.ticks(200);
+      CHECK(r.axis->getBusy()); CHECK(r.powered());
+      r.finishMove(); r.ticks(100); CHECK(!r.powered()); CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="Force ON does not bypass encoder faults";
+      Rig r; r.ticks(50); auto *source=r.axis->getPrimEnc();
+      CHECK(source->setPowerControl(1)==0); r.ticks(100);
+      r.lostReady=true; r.ticks(10);
+      CHECK(r.axis->getErrorID()==ERROR_ENC_NOT_READY);
+      CHECK(!r.powered()); CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      CHECK(source->setPowerControl(0)==0); r.lostReady=false;
+      r.axis->errorReset(); r.ticks(100); CHECK(!r.powered()); ++count;
+    }
+    {
+      scenario="axis packed Force ON and fixed encoder modes";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(!r.port.find("ax1.enc.pwrctrl1"));
+      CHECK(!r.port.find("ax1.enc.pwrctrl2"));
+      CHECK(r.axis->setEncoderMode(9)==ERROR_ENC_POWER_CONFIG);
+      CHECK(r.axis->setEncoderMode(2)==0); // counter is encoder 2 in this fixture
+      CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(r.axis->getEncoderMode()==2);
+      r.ticks(100); CHECK(!r.powered());
+      CHECK(r.axis->feedbackAvailable());
+      // Fixed counter motion neither powers nor waits for the absolute source.
+      const double initial=r.axis->getPrimEnc()->getActPos();
+      CHECK(r.axis->moveAbsolutePosition(initial+.04,.2,1,1)==0);
+      r.ticks(40); CHECK(r.axis->getExecute()); CHECK(!r.powered());
+      CHECK(r.axis->setEncoderMode(1)==ERROR_AXIS_BUSY);
+      r.finishMove(); CHECK(!r.powered()); CHECK(!r.axis->getErrorID());
+      CHECK(r.axis->setEnable(false)==0); r.ticks(20);
+      // Force ON for inspection must leave fixed counter feedback selected.
+      CHECK(r.axis->setEncoderForceOn(1)==0); r.ticks(100);
+      CHECK(r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(r.axis->getEncoderForceOn()==1);
+      CHECK(r.axis->setEncoderMode(1)==0); // fixed absolute is encoder 1
+      r.ticks(2200); CHECK(r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      CHECK(r.axis->setEncoderForceOn(0)==0); r.ticks(2200);
+      CHECK(r.powered()); // fixed powered encoder stays powered
+      CHECK(r.axis->setEncoderMode(0)==0); r.ticks(2100);
+      CHECK(!r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="packed axis control selects mode and publishes status without extra parameters";
+      Rig r(true,false,true,true); r.ticks(50);
+      ecmcAsynAxisControlType word{};
+      word.encoderMode=2;
+      CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynSuccess);
+      CHECK(r.axis->getEncoderMode()==2);
+      word.encoderForceOn=true;
+      CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynSuccess);
+      r.ticks(100); CHECK(r.powered());
+      uint32_t control=0,status=0;
+      auto *data=r.axis->dataForTest();
+      memcpy(&control,&data->control_.controlWord_,4);
+      memcpy(&status,&data->status_.statusWord_,4);
+      CHECK(((control>>14)&15)==2); CHECK((control&(1u<<18))!=0);
+      CHECK(((status>>25)&15)==2); CHECK((status&(1u<<29))!=0);
+      CHECK(r.axis->setEncoderForceOn(2)==ERROR_ENC_POWER_CONFIG);
+      word.encoderMode=15;
+      CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynError);
+      CHECK(r.axis->getEncoderMode()==2); ++count;
+    }
+    {
+      scenario="fixed powered encoder waits for warmup without a backup pair";
+      Rig r; r.ticks(50);
+      CHECK(r.axis->setEncoderMode(1)==0);
+      r.ticks(20); CHECK(r.powered()); CHECK(!r.axis->feedbackAvailable());
+      CHECK(r.axis->moveRelativePosition(.05,.2,1,1)==0);
+      r.waitMotion();
+      CHECK(std::abs(r.axis->getSeq()->getTargetPos()-10.05)<.002);
+      r.finishMove(); CHECK(r.axis->feedbackAvailable());
+      r.ticks(2200); CHECK(r.powered());
+      CHECK(r.axis->setEnable(false)==0); r.ticks(20);
+      CHECK(r.axis->setEncoderMode(0)==0); r.ticks(2100);
+      CHECK(!r.powered()); CHECK(!r.axis->getErrorID()); ++count;
+    }
+    {
+      scenario="generic selection accepts encoder 3 and retains its own reference";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(r.axis->addEncoder()==0);
+      int error=0; auto *third=r.axis->getEnc(2,&error); CHECK(third && !error);
+      ecmcDataAccess access;
+      CHECK(ecmcDataAccess::bind(r.counterItem,&r.counterHealthy,0,&access));
+      CHECK(third->setDataAtIndex(access,ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,-1)==0);
+      CHECK(third->setType(ECMC_ENCODER_TYPE_INCREMENTAL)==0);
+      CHECK(third->setBits(32)==0); CHECK(third->setScaleNum(1)==0);
+      CHECK(third->setScaleDenom(1000)==0);
+      CHECK(r.axis->validate()==0);
+      r.ticks(20); third->setActPos(27); r.ticks(10);
+      CHECK(r.axis->setEncoderMode(3)==0); r.ticks(20);
+      CHECK(r.axis->getPrimaryEncoderIndex()==3);
+      CHECK(std::abs(third->getActPos()-27)<.001);
+      CHECK(!r.powered()); CHECK(r.axis->feedbackAvailable()); ++count;
+    }
+    {
+      scenario="encoder status publishes power, readiness, homed and absolute independently";
+      Rig r(true,false,true,true); r.ticks(50);
+      CHECK(!r.port.find("ax1.enc.powerstate1"));
+      auto *sourceStatus=r.port.find("ax1.enc.status1");
+      auto *backupStatus=r.port.find("ax1.enc.status2");
+      CHECK(sourceStatus && backupStatus && !sourceStatus->writable && !backupStatus->writable);
+      auto powerState=[](uint32_t value) { return (value & ECMC_ENC_STATUS_POWER_STATE_MASK) >> ECMC_ENC_STATUS_POWER_STATE_SHIFT; };
+      uint32_t value=sourceStatus->lastRTValue;
+      CHECK(powerState(value)==1);
+      CHECK((value & ECMC_ENC_STATUS_POWER_ENABLED)!=0);
+      CHECK((value & (ECMC_ENC_STATUS_POWER_ON|ECMC_ENC_STATUS_READY))==0);
+      CHECK((value & (ECMC_ENC_STATUS_HOMED|ECMC_ENC_STATUS_ABSOLUTE))==
+        (ECMC_ENC_STATUS_HOMED|ECMC_ENC_STATUS_ABSOLUTE));
+      CHECK((backupStatus->lastRTValue & ECMC_ENC_STATUS_ABSOLUTE)==0);
+      int error=0; auto *backup=r.axis->getEnc(1,&error);
+      backup->setHomed(true); r.ticks(2);
+      CHECK((backupStatus->lastRTValue & ECMC_ENC_STATUS_HOMED)!=0);
+      backup->setHomed(false); r.ticks(2);
+      CHECK((backupStatus->lastRTValue & ECMC_ENC_STATUS_HOMED)==0);
+      CHECK(r.axis->setEncoderForceOn(1)==0); r.ticks(10);
+      value=sourceStatus->lastRTValue; CHECK(powerState(value)==2);
+      CHECK(value & ECMC_ENC_STATUS_POWER_ON); CHECK(!(value & ECMC_ENC_STATUS_READY));
+      r.ticks(100); value=sourceStatus->lastRTValue;
+      CHECK(powerState(value)==3); CHECK(value & ECMC_ENC_STATUS_READY);
+      r.lostReady=true; r.ticks(5); value=sourceStatus->lastRTValue;
+      CHECK(powerState(value)==4); CHECK(!(value & ECMC_ENC_STATUS_READY)); ++count;
     }
     std::cout<<"Encoder relay power: "<<count<<" production axis/encoder scenarios passed.\n";
   } catch(const std::exception &error) { std::cerr<<error.what()<<'\n'; return 1; }

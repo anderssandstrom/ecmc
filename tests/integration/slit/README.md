@@ -70,6 +70,7 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/limits.py` | Forward/backward hardware switches during motion, escape with switch held, bouncing inputs without automatic restart, motor-record soft-limit rejection, controller soft-limit boundary through axis PVs |
 | `cases/enable.py` | Missing enable acknowledgement, lost enabled feedback during motion, drive fault |
 | `cases/feedback.py` | Primary encoder not-ready at idle/during motion, readiness recovery without automatic restart, unready secondary isolation, frozen EL5042 following error, independent LO move while HI feedback is invalid |
+| `cases/encoder_handover.py` | Two-encoder handover with live counter feedback while absolute power is off, repeated wake-up, positive/negative mismatch rejection without replay, and ready timeout; closed-loop fixture only |
 | `cases/encoder_power.py` | EL5042 raw zero/ready low while off, both relay polarities, short/long post-settling delays, motor auto-enable, native relative wake with drive still enabled and auto-enable off, early/late readiness, wake timeout, STOP cancellation, atTarget/deadband dwell reset |
 | `cases/noise.py` | Closed-loop EL5042 measurement noise: small noise preserves at-target; larger noise clears it without fault/disable, followed by stable recovery |
 | `cases/sync.py` | Center/gap moves and inverse kinematics, physical-to-virtual ownership transitions, external slave trajectory selection, slave feedback fault during master motion, coordinated STOP and fresh-command recovery |
@@ -80,7 +81,7 @@ without running motion tests. Existing caQtDM IOC/axis panels can observe it.
 | `cases/torque.py` | Reduced-torque bit 2 clears during physical/coordinated motion, returns after settling, and responds to closed-loop encoder disturbance |
 | `cases/brake.py` | Applied when disabled; release after enable; application before power-off; cancellation while opening; release during physical/coordinated motion; failed/lost enable |
 
-There are 244 planned test executions with both loop modes selected. Primary
+There are 266 planned test executions with both loop modes selected. Primary
 EL5042 not-ready checks are explicitly skipped in open-loop mode. Every case
 uses `Rig.prepare()` to clear injected faults, stop/disable axes, reset errors,
 select encoder/gains and return the blades to zero. Teardown clears fault
@@ -423,7 +424,7 @@ are restored.
 21/22 skip in open-loop mode because that mode's primary incremental encoder
 has no absolute bits. Encoder-not-ready abort cases also skip there. Thus the
 homing module alone plans 88 cases across both modes with 6 expected skips;
-the complete suite plans 244 cases with 18 expected mode-specific skips.
+the complete suite plans 266 cases with 26 expected mode-specific skips.
 Mode-specific skips are decided before setup writes or cleanup registration.
 Index-latch 11/12 and external-drive 26 require additional hardware handshakes
 and are not claimed as covered by the current slit plant.
@@ -504,7 +505,7 @@ python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case homing
 ```
 
 The interface cases use existing IOC records. The current full suite plans
-244 executions with 18 mode-specific skips and uses the schema-3 fixture
+266 executions with 26 mode-specific skips and uses the schema-3 fixture
 described under encoder supply relay tests below.
 
 
@@ -599,7 +600,7 @@ and a fresh coordinated move are checked afterward; jog settings are restored.
 Rejection of blocked commands may report write errors at the requested record;
 that must not become a latched controller error on the virtual or physical axes.
 
-The complete default plan is 244 executions, with 18 mode-specific skips.
+The complete default plan is 266 executions, with 26 mode-specific skips.
 The isolation cases themselves are Python-only; the current default fixture
 also includes the encoder relay links described below.
 
@@ -736,3 +737,40 @@ finishes powered off before cleanup removes the measurement shift.
 ```sh
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case encoder_power --test wake_position_jump --loop closed
 ```
+
+## Counter handover tests
+
+The `encoder_handover` group uses the existing schema-3 relay links and both
+configured feedback devices. It requires the ECMC build providing
+`Cfg.SetAxisEncPwrBackup`. The fixture starts with this optional mode disabled;
+these cases select absolute encoder 2 and counter 1, then remove the mode before
+restoring the ordinary encoder-power fixture. Manual primary changes remain
+blocked while handover is active. Existing primary-encoder readback must show
+counter 1 while asleep and absolute encoder 2 after a valid wake.
+
+```sh
+python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case encoder_handover --loop closed
+```
+
+Seven cases cover repeated handover, each mismatch sign, missing ready, generic fixed encoder selection through PV/native commands, and persistent inspection power.
+They skip in open loop. Production stepping additionally checks operation with
+no ready input, live counter changes while asleep, an unready backup, accepted
+small differences with following-error monitoring enabled, and preservation of
+the encoder dwell through drive disable.
+
+The generic `-EncMode` selector provides Auto power=0 or Encoder N=1…8 and
+requires a disabled axis. It does not encode hardware types. The slit fixture
+assigns encoder 1 to the counter and encoder 2 to absolute feedback. `-EncForceOn`
+holds the configured source powered for inspection without changing fixed
+feedback selection. Both commands reuse existing axis control/status words;
+there are no extra native asyn parameters for these controls. See
+[encoder power control](../../../documentation/encoder-power.md) for bit masks
+and readbacks.
+
+Encoder-power diagnostics tests inject EL5042 warning bit 0, error bit 1, and
+both together while its supply is intentionally off. The bits remain asserted
+during warm-up; axis/encoder error IDs, axis warning ID and encoder EPICS alarm
+severities must stay clear. Clearing diagnostics permits normal motion. A
+closed-loop case retains the error through wake-up and requires hardware-alarm
+fault `0x14410`, with the queued target rejected and no physical motion. No IOC
+configuration changes are needed: the existing EL5042 warning/alarm links are used.

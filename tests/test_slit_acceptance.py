@@ -71,7 +71,7 @@ assert feedback.position == 11200 and raw == 5656064
 assert DEFAULT_REPORT == ROOT / 'test-results/slit/slit-report.json'
 suite = make_suite(None, ('open', 'closed'), MODULES)
 tests = list(suite)
-assert len(tests) == 244
+assert len(tests) == 266
 assert {test.loop for test in tests} == {'open', 'closed'}
 assert all(test.rig is None for test in tests)
 assert len(list(make_suite(None, ('closed',), ('limits',)))) == 8
@@ -88,7 +88,8 @@ assert len(list(make_suite(None, ('closed',), ('interfaces',)))) == 5
 assert len(list(make_suite(None, ('closed',), ('motor',)))) == 4
 assert len(list(make_suite(None, ('closed',), ('isolation',)))) == 4
 assert len(list(make_suite(None, ('closed',), ('target_write',)))) == 6
-assert len(list(make_suite(None, ('closed',), ('encoder_power',)))) == 12
+assert len(list(make_suite(None, ('closed',), ('encoder_power',)))) == 16
+assert len(list(make_suite(None, ('closed',), ('encoder_handover',)))) == 7
 
 
 single = list(make_suite(None, ('open',), ('homing',), ('test_native_sequence_15',)))

@@ -42,6 +42,17 @@
 // Do not allow absolute encoders with less than 4 bits
 #define ECMC_ENCODER_ABS_BIT_MIN 4
 
+// Published through one read-only Int32 asyn interface per encoder.
+enum ecmcEncoderStatusBits : uint32_t {
+  ECMC_ENC_STATUS_POWER_ENABLED = 1u << 0,
+  ECMC_ENC_STATUS_POWER_ON = 1u << 1,
+  ECMC_ENC_STATUS_READY = 1u << 2,
+  ECMC_ENC_STATUS_HOMED = 1u << 3,
+  ECMC_ENC_STATUS_ABSOLUTE = 1u << 4,
+  ECMC_ENC_STATUS_POWER_STATE_SHIFT = 8,
+  ECMC_ENC_STATUS_POWER_STATE_MASK = 7u << 8
+};
+
 enum ecmcOverUnderFlowType {
   ECMC_ENC_NORMAL    = 0,
   ECMC_ENC_UNDERFLOW = 1,
@@ -149,6 +160,9 @@ public:
   double                getMaxPosDiffToPrimEnc();
   int                   hwReady();
   int                   setInvHwReady(int invert);
+  int                   setPowerControl(int control);
+  int                   getPowerControl() const { return powerControl_; }
+  bool                  getPowerReleasePending() const { return powerReleasePending_; }
   int                   setPowerEnable(bool enable);
   int                   setPowerPolarity(bool activeHigh);
   int                   setPowerDelay(double seconds);
@@ -158,6 +172,7 @@ public:
   bool                  getPowerIdleOff() const { return powerIdleOff_; }
   void                  updatePowerIdle(bool settled);
   void                  wakePower();
+  void                  referencePowerBackup(double position, bool homed);
   bool                  getPowerEnable() const { return powerEnabled_; }
   bool                  getPowerReady() const { return !powerEnabled_ || powerState_ == 3; }
   bool                  getPowerOff() const { return powerEnabled_ && powerState_ == 1; }
@@ -249,7 +264,7 @@ protected:
   int      readHwTouchProbe(bool domainOK);
   int      readHwReady(bool domainOK);
   bool     updatePower(bool masterOK, bool domainOK);
-  void     publishPowerState();
+  void     publishStatusWord();
 
   // 0: ordinary encoder, 1: intentionally off, 2: warm-up, 3: ready, 4: fault.
   bool powerEnabled_;
@@ -259,7 +274,8 @@ protected:
   bool powerPositionSync_;
   bool powerFirstSample_;
   int powerState_;
-  int powerStateOld_;
+  uint32_t statusWord_;
+  uint32_t statusWordOld_;
   int powerError_;
   int powerReadyCycles_;
   double powerDelayS_;
@@ -268,7 +284,9 @@ protected:
   double powerOffDelayS_;
   double powerIdleElapsedS_;
   bool powerIdleOff_;
-  ecmcAsynDataItem *powerStateParam_;
+  int powerControl_; // bit 0: Force ON; zero: Auto; other bits reserved
+  bool powerReleasePending_;
+  ecmcAsynDataItem *statusWordParam_;
   
   encoderType encType_;
   ecmcFilter *velocityFilter_;

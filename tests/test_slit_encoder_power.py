@@ -56,7 +56,7 @@ class Clock:
     def monotonic(self): return self.now
     def advance(self, dt): self.now += dt
 
-for high, off_raw in product((False, True), (0, 0xffffffff)):
+for high, off_raw, diagnostics in product((False, True), (0, 0xffffffff), range(4)):
     clock = Clock()
     writes = []
     class Stop:
@@ -64,6 +64,8 @@ for high, off_raw in product((False, True), (0, 0xffffffff)):
         def is_set(self):
             if self.count == 0:
                 plant.configure_encoder_power('TR_HI', high, .025, off_raw=off_raw)
+                plant.inject('TR_HI', encoder_error=bool(diagnostics & 2),
+                             encoder_warning=bool(diagnostics & 1))
             return self.count >= 5
         def set(self): self.count = 5
         def wait(self, seconds):
@@ -102,13 +104,13 @@ for high, off_raw in product((False, True), (0, 0xffffffff)):
     raw = {cycle: value for cycle, name, value in writes if name.endswith('positionActual01')}
     status = {cycle: value for cycle, name, value in writes if name.endswith('encoderStatus01')}
     assert raw[0] == raw[1] == raw[4] == off_raw, raw
-    assert raw[3] == 5652480 and status[3] == 4
-    assert status[0] == status[4] == 0
+    assert raw[3] == 5652480 and status[3] == (4 | diagnostics)
+    assert status[0] == status[4] == diagnostics
 
 cases = list(make_suite(None, ('open', 'closed'), ('encoder_power',)))
-assert len(cases) == 24 and {c.loop for c in cases} == {'open', 'closed'}
+assert len(cases) == 32 and {c.loop for c in cases} == {'open', 'closed'}
 assert all(c.rig is None for c in cases)
-print('Slit encoder power: zero on EL5042 PV while off, warmup, polarities, physical counter isolation, and 24 live cases pass offline checks.')
+print('Slit encoder power: zero on EL5042 PV while off, warmup, polarities, physical counter isolation, and 32 live cases pass offline checks.')
 
 # Exercise the live fixture's actual setup/cleanup with configuration/CA
 # boundaries. The production SM behavior of these flags is checked separately

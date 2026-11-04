@@ -47,7 +47,8 @@ struct Axis {
   } data_;
   PID pid, *cntrl_=&pid; Drive drive, *drv_=&drive; Monitor mon, *mon_=&mon;
   bool ready=true, encoderPowerEnablePending_=false;
-  bool encoderPowerReady() { return ready; }
+  bool backup=false;
+  bool encoderPowerFeedbackReady() { return backup || (ready && !encoderPowerEnablePending_); }
   void step() { const bool axisEnabled=true, masterOK=true;
 '''+branch+r'''
   }
@@ -61,6 +62,8 @@ int main() {
   assert(a.drive.velocity==0 && a.pid.calls==1 && a.pid.resets==2);
   a.encoderPowerEnablePending_=false; a.step();
   assert(a.drive.velocity==2 && a.pid.calls==2);
+  a.ready=false; a.backup=true; a.encoderPowerEnablePending_=true;
+  a.step(); assert(a.drive.velocity==2 && a.pid.calls==3);
   // CSP holding must preserve the compensated command, not drop its offset.
   Axis csp; csp.data_.control_.drvMode=ECMC_DRV_MODE_CSP;
   csp.step(); assert(csp.drive.position==12 && csp.pid.calls==1);

@@ -564,7 +564,7 @@ void ecmcAxisReal::execute(bool masterOK) {
     double cntrOutput = 0;
     mon_->setEnable(true);
 
-    if (!encoderPowerReady() || encoderPowerEnablePending_) {
+    if (!encoderPowerFeedbackReady()) {
       // Feedback is intentionally unavailable while holding torque or warming
       // up. Never integrate the retained (stale) encoder position.
       cntrl_->reset();

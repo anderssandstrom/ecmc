@@ -169,7 +169,8 @@ void ecmcEncoder::initVars() {
   powerPositionSync_ = false;
   powerFirstSample_ = false;
   powerState_ = 0;
-  powerStateOld_ = -1;
+  statusWord_ = 0;
+  statusWordOld_ = UINT32_MAX;
   powerError_ = 0;
   powerReadyCycles_ = 0;
   powerDelayS_ = 0.1;
@@ -178,7 +179,9 @@ void ecmcEncoder::initVars() {
   powerOffDelayS_ = 2;
   powerIdleElapsedS_ = 0;
   powerIdleOff_ = false;
-  powerStateParam_ = nullptr;
+  statusWordParam_ = nullptr;
+  powerControl_ = 0;
+  powerReleasePending_ = false;
   hwSumAlarmOld_          = false;
   hwSumAlarm_             = false;
   homeParamsValid_        = 0;
@@ -405,6 +408,14 @@ void ecmcEncoder::setActPos(double pos) {
   velocityFilter_->initFilter(pos);
   positionFilter_->initFilter(pos);
   actPos_ = pos;
+}
+
+void ecmcEncoder::referencePowerBackup(double position, bool homed) {
+  setActPos(position);
+  setHomed(homed);
+  velocityFilter_->initFilter(0);
+  actVel_ = actVelLocal_ = 0;
+  delayCompStateValid_ = false;
 }
 
 int ecmcEncoder::setOffset(double offset) {
@@ -1125,6 +1136,18 @@ int ecmcEncoder::readHwReady(bool domainOK) {
   return 0;
 }
 
+int ecmcEncoder::setPowerControl(int control) {
+  if (control < 0 || (control & ~1) || (control && !powerEnabled_))
+    return ERROR_ENC_POWER_CONFIG;
+  if (data_->control_.controlWord_.blockCom) return ERROR_AXIS_BLOCKED;
+  if (control == powerControl_) return 0;
+  powerControl_ = control;
+  powerIdleOff_ = false;
+  powerIdleElapsedS_ = 0;
+  powerReleasePending_ = !control && powerOn_;
+  return 0;
+}
+
 int ecmcEncoder::setPowerEnable(bool enable) {
   if (powerOn_ || data_->status_.statusWord_.enable || data_->status_.statusWord_.enabled)
     return ERROR_AXIS_BUSY;
@@ -1134,7 +1157,9 @@ int ecmcEncoder::setPowerEnable(bool enable) {
                  !checkDataExist(ECMC_ENCODER_ENTRY_INDEX_POWER) ||
                  validateData(ECMC_ENCODER_ENTRY_INDEX_POWER)))
     return ERROR_ENC_POWER_CONFIG;
+  if (!enable && powerControl_) return ERROR_AXIS_BUSY;
   powerEnabled_ = enable;
+  powerReleasePending_ = false;
   powerIdleOff_ = false;
   powerIdleElapsedS_ = 0;
   powerRequested_ = false;
@@ -1142,7 +1167,7 @@ int ecmcEncoder::setPowerEnable(bool enable) {
   powerState_ = enable ? 1 : 0;
   powerElapsedS_ = 0;
   powerReadyCycles_ = 0;
-  publishPowerState();
+  publishStatusWord();
   return 0;
 }
 
@@ -1184,18 +1209,29 @@ void ecmcEncoder::wakePower() {
 
 void ecmcEncoder::updatePowerIdle(bool settled) {
   if (!powerEnabled_ || powerIdleOff_) return;
+  if (powerControl_) { powerIdleElapsedS_ = 0; return; }
   if (powerState_ != 3 || !settled) {
     powerIdleElapsedS_ = 0;
     return;
   }
   powerIdleElapsedS_ += data_->status_.sampleTime;
-  if (powerIdleElapsedS_ >= powerOffDelayS_) powerIdleOff_ = true;
+  if (powerIdleElapsedS_ >= powerOffDelayS_) {
+    powerIdleOff_ = true;
+    powerReleasePending_ = false;
+  }
 }
 
-void ecmcEncoder::publishPowerState() {
-  if (powerStateParam_ && powerState_ != powerStateOld_) {
-    powerStateParam_->refreshParamRT(1);
-    powerStateOld_ = powerState_;
+void ecmcEncoder::publishStatusWord() {
+  statusWord_ = (powerEnabled_ ? ECMC_ENC_STATUS_POWER_ENABLED : 0u) |
+    (powerOn_ ? ECMC_ENC_STATUS_POWER_ON : 0u) |
+    (!encLocalErrorId_ && domainOK_ && hwReady() ? ECMC_ENC_STATUS_READY : 0u) |
+    (homed_ ? ECMC_ENC_STATUS_HOMED : 0u) |
+    (encType_ == ECMC_ENCODER_TYPE_ABSOLUTE ? ECMC_ENC_STATUS_ABSOLUTE : 0u) |
+    ((static_cast<uint32_t>(powerState_) << ECMC_ENC_STATUS_POWER_STATE_SHIFT) &
+      ECMC_ENC_STATUS_POWER_STATE_MASK);
+  if (statusWordParam_ && statusWord_ != statusWordOld_) {
+    statusWordParam_->refreshParamRT(1);
+    statusWordOld_ = statusWord_;
   }
 }
 
@@ -1213,7 +1249,10 @@ bool ecmcEncoder::updatePower(bool masterOK, bool domainOK) {
   }
   // A completed, settled move may release feedback power while holding torque.
   // Ordinary disable still retains feedback until amplifier ramp-down finishes.
-  if (!powerRequested_ && (powerIdleOff_ || !data_->status_.statusWord_.enabled)) {
+  const bool allowManual = data_->status_.statusWord_.instartup || data_->status_.errorCode == 0;
+  if (!allowManual) powerReleasePending_ = false;
+  const bool request = powerRequested_ || (allowManual && (powerControl_ || powerReleasePending_));
+  if (!request && (!powerOn_ || powerIdleOff_ || !data_->status_.statusWord_.enabled)) {
     powerOn_ = false;
     powerState_ = 1;
     powerElapsedS_ = 0;
@@ -1321,7 +1360,7 @@ double ecmcEncoder::readEntries(bool masterOK) {
     powerError_ = encLocalErrorId_;
     powerState_ = 4;
   }
-  publishPowerState();
+  publishStatusWord();
 
   actPos_ = actPosLocal_;
   actVel_ = actVelLocal_;
@@ -1359,7 +1398,7 @@ int ecmcEncoder::writeEntries() {
       powerError_ = ERROR_ENC_ENTRY_WRITE_FAIL;
       encLocalErrorId_ = powerError_;
       powerState_ = 4;
-      publishPowerState();
+      publishStatusWord();
       return powerError_;
     }
   }
@@ -2227,9 +2266,11 @@ int ecmcEncoder::initAsyn() {
   paramTemp->setAllowWriteToEcmc(false);
   paramTemp->refreshParam(1);
   encErrId_ = paramTemp;
-  return createAsynParam("enc.powerstate", asynParamInt32, ECMC_EC_S32,
-                         reinterpret_cast<uint8_t*>(&powerState_), sizeof(powerState_),
-                         &powerStateParam_);
+  int error = createAsynParam("enc.status", asynParamInt32, ECMC_EC_U32,
+                              reinterpret_cast<uint8_t*>(&statusWord_), sizeof(statusWord_),
+                              &statusWordParam_);
+  if (error) return error;
+  return 0;
 }
 
 int ecmcEncoder::createTouchProbeAsynParams() {

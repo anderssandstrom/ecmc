@@ -792,6 +792,9 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
   case 0x1441D:
     return "ERROR_ENC_POWER_TIMEOUT";
 
+  case 0x1441F:
+    return "ERROR_ENC_POWER_MISMATCH";
+
   case 0x1441E:
     return "ERROR_ENC_POWER_CONFIG";
 

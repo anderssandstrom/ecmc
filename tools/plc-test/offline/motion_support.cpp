@@ -21,7 +21,8 @@ int ecmcLogBufferWrite(int, const char *, ...) { return 0; }
 void ecmcRtLoggerPortDriverSetAxisCommandCounters(int, unsigned int, unsigned int, unsigned int) {}
 void ecmcRtLoggerPortDriverSetAxisMasterSlaveBlock(int, int, int) {}
 int ecmcRtLoggerPortDriverGetCountEnableCommands(int) { return 0; }
-extern "C" int setAxisPLCEnable(int, int) {
+extern "C" int setAxisPLCEnable(int, int enable) {
+  if (!enable) return 0; // Disabling an absent PLC has no side effects.
   throw std::logic_error("axis PLCs unavailable in standalone motion tests");
 }
 extern "C" int getAxisPLCEnable(int, int *enable) { *enable = 0; return 0; }

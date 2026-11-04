@@ -427,6 +427,11 @@ void ecmcAxisBase::initVars() {
   encoderPowerEnablePending_    = false;
   encoderPowerInitPending_      = false;
   encoderPowerMoveCompleted_    = false;
+  encoderMode_                  = 0;
+  encoderPowerSourceIndex_      = -1;
+  encoderPowerBackupIndex_      = -1;
+  encoderPowerDiffTol_          = .01;
+  encoderPowerBackupAligned_   = false;
   motionStartPermissive_         = nullptr;
   motionStartPending_            = false;
   autoEnableTimeCounter_        = 0.0;
@@ -491,9 +496,15 @@ void ecmcAxisBase::preExecute(bool masterOK) {
   const int encoderCount = status.encoderCount;
   for (int i = 0; i < encoderCount; i++) {
     if (encArray_[i]->getPowerEnable()) {
-      encArray_[i]->requestPower(encoderPowerEnablePending_ || autoEnableRequest_ ||
-                                 ((statusWord.enable || statusWord.enabled) &&
-                                  !encArray_[i]->getPowerIdleOff()));
+      bool requested = encoderPowerEnablePending_ || autoEnableRequest_ ||
+        ((statusWord.enable || statusWord.enabled) && !encArray_[i]->getPowerIdleOff());
+      // Keep absolute feedback powered until the post-cycle handover has read
+      // BOTH encoders, aligned the counter and selected it for control.
+      if (encoderPowerBackupIndex_ >= 0 && i == encoderPowerSourceIndex_ &&
+          data_.control_.primaryEncIndex == i && encArray_[i]->getPowerReady() && !getErrorID())
+        requested = true;
+      if (encoderMode_ != 0) requested = i == encoderMode_-1 && !getErrorID();
+      encArray_[i]->requestPower(requested);
     }
     encArray_[i]->readEntries(masterOK);
     if (encArray_[i]->getPowerEnable() && encArray_[i]->getPowerError()) {
@@ -839,6 +850,8 @@ int ecmcAxisBase::getStartupBlockingGroup() const {
 }
 
 int ecmcAxisBase::setEncDataSourceType(dataSource refSource) {
+  if ((encoderPowerBackupIndex_ >= 0 || encoderMode_ != 0) && refSource != ECMC_DATA_SOURCE_INTERNAL)
+    return ERROR_ENC_POWER_CONFIG;
   if (refSource == data_.status_.statusWord_.encsource) return 0;
 
   if (!data_.control_.allowSourceChangeWhenEnabled) {
@@ -1090,6 +1103,15 @@ void ecmcAxisBase::errorReset() {
 }
 
 int ecmcAxisBase::validateBase() {
+  if (encoderPowerBackupIndex_ >= 0 &&
+      (!encArray_[encoderPowerSourceIndex_]->getPowerEnable() ||
+       encArray_[encoderPowerBackupIndex_]->getPowerEnable() ||
+       encArray_[encoderPowerSourceIndex_]->getType() != ECMC_ENCODER_TYPE_ABSOLUTE ||
+       encArray_[encoderPowerBackupIndex_]->getType() != ECMC_ENCODER_TYPE_INCREMENTAL ||
+       data_.control_.moduloRange != 0 ||
+       (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV) ||
+       data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL))
+    return setErrorID(ERROR_ENC_POWER_CONFIG);
   for (int i = 0; i < data_.status_.encoderCount; ++i)
     if (encArray_[i]->getPowerEnable() &&
         (!mon_->getEnableAtTargetMon() || mon_->getAtTargetTol() <= 0))
@@ -2059,6 +2081,8 @@ void ecmcAxisBase::refreshStatusWd() {
 
   // bit 24: native target writes trigger position moves.
   data_.status_.statusWord_.autoExecuteOnTargetPos = autoExecuteOnTargetPos_;
+  data_.status_.statusWord_.encoderMode = encoderMode_;
+  data_.status_.statusWord_.encoderForceOn = getEncoderForceOn();
 
   // The second status word carries sequence state and last interlock bytes.
   data_.status_.statusWord2_.lastilock =
@@ -2999,7 +3023,9 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
       (controlWordNew.enableDbgPrintout !=
        controlWordCurrent.enableDbgPrintout) ||
       (controlWordNew.tweakBwdCmd != controlWordCurrent.tweakBwdCmd) ||
-      (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd);
+      (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd) ||
+      (controlWordNew.encoderMode != controlWordCurrent.encoderMode) ||
+      (controlWordNew.encoderForceOn != controlWordCurrent.encoderForceOn);
 
     if (!controlWordNew.enableCmd) {
       errorCode = setEnable(0);
@@ -3052,7 +3078,9 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
       (controlWordNew.enableDbgPrintout !=
        controlWordCurrent.enableDbgPrintout) ||
       (controlWordNew.tweakBwdCmd != controlWordCurrent.tweakBwdCmd) ||
-      (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd);
+      (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd) ||
+      (controlWordNew.encoderMode != controlWordCurrent.encoderMode) ||
+      (controlWordNew.encoderForceOn != controlWordCurrent.encoderForceOn);
 
     if (!controlWordNew.enableCmd) {
       errorCode = setEnable(0);
@@ -3090,6 +3118,11 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
     return asynSuccess;
   }
 
+  // Validate mode before applying any enable/execute bits from this write.
+  if (controlWordNew.encoderMode != encoderMode_ && setEncoderMode(controlWordNew.encoderMode))
+    return asynError;
+  if (controlWordNew.encoderForceOn != getEncoderForceOn() &&
+      setEncoderForceOn(controlWordNew.encoderForceOn)) return asynError;
   memcpy(&data_.control_.controlWord_, &controlWordNew, sizeof(data_.control_.controlWord_));
 
   int errorCode = 0;
@@ -3304,6 +3337,8 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
 }
 
 void ecmcAxisBase::initControlWord() {
+  data_.control_.controlWord_.encoderMode = encoderMode_;
+  data_.control_.controlWord_.encoderForceOn = getEncoderForceOn();
   // Fill all controlWord with actual data before rt
   int plcEnable = 0;
 
@@ -3798,6 +3833,9 @@ int ecmcAxisBase::selectPrimaryEncoder(int index, int overrideError) {
     return 0;
   }
 
+  if ((encoderPowerBackupIndex_ >= 0 || encoderMode_ != 0) && localIndex != data_.control_.primaryEncIndex)
+    return ERROR_AXIS_BUSY; // Automatic handover owns primary selection.
+
   if ((localIndex >= ECMC_MAX_ENCODERS) ||
       (localIndex >= data_.status_.encoderCount)) {
     // Override error message to not stop axis if in motion
@@ -4205,7 +4243,200 @@ bool ecmcAxisBase::getLimitFwd() {
   return data_.status_.statusWord_.limitfwd;
 }
 
+// Operator controls share the existing axis control/status words. A feedback
+// change is an explicit disabled-axis operation, never an implicit move.
+int ecmcAxisBase::getEncoderForceOn() const {
+  const int index = encoderPowerSourceIndex_ >= 0 ? encoderPowerSourceIndex_ : data_.control_.primaryEncIndex;
+  return encArray_[index] ? encArray_[index]->getPowerControl() : 0;
+}
+
+int ecmcAxisBase::setEncoderForceOn(int force) {
+  if (force < 0 || force > 1) return ERROR_ENC_POWER_CONFIG;
+  if (getBlockCom() || masterSlaveBlocked_) return ERROR_AXIS_BLOCKED;
+  const int index = encoderPowerSourceIndex_ >= 0 ? encoderPowerSourceIndex_ : data_.control_.primaryEncIndex;
+  int error = encArray_[index]->setPowerControl(force);
+  if (!error) {
+    data_.control_.controlWord_.encoderForceOn = force;
+    data_.status_.statusWord_.encoderForceOn = force;
+  }
+  return error;
+}
+
+int ecmcAxisBase::setEncoderMode(int mode) {
+  if (mode < 0 || mode > data_.status_.encoderCount) return ERROR_ENC_POWER_CONFIG;
+  if (getBlockCom() || masterSlaveBlocked_) return ERROR_AXIS_BLOCKED;
+  if (mode == encoderMode_) return 0;
+  if (getEnable() || getEnabled() || getBusy() || encoderPowerEnablePending_ ||
+      autoEnableRequest_ || motionStartPending_) return ERROR_AXIS_BUSY;
+  if (data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL ||
+      (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV))
+    return ERROR_ENC_POWER_CONFIG;
+  // Without a configured power source, the diagnostic hold belongs to the
+  // primary encoder. Release it before changing the primary owner.
+  if (encoderPowerSourceIndex_ < 0 && getEncoderForceOn()) return ERROR_AXIS_BUSY;
+  if (mode) {
+    auto *encoder = encArray_[mode-1];
+    if (!getInStartupPhase() && !encoder->getPowerEnable() &&
+        (!encoder->hwReady() || !encoder->checkAllDataValid() || encoder->getErrorID()))
+      return ERROR_ENC_POWER_CONFIG;
+    // Keep each encoder's own reference. Explicit selection is not a homing
+    // or reference command. Powered feedback is selected by the RT path only
+    // after its power-up delay and optional ready input have completed.
+    if (encoder->getPowerReady()) switchEncoderPowerFeedback(mode-1);
+    if (encoder->getPowerEnable()) encoder->wakePower();
+  } else {
+    encoderPowerMoveCompleted_ = true;
+    for (int i=0; i<data_.status_.encoderCount; ++i) encArray_[i]->updatePowerIdle(false);
+  }
+  encoderMode_ = mode;
+  data_.control_.controlWord_.encoderMode = mode;
+  data_.status_.statusWord_.encoderMode = mode;
+  return 0;
+}
+
+int ecmcAxisBase::setEncoderPowerBackup(int source, int backup, double tolerance) {
+  if (getEnable() || getEnabled() || getBusy()) return ERROR_AXIS_BUSY;
+  if (!std::isfinite(tolerance) || tolerance <= 0) return ERROR_ENC_POWER_CONFIG;
+  if (backup == 0) {
+    if (getEncoderForceOn()) return ERROR_AXIS_BUSY;
+    encoderMode_ = 0;
+    data_.control_.controlWord_.encoderMode = 0;
+    data_.status_.statusWord_.encoderMode = 0;
+    encoderPowerDiffTol_ = tolerance;
+    encoderPowerSourceIndex_ = encoderPowerBackupIndex_ = -1;
+    encoderPowerBackupAligned_ = false;
+    return 0;
+  }
+  if (source < 1 || backup < 1 || source > data_.status_.encoderCount ||
+      backup > data_.status_.encoderCount || source == backup ||
+      !encArray_[source-1]->getPowerEnable() ||
+      encArray_[source-1]->getPowerState() == 3 ||
+      data_.control_.moduloRange != 0 ||
+      encArray_[source-1]->getType() != ECMC_ENCODER_TYPE_ABSOLUTE ||
+      encArray_[backup-1]->getType() != ECMC_ENCODER_TYPE_INCREMENTAL ||
+      encArray_[backup-1]->getPowerEnable() ||
+      data_.status_.statusWord_.encsource != ECMC_DATA_SOURCE_INTERNAL ||
+      (getDrv() && data_.control_.drvMode != ECMC_DRV_MODE_CSV))
+    return ERROR_ENC_POWER_CONFIG;
+  encoderPowerSourceIndex_ = source-1;
+  encoderPowerBackupIndex_ = backup-1;
+  encoderPowerDiffTol_ = tolerance;
+  encoderPowerBackupAligned_ = false;
+  return 0;
+}
+
+bool ecmcAxisBase::encoderPowerBackupSelected() const {
+  return encoderPowerBackupIndex_ >= 0 &&
+    data_.control_.primaryEncIndex == encoderPowerBackupIndex_;
+}
+
+bool ecmcAxisBase::encoderPowerFeedbackReady() {
+  if (encoderMode_ != 0) return encoderPowerReady() && !encoderPowerEnablePending_;
+  if (encoderPowerBackupSelected()) {
+    auto *backup = encArray_[encoderPowerBackupIndex_];
+    return !backup->getPowerEnable() && !backup->getErrorID() &&
+      backup->checkAllDataValid() && backup->hwReady();
+  }
+  if (encoderPowerSourceIndex_ >= 0 &&
+      !encArray_[encoderPowerSourceIndex_]->checkAllDataValid()) return false;
+  return encoderPowerReady() && !encoderPowerEnablePending_;
+}
+
+void ecmcAxisBase::switchEncoderPowerFeedback(int index) {
+  if (data_.control_.primaryEncIndex == index) return;
+  // Called with the axis disabled for manual selection, or from the RT
+  // handover with new trajectory starts blocked.
+  // Preserve staged commands: the normal bumpless helper rewrites that target.
+  const double request = data_.control_.positionTarget;
+  data_.control_.primaryEncIndex = index;
+  encPrimIndexAsyn_ = index+1;
+  seq_.setNewPositionCtrlDrvTrajBumpless(encArray_[index]->getActPos());
+  data_.control_.positionTarget = request;
+  data_.axAsynParams_[ECMC_ASYN_AX_ENC_ID_CMD_ID]->refreshParamRT(1);
+}
+
+void ecmcAxisBase::encoderPowerBackupSM() {
+  if (encoderPowerBackupIndex_ < 0 || encoderMode_ != 0) return;
+  auto *source = encArray_[encoderPowerSourceIndex_];
+  auto *backup = encArray_[encoderPowerBackupIndex_];
+  const auto &word = data_.status_.statusWord_;
+  if (getInStartupPhase()) return;
+  if (!source->getPowerEnable() || backup->getPowerEnable()) {
+    setEnable(false);
+    setErrorID(ERROR_ENC_POWER_CONFIG);
+    return;
+  }
+  if (backup->getErrorID() || !backup->checkAllDataValid() || !backup->hwReady()) {
+    const int error = backup->getErrorID() ? backup->getErrorID() : ERROR_ENC_NOT_READY;
+    setEnable(false);
+    setErrorID(error);
+    return;
+  }
+  if (source->getPowerReady() && !word.busy &&
+      source->getPowerIdleOff() &&
+      data_.control_.primaryEncIndex == encoderPowerSourceIndex_) {
+    backup->referencePowerBackup(source->getActPos(), source->getHomed());
+    encoderPowerBackupAligned_ = true;
+    switchEncoderPowerFeedback(encoderPowerBackupIndex_);
+  }
+}
+
 void ecmcAxisBase::syncEncoderPowerPosition() {
+  if (encoderMode_ != 0) {
+    auto *encoder = encArray_[encoderMode_-1];
+    if (!getInStartupPhase() && (encoder->getErrorID() ||
+        (encoder->getPowerReady() && (!encoder->checkAllDataValid() || !encoder->hwReady())))) {
+      setEnable(false);
+      setErrorID(encoder->getErrorID() ? encoder->getErrorID() : ERROR_ENC_NOT_READY);
+      return;
+    }
+    if (encoder->getPowerReady() && encoder->checkAllDataValid() && encoder->hwReady() &&
+        !encoder->getErrorID()) {
+      const bool fresh = encoder->consumePowerPositionSync();
+      const bool alreadySelected = data_.control_.primaryEncIndex == encoderMode_-1;
+      switchEncoderPowerFeedback(encoderMode_-1);
+      if (fresh && alreadySelected) {
+        const double request = data_.control_.positionTarget;
+        seq_.setNewPositionCtrlDrvTrajBumpless(encoder->getActPos());
+        data_.control_.positionTarget = request;
+      }
+      if (fresh && autoEnableRequest_ && data_.control_.command != ECMC_CMD_HOMING)
+        setTargetPos(data_.control_.positionTarget);
+    }
+    return;
+  }
+  if (encoderPowerBackupIndex_ >= 0) {
+    auto *source = encArray_[encoderPowerSourceIndex_];
+    auto *backup = encArray_[encoderPowerBackupIndex_];
+    if (!getInStartupPhase() && (!backup->checkAllDataValid() || !backup->hwReady() ||
+        backup->getErrorID() || (source->getPowerReady() && !source->checkAllDataValid()))) {
+      setEnable(false);
+      setErrorID(backup->getErrorID() ? backup->getErrorID() : ERROR_ENC_NOT_READY);
+      return;
+    }
+    if (!source->getPowerReady()) {
+      // Startup has no valid absolute position to reference from yet. The
+      // counter is only used for disabled/holding feedback; motion still waits.
+      if (backup->hwReady() && (encoderPowerBackupAligned_ || getInStartupPhase() ||
+          (!getEnable() && !getEnabled() && !getBusy())))
+        switchEncoderPowerFeedback(encoderPowerBackupIndex_);
+      return;
+    }
+    if (source->consumePowerPositionSync() || (encoderPowerBackupSelected() &&
+        (autoEnableRequest_ || encoderPowerEnablePending_))) {
+      if (encoderMode_ == 0 && encoderPowerBackupAligned_ &&
+          (!std::isfinite(source->getActPos()) || !std::isfinite(backup->getActPos()) ||
+           std::abs(source->getActPos()-backup->getActPos()) > encoderPowerDiffTol_)) {
+        setEnable(false);
+        setErrorID(ERROR_ENC_POWER_MISMATCH);
+        return; // Retain counter feedback; never correct toward stale targets.
+      }
+      switchEncoderPowerFeedback(encoderPowerSourceIndex_);
+      if (!autoEnableRequest_ && !motionStartPending_) encoderPowerMoveCompleted_ = true;
+      if (autoEnableRequest_ && data_.control_.command != ECMC_CMD_HOMING)
+        setTargetPos(data_.control_.positionTarget);
+    }
+  }
   if (!encoderPowerReady()) return;
   if (encoderPowerInitPending_) initEncoders();
   if (getPrimEnc()->consumePowerPositionSync()) {
@@ -4243,9 +4474,10 @@ void ecmcAxisBase::encoderPowerIdleSM() {
   const auto &word = data_.status_.statusWord_;
   if (data_.statusOld_.statusWord_.localBusy && !word.localBusy)
     encoderPowerMoveCompleted_ = true;
-  if (!word.enable && !word.enabled) encoderPowerMoveCompleted_ = false;
+  if (!word.enable && !word.enabled && encoderPowerBackupIndex_ < 0)
+    encoderPowerMoveCompleted_ = false;
   const double deadband = mon_->getCtrlDeadband();
-  const bool settled = encoderPowerMoveCompleted_ && !word.busy &&
+  const bool idleQualified = !word.busy &&
     !autoEnableRequest_ && !motionStartPending_ && !encoderPowerEnablePending_ &&
     !getErrorID() && word.attarget && mon_->getEnableAtTargetMon() &&
     mon_->getAtTargetTol() > 0 &&
@@ -4258,11 +4490,19 @@ void ecmcAxisBase::encoderPowerIdleSM() {
       setErrorID(ERROR_ENC_POWER_CONFIG);
       return;
     }
-    encArray_[i]->updatePowerIdle(settled);
+    encArray_[i]->updatePowerIdle(!(encoderMode_ == i+1) && idleQualified &&
+      (encoderPowerMoveCompleted_ || encArray_[i]->getPowerReleasePending()));
   }
+  encoderPowerBackupSM();
 }
 
 bool ecmcAxisBase::encoderPowerReady() {
+  if (encoderMode_ != 0) {
+    auto *encoder = encArray_[encoderMode_-1];
+    return data_.control_.primaryEncIndex == encoderMode_-1 && encoder->getPowerReady() &&
+      encoder->hwReady() && encoder->checkAllDataValid() && !encoder->getErrorID();
+  }
+  if (encoderPowerBackupSelected()) return false;
   for (int i = 0; i < data_.status_.encoderCount; ++i) {
     if (encArray_[i]->getPowerEnable() && !encArray_[i]->getPowerReady()) return false;
   }

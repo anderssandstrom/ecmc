@@ -39,6 +39,8 @@ class Faults:
     forward_ok: bool = True
     backward_ok: bool = True
     drive_fault: bool = False
+    encoder_error: bool = False  # EL5042 status bit 1.
+    encoder_warning: bool = False  # EL5042 status bit 0.
     encoder_noise_mm: float = 0.0  # Peak amplitude of uniform measurement noise.
     encoder_bias_mm: float = 0.0  # Deterministic measurement disturbance.
 
@@ -140,8 +142,11 @@ class Blade:
         valid_supply = self.encoder_powered and self.encoder_supply_seconds >= self.encoder_power_delay
         self.encoder_raw = raw if valid_supply else self.encoder_power_off_raw
         self.encoder_ready = valid_supply and self.faults.ready
+        encoder_status = ((4 if self.encoder_ready else 0) |
+                          (2 if self.faults.encoder_error else 0) |
+                          (1 if self.faults.encoder_warning else 0))
         return (el7041.Feedback(status, feedback.encoder_status, feedback.position),
-                self.encoder_raw, 4 if self.encoder_ready else 0)
+                self.encoder_raw, encoder_status)
 
 
 class Plant:
@@ -173,6 +178,8 @@ class Plant:
                                      'encoder_measurement_error_mm': blade.encoder_noise_mm,
                                      'encoder_frozen': blade.faults.frozen,
                                      'encoder_ready': blade.encoder_ready,
+                                     'encoder_error': blade.faults.encoder_error,
+                                     'encoder_warning': blade.faults.encoder_warning,
                                      'encoder_powered': blade.encoder_powered,
                                      'encoder_raw': blade.encoder_raw,
                                      'encoder_power_off_raw': blade.encoder_power_off_raw,

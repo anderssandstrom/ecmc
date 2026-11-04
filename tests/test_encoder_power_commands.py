@@ -8,15 +8,18 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 parser = (root/'devEcmcSup/com/ecmcCmdParser.c').read_text()
 motion = (root/'devEcmcSup/motion/ecmcMotion.cpp').read_text()
-api = motion[motion.index('int setAxisEncPwrEnable('):motion.index('int setAxisEncInvHwReady(')]
-sets = parser[parser.index('    nvals = sscanf(myarg_1, "SetAxisEncPwrEnable'):parser.index('\n    nvals = sscanf(myarg_1,\n                   "SetAxisEncInvHwReady')]
-gets = parser[parser.index('    nvals = sscanf(myarg_1, "GetAxisEncPwrEnable'):parser.index('    nvals = sscanf(myarg_1, "GetAxisEncAbsBits')]
+api = motion[motion.index('int setAxisEncMode('):motion.index('int setAxisEncInvHwReady(')]
+sets = parser[parser.index('    nvals = sscanf(myarg_1, "SetAxisEncMode'):parser.index('\n    nvals = sscanf(myarg_1,\n                   "SetAxisEncInvHwReady')]
+gets = parser[parser.index('    nvals = sscanf(myarg_1, "GetAxisEncMode'):parser.index('    nvals = sscanf(myarg_1, "GetAxisEncAbsBits')]
 code = r'''
 #include <cassert>
 #include <cstdio>
 #include "ecmcErrorsList.h"
 struct Encoder {
   bool enabled=false, high=true;
+  int control=0;
+  int setPowerControl(int v) { control=v; return 0; }
+  int getPowerControl() { return control; }
   double delay=.1, timeout=5, off=2;
   int setPowerEnable(bool v) { enabled=v; return 0; }
   int setPowerPolarity(bool v) { high=v; return 0; }
@@ -39,6 +42,17 @@ struct Axis {
   Encoder encoders[2]; int selected=0; bool blocked=false; Monitor monitor;
   Encoder *getConfigEnc() { return &encoders[selected]; }
   Monitor *getMon() { return &monitor; }
+  int mode=0;
+  int setEncoderMode(int value) { mode=value; return 0; }
+  int getEncoderMode() { return mode; }
+  int setEncoderForceOn(int value) { return getConfigEnc()->setPowerControl(value); }
+  int getEncoderForceOn() { return getConfigEnc()->getPowerControl(); }
+  int backup=0, sourceIndex=0; double tolerance=.01;
+  int getConfigEncoderIndex() { return selected+1; }
+  int setEncoderPowerBackup(int source, int value, double tol) { assert(source==selected+1); backup=value; sourceIndex=source; tolerance=tol; return 0; }
+  int getEncoderPowerSource() { return sourceIndex; }
+  int getEncoderPowerBackup() { return backup; }
+  double getEncoderPowerDiffTol() { return tolerance; }
 };
 Axis axis, *axes[3]={nullptr,nullptr,&axis};
 #define CHECK_AXIS_RETURN_IF_ERROR(i) if(i<0 || i>=3 || !axes[i]) return ERROR_MAIN_AXIS_INDEX_OUT_OF_RANGE;
@@ -56,12 +70,22 @@ return -1;
 }
 int main() {
   axis.selected=1;
+  assert(parseSet("SetAxisEncMode(2,1)")==0);
+  assert(parseGet("GetAxisEncMode(2)")==1);
+  assert(parseSet("SetAxisEncPwrBackup(2,1,0.02)")==0);
+  assert(parseGet("GetAxisEncPwrBackup(2)")==1);
+  assert(parseGet("GetAxisEncPwrSource(2)")==2);
+  assert(parseGet("GetAxisEncPwrDiffTol(2)")==.02);
   assert(parseSet("SetAxisEncPwrPol(2,0)")==0);
   assert(parseSet("SetAxisEncPwrDelay(2,0.25)")==0);
   assert(parseSet("SetAxisEncPwrTimeout(2,3.5)")==0);
   assert(parseSet("SetAxisEncPwrOffDelay(2,1.5)")==0);
   assert(parseSet("SetAxisEncPwrEnable(2,1)")==0);
   assert(parseGet("GetAxisEncPwrEnable(2)")==1);
+  assert(parseSet("SetAxisEncPwrCtrl(2,1)")==0);
+  assert(parseGet("GetAxisEncPwrCtrl(2)")==1);
+  assert(parseSet("SetAxisEncPwrCtrl(2,0)")==0);
+  assert(parseGet("GetAxisEncPwrCtrl(2)")==0);
   assert(parseGet("GetAxisEncPwrPol(2)")==0);
   assert(parseGet("GetAxisEncPwrDelay(2)")==.25);
   assert(parseGet("GetAxisEncPwrTimeout(2)")==3.5);
@@ -80,7 +104,7 @@ int main() {
   assert(parseSet("SetAxisEncPwrPol(9,1)")==ERROR_MAIN_AXIS_INDEX_OUT_OF_RANGE);
 }
 '''
-for command in ('Cfg.SetAxisEncPwrOffDelay(1023,1.5)', 'Cfg.SetAxisEncPwrTimeout(1023,5)'):
+for command in ('Cfg.SetAxisEncPwrBackup(1023,1,0.02)', 'Cfg.SetAxisEncPwrOffDelay(1023,1.5)', 'Cfg.SetAxisEncPwrTimeout(1023,5)'):
     assert len(command) < 40
 with tempfile.TemporaryDirectory(prefix='ecmc-encoder-power-api-') as tmp:
     src, exe = Path(tmp)/'check.cpp', Path(tmp)/'check'

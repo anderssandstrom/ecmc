@@ -294,6 +294,14 @@ public:
   int        selectCSPDriveEncoder(int index);
   int        selectConfigEncoder(int index);
   int        getPrimaryEncoderIndex();                  // Control (PID)
+  int setEncoderPowerBackup(int source, int backup, double tolerance);
+  int setEncoderMode(int mode);
+  int getEncoderMode() const { return encoderMode_; }
+  int setEncoderForceOn(int force);
+  int getEncoderForceOn() const;
+  int getEncoderPowerSource() const { return encoderPowerSourceIndex_ + 1; }
+  int getEncoderPowerBackup() const { return encoderPowerBackupIndex_ + 1; }
+  double getEncoderPowerDiffTol() const { return encoderPowerDiffTol_; }
   int        getConfigEncoderIndex();                   // Config
   int        getDrvMode();
   int        getCSPDriveEncoderIndex();
@@ -366,6 +374,10 @@ protected:
   void initEncoders();  
   void autoEnableSM();
   bool encoderPowerReady();
+  bool encoderPowerFeedbackReady();
+  void switchEncoderPowerFeedback(int index);
+  bool encoderPowerBackupSelected() const;
+  void encoderPowerBackupSM();
   void encoderPowerEnableSM();
   void encoderPowerIdleSM();
   int prepareEncoderPowerMotion();
@@ -417,6 +429,11 @@ protected:
   bool encoderPowerEnablePending_;
   bool encoderPowerInitPending_;
   bool encoderPowerMoveCompleted_;
+  int encoderMode_; // Auto power=0 (default), fixed encoder index=1..8
+  int encoderPowerSourceIndex_;
+  int encoderPowerBackupIndex_;
+  double encoderPowerDiffTol_;
+  bool encoderPowerBackupAligned_;
   const bool *motionStartPermissive_;
   bool motionStartPending_;
   double autoEnableTimeCounter_;

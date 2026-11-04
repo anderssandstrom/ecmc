@@ -4118,6 +4118,12 @@ parse_cfg_setaxisdrv:
     }
 
     /* Per-encoder relay power configuration (selected configuration encoder). */
+    nvals = sscanf(myarg_1, "SetAxisEncMode(%d,%d)", &iValue, &iValue2);
+    if (nvals == 2) return setAxisEncMode(iValue, iValue2);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrCtrl(%d,%d)", &iValue, &iValue2);
+    if (nvals == 2) return setAxisEncPwrCtrl(iValue, iValue2);
+    nvals = sscanf(myarg_1, "SetAxisEncPwrBackup(%d,%d,%lf)", &iValue, &iValue2, &dValue);
+    if (nvals == 3) return setAxisEncPwrBackup(iValue, iValue2, dValue);
     nvals = sscanf(myarg_1, "SetAxisEncPwrEnable(%d,%d)", &iValue, &iValue2);
     if (nvals == 2) return setAxisEncPwrEnable(iValue, iValue2);
     nvals = sscanf(myarg_1, "SetAxisEncPwrOffDelay(%d,%lf)", &iValue, &dValue);
@@ -5991,6 +5997,26 @@ parse_getaxisenc:
     }
 
     /*int GetAxisEncAbsBits(int axis_no);*/
+    nvals = sscanf(myarg_1, "GetAxisEncMode(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncMode(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrCtrl(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrCtrl(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrSource(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrSource(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrBackup(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrBackup(motor_axis_no, &iValue));
+    }
+    nvals = sscanf(myarg_1, "GetAxisEncPwrDiffTol(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisEncPwrDiffTol(motor_axis_no, &fValue));
+    }
     nvals = sscanf(myarg_1, "GetAxisEncPwrEnable(%d)", &motor_axis_no);
     if (nvals == 1) {
       SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisEncPwrEnable(motor_axis_no, &iValue));

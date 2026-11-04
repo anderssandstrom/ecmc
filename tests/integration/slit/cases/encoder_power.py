@@ -4,7 +4,7 @@ import time
 from .base import SlitCase
 
 
-class EncoderPowerTests(SlitCase):
+class EncoderPowerCase(SlitCase):
     axis = 'TR_HI'
     encoder = 2
 
@@ -135,6 +135,7 @@ class EncoderPowerTests(SlitCase):
         self.assertGreaterEqual(time.monotonic() - began, delay - .2)
         self.assertEqual(self.rig.get(self.axis, '-EnaAct'), 1, 'encoder sleeps while drive holds enable')
 
+class EncoderPowerTests(EncoderPowerCase):
     def cycle(self, delay, active_high=True):
         self.config('EncPwrOffDelay', delay)
         if not active_high:
@@ -312,3 +313,64 @@ class EncoderPowerTests(SlitCase):
 
     def test_at_target_loss_restarts_idle_delay(self): self.disturbance(.014, 0)
     def test_tighter_deadband_holds_encoder_on(self): self.disturbance(.004, .001)
+
+    def off_state_diagnostics(self, error=False, warning=False):
+        self.config('EncPwrDelay', 1.2)
+        self.config('EncPwrOffDelay', .6)
+        self.start(.15)
+        self.arrive(.15)
+        self.dwell_then_off(.6)
+        previous_warning = self.rig.get(self.axis, '-WrnId')
+        bits = (2 if error else 0) | (1 if warning else 0)
+        self.rig.plant.inject(self.axis, encoder_error=error, encoder_warning=warning)
+        try:
+            self.rig.wait(lambda: self.rig.encoder_status(self.axis) == bits,
+                          'EL5042 reports injected diagnostics while unpowered', 3)
+
+            def no_alarm():
+                return (self.healthy() and self.rig.get(self.axis, '-Enc02-ErrId') == 0
+                        and self.rig.get(self.axis, '-WrnId') == previous_warning
+                        and self.rig.get(self.axis, '-Enc02-ErrId.SEVR') == 0
+                        and self.rig.get(self.axis, '-Enc02-PwrState.SEVR') == 0)
+
+            self.rig.assert_stays(lambda: no_alarm() and self.state() == 1
+                                  and self.rig.encoder_status(self.axis) == bits,
+                                  'off-state hardware error/warning must not alarm ECMC', .3)
+            self.start(.25)
+            self.rig.wait(lambda: self.state() == 2, 'encoder warm-up starts', 3)
+            self.rig.assert_stays(lambda: no_alarm() and self.state() == 2
+                                  and (self.rig.encoder_status(self.axis) & 3) == bits
+                                  and abs(self.rig.plant.physical_position(self.axis)-.15) < .002,
+                                  'diagnostics remain suppressed during warm-up; motion waits', .3)
+        finally:
+            self.rig.plant.inject(self.axis, encoder_error=False, encoder_warning=False)
+        self.arrive(.25)
+        self.assertEqual(self.rig.get(self.axis, '-Enc02-ErrId'), 0)
+        self.dwell_then_off(.6)
+
+    def test_encoder_error_while_powered_off(self): self.off_state_diagnostics(error=True)
+    def test_encoder_warning_while_powered_off(self): self.off_state_diagnostics(warning=True)
+    def test_encoder_error_and_warning_while_powered_off(self):
+        self.off_state_diagnostics(error=True, warning=True)
+
+    def test_off_state_error_persisting_after_wake_faults(self):
+        if self.loop != 'closed':
+            self.skipTest('EL5042 hardware error propagation requires that encoder to be primary')
+        self.config('EncPwrDelay', .8)
+        self.config('EncPwrOffDelay', .6)
+        self.start(.15)
+        self.arrive(.15)
+        self.dwell_then_off(.6)
+        self.rig.plant.inject(self.axis, encoder_error=True)
+        try:
+            self.rig.wait(lambda: self.rig.encoder_status(self.axis) == 2,
+                          'hardware error asserted before wake', 3)
+            self.rig.assert_stays(lambda: self.healthy() and self.state() == 1,
+                                  'intentional power-off suppresses hardware error', .2)
+            self.start(.25)
+            self.rig.fault_stopped(self.axis, 0x14410, timeout=5)
+            self.assertEqual(self.state(), 4)
+            self.assertAlmostEqual(self.rig.plant.physical_position(self.axis), .15, delta=.002,
+                                   msg='persistent error must reject the queued move at wake-up')
+        finally:
+            self.rig.plant.inject(self.axis, encoder_error=False)
