@@ -363,3 +363,7 @@ one handover pair per axis. Startup remains in Auto power mode; fixed encoder
 selection and the inspection Force ON hold are operator controls, not YAML keys.
 Deploy the updated ecmccfg templates/schema files; no ECMC C++ changes are needed
 for YAML support beyond the already implemented encoder-power native commands.
+
+Simulation client and live integration commands shown here now run from the
+**ecmccfg repository root**. The dedicated IOC is in
+`tests/integration/slit/ioc/`; native C++ tests remain in ECMC.

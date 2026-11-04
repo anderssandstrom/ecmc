@@ -90,3 +90,7 @@ python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case target_writ
 ```
 
 Live tests have not been executed by the offline checks.
+
+Simulation client and live integration commands shown here now run from the
+**ecmccfg repository root**. The dedicated IOC is in
+`tests/integration/slit/ioc/`; native C++ tests remain in ECMC.

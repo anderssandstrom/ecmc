@@ -76,12 +76,12 @@ fall during an ongoing amplifier ON request from a pending OFF acknowledgement.
 
 ## Master/slave startup
 
-**INFERRED / REGRESSION**: `test_slit_recovery.py` executes the new live recovery,
+**INFERRED / REGRESSION**: `ecmccfg/tests/simulation/test_slit_recovery.py` executes the new live recovery,
 secondary-readiness and brake-cancellation case methods against controlled
 CA/plant boundaries and a virtual clock. Negative controls deliberately restart
 on readiness/reset or release a cancelled brake and must fail. These fixture
 checks validate test assertions, not IOC behavior or atomic CA sampling.
-`test_slit_preparation.py` executes real preparation/reset/SYNC sequencing with
+`ecmccfg/tests/simulation/test_slit_preparation.py` executes real preparation/reset/SYNC sequencing with
 delayed acknowledgements. It models a stale motor target at zero while actual
 position remains 0.067 mm; preparation must obtain fresh readback and motor
 SYNC acknowledgement before requesting zero. SYNC is **DOC** in the linked
@@ -110,7 +110,7 @@ and feedback transport are controlled boundaries. A secondary encoder must
 leave the primary axis enable flags intact; an invalid-domain sample retains
 its existing handling rather than becoming a ready-bit fault.
 
-`test_slit_enable_timeout.py` executes the live brake/enable missing-ack cases
+`ecmccfg/tests/simulation/test_slit_enable_timeout.py` executes the live brake/enable missing-ack cases
 with controlled CA/plant boundaries and a virtual drive timer read from
 `ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME` (15 seconds). **DOC / REGRESSION**:
 `setAxisDrvStateMachineTimeout` controls the direct drive transition; the YAML
@@ -171,9 +171,9 @@ checks. They do not claim that every branch or integration path was reviewed.
 | [test_axis_startup_restore.py](test_axis_startup_restore.py) | **INFERRED**: preserve restored coordinates/homed state and align startup references before motion. **COMPAT**: absolute/incremental encoder defaults, filter initialization and encoder-reference ordering in `ecmcEncoder`/`ecmcAxisBase`. Extracted startup code is not a homing test. |
 | [test_buffer_boundaries.py](test_buffer_boundaries.py) | **INFERRED**: bounded copies, NUL termination, no oversized dispatch, invalid writes do not corrupt buffers. **DOC**: buffer retention modes in `ecmcMisc.h::createDataStorage`. **COMPAT**: partial-read consumption, output truncation/error shape, zero-length behavior and notification counts. |
 | [test_simulation_records.py](test_simulation_records.py) | **DOC**: generic simulation I/O field records and native shared storage in [simulation-io.md](../documentation/simulation-io.md). **INFERRED**: reject collisions before registration, never initialize feedback by writing zero, and retain exact 64-bit buffers. Real generator/driver with controlled EPICS static-database calls; no real record processing, asyn conversion, CA/PVA or IOC build. |
-| [test_el7041_model.py](test_el7041_model.py) | **DOC / USER**: scaling of 2000 full steps/s at signed 16-bit full scale, 200 motor steps/rev and 12800 encoder counts/rev; independently calculated expected counts. Control/status mappings follow ecmccfg `ecmcEX70XX.cmd` and `ecmcEL7031-chX.template`, described in [the model README](../tools/simulation/README.md). Checks fractional accumulation, wrapping, enable delay, limits and failure cleanup. No physical drive, CA network or RT timing claim. |
-| [test_simulation_ioc.py](test_simulation_ioc.py) | **DOC**: prefix-only discovery using aliases of normal first-slave/hardware-type/next-slave metadata, exact supported-model selection, independent workers and read-only listing in [the model README](../tools/simulation/README.md). Controlled CA endpoints and per-worker deterministic clocks; no IOC connection or throughput measurement. |
-| [test_ds402_model.py](test_ds402_model.py) | **DOC**: DS402 command/status mappings from `ecmcDriveDS402.cpp` and Beckhoff references in [the model README](../tools/simulation/README.md). Explicit CSV scaling arithmetic; ideal CSP nearest-counter following, instantaneous quick stop and rising-edge fault reset are model assumptions. Native generated-field directions and scanner dispatch use fake CA endpoints. No drive dynamics or live IOC claim. |
+| [test_el7041_model.py](https://github.com/paulscherrerinstitute/ecmccfg/blob/master/tests/simulation/test_el7041_model.py) | **DOC / USER**: scaling of 2000 full steps/s at signed 16-bit full scale, 200 motor steps/rev and 12800 encoder counts/rev; independently calculated expected counts. Control/status mappings follow ecmccfg `ecmcEX70XX.cmd` and `ecmcEL7031-chX.template`, described in [the model README](../tools/simulation/README.md). Checks fractional accumulation, wrapping, enable delay, limits and failure cleanup. No physical drive, CA network or RT timing claim. |
+| [test_simulation_ioc.py](https://github.com/paulscherrerinstitute/ecmccfg/blob/master/tests/simulation/test_simulation_ioc.py) | **DOC**: prefix-only discovery using aliases of normal first-slave/hardware-type/next-slave metadata, exact supported-model selection, independent workers and read-only listing in [the model README](../tools/simulation/README.md). Controlled CA endpoints and per-worker deterministic clocks; no IOC connection or throughput measurement. |
+| [test_ds402_model.py](https://github.com/paulscherrerinstitute/ecmccfg/blob/master/tests/simulation/test_ds402_model.py) | **DOC**: DS402 command/status mappings from `ecmcDriveDS402.cpp` and Beckhoff references in [the model README](../tools/simulation/README.md). Explicit CSV scaling arithmetic; ideal CSP nearest-counter following, instantaneous quick stop and rising-edge fault reset are model assumptions. Native generated-field directions and scanner dispatch use fake CA endpoints. No drive dynamics or live IOC claim. |
 | [test_simulation_driver.py](test_simulation_driver.py) | **DOC**: model-free typed storage, shared values, explicit fault injection and lifetime rules in [simulation-io.md](../documentation/simulation-io.md). Standard diagnostic names/bit layouts follow `ecmcEc`, `ecmcEcSlave`, `ecmcEcDomain` and their ecmccfg records; counts and synthetic health/failure semantics follow [simulation-io.md](../documentation/simulation-io.md). Includes 31-device registration, one publication tick per RT phase independent of scalar-write count/slow work, short enable-pulse observation at a specified sampling rate, `ecN.ok` recovery, asyn typo-correction aliases/chains/conflicts sharing the original parameter, and pointer invalidation. Real driver with controlled asyn registration; no network access, packing or physical device model. |
 | [test_simulation_configuration.py](test_simulation_configuration.py) | **DOC**: configuration-only backend selection, existing names, memory SDO semantics and separate mixed instances in [simulation-io.md](../documentation/simulation-io.md). **INFERRED**: the C command parser must be able to include its API header. Real registry, complete encoder/drive/monitor linking functions and extracted routing/parser branches with controlled hardware and axes; equivalent scalar/bit attachment, brake/torque/home/interlock setup, invalid-source/slot errors and command blocking for both backends. No IOC startup claim. |
 | [test_io_driver.py](test_io_driver.py) | **DOC**: common cyclic I/O contract and timestamp/offset references in [ethercat-simulation-boundary.md](../documentation/ethercat-simulation-boundary.md). **COMPAT**: receive/domain/status order, unchanged integer status, output timestamp forwarding, separate timing readiness, startup reset, slow work and masterless offset forwarding. Real adapter with a controlled endpoint; integration ordering remains covered by `test_startup_gate.py`. No EtherLab/IOC or RT performance claim. |
@@ -223,7 +223,7 @@ them nor a claim that the behavior is wrong.
 
 ## Maintaining tests
 
-`test_slit_soft_limits.py` checks **DOC** predictive rejection through sequencer
+`ecmccfg/tests/simulation/test_slit_soft_limits.py` checks **DOC** predictive rejection through sequencer
 soft-limit warnings and monitor interlocks. A valid response can have `ErrId=0`
 and remain near its starting position. The live test must establish an executable
 in-range command path and fresh direction-specific diagnostics before accepting
@@ -243,7 +243,7 @@ and without enabled feedback. The live drive-fault case additionally verifies
 that injection reaches the raw status PV. Older IOC schemas are refused before
 any writes; these checks do not establish that a restarted live IOC passed.
 
-`test_slit_motion_requests.py` checks **DOC / INFERRED** motor put-notify
+`ecmccfg/tests/simulation/test_slit_motion_requests.py` checks **DOC / INFERRED** motor put-notify
 semantics: a short configuration-write timeout must not become the motion's
 completion deadline. Fake PyEpics-compatible callbacks establish independent
 request completion, continued motion/final-position checks and rejection
@@ -258,7 +258,7 @@ that an actual 0x14c08 STOP fault remains a failure. Explicit velocity-ramp
 arithmetic checks both internal and EL5042 encoder updates until standstill;
 there is no plant-level shortcut that freezes position on a STOP request.
 
-`test_slit_acceptance.py` checks **USER / DOC** arithmetic from the supplied slit
+`ecmccfg/tests/simulation/test_slit_acceptance.py` checks **USER / DOC** arithmetic from the supplied slit
 YAML: Q15 velocity at 10 mm/s, 12800 internal counts/mm, 4096 EL5042 counts/mm,
 -1380 mm offset and ready bit 2. The standalone plant and SIM/schema guard use
 controlled PVs. Test enumeration and report serialization are infrastructure
@@ -272,14 +272,14 @@ The live module observes output readbacks without manually writing them. Its CA
 windows check functional order; exact cycle behavior belongs to
 `test_drive_brake.py`, and no physical brake mechanics are inferred.
 
-`test_simulation_terminals.py` uses **DOC** raw fields/widths from ecmccfg EL5042,
+`ecmccfg/tests/simulation/test_simulation_terminals.py` uses **DOC** raw fields/widths from ecmccfg EL5042,
 EL5101 variants, EL5102 and EX7062 CSV/CSP mappings. Exact integer writes, native
 range validation and per-channel independence are checked with fake CA endpoints.
 Manual encoder values have no inferred mechanical coupling, counter/latch
 protocol or oversampling waveform behavior. The GUI test also checks numeric
 64-bit entry without float conversion. See [the tool README](../tools/simulation/README.md).
 
-`test_simulation_gui.py` uses **DOC** channel layouts from ecmccfg EX1004/1008/
+`ecmccfg/tests/simulation/test_simulation_gui.py` uses **DOC** channel layouts from ecmccfg EX1004/1008/
 1016 and EX2004/2008 scripts. Input retention, manual input/output writes,
 read-only fallback, stale-value display and background-worker access follow
 [the simulation tool README](../tools/simulation/README.md). Controlled CA
@@ -300,7 +300,7 @@ here. Resolve intent before changing uncertain production semantics; update the
 test and its rationale together when a decision is made. Do not weaken an
 assertion simply to make the current implementation pass.
 
-**USER / INFERRED — encoder noise:** `test_slit_noise.py` checks bounded uniform
+**USER / INFERRED — encoder noise:** `ecmccfg/tests/simulation/test_slit_noise.py` checks bounded uniform
 measurement noise independently of physical motion and the internal counter,
 including quantization (half a 4096-count/mm step), frozen measurement and reset.
 Live noise cases require primary EL5042 feedback in closed-loop mode: +/-0.001 mm
@@ -315,7 +315,7 @@ closed-loop stability; the dedicated IOC run remains necessary.
 
 **REGRESSION — motor completion diagnostics:** a live closed-loop setup failure
 reported a motor alarm/limit while its later snapshot contained LVIO=SEVR=0.
-`test_slit_motion_requests.py` injects a one-read nonzero severity or LVIO at
+`ecmccfg/tests/simulation/test_slit_motion_requests.py` injects a one-read nonzero severity or LVIO at
 completion and requires failure with the exact triggering values retained in
 the trace, even if subsequent reads are healthy. This does not classify the
 transient as stale or harmless and does not add an alarm grace period.
@@ -351,7 +351,7 @@ a stop before the old target, and no replay after input recovery. Coordinated
 STOP requires both physical blades stationary, no axis fault, bounded stop
 position and successful fresh coordinated motion. Wrap tests observe native
 16-bit counter rollover both ways within existing soft limits, while rejecting
-position jumps, faults and motor alarms. `test_slit_boundaries.py` executes the
+position jumps, faults and motor alarms. `ecmccfg/tests/simulation/test_slit_boundaries.py` executes the
 live methods with controlled CA/plant boundaries and deliberately broken
 responses; these probes validate verdicts, not controller behavior. The real
 monitor fixture separately steps single-cycle directional limit bounce with
@@ -386,7 +386,7 @@ and motor-driver enable flags. CfgDLLM/DHLM write the ECMC monitor through the
 motor-driver config interface; they are not raw parser commands. Fixtures use
 DIR=0, OFF=0 and positive MRES; tests enable sync temporarily and restore it. Negative-coordinate transforms,
 sync-disabled behavior and homing are not covered by these new live cases.
-`test_slit_native.py` and `test_slit_limit_sync.py` execute the real harness
+`ecmccfg/tests/simulation/test_slit_native.py` and `ecmccfg/tests/simulation/test_slit_limit_sync.py` execute the real harness
 methods with controlled boundaries and negative controls, not production
 controller simulations. Existing production trajectory and motor soft-limit
 fixtures cover that separate layer. A dedicated IOC run remains required.
@@ -758,3 +758,7 @@ and `GetAxisAutoExec` remain within that limit for four-digit axis numbers;
 the original long spellings remain aliases. Live target-write tests use the
 short forms. The command transport now rejects requests over 39 UTF-8 bytes
 before any put. Boundary tests accept 39 and reject 40 without writing.
+
+The Python model and live-harness checks referenced above moved to ecmccfg.
+Run `python3 tests/run_simulation_checks.py` from that repository; C++ tests
+remain here. See ecmccfg `tests/simulation/README.md` for the relocated coverage.

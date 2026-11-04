@@ -71,3 +71,7 @@ run from the ECMC repository:
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run --case sync --loop open
 python3 tests/integration/slit/run.py --prefix SIMSLIT: --run
 ```
+
+Simulation client and live integration commands shown here now run from the
+**ecmccfg repository root**. The dedicated IOC is in
+`tests/integration/slit/ioc/`; native C++ tests remain in ECMC.

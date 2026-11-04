@@ -250,7 +250,7 @@ clients. The generated records still need an IOC integration check.
 ## External Python models and discovery
 
 A separate [modular slit acceptance program](../tests/integration/slit/README.md)
-uses the sibling ecmccfg `slit_matrix_sim_test` configuration. Modules cover
+and its IOC configuration now live together in ecmccfg under `tests/integration/slit/`. Modules cover
 hardware/software limits, missing/lost enable, EL5042 readiness/frozen feedback,
 brake outputs, open/closed-loop motion and master/slave synchronization. It runs its own coupled
 plant and writes JSON/JUnit reports. Offline infrastructure checks do not imply
@@ -305,3 +305,7 @@ models/PLCs may overwrite manual values. Native widths/ranges are validated.
 The 7062 family reuses the DS402 CSV/CSP model with independent configured
 channels 01/02. Encoder/drive coupling, oversampling arrays and real DC timing
 are not inferred or emulated by these Python tools.
+
+Simulation client and live integration commands shown here now run from the
+**ecmccfg repository root**. The dedicated IOC is in
+`tests/integration/slit/ioc/`; native C++ tests remain in ECMC.
