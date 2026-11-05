@@ -136,7 +136,8 @@ public:
   enum ControlBits : uint32_t {
     TOUCH_PROBE_ENABLE = 1u << 0,
     TOUCH_PROBE_ARM = 1u << 1,
-    TOUCH_PROBE_AUTO_REARM = 1u << 2
+    TOUCH_PROBE_AUTO_REARM = 1u << 2,
+    POWER_FORCE_ON = 1u << 3
   };
   asynStatus            encoderAsynWriteControl(void *data,
                                                   size_t bytes,

@@ -220,15 +220,13 @@ change enables the drive or executes motion. Returning from fixed powered
 feedback to Auto starts a fresh atTarget/deadband dwell before power-off in
 handover mode.
 
-For inspection, `PREFIX:AXIS-EncForceOn=1` holds the configured power source on
-until explicitly released. It does not change a fixed feedback selection or
-start motion, and remains set after completed moves. With no handover pair,
-it applies to the current primary encoder, which must have power control enabled;
-release it before changing the fixed selection. `-EncForceOn-RB` acknowledges the
-hold. Releasing it (`0`) restarts the qualified settling delay; a fixed selected
-power-controlled encoder remains powered regardless. Fault handling still takes
-precedence over the hold. Use these controls rather than writing the relay PDO
-or its hardware PV directly.
+For inspection, `PREFIX:AXIS-Enc02-ForceOn=1` holds encoder 2 powered until
+explicitly released. Use the corresponding encoder number for other encoders.
+It must have power control configured. The hold does not change feedback
+selection or start motion and remains set after completed moves. Its accepted
+value is published through `-Enc02-ForceOn-RB`. Releasing it (`0`) restarts the
+qualified settling delay; a fixed selected powered encoder remains powered.
+Fault handling takes precedence. Use this control rather than the relay PDO.
 
 The native command equivalents are:
 
@@ -242,16 +240,26 @@ ecmcConfigOrDie "Cfg.SetAxisEncPwrCtrl(6,0)"
 ecmcConfigOrDie "Cfg.SetAxisEncMode(6,0)"
 ```
 
-Operator mode and inspection controls add **no asyn parameters**. Their EPICS
-records share the existing axis packed words; status readbacks derive from the
-single existing Int32 status reader.
+Mode selection continues to use the existing axis words. Every encoder now
+has one shared UInt32Digital control parameter, including encoders without
+probe/latch configuration. Probe commands and power hold use masked bits of
+that same parameter; no separate Force ON asyn parameter is allocated.
 
-| Existing word | Bits | Mask | Meaning |
+| Word | Bits | Mask | Meaning |
 | --- | --- | --- | --- |
-| `axN.control` | 14…17 | `0x0003c000` | Mode: Auto power=0, fixed encoder=1…8 |
-| `axN.control` | 18 | `0x00040000` | Force ON |
+| `axN.control` | 14…17 | `0x0003c000` | Auto power=0, fixed encoder=1…8 |
 | `axN.status` | 25…28 | `0x1e000000` | Accepted mode |
-| `axN.status` | 29 | `0x20000000` | Accepted Force ON |
+| `axN.enc.controlM` | 0 | `0x1` | Probe/latch enable |
+| `axN.enc.controlM` | 1 | `0x2` | Probe/latch arm |
+| `axN.enc.controlM` | 2 | `0x4` | Automatic rearm |
+| `axN.enc.controlM` | 3 | `0x8` | Force encoder M power ON; command and readback |
+
+Axis control bit 18 and status bit 29 are retired. Writes with axis bit 18 set
+are rejected. Replace the old axis `-EncForceOn` PV with the explicit per-encoder
+`-EncNN-ForceOn` PV and rebuild ECMC/restart the IOC with matching databases.
+The native `SetAxisEncPwrCtrl` command remains available for the configured
+automatic power source (or primary encoder when no source is configured); the per-encoder PV does not change the configuration index.
+
 
 Both words remain 32 bits. Existing control bits 0…13, status bits 0…24, and the
 sequence/interlock word retain their layout. Writes to control fields must be

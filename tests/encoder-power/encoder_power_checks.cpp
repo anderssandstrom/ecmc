@@ -170,9 +170,9 @@ int main() {
                                          ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,false);
       const size_t before=r.port.parameterCount();
       CHECK(enc->setTouchProbeArmControlWord(17,5)==0);
-      CHECK(r.port.parameterCount()==before+7); // Six capture results and one shared control word.
+      CHECK(r.port.parameterCount()==before+6); // Six optional capture results; control word already exists.
       CHECK(enc->setTouchProbeArmControlWord(17,5)==0);
-      CHECK(r.port.parameterCount()==before+7); // Reconfiguration does not duplicate parameters.
+      CHECK(r.port.parameterCount()==before+6); // Reconfiguration does not duplicate parameters.
       if (legacy) CHECK(enc->setHomeLatchArmControlWord(17,5)==0);
       CHECK(enc->validate()==0);
       auto *word=r.port.find("ax1.enc.control1"); CHECK(word && word->writable);
@@ -200,7 +200,12 @@ int main() {
       write(1,1); CHECK(read()==5);
       write(2,2); CHECK(read()==7); CHECK(enc->writeEntries()==0); CHECK(control==0x8011);
       write(0,4); CHECK(read()==3); // Changing auto-rearm preserves enable/arm.
-      uint32_t invalid=8;
+      // Power and capture masked writes preserve each other's accepted bits.
+      write(8,8); CHECK(read()==11); CHECK(enc->getPowerControl()==1);
+      write(0,1); CHECK(read()==8); CHECK(enc->getPowerControl()==1);
+      write(0,8); CHECK(read()==0); CHECK(enc->getPowerControl()==0);
+      write(3,3); CHECK(read()==3);
+      uint32_t invalid=16;
       CHECK(enc->encoderAsynWriteControl(&invalid,sizeof(invalid),asynParamUInt32Digital)==asynError);
       CHECK(enc->encoderAsynWriteControl(nullptr,sizeof(invalid),asynParamUInt32Digital)==asynError);
       CHECK(enc->encoderAsynWriteControl(&invalid,1,asynParamUInt32Digital)==asynError);
@@ -618,15 +623,34 @@ int main() {
       word.encoderMode=2;
       CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynSuccess);
       CHECK(r.axis->getEncoderMode()==2);
-      word.encoderForceOn=true;
-      CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynSuccess);
+      uint32_t encoderControl=ecmcEncoder::POWER_FORCE_ON;
+      int error=0; auto *enc=r.axis->getEnc(0,&error); CHECK(enc && !error);
+      CHECK(enc->encoderAsynWriteControl(&encoderControl,sizeof(encoderControl),asynParamUInt32Digital)==asynSuccess);
       r.ticks(100); CHECK(r.powered());
       uint32_t control=0,status=0;
       auto *data=r.axis->dataForTest();
       memcpy(&control,&data->control_.controlWord_,4);
       memcpy(&status,&data->status_.statusWord_,4);
-      CHECK(((control>>14)&15)==2); CHECK((control&(1u<<18))!=0);
-      CHECK(((status>>25)&15)==2); CHECK((status&(1u<<29))!=0);
+      CHECK(((control>>14)&15)==2); CHECK((control&(1u<<18))==0);
+      CHECK(((status>>25)&15)==2); CHECK((status&(1u<<29))==0);
+      auto *param=r.port.find("ax1.enc.control1"); CHECK(param && param->writable);
+      CHECK((param->lastRTValue & ecmcEncoder::POWER_FORCE_ON)!=0);
+      uint32_t oldAxisControl=control | (1u<<18);
+      CHECK(r.axis->axisAsynWriteCmd(&oldAxisControl,4,asynParamUInt32Digital)==asynError);
+      encoderControl=0;
+      CHECK(enc->encoderAsynWriteControl(&encoderControl,4,asynParamUInt32Digital)==asynSuccess);
+      CHECK(r.axis->getEncoderForceOn()==0);
+      // Power writes obey both communication and coordinated-owner blocks.
+      r.axis->dataForTest()->control_.controlWord_.blockCom=1;
+      encoderControl=8;
+      CHECK(enc->encoderAsynWriteControl(&encoderControl,4,asynParamUInt32Digital)==asynError);
+      r.axis->dataForTest()->control_.controlWord_.blockCom=0;
+      r.axis->dataForTest()->status_.statusWord_.blocked=1;
+      CHECK(enc->encoderAsynWriteControl(&encoderControl,4,asynParamUInt32Digital)==asynError);
+      r.axis->dataForTest()->status_.statusWord_.blocked=0;
+      auto *counter=r.axis->getEnc(1,&error); CHECK(counter && !error);
+      CHECK(counter->encoderAsynWriteControl(&encoderControl,4,asynParamUInt32Digital)==asynError);
+      CHECK(enc->getPowerControl()==0);
       CHECK(r.axis->setEncoderForceOn(2)==ERROR_ENC_POWER_CONFIG);
       word.encoderMode=15;
       CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynError);

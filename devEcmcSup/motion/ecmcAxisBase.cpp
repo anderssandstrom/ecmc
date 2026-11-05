@@ -2076,7 +2076,6 @@ void ecmcAxisBase::refreshStatusWd() {
   // bit 24: native target writes trigger position moves.
   data_.status_.statusWord_.autoExecuteOnTargetPos = autoExecuteOnTargetPos_;
   data_.status_.statusWord_.encoderMode = encoderMode_;
-  data_.status_.statusWord_.encoderForceOn = getEncoderForceOn();
 
   // The second status word carries sequence state and last interlock bytes.
   data_.status_.statusWord2_.lastilock =
@@ -2858,6 +2857,9 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
          sizeof(controlWordNew) < sizeof(controlWordRaw) ?
          sizeof(controlWordNew) : sizeof(controlWordRaw));
 
+  // Retired Force ON bit: reject old clients rather than silently accepting it.
+  if (controlWordRaw & (1u << 18)) return asynError;
+
   // These are momentary commands that are auto-reset after this callback.
   // Each callback with a command bit set is a new request; the stored control
   // word is also used as state/readback and is not reliable edge history.
@@ -3018,8 +3020,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
        controlWordCurrent.enableDbgPrintout) ||
       (controlWordNew.tweakBwdCmd != controlWordCurrent.tweakBwdCmd) ||
       (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd) ||
-      (controlWordNew.encoderMode != controlWordCurrent.encoderMode) ||
-      (controlWordNew.encoderForceOn != controlWordCurrent.encoderForceOn);
+      (controlWordNew.encoderMode != controlWordCurrent.encoderMode);
 
     if (!controlWordNew.enableCmd) {
       errorCode = setEnable(0);
@@ -3073,8 +3074,7 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
        controlWordCurrent.enableDbgPrintout) ||
       (controlWordNew.tweakBwdCmd != controlWordCurrent.tweakBwdCmd) ||
       (controlWordNew.tweakFwdCmd != controlWordCurrent.tweakFwdCmd) ||
-      (controlWordNew.encoderMode != controlWordCurrent.encoderMode) ||
-      (controlWordNew.encoderForceOn != controlWordCurrent.encoderForceOn);
+      (controlWordNew.encoderMode != controlWordCurrent.encoderMode);
 
     if (!controlWordNew.enableCmd) {
       errorCode = setEnable(0);
@@ -3115,8 +3115,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
   // Validate mode before applying any enable/execute bits from this write.
   if (controlWordNew.encoderMode != encoderMode_ && setEncoderMode(controlWordNew.encoderMode))
     return asynError;
-  if (controlWordNew.encoderForceOn != getEncoderForceOn() &&
-      setEncoderForceOn(controlWordNew.encoderForceOn)) return asynError;
   memcpy(&data_.control_.controlWord_, &controlWordNew, sizeof(data_.control_.controlWord_));
 
   int errorCode = 0;
@@ -3332,7 +3330,6 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
 
 void ecmcAxisBase::initControlWord() {
   data_.control_.controlWord_.encoderMode = encoderMode_;
-  data_.control_.controlWord_.encoderForceOn = getEncoderForceOn();
   // Fill all controlWord with actual data before rt
   int plcEnable = 0;
 
@@ -4249,12 +4246,7 @@ int ecmcAxisBase::setEncoderForceOn(int force) {
   if (getBlockCom() || masterSlaveBlocked_) return ERROR_AXIS_BLOCKED;
   const int index = encoderPowerSourceIndex_ >= 0 ? encoderPowerSourceIndex_ : data_.control_.primaryEncIndex;
   if (!encArray_[index]) return ERROR_ENC_POWER_CONFIG;
-  int error = encArray_[index]->setPowerControl(force);
-  if (!error) {
-    data_.control_.controlWord_.encoderForceOn = force;
-    data_.status_.statusWord_.encoderForceOn = force;
-  }
-  return error;
+  return encArray_[index]->setPowerControl(force);
 }
 
 int ecmcAxisBase::setEncoderMode(int mode) {

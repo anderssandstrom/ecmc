@@ -1137,12 +1137,14 @@ int ecmcEncoder::readHwReady(bool domainOK) {
 int ecmcEncoder::setPowerControl(int control) {
   if (control < 0 || (control & ~1) || (control && !powerEnabled_))
     return ERROR_ENC_POWER_CONFIG;
-  if (data_->control_.controlWord_.blockCom) return ERROR_AXIS_BLOCKED;
+  if (data_->control_.controlWord_.blockCom || data_->status_.statusWord_.blocked)
+    return ERROR_AXIS_BLOCKED;
   if (control == powerControl_) return 0;
   powerControl_ = control;
   powerIdleOff_ = false;
   powerIdleElapsedS_ = 0;
   powerReleasePending_ = !control && powerOn_;
+  updateControlWord();
   return 0;
 }
 
@@ -1220,6 +1222,8 @@ void ecmcEncoder::updatePowerIdle(bool settled) {
 }
 
 void ecmcEncoder::publishStatusWord() {
+  updateControlWord();
+  if (encoderControlWordParam_) encoderControlWordParam_->refreshParamRT(0);
   statusWord_ = (powerEnabled_ ? ECMC_ENC_STATUS_POWER_ENABLED : 0u) |
     (powerOn_ ? ECMC_ENC_STATUS_POWER_ON : 0u) |
     (!encLocalErrorId_ && domainOK_ && hwReady() ? ECMC_ENC_STATUS_READY : 0u) |
@@ -2276,6 +2280,17 @@ int ecmcEncoder::initAsyn() {
                               reinterpret_cast<uint8_t*>(&statusWord_), sizeof(statusWord_),
                               &statusWordParam_);
   if (error) return error;
+  // One shared control parameter per encoder, including those without a probe.
+  error = createAsynParam("enc.control",
+                         asynParamUInt32Digital,
+                         ECMC_EC_U32,
+                         reinterpret_cast<uint8_t*>(&encoderControlWord_),
+                         sizeof(encoderControlWord_),
+                         &encoderControlWordParam_);
+  if (error) return error;
+  encoderControlWordParam_->setAllowWriteToEcmc(true);
+  encoderControlWordParam_->setExeCmdFunctPtr(asynWriteEncoderControl, this);
+
   return 0;
 }
 
@@ -2342,17 +2357,6 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynEventTimeNs_),
                                     &touchProbeAsynEventTimeParam_);
   if (error) return error;
-  // One optional control parameter per TP encoder, shared by all bit PVs.
-  error = createAsynParam("enc.control",
-                         asynParamUInt32Digital,
-                         ECMC_EC_U32,
-                         reinterpret_cast<uint8_t*>(&encoderControlWord_),
-                         sizeof(encoderControlWord_),
-                         &encoderControlWordParam_);
-  if (error) return error;
-  encoderControlWordParam_->setAllowWriteToEcmc(true);
-  encoderControlWordParam_->setExeCmdFunctPtr(asynWriteEncoderControl, this);
-
   touchProbeAsynParamsCreated_ = true;
   refreshTouchProbeAsyn(0, true);
   return 0;
@@ -2413,7 +2417,8 @@ void ecmcEncoder::updateControlWord() {
   const bool armed = touchProbeFunctEnabled_ ? touchProbeArm_ : encLatchArm_;
   encoderControlWord_ = (enabled ? TOUCH_PROBE_ENABLE : 0u) |
                         (armed ? TOUCH_PROBE_ARM : 0u) |
-                        (touchProbeAutoRearm_ ? TOUCH_PROBE_AUTO_REARM : 0u);
+                        (touchProbeAutoRearm_ ? TOUCH_PROBE_AUTO_REARM : 0u) |
+                        (powerControl_ ? POWER_FORCE_ON : 0u);
 }
 
 asynStatus ecmcEncoder::encoderAsynWriteControl(void *data,
@@ -2426,12 +2431,14 @@ asynStatus ecmcEncoder::encoderAsynWriteControl(void *data,
   }
   uint32_t control = 0;
   memcpy(&control, data, sizeof(control));
-  const uint32_t supported = TOUCH_PROBE_ENABLE | TOUCH_PROBE_ARM |
-                             TOUCH_PROBE_AUTO_REARM;
+  const uint32_t probeBits = TOUCH_PROBE_ENABLE | TOUCH_PROBE_ARM | TOUCH_PROBE_AUTO_REARM;
+  const uint32_t supported = probeBits | POWER_FORCE_ON;
   if (control & ~supported ||
-      (!touchProbeFunctEnabled_ && !encLatchFunctEnabled_)) {
+      ((control & probeBits) && !touchProbeFunctEnabled_ && !encLatchFunctEnabled_)) {
     return asynError;
   }
+  const int forceOn = (control & POWER_FORCE_ON) != 0;
+  if (forceOn != powerControl_ && setPowerControl(forceOn)) return asynError;
   const bool enable = (control & TOUCH_PROBE_ENABLE) != 0;
   // Clearing enable always disarms, even when the masked write preserves arm.
   const bool arm = enable && (control & TOUCH_PROBE_ARM);
@@ -2439,7 +2446,7 @@ asynStatus ecmcEncoder::encoderAsynWriteControl(void *data,
   if (touchProbeFunctEnabled_) {
     setTouchProbeControlEnabled(enable);
     setArmTouchProbe(arm);
-  } else {
+  } else if (encLatchFunctEnabled_) {
     setLatchControlEnabled(enable);
     setArmLatch(arm);
   }

@@ -35,8 +35,7 @@ typedef struct {
   bool tweakFwdCmd        : 1;
   bool blockCom           : 1;
   unsigned int encoderMode : 4; // 0 Auto power, 1..8 fixed encoder index
-  bool encoderForceOn : 1;      // bit 18: diagnostic hold; no motion request
-  unsigned int spareBitsCmd : 13;
+  unsigned int spareBitsCmd : 14; // bits 18..31 reserved
 } ecmcAsynAxisControlType;
 static_assert(sizeof(ecmcAsynAxisControlType) == sizeof(uint32_t), "Axis control must remain 32 bits");
 
@@ -91,8 +90,7 @@ typedef struct {
   unsigned char blocked         : 1;   // Blocked by master/slave state machine
   unsigned char autoExecuteOnTargetPos : 1;
   unsigned char encoderMode     : 4; // bits 25..28
-  unsigned char encoderForceOn  : 1; // bit 29
-  unsigned char reserved        : 2;
+  unsigned char reserved        : 3; // bits 29..31
 } ecmcAxisStatusWordType;
 
 typedef struct {
