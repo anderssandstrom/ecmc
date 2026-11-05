@@ -1260,11 +1260,11 @@ private:
     D(touchProbeAsynParamsCreated_); D(touchProbeAsynValid_);
     D(touchProbeAsynSequence_); D(touchProbeAsynPosition_);
     D(touchProbeAsynTimestampValid_); D(touchProbeAsynTimestampRaw_);
-    D(touchProbeAsynEventTimeNs_); D(touchProbeAsynArmed_); D(touchProbeAsynArmCmd_);
+    D(touchProbeAsynEventTimeNs_); D(encoderControlWord_);
     P(touchProbeAsynValidParam_); P(touchProbeAsynSequenceParam_);
     P(touchProbeAsynPositionParam_); P(touchProbeAsynTimestampValidParam_);
     P(touchProbeAsynTimestampRawParam_); P(touchProbeAsynEventTimeParam_);
-    P(touchProbeAsynArmedParam_); P(touchProbeAsynArmCmdParam_);
+    P(encoderControlWordParam_);
     D(hwReadyInvert_); D(index_); D(homeParamsValid_); D(homeVelTowardsCam_);
     D(homeVelOffCam_); D(homePosition_); D(homeSeqId_); D(homeEnablePostMove_);
     D(homePostMoveTargetPos_); D(homeAcc_); D(homeDec_); D(domainOK_);

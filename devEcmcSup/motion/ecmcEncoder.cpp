@@ -18,7 +18,7 @@
 #include <cmath>
 
 namespace {
-asynStatus asynWriteTouchProbeArmCmd(void *data,
+asynStatus asynWriteEncoderControl(void *data,
                                      size_t bytes,
                                      asynParamType asynParType,
                                      void *userObj) {
@@ -26,7 +26,7 @@ asynStatus asynWriteTouchProbeArmCmd(void *data,
     return asynError;
   }
   return static_cast<ecmcEncoder*>(userObj)->
-         touchProbeAsynWriteArmCmd(data, bytes, asynParType);
+         encoderAsynWriteControl(data, bytes, asynParType);
 }
 }
 
@@ -238,16 +238,14 @@ void ecmcEncoder::initVars() {
   touchProbeAsynTimestampValid_  = 0;
   touchProbeAsynTimestampRaw_    = 0;
   touchProbeAsynEventTimeNs_     = 0;
-  touchProbeAsynArmed_           = 0;
-  touchProbeAsynArmCmd_          = 0;
+  encoderControlWord_           = 0;
   touchProbeAsynValidParam_      = NULL;
   touchProbeAsynSequenceParam_   = NULL;
   touchProbeAsynPositionParam_   = NULL;
   touchProbeAsynTimestampValidParam_ = NULL;
   touchProbeAsynTimestampRawParam_ = NULL;
   touchProbeAsynEventTimeParam_  = NULL;
-  touchProbeAsynArmedParam_      = NULL;
-  touchProbeAsynArmCmdParam_     = NULL;
+  encoderControlWordParam_      = NULL;
   allowOverUnderFlow_            = true;  // Allow as default
 }
 
@@ -1795,6 +1793,7 @@ void ecmcEncoder::setLatchControlEnabled(bool enable) {
   if (enable) {
     encLatchControlEnabled_ = true;
     encLatchControlDisablePending_ = false;
+    updateControlWord();
     return;
   }
 
@@ -1804,6 +1803,7 @@ void ecmcEncoder::setLatchControlEnabled(bool enable) {
   } else {
     encLatchControlDisablePending_ = false;
   }
+  updateControlWord();
 }
 
 bool ecmcEncoder::getLatchControlEnabled() {
@@ -1814,6 +1814,7 @@ void ecmcEncoder::setTouchProbeControlEnabled(bool enable) {
   if (enable) {
     touchProbeControlEnabled_ = true;
     touchProbeControlDisablePending_ = false;
+    updateControlWord();
     return;
   }
 
@@ -1823,6 +1824,7 @@ void ecmcEncoder::setTouchProbeControlEnabled(bool enable) {
   } else {
     touchProbeControlDisablePending_ = false;
   }
+  updateControlWord();
 }
 
 /*
@@ -1843,6 +1845,7 @@ void ecmcEncoder::setArmLatch(bool arm) {
     // even if the terminal's stored flag low phase is missed between cycles.
     touchProbeRearmState_ = 2;
   }
+  updateControlWord();
 }
 
 void ecmcEncoder::setArmTouchProbe(bool arm) {
@@ -1858,14 +1861,17 @@ void ecmcEncoder::setArmTouchProbe(bool arm) {
     // even if the terminal's stored flag low phase is missed between cycles.
     touchProbeRearmState_ = 2;
   }
+  updateControlWord();
 }
 
 void ecmcEncoder::setTouchProbeAutoRearm(bool enable) {
   if (touchProbeAutoRearm_ == enable) {
+    updateControlWord();
     return;
   }
   touchProbeAutoRearm_ = enable;
   touchProbeRearmState_ = 0;
+  updateControlWord();
 }
 
 bool ecmcEncoder::getArmTouchProbe() {
@@ -2336,25 +2342,16 @@ int ecmcEncoder::createTouchProbeAsynParams() {
                                     sizeof(touchProbeAsynEventTimeNs_),
                                     &touchProbeAsynEventTimeParam_);
   if (error) return error;
-  error = createAsynParam("enc.touchprobe.armed",
-                                    asynParamInt32,
-                                    ECMC_EC_S32,
-                                    reinterpret_cast<uint8_t*>(
-                                      &touchProbeAsynArmed_),
-                                    sizeof(touchProbeAsynArmed_),
-                                    &touchProbeAsynArmedParam_);
+  // One optional control parameter per TP encoder, shared by all bit PVs.
+  error = createAsynParam("enc.control",
+                         asynParamUInt32Digital,
+                         ECMC_EC_U32,
+                         reinterpret_cast<uint8_t*>(&encoderControlWord_),
+                         sizeof(encoderControlWord_),
+                         &encoderControlWordParam_);
   if (error) return error;
-  error = createAsynParam("enc.touchprobe.armcmd",
-                                    asynParamInt32,
-                                    ECMC_EC_S32,
-                                    reinterpret_cast<uint8_t*>(
-                                      &touchProbeAsynArmCmd_),
-                                    sizeof(touchProbeAsynArmCmd_),
-                                    &touchProbeAsynArmCmdParam_);
-  if (error) return error;
-  touchProbeAsynArmCmdParam_->setAllowWriteToEcmc(true);
-  touchProbeAsynArmCmdParam_->setExeCmdFunctPtr(asynWriteTouchProbeArmCmd,
-                                                this);
+  encoderControlWordParam_->setAllowWriteToEcmc(true);
+  encoderControlWordParam_->setExeCmdFunctPtr(asynWriteEncoderControl, this);
 
   touchProbeAsynParamsCreated_ = true;
   refreshTouchProbeAsyn(0, true);
@@ -2409,14 +2406,44 @@ int ecmcEncoder::createAsynParam(
   return 0;
 }
 
-asynStatus ecmcEncoder::touchProbeAsynWriteArmCmd(void *data,
-                                                  size_t bytes,
-                                                  asynParamType asynParType) {
-  if (bytes != sizeof(int32_t) || asynParType != asynParamInt32) {
+void ecmcEncoder::updateControlWord() {
+  const bool enabled = touchProbeFunctEnabled_ ?
+    touchProbeControlEnabled_ && !touchProbeControlDisablePending_ :
+    encLatchControlEnabled_ && !encLatchControlDisablePending_;
+  const bool armed = touchProbeFunctEnabled_ ? touchProbeArm_ : encLatchArm_;
+  encoderControlWord_ = (enabled ? TOUCH_PROBE_ENABLE : 0u) |
+                        (armed ? TOUCH_PROBE_ARM : 0u) |
+                        (touchProbeAutoRearm_ ? TOUCH_PROBE_AUTO_REARM : 0u);
+}
+
+asynStatus ecmcEncoder::encoderAsynWriteControl(void *data,
+                                               size_t bytes,
+                                               asynParamType asynParType) {
+  if (!data || bytes != sizeof(uint32_t) ||
+      asynParType != asynParamUInt32Digital ||
+      data_->control_.controlWord_.blockCom) {
     return asynError;
   }
-  memcpy(&touchProbeAsynArmCmd_, data, bytes);
-  setArmTouchProbe(touchProbeAsynArmCmd_ != 0);
+  uint32_t control = 0;
+  memcpy(&control, data, sizeof(control));
+  const uint32_t supported = TOUCH_PROBE_ENABLE | TOUCH_PROBE_ARM |
+                             TOUCH_PROBE_AUTO_REARM;
+  if (control & ~supported ||
+      (!touchProbeFunctEnabled_ && !encLatchFunctEnabled_)) {
+    return asynError;
+  }
+  const bool enable = (control & TOUCH_PROBE_ENABLE) != 0;
+  // Clearing enable always disarms, even when the masked write preserves arm.
+  const bool arm = enable && (control & TOUCH_PROBE_ARM);
+  setTouchProbeAutoRearm((control & TOUCH_PROBE_AUTO_REARM) != 0);
+  if (touchProbeFunctEnabled_) {
+    setTouchProbeControlEnabled(enable);
+    setArmTouchProbe(arm);
+  } else {
+    setLatchControlEnabled(enable);
+    setArmLatch(arm);
+  }
+  updateControlWord();
   return asynSuccess;
 }
 
@@ -2434,9 +2461,7 @@ void ecmcEncoder::refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs, bool force) {
     (encLatchTimestampValid_ ? 1 : 0);
   touchProbeAsynTimestampRaw_ = getTouchProbeTimestampRaw();
   touchProbeAsynEventTimeNs_ = result.eventTimeNs;
-  touchProbeAsynArmed_ = touchProbeFunctEnabled_ ?
-    (touchProbeArm_ ? 1 : 0) :
-    (encLatchArm_ ? 1 : 0);
+  updateControlWord();
 
   touchProbeAsynValidParam_->refreshParamRT(force);
   touchProbeAsynSequenceParam_->refreshParamRT(force);
@@ -2444,8 +2469,7 @@ void ecmcEncoder::refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs, bool force) {
   touchProbeAsynTimestampValidParam_->refreshParamRT(force);
   touchProbeAsynTimestampRawParam_->refreshParamRT(force);
   touchProbeAsynEventTimeParam_->refreshParamRT(force);
-  touchProbeAsynArmedParam_->refreshParamRT(force);
-  touchProbeAsynArmCmdParam_->refreshParamRT(force);
+  encoderControlWordParam_->refreshParamRT(force);
 }
 
 void ecmcEncoder::setMaxPosDiffToPrimEnc(double distance) {

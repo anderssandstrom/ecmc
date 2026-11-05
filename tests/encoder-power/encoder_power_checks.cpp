@@ -155,6 +155,77 @@ struct Rig {
 int main() {
   try {
     int count=0;
+    for (bool legacy : {false,true}) {
+      scenario=legacy ? "shared encoder control with latch fallback" :
+                        "shared encoder control with native touch probe";
+      Rig r; r.idle();
+      auto *enc=r.axis->getPrimEnc();
+      uint32_t control=0x8000, stored=0, capture=10000;
+      ecmcDataItem controlItem{"probeControl"}, statusItem{"probeStatus"}, capturedItem{"probeCapture"};
+      r.bind(controlItem,control,legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL :
+                                        ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL,true,0);
+      r.bind(statusItem,stored,legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS :
+                                      ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS,false,0);
+      r.bind(capturedItem,capture,legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE :
+                                         ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE,false);
+      const size_t before=r.port.parameterCount();
+      CHECK(enc->setTouchProbeArmControlWord(17,5)==0);
+      CHECK(r.port.parameterCount()==before+7); // Six capture results and one shared control word.
+      CHECK(enc->setTouchProbeArmControlWord(17,5)==0);
+      CHECK(r.port.parameterCount()==before+7); // Reconfiguration does not duplicate parameters.
+      if (legacy) CHECK(enc->setHomeLatchArmControlWord(17,5)==0);
+      CHECK(enc->validate()==0);
+      auto *word=r.port.find("ax1.enc.control1"); CHECK(word && word->writable);
+      CHECK(!r.port.find("ax1.enc.touchprobe.armcmd1"));
+      CHECK(!r.port.find("ax1.enc.touchprobe.armed1"));
+      auto read=[&]() { uint32_t value=0; memcpy(&value,word->data,sizeof(value)); return value; };
+      auto write=[&](uint32_t value,uint32_t mask) {
+        uint32_t merged=(read() & ~mask) | (value & mask);
+        CHECK(enc->encoderAsynWriteControl(&merged,sizeof(merged),asynParamUInt32Digital)==asynSuccess);
+      };
+      CHECK(read()==0);
+      write(1,1); // Enable without arming must only send idle.
+      CHECK(read()==1); CHECK(enc->writeEntries()==0); CHECK(control==0x8000);
+      write(2,2); // Arm preserves enable and the unrelated physical PDO bits.
+      CHECK(read()==3); CHECK(enc->writeEntries()==0); CHECK(control==0x8011);
+      write(0,2); // Disarm retains enable for subsequent arm requests.
+      CHECK(read()==1); CHECK(enc->writeEntries()==0); CHECK(control==0x8000);
+      write(2,2); CHECK(enc->writeEntries()==0); CHECK(control==0x8011);
+      write(0,1); // Disable while armed forces arm low and transmits idle first.
+      CHECK(read()==0); CHECK(enc->writeEntries()==0); CHECK(control==0x8000);
+      CHECK(enc->writeEntries()==0); CHECK(control==0x8000);
+      write(2,2); CHECK(read()==0); // An arm bit cannot bypass disabled ownership.
+      CHECK(enc->writeEntries()==0); CHECK(control==0x8000);
+      write(4,4); CHECK(read()==4); // Auto-rearm is independent of control enable.
+      write(1,1); CHECK(read()==5);
+      write(2,2); CHECK(read()==7); CHECK(enc->writeEntries()==0); CHECK(control==0x8011);
+      write(0,4); CHECK(read()==3); // Changing auto-rearm preserves enable/arm.
+      uint32_t invalid=8;
+      CHECK(enc->encoderAsynWriteControl(&invalid,sizeof(invalid),asynParamUInt32Digital)==asynError);
+      CHECK(enc->encoderAsynWriteControl(nullptr,sizeof(invalid),asynParamUInt32Digital)==asynError);
+      CHECK(enc->encoderAsynWriteControl(&invalid,1,asynParamUInt32Digital)==asynError);
+      CHECK(enc->encoderAsynWriteControl(&invalid,sizeof(invalid),asynParamInt32)==asynError);
+      CHECK(read()==3);
+      r.axis->dataForTest()->control_.controlWord_.blockCom=1;
+      invalid=0;
+      CHECK(enc->encoderAsynWriteControl(&invalid,sizeof(invalid),asynParamUInt32Digital)==asynError);
+      CHECK(read()==3);
+      r.axis->dataForTest()->control_.controlWord_.blockCom=0;
+      // Native/PLC commands immediately update the same backing word. A PV
+      // masked write must preserve them without waiting for cyclic publication.
+      CHECK(r.axis->setTouchProbeArm(0,false)==0); CHECK(read()==0);
+      CHECK(r.axis->setTouchProbeArm(0,true)==0); CHECK(read()==7);
+      write(0,4); CHECK(read()==3);
+      enc->refreshTouchProbeAsyn(0,true); CHECK(word->lastRTValue==3);
+      CHECK(r.axis->setTouchProbeArm(0,false)==0);
+      CHECK(enc->writeEntries()==0); CHECK(control==0x8000); ++count;
+    }
+    {
+      scenario="probe control rejects an encoder without probe or latch links";
+      Rig r; uint32_t request=3;
+      CHECK(r.axis->getPrimEnc()->encoderAsynWriteControl(&request,sizeof(request),asynParamUInt32Digital)==asynError);
+      ++count;
+    }
     for(bool high : {false,true}) for(bool inverted : {false,true}) {
       scenario="startup/ABS/polarities";
       Rig r(high,inverted); r.idle();

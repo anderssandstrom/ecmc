@@ -132,7 +132,13 @@ public:
   }
   void                  refreshTouchProbeAsyn(uint64_t nearbyDcTimeNs,
                                               bool force);
-  asynStatus            touchProbeAsynWriteArmCmd(void *data,
+  // Shared encoder control word, exposed through masked UInt32Digital PVs.
+  enum ControlBits : uint32_t {
+    TOUCH_PROBE_ENABLE = 1u << 0,
+    TOUCH_PROBE_ARM = 1u << 1,
+    TOUCH_PROBE_AUTO_REARM = 1u << 2
+  };
+  asynStatus            encoderAsynWriteControl(void *data,
                                                   size_t bytes,
                                                   asynParamType asynParType);
   uint64_t              getTouchProbeSequence() const;
@@ -408,16 +414,15 @@ protected:
   int32_t touchProbeAsynTimestampValid_;
   uint64_t touchProbeAsynTimestampRaw_;
   uint64_t touchProbeAsynEventTimeNs_;
-  int32_t touchProbeAsynArmed_;
-  int32_t touchProbeAsynArmCmd_;
+  uint32_t encoderControlWord_;
   ecmcAsynDataItem *touchProbeAsynValidParam_;
   ecmcAsynDataItem *touchProbeAsynSequenceParam_;
   ecmcAsynDataItem *touchProbeAsynPositionParam_;
   ecmcAsynDataItem *touchProbeAsynTimestampValidParam_;
   ecmcAsynDataItem *touchProbeAsynTimestampRawParam_;
   ecmcAsynDataItem *touchProbeAsynEventTimeParam_;
-  ecmcAsynDataItem *touchProbeAsynArmedParam_;
-  ecmcAsynDataItem *touchProbeAsynArmCmdParam_;
+  ecmcAsynDataItem *encoderControlWordParam_;
+  void updateControlWord();
 
   int hwReadyInvert_;
   int index_; // Index of this encoder (im axis object)
