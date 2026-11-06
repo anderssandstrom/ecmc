@@ -59,6 +59,7 @@ class ecmcEncoder {
 public:
   int encType_ = ECMC_ENCODER_TYPE_INCREMENTAL, reference = -1;
   bool homed_ = false, floatingPoint = false;
+  bool powerEnabled = false, powerReady = false;
   double rawPosDouble_ = 12.5, invScale_ = 2, engOffset_ = 0;
   uint64_t rawPosUint_ = 25;
   int rawTurnsOld_ = 0, rawTurns_ = 0;
@@ -68,6 +69,8 @@ public:
   Filter *velocityFilter_ = &velocity, *positionFilter_ = &position;
   bool actPosEntryUsesFloatingPoint() { return floatingPoint; }
   bool getPowerOff() { return false; }
+  bool getPowerEnable() { return powerEnabled; }
+  bool getPowerReady() { return powerReady; }
   int getRefToOtherEncAtStartup() { return reference; }
   double getActPos();
   void setActPos(double pos);
@@ -122,6 +125,7 @@ public:
     hwReadyOld_ = previouslyReady;
     auto &status = data_.status_;
     auto &statusWord = status.statusWord_;
+    const int encoderCount = status.encoderCount;
     switch (axisState_) {
 '''
 stubs += startup + '  default: break;\n    }\n  }\n};\n'
@@ -244,11 +248,41 @@ void testDeferredStartupEnable() {
   commandsHeld = false;
 }
 
+void testPoweredEncoderStartupRestore() {
+  ecmcAxisBase axis;
+  axis.setPosition(123.25);
+  // A managed secondary encoder must also finish its initial read. The full
+  // preExecute() supplies aggregate hardware readiness; model that input here.
+  axis.secondary.powerEnabled = true;
+  axis.startupStep(true, false, false);
+  assert(axis.error == 0); // Expected warm-up is not a generic hardware fault.
+  assert(!axis.data_.status_.startupFinsished);
+  assert(axis.data_.status_.statusWord_.instartup);
+  assert(!axis.data_.status_.statusWord_.enable && !axis.mrEnable);
+  assert(axis.syncs == 0 && axis.primary.getActPos() == 123.25);
+
+  const int powerTimeout = 0x1441d;
+  axis.error = powerTimeout;
+  axis.startupStep(true, false, false);
+  assert(axis.error == powerTimeout); // Preserve the specific power fault.
+  assert(!axis.data_.status_.startupFinsished);
+  axis.errorReset();
+  axis.secondary.powerReady = true;
+  axis.startupStep(true, true, false);
+  assert(!axis.data_.status_.startupFinsished);
+  axis.startupStep(true, true, true);
+  assert(axis.data_.status_.startupFinsished && axis.syncs == 1);
+  assert(axis.primary.getActPos() == 123.25 && axis.primary.getHomed());
+  assert(axis.data_.control_.positionTarget == 123.25);
+  assert(!axis.data_.status_.statusWord_.enable && !axis.mrEnable);
+}
+
 int main() {
   testEncoderInitialization();
   testRestoredStartup();
   testStartupReferences();
   testDeferredStartupEnable();
+  testPoweredEncoderStartupRestore();
   puts("Axis startup/restore: position and homed state, readiness gating, "
        "initial targets, one-time initialization, and encoder references passed.");
 }

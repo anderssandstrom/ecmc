@@ -67,8 +67,13 @@ with tempfile.TemporaryDirectory(prefix='ecmc-startup-linkage-') as tmp:
     bad = source.replace('}  // extern "C"\n\n// Queued PREOP SDO', '// Queued PREOP SDO', 1)
     bad = bad.replace('extern "C" {\n\nstatic const iocshArg sdoRestoreSlaveArg', 'static const iocshArg sdoRestoreSlaveArg', 1)
     assert bad != source
-    cpp.write_text(skeleton(bad, check=False))
-    failed = subprocess.run([os.environ.get('CXX','c++'), '-std=c++17', '-fsyntax-only', str(cpp)],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    assert failed.returncode != 0, 'conflicting C/C++ linkage was not rejected'
-print('Startup helpers retain C++ linkage; public IOC functions link from C; original linkage conflict is rejected.')
+    # GCC rejects this anonymous-namespace linkage conflict, whereas Clang
+    # accepts it. Check the production scope invariant directly so the
+    # regression check does not depend on a compiler-specific diagnostic.
+    try:
+        skeleton(bad)
+    except AssertionError as error:
+        assert error.args[0] == ('collectSdoRestoreRecords', 'C'), error
+    else:
+        raise AssertionError('incorrect helper linkage was not detected')
+print('Startup helpers retain C++ linkage; public IOC functions link from C; original incorrect linkage is detected.')

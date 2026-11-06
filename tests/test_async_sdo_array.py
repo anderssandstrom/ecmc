@@ -107,7 +107,8 @@ int ecrt_master_sdo_download(ec_master_t *m,int,uint16_t,uint8_t,const uint8_t *
 int ecrt_master_sdo_upload(ec_master_t *m,int,uint16_t,uint8_t,uint8_t *data,size_t capacity,size_t *size,uint32_t*) {
  ++m->uploadCalls; if(m->uploadError) return -1; *size=m->value.size();
  memcpy(data,m->value.data(),std::min(capacity,*size));
- if(m->mismatch && capacity) data[0]^=1; return 0;
+ if(m->mismatch && capacity) data[0]^=1;
+ return 0;
 }
 
 ec_sdo_request_t *ecrt_slave_config_create_sdo_request(ec_slave_config_t *s,
