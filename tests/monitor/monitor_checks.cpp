@@ -10,6 +10,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
+extern std::vector<std::string> monitorErrorMessages;
 
 static std::string context;
 static size_t scenarios = 0, samples = 0;
@@ -104,6 +106,37 @@ static void followingError() {
     for (int i = 0; i < 3; ++i) { b.tick(); CHECK(!b.data.interlocks_.lagTrajInterlock); }
     b.tick(); CHECK(b.data.interlocks_.lagTrajInterlock);
   }
+}
+
+static void followingErrorTripDiagnostics() {
+  context = "following error logs the trip sample once per episode";
+  Bench b;
+  b.monitor->setPosLagTol(.02); b.monitor->setPosLagTime(100);
+  b.monitor->setEnableLagMon(true); b.settle();
+  monitorErrorMessages.clear();
+  b.data.status_.currentPositionSetpoint = 1.125;
+  b.data.status_.currentPositionActual = 1.1;
+  b.data.status_.currentVelocitySetpoint = -1;
+  b.data.status_.cntrlOutput = -.95;
+  b.data.control_.primaryEncIndex = 1;
+  b.data.status_.cntrlError = .025;
+  for (int i=0; i<100; ++i) b.tick();
+  CHECK(monitorErrorMessages.empty());
+  b.tick();
+  CHECK(monitorErrorMessages.size()==1);
+  const std::string trip = monitorErrorMessages.front();
+  for (const char *field : {"following-error trip", "err=0.025", "tol=0.02",
+                           "cycles=101/100", "set=1.125", "act=1.1",
+                           "vel=-1", "out=-0.95", "enc=2"}) {
+    CHECK(trip.find(field)!=std::string::npos);
+  }
+  for (int i=0; i<300; ++i) b.tick();
+  CHECK(monitorErrorMessages.size()==1);
+  b.data.status_.cntrlError=0; b.tick(); b.monitor->errorReset();
+  b.data.status_.cntrlError=-.03;
+  for (int i=0; i<101; ++i) b.tick();
+  CHECK(monitorErrorMessages.size()==2);
+  CHECK(monitorErrorMessages.back().find("err=-0.03")!=std::string::npos);
 }
 
 static void maximumVelocity() {
@@ -412,7 +445,7 @@ static void encoderWraparound() {
 
 int main() {
   try {
-    followingError(); maximumVelocity(); targetDetection(); noisyTargetDetection(); directionalLimits(); bouncingLimits(); commonDataInputs(); encoderWraparound();
+    followingError(); followingErrorTripDiagnostics(); maximumVelocity(); targetDetection(); noisyTargetDetection(); directionalLimits(); bouncingLimits(); commonDataInputs(); encoderWraparound();
     std::cout << "Monitor: " << scenarios << " scenarios, " << samples << " production samples passed.\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n'; return 1;

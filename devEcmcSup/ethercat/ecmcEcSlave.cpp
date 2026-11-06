@@ -1566,12 +1566,14 @@ int ecmcEcSlave::addSDOWrite(uint16_t sdoIndex,
                       ERROR_EC_SLAVE_CONFIG_NULL);
   }
 
-  return ecmcEcSDO::addSdoConfig(slaveConfig_,
+  const int error=ecmcEcSDO::addSdoConfig(slaveConfig_,
                                  slavePosition_,
                                  sdoIndex,
                                  sdoSubIndex,
                                  writeValue,
                                  byteSize);
+  if (!error) startupSdoAddresses_.push_back({sdoIndex,sdoSubIndex});
+  return error;
 }
 
 int ecmcEcSlave::addSDOWriteDT(uint16_t       sdoIndex,
@@ -1594,12 +1596,14 @@ int ecmcEcSlave::addSDOWriteDT(uint16_t       sdoIndex,
                       ERROR_EC_SLAVE_CONFIG_NULL);
   }
 
-  return ecmcEcSDO::addSdoConfigDT(slaveConfig_,
+  const int error=ecmcEcSDO::addSdoConfigDT(slaveConfig_,
                                    slavePosition_,
                                    sdoIndex,
                                    sdoSubIndex,
                                    value,
                                    dt);
+  if (!error) startupSdoAddresses_.push_back({sdoIndex,sdoSubIndex});
+  return error;
 }
 
 int ecmcEcSlave::getSlaveState(ec_slave_config_state_t *state) {
@@ -1784,10 +1788,12 @@ int ecmcEcSlave::addSDOWriteComplete(uint16_t    sdoIndex,
                       ERROR_EC_SLAVE_CONFIG_NULL);
   }
 
-  return ecmcEcSDO::addWriteComplete(slaveConfig_,
+  const int error=ecmcEcSDO::addWriteComplete(slaveConfig_,
                                      sdoIndex,
                                      dataBuffer,
                                      (size_t)byteSize);
+  if (!error) startupSdoAddresses_.push_back({sdoIndex,-1});
+  return error;
 }
 
 int ecmcEcSlave::addSDOWriteBuffer(uint16_t    sdoIndex,
@@ -1810,11 +1816,13 @@ int ecmcEcSlave::addSDOWriteBuffer(uint16_t    sdoIndex,
                       ERROR_EC_SLAVE_CONFIG_NULL);
   }
 
-  return ecmcEcSDO::addSdoConfigBuffer(slaveConfig_,
+  const int error=ecmcEcSDO::addSdoConfigBuffer(slaveConfig_,
                                        sdoIndex,
                                        sdoSubIndex,
                                        dataBuffer,
                                        (size_t)byteSize);
+  if (!error) startupSdoAddresses_.push_back({sdoIndex,sdoSubIndex});
+  return error;
 }
 
 int ecmcEcSlave::addSDOAsync(uint16_t       sdoIndex, /**< SDO index. */
@@ -2069,4 +2077,16 @@ int ecmcEcSlave::addSimEntry(std::string    id,
   simBuffer_.push_back(simBuffer);
   simEntries_.push_back(entry);
   return 0;
+}
+
+namespace {
+bool sdoAddressMatches(const std::vector<std::pair<uint16_t,int>> &addresses,
+                        uint16_t index, int subindex) {
+  for (const auto &address : addresses)
+    if (address.first==index && (address.second<0 || subindex<0 || address.second==subindex)) return true;
+  return false;
+}
+}
+bool ecmcEcSlave::hasStartupSdo(uint16_t index, int subindex) const {
+  return sdoAddressMatches(startupSdoAddresses_,index,subindex);
 }

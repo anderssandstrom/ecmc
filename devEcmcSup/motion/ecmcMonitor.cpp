@@ -1224,6 +1224,19 @@ int ecmcMonitor::checkPositionLag() {
     lagMonCounter_ = 0;
   }
 
+  if ((lagErrorDrive || lagErrorTraj) &&
+      !interlocks.lagDriveInterlock && !interlocks.lagTrajInterlock) {
+    // Capture the trip cycle, rather than comparing asynchronously published
+    // position PVs after the axis has already started stopping. Log once per
+    // interlock episode, not on every cycle while the error remains active.
+    ecmcRtLoggerLogError(
+      "Axis[%d]: following-error trip: err=%g tol=%g cycles=%d/%d set=%g act=%g vel=%g out=%g enc=%d.\n",
+      data_->status_.axisId, data_->status_.cntrlError, posLagTol_,
+      lagMonCounter_, posLagTime_, data_->status_.currentPositionSetpoint,
+      data_->status_.currentPositionActual, data_->status_.currentVelocitySetpoint,
+      data_->status_.cntrlOutput, data_->control_.primaryEncIndex + 1);
+  }
+
   interlocks.lagDriveInterlock = lagErrorDrive;
   interlocks.lagTrajInterlock  = lagErrorTraj;
 

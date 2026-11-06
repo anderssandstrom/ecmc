@@ -2084,6 +2084,9 @@ int setAxisPLCEncVelFilterSize(int axisIndex,
  *  Needed when resolution of encoder is low compared to\n
  *  sample rate and speed.\n
  *
+ * \note Applies to the encoder selected by Cfg.SelectAxisEncConfig, not
+ * necessarily the primary feedback encoder.\n
+ *
  * \param[in] axisIndex  Axis index.\n
  * \param[in] size       Size of filter (default 100), needs to be >0.\n
  *
@@ -2096,6 +2099,9 @@ int setAxisEncVelFilterSize(int axisIndex,
                             int size);
 
 /** \brief Enables/disables encoder velocity filter.\n
+ *
+ * \note Applies to the encoder selected by Cfg.SelectAxisEncConfig, not
+ * necessarily the primary feedback encoder.\n
  *
  * \param[in] axisIndex  Axis index.\n
  * \param[in] enable     Enable/disable (default disabled).\n
@@ -2122,6 +2128,9 @@ int getAxisEncPosFilterEnable(int axisIndex,
  *  Needed when resolution of encoder is low compared to\n
  *  sample rate and speed.\n
  *
+ * \note Applies to the encoder selected by Cfg.SelectAxisEncConfig, not
+ * necessarily the primary feedback encoder.\n
+ *
  * \param[in] axisIndex  Axis index.\n
  * \param[in] size       Size of filter (default 10), filter disables if size<=1.\n
  *
@@ -2134,6 +2143,9 @@ int setAxisEncPosFilterSize(int axisIndex,
                             int size);
 
 /** \brief Enables/disables encoder position filter.\n
+ *
+ * \note Applies to the encoder selected by Cfg.SelectAxisEncConfig, not
+ * necessarily the primary feedback encoder.\n
  *
  * \param[in] axisIndex  Axis index.\n
  * \param[in] enable     Enable/disable (default disabled).\n

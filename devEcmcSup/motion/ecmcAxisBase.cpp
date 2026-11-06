@@ -504,6 +504,11 @@ void ecmcAxisBase::preExecute(bool masterOK) {
           data_.control_.primaryEncIndex == i && encArray_[i]->getPowerReady() && !getErrorID())
         requested = true;
       if (encoderMode_ != 0) requested = i == encoderMode_-1 && !getErrorID();
+      // Obtain real absolute feedback once before completing initial startup,
+      // including when an operator selected the tracking counter explicitly.
+      // Wait for valid process data before starting the power-up timeout.
+      if (!status.startupFinsished && masterOK && encArray_[i]->checkAllDataValid())
+        requested = true;
       encArray_[i]->requestPower(requested);
     }
     encArray_[i]->readEntries(masterOK);
@@ -518,7 +523,8 @@ void ecmcAxisBase::preExecute(bool masterOK) {
 
   // Axis state machine
   switch (axisState_) {
-  case ECMC_AXIS_STATE_STARTUP:
+  case ECMC_AXIS_STATE_STARTUP: {
+    setInStartupPhase(true);
     if (statusWord.enable) {
       setEnable(false);
     }
@@ -526,11 +532,17 @@ void ecmcAxisBase::preExecute(bool masterOK) {
     statusWord.busy = true;
     status.distToStop = 0;
 
+    bool powerStartupPending = false;
+    if (!status.startupFinsished) {
+      for (int i = 0; i < encoderCount; ++i)
+        powerStartupPending |= encArray_[i]->getPowerEnable() &&
+          !encArray_[i]->getPowerReady();
+    }
     if (masterOK && !ecmcStartupMotionHeld()) {
       
-      if (!hwReady_) {
+      if (!hwReady_ && !powerStartupPending) {
         setErrorID(ERROR_AXIS_HW_NOT_READY);
-      } else {  // auto reset error if ok
+      } else if (hwReady_) {  // auto reset error if ok
         if (getErrorID() == ERROR_AXIS_HW_NOT_READY && hwReadyOld_) {
           errorReset();
         }
@@ -571,6 +583,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
     }
     break;
 
+  }
   case ECMC_AXIS_STATE_DISABLED:
     // Allow axes to be busy if auto enabling..
     if (!autoEnableRequest_ ) {
@@ -2230,19 +2243,21 @@ int ecmcAxisBase::getExtEncVeloFiltSize() {
 }
 
 int ecmcAxisBase::setEncVeloFiltSize(size_t size) {
-  return encArray_[data_.control_.primaryEncIndex]->setVeloFilterSize(size);
+  // Match the getters and other encoder configuration commands. Selecting an
+  // encoder for configuration must not change the active feedback encoder.
+  return encArray_[data_.control_.cfgEncIndex]->setVeloFilterSize(size);
 }
 
 int ecmcAxisBase::setEncPosFiltSize(size_t size) {
-  return encArray_[data_.control_.primaryEncIndex]->setPosFilterSize(size);
+  return encArray_[data_.control_.cfgEncIndex]->setPosFilterSize(size);
 }
 
 int ecmcAxisBase::setEncPosFiltEnable(bool enable) {
-  return encArray_[data_.control_.primaryEncIndex]->setPosFilterEnable(enable);
+  return encArray_[data_.control_.cfgEncIndex]->setPosFilterEnable(enable);
 }
 
 int ecmcAxisBase::setEncVeloFiltEnable(bool enable) {
-  return encArray_[data_.control_.primaryEncIndex]->setVelFilterEnable(enable);
+  return encArray_[data_.control_.cfgEncIndex]->setVelFilterEnable(enable);
 }
 
 int ecmcAxisBase::setEncInvHwReady(int invert) {
@@ -3910,6 +3925,16 @@ int ecmcAxisBase::getCSPDriveEncoderIndex() {
 }
 
 bool ecmcAxisBase::getHwReady() {
+
+  // Initial startup must verify every managed encoder, even if the tracking
+  // counter is currently primary. Subsequent intentional idle power-off is OK.
+  if (!data_.status_.startupFinsished) {
+    for (int i = 0; i < data_.status_.encoderCount; ++i) {
+      if (encArray_[i]->getPowerEnable() &&
+          (!encArray_[i]->getPowerReady() || !encArray_[i]->hwReady()))
+        return false;
+    }
+  }
 
   /* Only check prim encoder (allow encoders to be in error state 
   if they are not used) */

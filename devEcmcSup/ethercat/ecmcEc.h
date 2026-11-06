@@ -135,6 +135,11 @@ public:
                   ecmcEcDataType dt,
                   std::string    idString,
                   size_t         arrayBytes = 0);
+  int configureSdoQueue(int slave, const char *name, int writeOnValue, int preopOnly);
+  bool hasQueuedSdos() const { return !queuedSdos_.empty(); }
+  int startupSdoError() const;
+  int validateStartupSdo(const ecmcEcAsyncSDO *sdo);
+  ecmcSdoQueue &sdoQueue() { return sdoQueue_; }
   int readSoE(uint16_t slavePosition,  /**< Slave position. */
               uint8_t  driveNo,  /**< Drive number. */
               uint16_t idn,  /**< SoE IDN (see ecrt_slave_config_idn()). */
@@ -261,6 +266,8 @@ private:
                        timespec time2);
   bool     validEntryType(ecmcEcDataType dt);
   ec_master_t *master_;
+  ecmcSdoQueue sdoQueue_{ERROR_EC_SDO_QUEUE_FULL};
+  std::vector<ecmcEcAsyncSDO *> queuedSdos_;
   ec_master_state_t masterStateOld_;
   ec_master_state_t masterState_;
   int slaveCounter_;

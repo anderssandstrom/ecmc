@@ -424,6 +424,9 @@ int ecmcEc::setPortWiringCheckEnable(bool enable) {
 }
 
 int ecmcEc::activate() {
+  if (sdoQueue_.pending() || startupSdoError()) {
+    return ERROR_EC_SDO_STARTUP_PENDING;
+  }
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Activating master...\n",
                              __FILE__,
@@ -457,6 +460,7 @@ int ecmcEc::activate() {
                       __LINE__,
                       ERROR_EC_MAIN_MASTER_ACTIVATE_FAILED);
   }
+  sdoQueue_.setRunning(true);
 
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Writing process data offsets to entries.\n",
@@ -747,6 +751,7 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
   }
 
   updateInputProcessImage();
+  sdoQueue_.poll();
 
   // Keep for later investigation in master->dc_ref_clock delay.
   //uint32_t time32=0;
@@ -2963,5 +2968,40 @@ int ecmcEc::addSimEntry(int            position,     // Slave position.
   asynPortDriver_->callParamCallbacks(ECMC_ASYN_DEFAULT_LIST,
                                       ECMC_ASYN_DEFAULT_ADDR);
 
+  return 0;
+}
+
+int ecmcEc::configureSdoQueue(int slaveId, const char *name, int writeOnValue,
+                              int preopOnly) {
+  if (!name || (writeOnValue!=0 && writeOnValue!=1) ||
+      (preopOnly!=0 && preopOnly!=1) || sdoQueue_.running())
+    return ERROR_EC_SDO_ASYNC_VALUE;
+  auto *slave=findSlave(slaveId);
+  if (!slave) return ERROR_MAIN_EC_SLAVE_NULL;
+  int index=-1;
+  int error=slave->findSDOAsyncIndex(name,&index);
+  if (error) return error;
+  auto *sdo=slave->getSDOAsync(index);
+  const bool alreadyQueued=sdo->queued();
+  error=sdo->configureQueue(&sdoQueue_,writeOnValue!=0,preopOnly!=0);
+  if (!error && !alreadyQueued) queuedSdos_.push_back(sdo);
+  return error;
+}
+
+int ecmcEc::startupSdoError() const {
+  for (auto *sdo : queuedSdos_) {
+    if (sdo->getSdoError()) return sdo->getSdoError();
+    if (!sdo->startupWriteVerified()) return ERROR_EC_SDO_VERIFY;
+  }
+  return 0;
+}
+
+int ecmcEc::validateStartupSdo(const ecmcEcAsyncSDO *sdo) {
+  if (!sdo) return ERROR_EC_SDO_ASYNC_NOT_FOUND;
+  auto *slave=findSlave(sdo->getSlavePosition());
+  const uint16_t index=sdo->getIndex();
+  if (!slave || slave->hasStartupSdo(index,sdo->getSubIndex()) ||
+      (index>=0x1600 && index<=0x1bff) || (index>=0x1c10 && index<=0x1c2f))
+    return ERROR_EC_SDO_CONFIG_CONFLICT;
   return 0;
 }

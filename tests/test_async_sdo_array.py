@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-header = (root / 'devEcmcSup/ethercat/ecmcEcAsyncSDO.h').read_text()
+header = (root / 'devEcmcSup/ethercat/ecmcSdoQueue.h').read_text() + (root / 'devEcmcSup/ethercat/ecmcEcAsyncSDO.h').read_text()
 source = (root / 'devEcmcSup/ethercat/ecmcEcAsyncSDO.cpp').read_text()
 header = (root / 'devEcmcSup/ethercat/ecmcSdoErrors.h').read_text() + header
 header = re.sub(r'^#include ".*"\n', '', header, flags=re.M)
@@ -93,6 +93,23 @@ struct ec_sdo_request_t {
  int reads=0, writes=0;
 };
 struct ec_slave_config_t { std::vector<std::unique_ptr<ec_sdo_request_t>> requests; };
+struct ec_master_t {
+  int state=2, downloadError=0, uploadError=0, downloadCalls=0, uploadCalls=0;
+  bool mismatch=false;
+  std::vector<uint8_t> value;
+};
+struct ec_slave_info_t { int al_state=2; };
+#define EC_AL_STATE_PREOP 2
+int ecrt_master_get_slave(ec_master_t *m,int,ec_slave_info_t *info) { info->al_state=m->state; return 0; }
+int ecrt_master_sdo_download(ec_master_t *m,int,uint16_t,uint8_t,const uint8_t *data,size_t size,uint32_t*) {
+ ++m->downloadCalls; if(m->downloadError) return -1; m->value.assign(data,data+size); return 0;
+}
+int ecrt_master_sdo_upload(ec_master_t *m,int,uint16_t,uint8_t,uint8_t *data,size_t capacity,size_t *size,uint32_t*) {
+ ++m->uploadCalls; if(m->uploadError) return -1; *size=m->value.size();
+ memcpy(data,m->value.data(),std::min(capacity,*size));
+ if(m->mismatch && capacity) data[0]^=1; return 0;
+}
+
 ec_sdo_request_t *ecrt_slave_config_create_sdo_request(ec_slave_config_t *s,
  uint16_t,uint8_t,size_t bytes) {
  auto r=std::unique_ptr<ec_sdo_request_t>(new ec_sdo_request_t);
@@ -261,6 +278,84 @@ int main() {
  assert(scalar.setValue(0,4294967296.0)==ERROR_EC_SDO_ASYNC_VALUE);
  assert(scalar.setValue(0,std::numeric_limits<double>::quiet_NaN())==ERROR_EC_SDO_ASYNC_VALUE);
  assert(scalar.getValue(0,&numeric)==0 && numeric==42);
+
+ // New mode: command writes snapshot staged values while busy; no overlap,
+ // and each download owns its verification upload before the next request.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver aPort,bPort; ec_slave_config_t aSlave,bSlave;
+  ecmcEcAsyncSDO a(&aPort,0,3,&aSlave,0x2000,1,ECMC_EC_U32,"payload");
+  ecmcEcAsyncSDO b(&bPort,0,4,&bSlave,0x2000,2,ECMC_EC_U32,"payload");
+  assert(a.configureQueue(&queue,false,false)==0 && b.configureQueue(&queue,false,false)==0);
+  assert(a.setValue(0,11)==0 && queue.pending()==0); // Manual staging still needs WrtCmd.
+  assert(a.requestWrite()==0 && a.setValue(0,22)==0 && a.requestWrite()==0);
+  assert(b.setValue(0,33)==0 && b.requestWrite()==0 && a.requestRead()==0);
+  assert(queue.pending()==4 && a.getBusy()==1 && aSlave.requests[0]->writes==0);
+  queue.setRunning(true); queue.poll();
+  auto &aReq=*aSlave.requests[0], &bReq=*bSlave.requests[0];
+  assert(EC_READ_U32(aReq.data.data())==11 && bReq.writes==0);
+  aReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(aReq.reads==1 && bReq.writes==0 && a.getBusy());
+  EC_WRITE_U32(aReq.data.data(),11); aReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(EC_READ_U32(aReq.data.data())==22 && aReq.writes==2 && bReq.writes==0);
+  assert(EC_READ_U32(aPort.get("readvalue").data)==11);
+  aReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  // Verification mismatch is retained across the rest of this object's burst.
+  EC_WRITE_U32(aReq.data.data(),23); aReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(a.getSdoError()==ERROR_EC_SDO_VERIFY && bReq.writes==1 && a.getBusy());
+  bReq.state=EC_REQUEST_SUCCESS; queue.poll(); bReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(!b.getBusy() && aReq.reads==3);
+  EC_WRITE_U32(aReq.data.data(),24); aReq.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(!a.getBusy() && a.getSdoError()==ERROR_EC_SDO_VERIFY && !queue.pending());
+  assert(a.getValue(0,&numeric)==0 && numeric==24);
+  assert(a.setValue(0,25)==0 && a.requestWrite()==0 && a.getSdoError()==0);
+  queue.poll(); aReq.state=EC_REQUEST_ERROR; queue.poll();
+  assert(!a.getBusy() && a.getSdoError()==ERROR_EC_SDO_ASYNC_ERROR);
+ }
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL); ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO queued(&port,0,3,&slave,0x2000,1,ECMC_EC_U32,"payload");
+  assert(queued.configureQueue(&queue,true,true)==0);
+  // Ordinary value writes can opt in; each accepted write owns an immutable snapshot.
+  int32_t first=41, second=42;
+  assert(queued.asynWriteScalar(&first,4,asynParamInt32)==asynSuccess);
+  assert(queued.asynWriteScalar(&second,4,asynParamInt32)==asynSuccess && queue.pending()==2);
+  ec_master_t master;
+  for(uint32_t expected : {41u,42u}) {
+   ecmcSdoQueue::Request job; assert(queue.claim(&job));
+   uint64_t actual=0; bool valid=false;
+   assert(queued.transferBeforeActivation(&master,job.write,job.value,&actual,&valid)==0 && valid);
+   assert(EC_READ_U32(master.value.data())==expected);
+   queued.publishQueuedRead(actual); queue.complete(0);
+  }
+  assert(!queued.getBusy() && queued.getValue(0,&numeric)==0 && numeric==42);
+  uint64_t actual=0; bool valid=false;
+  master.state=8;
+  assert(queued.transferBeforeActivation(&master,true,43,&actual,&valid)==ERROR_EC_SDO_PREOP_ONLY);
+  master.state=2; master.mismatch=true;
+  assert(queued.transferBeforeActivation(&master,true,43,&actual,&valid)==ERROR_EC_SDO_VERIFY && valid);
+  master.mismatch=false; master.downloadError=1;
+  assert(queued.transferBeforeActivation(&master,true,43,&actual,&valid)==ERROR_EC_SDO_ASYNC_ERROR && !valid);
+  master.downloadError=0; master.uploadError=1;
+  assert(queued.transferBeforeActivation(&master,true,43,&actual,&valid)==ERROR_EC_SDO_ASYNC_ERROR && !valid);
+  queue.setRunning(true);
+  assert(queued.requestWrite()==ERROR_EC_SDO_PREOP_ONLY && queue.pending()==0);
+  assert(queued.requestRead()==0); // Reads remain available after activation.
+ }
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL); ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO queued(&port,0,3,&slave,0x2000,1,ECMC_EC_U32,"payload");
+  assert(queued.configureQueue(&queue,false,false)==0);
+  for(size_t i=0;i<queue.CAPACITY;++i) {
+   assert(queued.setValue(0,i)==0 && queued.requestWrite()==0);
+  }
+  assert(queued.requestWrite()==ERROR_EC_SDO_QUEUE_FULL && queue.pending()==queue.CAPACITY);
+  for(size_t i=0;i<queue.CAPACITY;++i) {
+   ecmcSdoQueue::Request job; assert(queue.claim(&job));
+   assert(job.value==i); queue.complete(0);
+  }
+  assert(!queued.getBusy() && queued.getSdoError()==ERROR_EC_SDO_QUEUE_FULL);
+ }
  puts("async SDO scalar/array, lookup, PLC and C++ interface tests passed");
 }
 '''

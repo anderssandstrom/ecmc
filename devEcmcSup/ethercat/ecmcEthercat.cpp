@@ -2029,3 +2029,12 @@ int ecUseClockRealtime(int useClkRT) {
 
   return ec->useClockRealtime(useClkRT);
 }
+
+int ecConfigureSdoQueue(int slavePosition, const char *name,
+                        int writeOnValue, int preopOnly) {
+  if (ecmcSelectedSimulation()) {
+    return ERROR_MAIN_IO_CONFIG_UNSUPPORTED;
+  }
+  if (!ec || !ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  return ec->configureSdoQueue(slavePosition,name,writeOnValue,preopOnly);
+}

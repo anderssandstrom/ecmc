@@ -22,11 +22,12 @@
 #include "ecmcErrorsList.h"
 
 #include "ecmcSdoErrors.h"
+#include "ecmcSdoQueue.h"
 #define ECMC_SDO_ASYNC_MAX_BYTES (1024 * 1024)
 
 #define DEFAULT_SDO_ASYNC_TIMOUT_MS 2000
 
-class ecmcEcAsyncSDO : public ecmcError {
+class ecmcEcAsyncSDO : public ecmcError, public ecmcSdoQueueTarget {
 public:
   ecmcEcAsyncSDO(ecmcAsynPortDriver *asynDriver,
                  int                 masterId,
@@ -59,7 +60,45 @@ public:
   int setValue(int element, double value);
   int execute();
 
+  // Opt-in scalar queue. Existing manual/asyn behavior is unchanged otherwise.
+  int configureQueue(ecmcSdoQueue *queue, bool writeOnValue, bool preopOnly);
+  bool queued() const { return queue_ != nullptr; }
+  int getSlavePosition() const { return slaveId_; }
+  uint16_t getIndex() const { return index_; }
+  uint8_t getSubIndex() const { return subindex_; }
+  asynStatus asynWriteScalar(void *data, size_t bytes, asynParamType type);
+  int stageScalar(void *data, size_t bytes, asynParamType type);
+  int beginQueuedTransfer(bool write, uint64_t value) override;
+  int pollQueuedTransfer(bool *done) override;
+  void queuedRequestAccepted() override;
+  void queuedRequestStarted(bool write) override { activeQueuedWrite_=write; }
+  bool startupWriteVerified() const { return !startupUnverified_; }
+  bool hasStartupWrite() const { return hasStartupWrite_; }
+  int enableStartupData();
+  int restoreStartupData(const uint8_t *data, size_t bytes);
+  void queuedRequestComplete(int error) override;
+  int transferBeforeActivation(ec_master_t *master, bool write, uint64_t desired,
+                                uint64_t *actual, bool *actualValid) const;
+  void publishQueuedRead(uint64_t actual);
+  int reportQueueError(int error);
+
+
 private:
+  ecmcSdoQueue *queue_ = nullptr;
+  bool writeOnValue_ = false, preopOnly_ = false;
+  int queuedPending_ = 0, pendingWrites_ = 0;
+  bool activeQueuedWrite_ = false, startupUnverified_ = false;
+  bool startupWriteFailed_ = false, hasStartupWrite_ = false;
+  uint64_t lastDesired_ = 0;
+  uint8_t startupData_[32] = {};
+  ecmcAsynDataItem *asynParamStartupData_ = nullptr;
+  void rememberStartupWrite(uint64_t value);
+  enum QueuePhase { QUEUE_IDLE, QUEUE_WRITE, QUEUE_READ, QUEUE_VERIFY };
+  QueuePhase queuePhase_ = QUEUE_IDLE;
+  uint8_t expectedWire_[8] = {};
+  uint64_t readBuffer_ = 0;
+  bool readValid_ = false;
+  ecmcAsynDataItem *asynParamReadValue_ = nullptr;
   int initAsyn();
   int writeValue();
   int readValue();

@@ -117,10 +117,15 @@ struct Rig {
   }
   void ticks(int count) { for(int i=0;i<count;++i) tick(); }
   void idle() {
-    ticks(50);
+    for (int i=0; i<2500; ++i) {
+      tick();
+      CHECK(!axis->getEnable()); CHECK(!axis->getExecute());
+      CHECK(!axis->getErrorID() || axis->getErrorID()==ERROR_AXIS_HW_NOT_READY);
+      if (!axis->getInStartupPhase() && !powered()) break;
+    }
     CHECK(!axis->getInStartupPhase()); CHECK(!axis->getBusy());
     CHECK(!axis->getErrorID()); CHECK(!powered());
-    CHECK(axis->getPrimEnc()->getPowerState()==1);
+    int error=0; CHECK(axis->getEnc(0,&error)->getPowerState()==1);
     CHECK(!axis->getEnable());
   }
   void waitMotion() {
@@ -155,6 +160,44 @@ struct Rig {
 int main() {
   try {
     int count=0;
+    {
+      scenario="filter configuration follows selected encoder, not primary feedback";
+      Rig r(true,false,true,true,false);
+      auto *primary=r.axis->getPrimEnc();
+      int error=0; auto *secondary=r.axis->getEnc(1,&error); CHECK(secondary && !error);
+      CHECK(primary!=secondary); CHECK(r.axis->getPrimaryEncoderIndex()==1);
+      CHECK(primary->setPosFilterSize(10)==0); CHECK(primary->setPosFilterEnable(false)==0);
+      CHECK(primary->setVeloFilterSize(100)==0); CHECK(primary->setVelFilterEnable(false)==0);
+      CHECK(r.axis->selectConfigEncoder(2)==0);
+      for (int size : {1,10,100}) {
+        CHECK(r.axis->setEncPosFiltSize(size)==0);
+        CHECK(r.axis->getConfigEnc()->getPosFilterSize()==size);
+        CHECK(primary->getPosFilterSize()==10);
+      }
+      for (bool enable : {false,true}) {
+        CHECK(r.axis->setEncPosFiltEnable(enable)==0);
+        CHECK(secondary->getPosFilterEnable()==enable);
+        CHECK(!primary->getPosFilterEnable());
+      }
+      for (int size : {1,25,100}) {
+        CHECK(r.axis->setEncVeloFiltSize(size)==0);
+        CHECK(secondary->getVeloFilterSize()==size);
+        CHECK(primary->getVeloFilterSize()==100);
+      }
+      for (bool enable : {false,true}) {
+        CHECK(r.axis->setEncVeloFiltEnable(enable)==0);
+        CHECK(secondary->getVelFilterEnable()==enable);
+        CHECK(!primary->getVelFilterEnable());
+      }
+      CHECK(r.axis->selectConfigEncoder(1)==0);
+      CHECK(r.axis->setEncPosFiltSize(25)==0); CHECK(primary->getPosFilterSize()==25);
+      CHECK(r.axis->setEncVeloFiltSize(50)==0); CHECK(primary->getVeloFilterSize()==50);
+      CHECK(r.axis->setEncPosFiltEnable(false)==0); CHECK(!primary->getPosFilterEnable());
+      CHECK(r.axis->setEncVeloFiltEnable(false)==0); CHECK(!primary->getVelFilterEnable());
+      CHECK(secondary->getPosFilterSize()==100 && secondary->getPosFilterEnable());
+      CHECK(secondary->getVeloFilterSize()==100 && secondary->getVelFilterEnable());
+      CHECK(r.axis->getPrimaryEncoderIndex()==1); ++count;
+    }
     for (bool legacy : {false,true}) {
       scenario=legacy ? "shared encoder control with latch fallback" :
                         "shared encoder control with native touch probe";
@@ -229,6 +272,52 @@ int main() {
       scenario="probe control rejects an encoder without probe or latch links";
       Rig r; uint32_t request=3;
       CHECK(r.axis->getPrimEnc()->encoderAsynWriteControl(&request,sizeof(request),asynParamUInt32Digital)==asynError);
+      ++count;
+    }
+    for(bool high : {false,true}) for(bool readyInput : {false,true})
+      for(bool backup : {false,true}) {
+      scenario="initial startup powers and reads feedback without enabling motion";
+      Rig r(high,false,readyInput,backup);
+      r.ticks(25);
+      CHECK(r.powered()); CHECK(r.axis->getInStartupPhase());
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      CHECK(!r.axis->getErrorID());
+      CHECK(std::abs(r.physical-10)<1e-12);
+      r.idle();
+      int error=0; auto *source=r.axis->getEnc(0,&error);
+      CHECK(std::abs(source->getActPos()-10)<.001);
+      CHECK(std::abs(r.physical-10)<1e-12);
+      if (backup) {
+        CHECK(r.axis->getPrimaryEncoderIndex()==2);
+        CHECK(std::abs(r.axis->getPrimEnc()->getActPos()-10)<.001);
+      }
+      ++count;
+    }
+    {
+      scenario="initial startup missing ready times out without enabling drive";
+      Rig r; r.neverReady=true; r.ticks(250);
+      CHECK(r.axis->getErrorID()==ERROR_ENC_POWER_TIMEOUT);
+      CHECK(r.axis->getInStartupPhase()); CHECK(!r.powered());
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      CHECK(std::abs(r.physical-10)<1e-12); ++count;
+    }
+    {
+      scenario="initial startup waits for valid process data before power timeout";
+      Rig r; r.healthy=0; r.ticks(400);
+      CHECK(!r.powered()); CHECK(r.axis->getInStartupPhase());
+      CHECK(r.axis->getPrimEnc()->getPowerError()==0);
+      CHECK(!r.axis->getEnable()); CHECK(!r.axis->getExecute());
+      r.healthy=1; r.idle(); ++count;
+    }
+    {
+      scenario="initial read also verifies powered source in explicit counter mode";
+      Rig r(true,false,true,true);
+      r.axis->setInStartupPhase(true);
+      CHECK(r.axis->setEncoderMode(2)==0);
+      r.ticks(25); CHECK(r.powered()); CHECK(r.axis->getInStartupPhase());
+      r.idle();
+      CHECK(r.axis->getPrimaryEncoderIndex()==2);
+      int error=0; CHECK(std::abs(r.axis->getEnc(0,&error)->getActPos()-10)<.001);
       ++count;
     }
     for(bool high : {false,true}) for(bool inverted : {false,true}) {
@@ -455,7 +544,7 @@ int main() {
     }
     for(bool readyInput : {false,true}) {
       scenario="counter handover and wake";
-      Rig r(true,false,readyInput,true); r.ticks(50);
+      Rig r(true,false,readyInput,true); r.idle();
       int error=0; auto *source=r.axis->getEnc(0,&error); auto *backup=r.axis->getEnc(1,&error);
       CHECK(r.axis->getPrimaryEncoderIndex()==2); CHECK(!r.powered());
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0);
@@ -476,7 +565,7 @@ int main() {
     }
     for(int mismatch : {-30,30}) {
       scenario="counter/absolute wake mismatch blocks motion";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
       CHECK(r.axis->getPrimaryEncoderIndex()==2); r.sourceShift=mismatch;
       const double previous=r.physical;
@@ -492,7 +581,7 @@ int main() {
     }
     {
       scenario="unready backup prevents relay handover";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove();
       r.counterReady=0; r.ticks(5);
       CHECK(r.axis->getErrorID()!=0); CHECK(!r.axis->getEnable());
@@ -500,7 +589,7 @@ int main() {
     }
     {
       scenario="within-limit handover rebases without following error";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
       r.sourceShift=5; // .005 mm mismatch, below .01 handover tolerance
       auto *mon=r.axis->getMon();
@@ -522,7 +611,7 @@ int main() {
     }
     {
       scenario="handover dwell is independent of normal drive disable";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       int error=0; auto *source=r.axis->getEnc(0,&error);
       CHECK(source->setPowerOffDelay(.08)==0);
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove();
@@ -534,7 +623,7 @@ int main() {
     }
     {
       scenario="invalid counter transport cannot remain in control";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0); r.waitMotion(); r.finishMove(); r.ticks(2100);
       CHECK(r.axis->getPrimaryEncoderIndex()==2); r.counterHealthy=0; r.ticks(5);
       CHECK(r.axis->getErrorID()==ERROR_ENC_NOT_READY);
@@ -543,7 +632,7 @@ int main() {
     }
     for(bool backup : {false,true}) {
       scenario="Force ON persists until explicit Auto release";
-      Rig r(true,false,true,backup); r.ticks(50);
+      Rig r(true,false,true,backup); r.idle();
       int error=0; auto *source=r.axis->getEnc(0,&error);
       CHECK(source->setPowerOffDelay(.08)==0);
       CHECK(source->setPowerControl(1)==0); r.ticks(100);
@@ -558,7 +647,7 @@ int main() {
     }
     for(bool backup : {false,true}) {
       scenario="manual release without a move waits full settling delay";
-      Rig r(true,false,true,backup); r.ticks(50);
+      Rig r(true,false,true,backup); r.idle();
       int error=0; auto *source=r.axis->getEnc(0,&error);
       CHECK(source->setPowerOffDelay(.08)==0);
       CHECK(source->setPowerControl(1)==0); r.ticks(200);
@@ -568,7 +657,7 @@ int main() {
     }
     {
       scenario="manual release during motion cannot cut encoder power";
-      Rig r; r.ticks(50); auto *source=r.axis->getPrimEnc();
+      Rig r; r.idle(); auto *source=r.axis->getPrimEnc();
       CHECK(source->setPowerOffDelay(.08)==0);
       CHECK(source->setPowerControl(1)==0); r.ticks(100);
       CHECK(r.axis->moveAbsolutePosition(10.4,.2,1,1)==0); r.waitMotion();
@@ -578,7 +667,7 @@ int main() {
     }
     {
       scenario="Force ON does not bypass encoder faults";
-      Rig r; r.ticks(50); auto *source=r.axis->getPrimEnc();
+      Rig r; r.idle(); auto *source=r.axis->getPrimEnc();
       CHECK(source->setPowerControl(1)==0); r.ticks(100);
       r.lostReady=true; r.ticks(10);
       CHECK(r.axis->getErrorID()==ERROR_ENC_NOT_READY);
@@ -588,7 +677,7 @@ int main() {
     }
     {
       scenario="axis packed Force ON and fixed encoder modes";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(!r.port.find("ax1.enc.pwrctrl1"));
       CHECK(!r.port.find("ax1.enc.pwrctrl2"));
       CHECK(r.axis->setEncoderMode(9)==ERROR_ENC_POWER_CONFIG);
@@ -618,7 +707,7 @@ int main() {
     }
     {
       scenario="packed axis control selects mode and publishes status without extra parameters";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       ecmcAsynAxisControlType word{};
       word.encoderMode=2;
       CHECK(r.axis->axisAsynWriteCmd(&word,sizeof(word),asynParamUInt32Digital)==asynSuccess);
@@ -658,7 +747,7 @@ int main() {
     }
     {
       scenario="fixed powered encoder waits for warmup without a backup pair";
-      Rig r; r.ticks(50);
+      Rig r; r.idle();
       CHECK(r.axis->setEncoderMode(1)==0);
       r.ticks(20); CHECK(r.powered()); CHECK(!r.axis->feedbackAvailable());
       CHECK(r.axis->moveRelativePosition(.05,.2,1,1)==0);
@@ -672,7 +761,7 @@ int main() {
     }
     {
       scenario="generic selection accepts encoder 3 and retains its own reference";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(r.axis->addEncoder()==0);
       int error=0; auto *third=r.axis->getEnc(2,&error); CHECK(third && !error);
       ecmcDataAccess access;
@@ -690,7 +779,7 @@ int main() {
     }
     {
       scenario="encoder status publishes power, readiness, homed and absolute independently";
-      Rig r(true,false,true,true); r.ticks(50);
+      Rig r(true,false,true,true); r.idle();
       CHECK(!r.port.find("ax1.enc.powerstate1"));
       auto *sourceStatus=r.port.find("ax1.enc.status1");
       auto *backupStatus=r.port.find("ax1.enc.status2");
@@ -724,7 +813,7 @@ int main() {
       CHECK(r.axis->validate()==ERROR_ENC_POWER_CONFIG); // no null dereference
       r.addCounter(); r.withBackup=true;
       r.axis->errorReset(); CHECK(r.axis->validate()==0);
-      CHECK(r.axis->setRealTimeStarted(true)==0); r.ticks(50);
+      CHECK(r.axis->setRealTimeStarted(true)==0); r.idle();
       CHECK(r.axis->moveAbsolutePosition(10.2,.2,1,1)==0);
       r.waitMotion(); r.finishMove(); r.ticks(2100);
       CHECK(!r.powered()); CHECK(r.axis->getPrimaryEncoderIndex()==2);

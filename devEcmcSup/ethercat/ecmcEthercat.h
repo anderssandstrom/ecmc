@@ -373,6 +373,10 @@ int ecAddSdoAsync(
  * byteSize is the maximum upload and exact download size (1..1048576).
  * Exposes value, writevalue, bytes, readcmd, writecmd, busy and error parameters.
  */
+/** Opt-in queue policy for an existing scalar async SDO alias. */
+int ecConfigureSdoQueue(int slavePosition, const char *name,
+                        int writeOnValue, int preopOnly);
+
 int ecAddSdoAsyncArray(int slaveBusPosition, int index, int subIndex,
                        int byteSize, const char *idString);
 

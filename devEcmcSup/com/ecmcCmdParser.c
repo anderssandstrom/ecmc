@@ -2423,6 +2423,14 @@ static int handleCfgCommand(const char *myarg_1, int fromNetwork) {
                                u64Value);
   }
 
+  cIdBuffer[0]='\0';
+  nvals=sscanf(myarg_1,"EcConfigureSdoQueue(%d,%255[^,],%d,%d)",
+                 &iValue,cIdBuffer,&iValue2,&iValue3);
+  if (nvals==4) {
+    RETURN_ERROR_IF_RUNTIME_CFG_CMD("EcConfigureSdoQueue");
+    return ecConfigureSdoQueue(iValue,cIdBuffer,iValue2,iValue3);
+  }
+
   // A byte payload at one index/subindex, not a subindex traversal.
   cIdBuffer[0] = '\0';
   nvals = sscanf(myarg_1, "EcAddSdoAsyncArray(%d,0x%x,0x%x,%d,%255[^)])",

@@ -17,6 +17,7 @@
 #include <string>
 #include <atomic>
 #include <vector>
+#include <utility>
 #include "stdio.h"
 #include "ecrt.h"
 #include "ecmcDefinitions.h"
@@ -207,6 +208,7 @@ public:
                   size_t         arrayBytes = 0);
   ecmcEcAsyncSDO *getSDOAsync(int index);
   int findSDOAsyncIndex(const char *name, int *index);
+  bool hasStartupSdo(uint16_t index, int subindex) const;
   int getAllowOffline();
 
 /* 
@@ -302,6 +304,9 @@ private:
 
   std::vector<ecmcEcAsyncSDO *>asyncSDOvector_;
   int asyncSDOCounter_;
+  // -1 denotes a Complete Access download covering all subindices.
+  std::vector<std::pair<uint16_t,int>> startupSdoAddresses_;
+
   
   // Ensure important SDO settings like max current are set.
   std::vector<sdoVerifyChX> sdoChVerify_;

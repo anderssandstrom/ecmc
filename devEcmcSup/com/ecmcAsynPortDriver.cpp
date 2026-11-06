@@ -45,6 +45,7 @@
 #include "ecmcAsynPortDriverUtils.h"
 
 #include "ecmcMainThread.h"
+#include "ecmcEcAsyncSDO.h"
 #include "ecmcEthercat.h"
 #include "ecmcEc.h"
 #include "ecmcGeneral.h"
@@ -53,6 +54,11 @@
 #include "ecmcMotionDiag.h"
 
 #include "exprtkWrap.h"  // Other module
+
+namespace {
+int collectSdoRestoreRecords();
+int startQueuedSdosThenRuntime();
+}
 
 static const char *driverName = "ecmcAsynPortDriver";
 
@@ -85,6 +91,13 @@ static void getEpicsState(initHookState state) {
   ecmcAsynPortObj->setEpicsState(state);
 
   switch (state) {
+  case initHookAfterFinishDevSup:
+    // Autosave pass 1 has finished at the earlier AfterInitDatabase hook.
+    // This only snapshots record data and enqueues; it never performs I/O.
+    ecmcAsynPortObj->lock();
+    collectSdoRestoreRecords();
+    ecmcAsynPortObj->unlock();
+    break;
   // case initHookAfterScanInit:
   case initHookAfterIocRunning:
     ecmcNotifyIocRunning();
@@ -2083,6 +2096,125 @@ static void initCallFunc_4(const iocshArgBuf *args) {
   ecmcConfig(args[0].sval);
 }
 
+}  // extern "C"
+
+// Queued PREOP SDO startup support. Registry mutation is configuration-only.
+// These helpers match the C++ forward declarations used by the init hook.
+namespace {
+struct SdoRestoreRecord {
+  ecmcEcAsyncSDO *sdo;
+  std::string pv;
+  int collectionError=0;
+};
+std::vector<SdoRestoreRecord> sdoRestoreRecords;
+bool sdoRestoreCollected=false;
+
+int collectSdoRestoreRecords() {
+  int firstError=0;
+  for (auto &entry : sdoRestoreRecords) {
+    // A new explicit request in this boot supersedes saved state or an earlier
+    // bad restore. Untouched saved envelopes contain no request and are skipped.
+    if (entry.sdo->hasStartupWrite()) { entry.collectionError=0; continue; }
+    DBADDR address;
+    uint8_t data[32]={}; long options=0, count=sizeof(data);
+    int error=0;
+    if (dbNameToAddr(entry.pv.c_str(),&address) ||
+        dbGetField(&address,DBR_UCHAR,data,&options,&count,nullptr)) {
+      error=ERROR_EC_SDO_RESTORE_MISSING;
+    } else {
+      error=entry.sdo->restoreStartupData(data,static_cast<size_t>(count));
+    }
+    entry.collectionError=error;
+    if (error) {
+      entry.sdo->reportQueueError(error);
+      printf("SDO startup: invalid restore data for %s (0x%x); master activation held.\n",
+             entry.pv.c_str(),error);
+      if (!firstError) firstError=error;
+    }
+  }
+  sdoRestoreCollected=true;
+  return firstError;
+}
+
+int registerSdoRestore(int slaveId, const char *name, const char *pv) {
+  if (!ec || !name || !pv || !*pv || appModeStat!=ECMC_MODE_CONFIG ||
+      sdoRestoreCollected) return asynError;
+  auto *slave=ec->findSlave(slaveId);
+  if (!slave) return asynError;
+  int index=-1;
+  if (slave->findSDOAsyncIndex(name,&index)) return asynError;
+  auto *sdo=slave->getSDOAsync(index);
+  if (!sdo || sdo->enableStartupData()) return asynError;
+  for (const auto &entry : sdoRestoreRecords)
+    if (entry.sdo==sdo || entry.pv==pv) return asynError;
+  sdoRestoreRecords.push_back({sdo,pv,0});
+  return asynSuccess;
+}
+
+int startQueuedSdosThenRuntime() {
+  // The later init hook guarantees both restore passes are complete, even if
+  // afterIocRunning's callback runs before our IOC-running notification.
+  for (int attempt=0;!ecmcIocRunning() && attempt<1000;++attempt) epicsThreadSleep(.01);
+  if (!ecmcIocRunning()) return ERROR_EC_SDO_STARTUP_PENDING;
+  ecmcAsynPortObj->lock();
+  if (!sdoRestoreCollected) collectSdoRestoreRecords();
+  for (auto &entry : sdoRestoreRecords) {
+    if (entry.collectionError && !entry.sdo->hasStartupWrite()) {
+      const int error=entry.collectionError;
+      ecmcAsynPortObj->unlock(); return error;
+    }
+  }
+  ecmcAsynPortObj->unlock();
+
+  while (true) {
+    ecmcSdoQueue::Request request;
+    ecmcAsynPortObj->lock();
+    auto &queue=ec->sdoQueue();
+    if (!queue.pending()) {
+      int error=ec->startupSdoError();
+      if (!error) {
+        queue.clearBatchError();
+        // Keep the producer lock across the empty-queue check and activation:
+        // no late put can slip between the barrier and ecrt_master_activate().
+        error=setAppMode(1);
+      }
+      ecmcAsynPortObj->unlock();
+      return error;
+    }
+    const bool claimed=queue.claim(&request);
+    ecmcAsynPortObj->unlock();
+    if (!claimed) return ERROR_EC_SDO_STARTUP_PENDING;
+    auto *sdo=static_cast<ecmcEcAsyncSDO *>(request.target);
+    uint64_t actual=0; bool actualValid=false;
+    // Mailbox transfers block here without holding the producer/asyn/RT lock.
+    int error=request.write ? ec->validateStartupSdo(sdo) : 0;
+    if (!error) error=sdo->transferBeforeActivation(ec->getMaster(),request.write,
+                                                    request.value,&actual,&actualValid);
+    ecmcAsynPortObj->lock();
+    if (actualValid) sdo->publishQueuedRead(actual);
+    queue.complete(error);
+    ecmcAsynPortObj->unlock();
+    if (error) printf("SDO startup: %s transfer/verification failed (0x%x).\n",
+                      sdo->getName().c_str(),error);
+  }
+}
+}
+
+extern "C" {
+
+static const iocshArg sdoRestoreSlaveArg={"Slave position",iocshArgInt};
+static const iocshArg sdoRestoreNameArg={"SDO alias",iocshArgString};
+static const iocshArg sdoRestorePvArg={"Saved request waveform PV",iocshArgString};
+static const iocshArg *const sdoRestoreArgs[]={&sdoRestoreSlaveArg,&sdoRestoreNameArg,&sdoRestorePvArg};
+static const iocshFuncDef sdoRestoreFuncDef={"ecmcSdoRegisterRestore",3,sdoRestoreArgs};
+static void sdoRestoreCallFunc(const iocshArgBuf *args) {
+  const int error=registerSdoRestore(args[0].ival,args[1].sval,args[2].sval);
+  if (error) printf("ecmcSdoRegisterRestore: invalid queued PREOP SDO or duplicate restore registration.\n");
+  iocshSetError(error);
+}
+
+}  // extern "C"
+
 /* Start ECMC from a worker thread after IOC initialization has returned.
  * This is intended for EPICS-first startup only.  The normal synchronous
  * ecmcConfigOrDie("Cfg.SetAppMode(1)") path is deliberately unchanged. */
@@ -2105,10 +2237,17 @@ static void ecmcAsyncAppModeStartTask(void *userData) {
 
   printf("ecmcStartAppModeAsync: starting ECMC after %.3f second(s).\n",
          delaySeconds);
-  ecmcConfigOrDie("Cfg.SetAppMode(1)");
+  if (ec && ec->hasQueuedSdos()) {
+    const int error=startQueuedSdosThenRuntime();
+    if (error) printf("SDO startup: activation held (0x%x). Correct the request and retry ecmcStartAppModeAsync(0).\n",error);
+  } else {
+    ecmcConfigOrDie("Cfg.SetAppMode(1)");
+  }
   ecmcAsyncAppModeStartPending.store(false, std::memory_order_release);
 }
 }  // namespace
+
+extern "C" {
 
 int ecmcStartAppModeAsync(double delaySeconds) {
   if (!ecmcAsynPortObj) {
@@ -3609,6 +3748,7 @@ void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&initFuncDef_17, initCallFunc_17);
   iocshRegister(&initFuncDef_18, initCallFunc_18);
   iocshRegister(&asyncStartFuncDef, asyncStartCallFunc);
+  iocshRegister(&sdoRestoreFuncDef, sdoRestoreCallFunc);
   iocshRegister(&logBufferWriteFuncDef, logBufferWriteCallFunc);
   iocshRegister(&logBufferPrintFuncDef, logBufferPrintCallFunc);
   iocshRegister(&logBufferClearFuncDef, logBufferClearCallFunc);
