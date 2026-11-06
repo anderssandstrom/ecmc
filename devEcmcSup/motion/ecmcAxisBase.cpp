@@ -494,8 +494,13 @@ void ecmcAxisBase::preExecute(bool masterOK) {
                       std::abs(status.currentVelocityActual) > 0; /*|| getTraj()->getBusy();*/
 
   const int encoderCount = status.encoderCount;
+  bool powerCoordinationNeeded = encoderMode_ != 0 ||
+                                 encoderPowerBackupIndex_ >= 0 ||
+                                 encoderPowerInitPending_;
   for (int i = 0; i < encoderCount; i++) {
-    if (encArray_[i]->getPowerEnable()) {
+    auto *const encoder = encArray_[i];
+    const bool powerEnabled = encoder->getPowerEnable();
+    if (powerEnabled) {
       bool requested = encoderPowerEnablePending_ || autoEnableRequest_ ||
         ((statusWord.enable || statusWord.enabled) && !encArray_[i]->getPowerIdleOff());
       // Keep absolute feedback powered until the post-cycle handover has read
@@ -511,14 +516,17 @@ void ecmcAxisBase::preExecute(bool masterOK) {
         requested = true;
       encArray_[i]->requestPower(requested);
     }
-    encArray_[i]->readEntries(masterOK);
-    if (encArray_[i]->getPowerEnable() && encArray_[i]->getPowerError()) {
+    encoder->readEntries(masterOK);
+    // Include one-shot synchronization left by a power cycle even if power
+    // control has since been disabled. Membership is re-evaluated each cycle.
+    powerCoordinationNeeded |= powerEnabled || encoder->powerPositionSyncPending();
+    if (powerEnabled && encoder->getPowerError()) {
       setEnable(false);
       setErrorID(encArray_[i]->getPowerError());
     }
   }
   
-  syncEncoderPowerPosition();
+  if (powerCoordinationNeeded) syncEncoderPowerPosition();
   hwReady_ = getHwReady();
 
   // Axis state machine
@@ -4516,6 +4524,18 @@ void ecmcAxisBase::encoderPowerIdleSM() {
     encoderPowerMoveCompleted_ = true;
   if (!word.enable && !word.enabled && encoderPowerBackupIndex_ < 0)
     encoderPowerMoveCompleted_ = false;
+  // The ordinary encoder path has no idle-power qualification to calculate.
+  // Reuse this scan as the start of the existing powered-encoder loop.
+  const int encoderCount = data_.status_.encoderCount;
+  int firstPoweredEncoder = 0;
+  while (firstPoweredEncoder < encoderCount &&
+         !encArray_[firstPoweredEncoder]->getPowerEnable()) {
+    ++firstPoweredEncoder;
+  }
+  if (firstPoweredEncoder == encoderCount) {
+    if (encoderPowerBackupIndex_ >= 0) encoderPowerBackupSM();
+    return;
+  }
   const double deadband = mon_->getCtrlDeadband();
   const bool idleQualified = !word.busy &&
     !autoEnableRequest_ && !motionStartPending_ && !encoderPowerEnablePending_ &&
@@ -4523,7 +4543,7 @@ void ecmcAxisBase::encoderPowerIdleSM() {
     mon_->getAtTargetTol() > 0 &&
     (deadband <= 0 || deadband >= mon_->getAtTargetTol() || mon_->getCtrlInDeadband()) &&
     word.trajsource == ECMC_DATA_SOURCE_INTERNAL;
-  for (int i = 0; i < data_.status_.encoderCount; ++i) {
+  for (int i = firstPoweredEncoder; i < encoderCount; ++i) {
     if (!encArray_[i]->getPowerEnable()) continue;
     if (!mon_->getEnableAtTargetMon() || mon_->getAtTargetTol() <= 0) {
       setEnable(false);

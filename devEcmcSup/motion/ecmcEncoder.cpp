@@ -607,13 +607,17 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
     return 0;
   }
 
+  // The bound entry type is constant for this sample. Re-evaluate next cycle
+  // so a configuration-time rebind does not leave cached metadata stale.
+  const bool floatingPoint = actPosEntryUsesFloatingPoint();
+
   uint64_t tempRaw = 0;
   double tempRawDouble = 0;
   int errorCode    = 0;
 
   // Actual position entry
   // Act position
-  if (actPosEntryUsesFloatingPoint()) {
+  if (floatingPoint) {
     errorCode = readDataValueDouble(ECMC_ENCODER_ENTRY_INDEX_ACTUAL_POSITION,
                                        &tempRawDouble);
   } else {
@@ -628,7 +632,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   rawPosUintOld_ = rawPosUint_;
   rawPosDoubleOld_ = rawPosDouble_;
 
-  if (actPosEntryUsesFloatingPoint()) {
+  if (floatingPoint) {
     rawPosDouble_ = tempRawDouble;
     rawPosUint_   = clampDoubleToUInt64(rawPosDouble_);
     data_->status_.currentPositionActualRaw = clampDoubleToInt64(rawPosDouble_);
@@ -682,7 +686,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
     return 0;
   }
 
-  if (actPosEntryUsesFloatingPoint()) {
+  if (floatingPoint) {
     rawTurnsOld_ = 0;
     rawTurns_    = 0;
     rawPosMultiTurn_ = rawPosDouble_ + rawPosOffset_;
@@ -700,7 +704,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   }
 
   // Calculate absolute encoder data
-  if (!actPosEntryUsesFloatingPoint() && absBits_ > 0) {
+  if (!floatingPoint && absBits_ > 0) {
     rawAbsPosUintOld_ = rawAbsPosUint_;
     rawAbsPosUint_    = (rawAbsRange_ - 1) & rawPosUint_;  // filter abs bits
     rawAbsPosDoubleOld_ = rawAbsPosDouble_;
@@ -741,7 +745,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
       actPosLocal_ = actPosLocal_ - moduloRange;
 
       // Reset stuff to be able to run forever
-      const double rawPos = actPosEntryUsesFloatingPoint() ? rawPosDouble_ :
+      const double rawPos = floatingPoint ? rawPosDouble_ :
                             static_cast<double>(rawPosUint_);
       engOffset_       = 0;
       rawTurnsOld_     = 0;
@@ -754,7 +758,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
       actPosLocal_ = moduloRange + actPosLocal_;
 
       // Reset stuff to be able to run forever
-      const double rawPos = actPosEntryUsesFloatingPoint() ? rawPosDouble_ :
+      const double rawPos = floatingPoint ? rawPosDouble_ :
                             static_cast<double>(rawPosUint_);
       engOffset_       = 0;
       rawTurnsOld_     = 0;
@@ -838,7 +842,7 @@ int ecmcEncoder::readHwActPos(bool masterOK, bool domainOK) {
   // Keep the entry-type check live so relinking an encoder cannot leave stale
   // quantization settings. The numeric limits change only with configuration.
   const bool quantized =
-    !actPosEntryUsesFloatingPoint() && delayCompAbsScale_ > 0.0;
+    !floatingPoint && delayCompAbsScale_ > 0.0;
   const double minTrustedVel = quantized ? delayCompMinTrustedVel_ : 0.0;
 
   if (std::abs(actVelLocal_) >= minTrustedVel) {

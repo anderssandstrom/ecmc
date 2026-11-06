@@ -597,11 +597,13 @@ int ecmcEcSlave::updateInputProcessImage() {
   for (int i = 0; i < asyncSdoCount; i++) {
     asyncSDOvector_[i]->execute();
   }
-  executeSmTimingDiscovery();
-  executeDcScheduleDiscovery();
-
-  // Publish the final startup snapshot even when slow diagnostics are disabled.
+  // Discovery is a one-shot startup operation. Once the final snapshot has
+  // been published, leave only the completion check in the cyclic path.
   if (!timingStartupReady_.load(std::memory_order_relaxed)) {
+    executeSmTimingDiscovery();
+    executeDcScheduleDiscovery();
+
+    // Publish the final snapshot even when slow diagnostics are disabled.
     bool complete = !dcSchedule_.discoveryAttempted ||
                     dcSchedule_.discoveryComplete;
     for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {

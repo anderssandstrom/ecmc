@@ -1177,6 +1177,41 @@ void ecmcEcAsyncSDO::publishQueuedRead(uint64_t actual) {
   asynParamReadValue_->refreshParamRT(1);
 }
 
+int ecmcEcAsyncSDO::configureStartupWrite(uint64_t value) {
+  if (!queue_ || queue_->running() || !sc_)
+    return reportQueueError(ERROR_EC_SDO_STARTUP_PENDING);
+  // Mapping/assignment objects must remain under the PDO configuration owner.
+  if ((index_>=0x1600 && index_<=0x1bff) || (index_>=0x1c10 && index_<=0x1c2f))
+    return reportQueueError(ERROR_EC_SDO_CONFIG_CONFLICT);
+  uint8_t wire[8]={};
+  sdoEncodeScalar(value,size_,wire);
+  if (ecrt_slave_config_sdo(sc_,index_,subindex_,wire,size_))
+    return reportQueueError(ERROR_EC_SDO_ASYNC_ERROR);
+  printf("SDO startup download registered: ec%d.s%d %s 0x%04x:%02x, %zu bytes, value=0x%llx (applied by EtherLab during activation).\n",
+         masterId_,slaveId_,idStringChar_,index_,subindex_,size_,
+         static_cast<unsigned long long>(value));
+  return 0;
+}
+
+bool ecmcEcAsyncSDO::queuedTransferReady() const {
+  if (!sc_) return false;
+  ec_slave_config_state_t state={};
+  ecrt_slave_config_state(sc_,&state);
+  return state.operational;
+}
+
+int ecmcEcAsyncSDO::beginStartupVerification(uint64_t value) {
+  if (!queue_ || !queue_->running()) return ERROR_EC_SDO_STARTUP_PENDING;
+  if (ecrt_sdo_request_state(readreq_)==EC_REQUEST_BUSY) return ERROR_EC_SDO_ASYNC_BUSY;
+  sdoEncodeScalar(value,size_,expectedWire_);
+  ecmcRtLoggerLogInfo("SDO startup verification starting: ec%d.s%d %s 0x%04x:%02x, %zu bytes, expected=0x%llx.\n",
+                     masterId_,slaveId_,idStringChar_,index_,subindex_,size_,
+                     static_cast<unsigned long long>(value));
+  ecrt_sdo_request_read(readreq_);
+  queuePhase_=QUEUE_VERIFY;
+  return 0;
+}
+
 int ecmcEcAsyncSDO::beginQueuedTransfer(bool write, uint64_t value) {
   if (!queue_ || !queue_->running()) return ERROR_EC_SDO_STARTUP_PENDING;
   if (write && preopOnly_) return ERROR_EC_SDO_PREOP_ONLY;
@@ -1184,6 +1219,9 @@ int ecmcEcAsyncSDO::beginQueuedTransfer(bool write, uint64_t value) {
   if (write) {
     sdoEncodeScalar(value,size_,expectedWire_);
     memcpy(ecrt_sdo_request_data(sdoreq_),expectedWire_,size_);
+    ecmcRtLoggerLogInfo("SDO queued write starting: ec%d.s%d %s 0x%04x:%02x, %zu bytes, value=0x%llx.\n",
+                       masterId_,slaveId_,idStringChar_,index_,subindex_,size_,
+                       static_cast<unsigned long long>(value));
     ecrt_sdo_request_write(sdoreq_); queuePhase_=QUEUE_WRITE;
   } else {
     ecrt_sdo_request_read(readreq_); queuePhase_=QUEUE_READ;
@@ -1197,6 +1235,8 @@ int ecmcEcAsyncSDO::pollQueuedTransfer(bool *done) {
   if (state==EC_REQUEST_BUSY || state==EC_REQUEST_UNUSED) return 0;
   if (state==EC_REQUEST_ERROR) { *done=true; return ERROR_EC_SDO_ASYNC_ERROR; }
   if (queuePhase_==QUEUE_WRITE) {
+    ecmcRtLoggerLogInfo("SDO queued write verification starting: ec%d.s%d %s 0x%04x:%02x, %zu bytes.\n",
+                       masterId_,slaveId_,idStringChar_,index_,subindex_,size_);
     ecrt_sdo_request_read(readreq_); queuePhase_=QUEUE_VERIFY; return 0;
   }
   *done=true;
@@ -1216,10 +1256,17 @@ int ecmcEcAsyncSDO::transferBeforeActivation(ec_master_t *master, bool write,
   uint8_t expected[8]={}, received[8]={};
   uint32_t abort=0; size_t receivedSize=0;
   sdoEncodeScalar(desired,size_,expected);
+  if (write)
+    printf("SDO PREOP write starting: ec%d.s%d %s 0x%04x:%02x, %zu bytes, value=0x%llx.\n",
+           masterId_,slaveId_,idStringChar_,index_,subindex_,size_,
+           static_cast<unsigned long long>(desired));
   if (write && (ecrt_master_sdo_download(master,slaveId_,index_,subindex_,expected,size_,&abort) || abort))
     return ERROR_EC_SDO_ASYNC_ERROR;
   if (ecrt_master_get_slave(master,slaveId_,&slave) || slave.al_state!=EC_AL_STATE_PREOP)
     return ERROR_EC_SDO_PREOP_ONLY;
+  if (write)
+    printf("SDO PREOP write verification starting: ec%d.s%d %s 0x%04x:%02x, %zu bytes.\n",
+           masterId_,slaveId_,idStringChar_,index_,subindex_,size_);
   if (ecrt_master_sdo_upload(master,slaveId_,index_,subindex_,received,size_,&receivedSize,&abort) || abort)
     return ERROR_EC_SDO_ASYNC_ERROR;
   if (receivedSize!=size_) return ERROR_EC_SDO_ASYNC_SIZE;
@@ -1236,7 +1283,8 @@ uint32_t sdoStartupChecksum(const uint8_t *data) {
 }
 
 int ecmcEcAsyncSDO::enableStartupData() {
-  if (!queue_ || !preopOnly_ || queue_->running()) return ERROR_EC_SDO_ASYNC_VALUE;
+  // Startup snapshots are also used by ordinary SDOs that allow runtime writes.
+  if (!queue_ || queue_->running()) return ERROR_EC_SDO_ASYNC_VALUE;
   if (asynParamStartupData_) return 0;
   const std::string name="ec"+std::to_string(masterId_)+".s"+
     std::to_string(slaveId_)+".sdo."+idString_+".startup";

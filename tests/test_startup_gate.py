@@ -132,6 +132,9 @@ struct Plc {
   void execute(int) { ++globalCalls; trace.push_back("global-plc"); }
 };
 struct Ethercat {
+  bool sdosReady = true;
+  bool startupSdosReady() const { return sdosReady; }
+  void reportStartupSdoStatus() const {}
   int masterIndex = 0;
   int getMasterIndex() { return masterIndex; }
   bool available = true, healthy = true, timing = true;
@@ -205,6 +208,7 @@ struct Rig {
   Ethercat *ec = &ethercat;
   timespec startTime = {}, sendTime = {}, endTime = {};
   timespec masterActivationTimeOffset = {};
+  timespec masterActivationTimeMonotonic = {}, wakeupTime = {};
   int counter = 0, diagnosticsUpdateFreqHz = 0;
   int diagnosticsUpdateFreqHzCached = -1, slowCycleInterval = 1;
   double mcuFrequency = 4;
@@ -411,6 +415,27 @@ body = master_identity + initialization + r'''
       expectDispatch(0);
       iocRunning = true; ticks(10);
       assert(!startup.axisInitializationReleased && !startup.commandsReleased);
+    } else if (scenario == 14) {
+      // SDO restore forces a hold even with STARTUP_GATE=0. Healthy OP alone
+      // cannot release motion before final mailbox readback has passed.
+      assert(startupGateEnabled && !startupGateConfigured);
+      iocRunning=true; readyAxes(); ticks(4);
+      assert(!startup.axisInitializationReleased && startupMotionHeld);
+      expectDispatch(0);
+      ethercat.sdosReady=true; ticks(8);
+      assert(startup.axisInitializationReleased && startup.commandsReleased);
+      assert(!startupMotionHeld && !startupCommandsHeld);
+      expectDispatch(1);
+    } else if (scenario == 15) {
+      // Verification failure/timeout stays held even if later ordinary status
+      // appears healthy. Cyclic I/O, safety and publication continue.
+      iocRunning=true; readyAxes(); ticks(24);
+      assert(startup.timedOut && startupMotionHeld && startupCommandsHeld);
+      expectDispatch(0);
+      ethercat.sdosReady=true; ticks(8);
+      assert(startup.timedOut && !startup.axisInitializationReleased);
+      assert(!startup.commandsReleased && ethercat.receives==32 && safety.calls==32);
+      expectDispatch(0);
     }
   }
 };
@@ -485,8 +510,8 @@ void checkRuntimeObjects() {
 }
 int main() {
   checkRuntimeObjects();
-  for (int scenario = 0; scenario < 14; ++scenario) {
-    startupGateConfigured = scenario != 4 && scenario != 8 && scenario != 9 && scenario != 12;
+  for (int scenario = 0; scenario < 16; ++scenario) {
+    startupGateConfigured = scenario != 4 && scenario != 8 && scenario != 9 && scenario != 12 && scenario != 14 && scenario != 15;
     iocRunning = false;
     iocExitRequested = false;
     commands = 0;
@@ -495,6 +520,7 @@ int main() {
     configuredSimulations.clear();
     if (scenario == 12 || scenario == 13) configuredSimulations.push_back(&rig.simulated);
     rig.plc.dataInputs = scenario == 9 || scenario == 10;
+    rig.ethercat.sdosReady = scenario != 14 && scenario != 15;
     rig.run(scenario);
   }
   puts("Startup gate: IOC readiness, bus stability, timing timeout, axis readiness, "

@@ -59,6 +59,7 @@ struct ecmcError {
  template<class A, class... T> int last(A, T... t) { return last(t...); }
 };
 void ecmcRtLoggerLogError(const char*, ...) {}
+void ecmcRtLoggerLogInfo(const char*, ...) {}
 struct ecmcAsynDataItem {
  uint8_t *data; size_t size; bool writable = false; int callbacks = 0;
  using Callback = asynStatus(*)(void*, size_t, asynParamType, void*);
@@ -92,7 +93,23 @@ struct ec_sdo_request_t {
  std::vector<uint8_t> data; ec_request_state_t state=EC_REQUEST_UNUSED;
  int reads=0, writes=0;
 };
-struct ec_slave_config_t { std::vector<std::unique_ptr<ec_sdo_request_t>> requests; };
+struct ec_slave_config_t {
+ struct Startup { uint16_t index; uint8_t sub; std::vector<uint8_t> data; };
+ std::vector<std::unique_ptr<ec_sdo_request_t>> requests;
+ std::vector<Startup> startup;
+ int configError=0;
+ bool operational=true;
+};
+struct ec_slave_config_state_t { bool operational=false; };
+void ecrt_slave_config_state(ec_slave_config_t *sc, ec_slave_config_state_t *state) {
+ state->operational=sc->operational;
+}
+int ecrt_slave_config_sdo(ec_slave_config_t *sc, uint16_t index, uint8_t sub,
+                         const uint8_t *data, size_t size) {
+ if(sc->configError) return sc->configError;
+ sc->startup.push_back({index,sub,std::vector<uint8_t>(data,data+size)});
+ return 0;
+}
 struct ec_master_t {
   int state=2, downloadError=0, uploadError=0, downloadCalls=0, uploadCalls=0;
   bool mismatch=false;
@@ -279,6 +296,190 @@ int main() {
  assert(scalar.setValue(0,4294967296.0)==ERROR_EC_SDO_ASYNC_VALUE);
  assert(scalar.setValue(0,std::numeric_limits<double>::quiet_NaN())==ERROR_EC_SDO_ASYNC_VALUE);
  assert(scalar.getValue(0,&numeric)==0 && numeric==42);
+
+
+ // Ordinary scalar endpoints restore accepted requests without PREOP-only policy.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO original(&port,0,3,&slave,0x2000,1,ECMC_EC_U32,"payload");
+  assert(original.configureQueue(&queue,false,false)==0);
+  assert(original.enableStartupData()==0);
+  const uint8_t empty[32]={};
+  assert(original.restoreStartupData(empty,32)==0 && !queue.pending());
+  assert(original.setValue(0,123)==0 && !queue.pending());
+  assert(!original.hasStartupWrite()); // Manual Val staging alone is not autosaved.
+  assert(memcmp(port.get("startup").data,empty,32)==0);
+  assert(original.requestWrite()==0 && queue.pending()==1);
+  uint8_t saved[32]; memcpy(saved,port.get("startup").data,32);
+  assert(memcmp(saved,"ESDO",4)==0);
+  ecmcSdoQueue::Request job; assert(queue.claim(&job));
+  ec_master_t master; uint64_t actual=0; bool valid=false;
+  assert(original.transferBeforeActivation(&master,job.write,job.value,&actual,&valid)==0 && valid);
+  original.publishQueuedRead(actual); queue.complete(0);
+  // Next boot: valid saved data queues exactly the previous committed payload.
+  ecmcSdoQueue nextQueue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver nextPort; ec_slave_config_t nextSlave;
+  ecmcEcAsyncSDO restored(&nextPort,0,3,&nextSlave,0x2000,1,ECMC_EC_U32,"payload");
+  assert(restored.configureQueue(&nextQueue,false,false)==0 && restored.enableStartupData()==0);
+  assert(restored.restoreStartupData(saved,32)==0 && nextQueue.pending()==1);
+  assert(nextQueue.claim(&job) && job.write && job.value==123);
+  nextQueue.complete(0);
+  // A manual runtime write and read still work with automatic restore support.
+  nextQueue.setRunning(true);
+  assert(restored.setValue(0,456)==0 && nextQueue.pending()==0);
+  assert(restored.requestWrite()==0 && restored.requestRead()==0);
+  assert(nextQueue.claim(&job) && job.write && job.value==456); nextQueue.complete(0);
+  assert(nextQueue.claim(&job) && !job.write); nextQueue.complete(0);
+  assert(!nextQueue.pending());
+  // Explicit zero is a valid write; it is distinct from an untouched waveform.
+  assert(original.setValue(0,0)==0 && original.requestWrite()==0);
+  memcpy(saved,port.get("startup").data,32);
+  ecmcSdoQueue zeroQueue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver zeroPort; ec_slave_config_t zeroSlave;
+  ecmcEcAsyncSDO zero(&zeroPort,0,3,&zeroSlave,0x2000,1,ECMC_EC_U32,"payload");
+  assert(zero.configureQueue(&zeroQueue,false,false)==0 && zero.enableStartupData()==0);
+  saved[20]^=1;
+  assert(zero.restoreStartupData(saved,32)==ERROR_EC_SDO_CONFIG_CONFLICT && !zeroQueue.pending());
+  saved[20]^=1;
+  assert(zero.restoreStartupData(saved,32)==0 && zeroQueue.pending()==1);
+  assert(zeroQueue.claim(&job) && job.write && job.value==0); zeroQueue.complete(0);
+ }
+
+
+ // Component defaults first, accepted restored writes last. Verification waits
+ // until the master has applied the entire list, and checks only final values.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  uint8_t baseline[4]; EC_WRITE_U32(baseline,500);
+  assert(ecrt_slave_config_sdo(&slave,0x8010,1,baseline,4)==0);
+  ecmcEcAsyncSDO restored(&port,0,3,&slave,0x8010,1,ECMC_EC_U32,"payload");
+  assert(restored.configureQueue(&queue,false,true)==0);
+  assert(restored.setValue(0,700)==0 && restored.requestWrite()==0);
+  assert(restored.setValue(0,900)==0 && restored.requestWrite()==0);
+  assert(queue.prepareStartup()==0 && queue.startupHeld() && queue.startupRemaining()==2);
+  assert(slave.startup.size()==3);
+  assert(EC_READ_U32(slave.startup[0].data.data())==500);
+  assert(EC_READ_U32(slave.startup[1].data.data())==700);
+  assert(EC_READ_U32(slave.startup[2].data.data())==900);
+  assert(slave.requests[0]->writes==0 && slave.requests[0]->reads==0);
+  // Simulate successful EtherLab startup list execution in list order.
+  std::vector<uint8_t> hardware;
+  for(const auto &write : slave.startup) hardware=write.data;
+  assert(EC_READ_U32(hardware.data())==900);
+  queue.setRunning(true);
+  for(int i=0;i<2;++i) {
+   queue.poll();
+   auto &read=*slave.requests[0];
+   assert(read.writes==0 && read.reads==i+1 && queue.startupHeld());
+   read.data=hardware; read.state=EC_REQUEST_SUCCESS;
+   queue.poll();
+   // poll may already have begun the next verification.
+   if(i==0) {
+    assert(queue.startupHeld() && read.reads==2);
+    read.data=hardware; read.state=EC_REQUEST_SUCCESS;
+    queue.poll(); break;
+   }
+  }
+  assert(!queue.startupHeld() && !restored.getBusy() && !restored.getSdoError());
+  assert(EC_READ_U32(port.get("readvalue").data)==900);
+  assert(restored.requestRead()==0); // PREOP-only settings still allow runtime reads.
+  assert(restored.requestWrite()==ERROR_EC_SDO_PREOP_ONLY);
+  assert(queue.prepareStartup()==0 && slave.startup.size()==3); // No append on runtime reentry.
+ }
+
+ // Different aliases for one address must also verify the last write, not an
+ // earlier alias's superseded value.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver aPort,bPort; ec_slave_config_t slave;
+  ecmcEcAsyncSDO a(&aPort,0,3,&slave,0x8010,1,ECMC_EC_U32,"first");
+  ecmcEcAsyncSDO b(&bPort,0,3,&slave,0x8010,1,ECMC_EC_U32,"second");
+  assert(a.configureQueue(&queue,false,false)==0 && b.configureQueue(&queue,false,false)==0);
+  assert(a.setValue(0,100)==0 && a.requestWrite()==0);
+  assert(b.setValue(0,200)==0 && b.requestWrite()==0 && queue.prepareStartup()==0);
+  queue.setRunning(true); queue.poll();
+  EC_WRITE_U32(slave.requests[0]->data.data(),200); slave.requests[0]->state=EC_REQUEST_SUCCESS;
+  queue.poll();
+  EC_WRITE_U32(slave.requests[1]->data.data(),200); slave.requests[1]->state=EC_REQUEST_SUCCESS;
+  queue.poll();
+  assert(!queue.startupHeld() && !a.getSdoError() && !b.getSdoError());
+  // Subsequent runtime errors do not change the completed startup latch.
+  assert(b.requestRead()==0); queue.poll();
+  slave.requests[1]->state=EC_REQUEST_ERROR; queue.poll();
+  assert(b.getSdoError()==ERROR_EC_SDO_ASYNC_ERROR && !queue.startupHeld());
+ }
+
+
+ // Slave-local readiness: wait for the SDO target to reach OP, while unrelated
+ // slaves may remain PREOP. If the target drops out, still complete active errors.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO restored(&port,0,3,&slave,0x8010,1,ECMC_EC_U32,"payload");
+  assert(restored.configureQueue(&queue,false,false)==0);
+  assert(restored.setValue(0,700)==0 && restored.requestWrite()==0);
+  assert(restored.setValue(0,800)==0 && restored.requestWrite()==0);
+  assert(queue.prepareStartup()==0);
+  queue.setRunning(true); slave.operational=false;
+  queue.poll(); assert(slave.requests[0]->reads==0 && queue.startupRemaining()==2);
+  slave.operational=true; queue.poll();
+  assert(slave.requests[0]->reads==1); // Begins as soon as the target is OP.
+  slave.operational=false; slave.requests[0]->state=EC_REQUEST_ERROR;
+  queue.poll();
+  assert(queue.startupRemaining()==1 && restored.getSdoError()==ERROR_EC_SDO_ASYNC_ERROR);
+  assert(slave.requests[0]->reads==1); // No next transaction while target is PREOP.
+  slave.operational=true; queue.poll();
+  assert(slave.requests[0]->reads==2);
+  EC_WRITE_U32(slave.requests[0]->data.data(),800); slave.requests[0]->state=EC_REQUEST_SUCCESS;
+  queue.poll();
+  assert(!queue.startupRemaining() && queue.startupHeld()); // Error remains latched.
+ }
+
+ // No saved/requested write: preserve the component default, without appending.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  uint8_t baseline[4]; EC_WRITE_U32(baseline,500);
+  assert(ecrt_slave_config_sdo(&slave,0x8010,1,baseline,4)==0);
+  ecmcEcAsyncSDO untouched(&port,0,3,&slave,0x8010,1,ECMC_EC_U32,"payload");
+  assert(untouched.configureQueue(&queue,false,false)==0);
+  assert(queue.prepareStartup()==0 && slave.startup.size()==1 && !queue.startupHeld());
+ }
+ // A failed final verification is sticky: a later ordinary read must not release motion.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO restored(&port,0,3,&slave,0x8010,1,ECMC_EC_U32,"payload");
+  assert(restored.configureQueue(&queue,false,false)==0);
+  assert(restored.setValue(0,700)==0 && restored.requestWrite()==0 && queue.prepareStartup()==0);
+  queue.setRunning(true); queue.poll();
+  auto &read=*slave.requests[0]; EC_WRITE_U32(read.data.data(),500); read.state=EC_REQUEST_SUCCESS;
+  queue.poll();
+  assert(queue.startupHeld() && !queue.startupRemaining() && queue.startupError()==ERROR_EC_SDO_VERIFY);
+  assert(restored.getSdoError()==ERROR_EC_SDO_VERIFY);
+  assert(restored.requestRead()==0); queue.poll();
+  EC_WRITE_U32(read.data.data(),700); read.state=EC_REQUEST_SUCCESS; queue.poll();
+  assert(queue.startupHeld() && queue.startupError()==ERROR_EC_SDO_VERIFY);
+  assert(queue.prepareStartup()==0 && queue.startupHeld());
+ }
+ // Registration errors fail before activation. PDO mapping overrides remain rejected.
+ {
+  ecmcSdoQueue queue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver port; ec_slave_config_t slave;
+  ecmcEcAsyncSDO restored(&port,0,3,&slave,0x8010,1,ECMC_EC_U32,"payload");
+  assert(restored.configureQueue(&queue,false,false)==0);
+  assert(restored.setValue(0,700)==0 && restored.requestWrite()==0);
+  slave.configError=-1;
+  assert(queue.prepareStartup()==ERROR_EC_SDO_ASYNC_ERROR && slave.startup.empty());
+  ecmcSdoQueue mappingQueue(ERROR_EC_SDO_QUEUE_FULL);
+  ecmcAsynPortDriver mappingPort; ec_slave_config_t mappingSlave;
+  ecmcEcAsyncSDO mapping(&mappingPort,0,3,&mappingSlave,0x1600,1,ECMC_EC_U32,"payload");
+  assert(mapping.configureQueue(&mappingQueue,false,false)==0);
+  assert(mapping.requestWrite()==0 && mappingQueue.prepareStartup()==ERROR_EC_SDO_CONFIG_CONFLICT);
+  assert(mappingSlave.startup.empty());
+ }
 
  // New mode: command writes snapshot staged values while busy; no overlap,
  // and each download owns its verification upload before the next request.

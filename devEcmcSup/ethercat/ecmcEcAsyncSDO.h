@@ -68,6 +68,13 @@ public:
   uint8_t getSubIndex() const { return subindex_; }
   asynStatus asynWriteScalar(void *data, size_t bytes, asynParamType type);
   int stageScalar(void *data, size_t bytes, asynParamType type);
+  int configureStartupWrite(uint64_t value) override;
+  int beginStartupVerification(uint64_t value) override;
+  bool queuedTransferReady() const override;
+  uint64_t startupAddress() const override {
+    return (static_cast<uint64_t>(slaveId_)<<24) |
+           (static_cast<uint64_t>(index_)<<8) | subindex_;
+  }
   int beginQueuedTransfer(bool write, uint64_t value) override;
   int pollQueuedTransfer(bool *done) override;
   void queuedRequestAccepted() override;

@@ -424,8 +424,13 @@ int ecmcEc::setPortWiringCheckEnable(bool enable) {
 }
 
 int ecmcEc::activate() {
-  if (sdoQueue_.pending() || startupSdoError()) {
-    return ERROR_EC_SDO_STARTUP_PENDING;
+  // Appended only here, after component/plugin configuration and autosave.
+  // Verification follows EtherLab's startup downloads; it holds motion, not OP.
+  const int startupError=sdoQueue_.prepareStartup();
+  if (startupError) return startupError;
+  if (sdoQueue_.startupRemaining()) {
+    printf("SDO startup: activating EtherCAT with %zu download(s); readback verification starts as each target becomes operational. Motion/PLCs remain held until verification completes.\n",
+           sdoQueue_.startupRemaining());
   }
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Activating master...\n",
@@ -751,7 +756,18 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
   }
 
   updateInputProcessImage();
-  sdoQueue_.poll();
+  // Startup reads must follow EtherLab's startup list for the target slave.
+  // The queue checks each target's configured slave, not the master's aggregate
+  // AL states: unrelated, unconfigured slaves may legitimately remain PREOP.
+  if (sdoQueue_.pending()) {
+    const size_t remaining=sdoQueue_.startupRemaining();
+    sdoQueue_.poll();
+    if (remaining && !sdoQueue_.startupRemaining()) {
+      if (sdoQueue_.startupError())
+        ecmcRtLoggerLogError("SDO startup verification failed (0x%x); motion/PLCs remain held. Correct the cause and restart the IOC.\n",sdoQueue_.startupError());
+      else ecmcRtLoggerLogInfo("SDO startup readback verified; normal startup readiness checks continue.\n");
+    }
+  }
 
   // Keep for later investigation in master->dc_ref_clock delay.
   //uint32_t time32=0;
@@ -2988,6 +3004,17 @@ int ecmcEc::configureSdoQueue(int slaveId, const char *name, int writeOnValue,
   return error;
 }
 
+void ecmcEc::reportStartupSdoStatus() const {
+  ecmcRtLoggerLogError("Startup SDO status: remaining=%zu, verification error=0x%x.\n",
+                        sdoQueue_.startupRemaining(),sdoQueue_.startupError());
+  for (const auto *sdo : queuedSdos_) {
+    if (sdo->getBusy() || sdo->getSdoError() || !sdo->startupWriteVerified())
+      ecmcRtLoggerLogError("Startup SDO: slave=%d, name=%s, slave OP=%d, busy=%d, error=0x%x.\n",
+        sdo->getSlavePosition(),sdo->getName().c_str(),sdo->queuedTransferReady(),
+        sdo->getBusy(),sdo->getSdoError());
+  }
+}
+
 int ecmcEc::startupSdoError() const {
   for (auto *sdo : queuedSdos_) {
     if (sdo->getSdoError()) return sdo->getSdoError();
@@ -3000,7 +3027,7 @@ int ecmcEc::validateStartupSdo(const ecmcEcAsyncSDO *sdo) {
   if (!sdo) return ERROR_EC_SDO_ASYNC_NOT_FOUND;
   auto *slave=findSlave(sdo->getSlavePosition());
   const uint16_t index=sdo->getIndex();
-  if (!slave || slave->hasStartupSdo(index,sdo->getSubIndex()) ||
+  if (!slave ||
       (index>=0x1600 && index<=0x1bff) || (index>=0x1c10 && index<=0x1c2f))
     return ERROR_EC_SDO_CONFIG_CONFLICT;
   return 0;

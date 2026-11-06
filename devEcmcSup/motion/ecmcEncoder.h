@@ -189,6 +189,7 @@ public:
   double                getPowerDelay() const { return powerDelayS_; }
   double                getPowerTimeout() const { return powerTimeoutS_; }
   void                  requestPower(bool request) { powerRequested_ = request; }
+  bool                  powerPositionSyncPending() const { return powerPositionSync_; }
   bool                  consumePowerPositionSync();
 
   // For homing (just storing data)

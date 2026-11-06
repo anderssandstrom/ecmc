@@ -138,6 +138,8 @@ public:
   int configureSdoQueue(int slave, const char *name, int writeOnValue, int preopOnly);
   bool hasQueuedSdos() const { return !queuedSdos_.empty(); }
   int startupSdoError() const;
+  bool startupSdosReady() const { return !sdoQueue_.startupHeld(); }
+  void reportStartupSdoStatus() const;
   int validateStartupSdo(const ecmcEcAsyncSDO *sdo);
   ecmcSdoQueue &sdoQueue() { return sdoQueue_; }
   int readSoE(uint16_t slavePosition,  /**< Slave position. */

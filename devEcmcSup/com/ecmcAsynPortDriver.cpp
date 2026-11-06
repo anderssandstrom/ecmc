@@ -2164,39 +2164,12 @@ int startQueuedSdosThenRuntime() {
       ecmcAsynPortObj->unlock(); return error;
     }
   }
+  // setAppMode/activate appends restored writes after all startup settings.
+  // Keep the producer lock through activation; no late write can escape the
+  // startup batch. The RT loop reads back final values before releasing motion.
+  const int error=ec->sdoQueue().running() ? ERROR_EC_SDO_STARTUP_PENDING : setAppMode(1);
   ecmcAsynPortObj->unlock();
-
-  while (true) {
-    ecmcSdoQueue::Request request;
-    ecmcAsynPortObj->lock();
-    auto &queue=ec->sdoQueue();
-    if (!queue.pending()) {
-      int error=ec->startupSdoError();
-      if (!error) {
-        queue.clearBatchError();
-        // Keep the producer lock across the empty-queue check and activation:
-        // no late put can slip between the barrier and ecrt_master_activate().
-        error=setAppMode(1);
-      }
-      ecmcAsynPortObj->unlock();
-      return error;
-    }
-    const bool claimed=queue.claim(&request);
-    ecmcAsynPortObj->unlock();
-    if (!claimed) return ERROR_EC_SDO_STARTUP_PENDING;
-    auto *sdo=static_cast<ecmcEcAsyncSDO *>(request.target);
-    uint64_t actual=0; bool actualValid=false;
-    // Mailbox transfers block here without holding the producer/asyn/RT lock.
-    int error=request.write ? ec->validateStartupSdo(sdo) : 0;
-    if (!error) error=sdo->transferBeforeActivation(ec->getMaster(),request.write,
-                                                    request.value,&actual,&actualValid);
-    ecmcAsynPortObj->lock();
-    if (actualValid) sdo->publishQueuedRead(actual);
-    queue.complete(error);
-    ecmcAsynPortObj->unlock();
-    if (error) printf("SDO startup: %s transfer/verification failed (0x%x).\n",
-                      sdo->getName().c_str(),error);
-  }
+  return error;
 }
 }
 
@@ -2239,7 +2212,7 @@ static void ecmcAsyncAppModeStartTask(void *userData) {
          delaySeconds);
   if (ec && ec->hasQueuedSdos()) {
     const int error=startQueuedSdosThenRuntime();
-    if (error) printf("SDO startup: activation held (0x%x). Correct the request and retry ecmcStartAppModeAsync(0).\n",error);
+    if (error) printf("SDO startup: start failed (0x%x). Check diagnostics; correct the cause before retrying startup.\n",error);
   } else {
     ecmcConfigOrDie("Cfg.SetAppMode(1)");
   }

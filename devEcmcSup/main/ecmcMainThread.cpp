@@ -411,6 +411,47 @@ struct StartupState {
   double stableSeconds = 0;
   double motorWaitSeconds = 0;
 
+  // Collected by the cyclic thread and logged after send, even while the main
+  // diagnostic PV publication is disabled during startup. No new clock reads.
+  bool timingFirstLogged = false;
+  timespec timingLastStart = {};
+  timespec timingFirstSend = {};
+  double timingMaxWakeNs = 0, timingMaxExecutionNs = 0;
+  double timingMinPeriodNs = 0, timingMaxPeriodNs = 0;
+  double timingNextReportNs = 5.0e9;
+
+  static double timingDeltaNs(const timespec &from, const timespec &to) {
+    return static_cast<double>(to.tv_sec-from.tv_sec)*1.0e9 +
+           static_cast<double>(to.tv_nsec-from.tv_nsec);
+  }
+
+  void recordTiming(int master, const timespec &activation,
+                    const timespec &scheduled, const timespec &start,
+                    const timespec &sent, const timespec &end) {
+    const double wake=timingDeltaNs(scheduled,start);
+    const double execution=timingDeltaNs(start,end);
+    if (!timingFirstLogged) {
+      timingFirstSend=sent;
+      ecmcRtLoggerLogInfo("Startup timing master %d: first send %.3f ms after startup timestamp; wake latency %.3f us; execution %.3f us.\n",
+        master,timingDeltaNs(activation,sent)/1.0e6,wake/1.0e3,execution/1.0e3);
+      timingFirstLogged=true;
+    } else {
+      const double period=timingDeltaNs(timingLastStart,start);
+      if (!timingMinPeriodNs || period<timingMinPeriodNs) timingMinPeriodNs=period;
+      if (period>timingMaxPeriodNs) timingMaxPeriodNs=period;
+    }
+    timingLastStart=start;
+    if (wake>timingMaxWakeNs) timingMaxWakeNs=wake;
+    if (execution>timingMaxExecutionNs) timingMaxExecutionNs=execution;
+    const double elapsed=timingDeltaNs(timingFirstSend,end);
+    if (elapsed>=timingNextReportNs) {
+      ecmcRtLoggerLogInfo("Startup timing master %d at %.1f s: max wake latency %.3f us; max execution %.3f us; cycle period min/max %.3f/%.3f us.\n",
+        master,elapsed/1.0e9,timingMaxWakeNs/1.0e3,timingMaxExecutionNs/1.0e3,
+        timingMinPeriodNs/1.0e3,timingMaxPeriodNs/1.0e3);
+      timingNextReportNs=elapsed+5.0e9;
+    }
+  }
+
   explicit StartupState(bool gateEnabled)
     : axisInitializationReleased(!gateEnabled), commandsReleased(!gateEnabled) {}
 };
@@ -448,7 +489,7 @@ void cyclic_task(void *usr) {
   // Snapshot the configuration once per runtime entry.
   const bool dataInputsConfigured = plcs && plcs->hasDataInputProducers();
   const bool startupGateEnabled =
-    startupGateConfigured.load(std::memory_order_acquire);
+    startupGateConfigured.load(std::memory_order_acquire) || !ec->startupSdosReady();
   // Explicit opt-out for applications that never call iocInit/iocRun.
   const char *waitForIoc = getenv("ECMC_WAIT_FOR_IOC_RUNNING");
   const bool waitForIocRunning = !waitForIoc || strcmp(waitForIoc, "0") != 0;
@@ -586,7 +627,7 @@ void cyclic_task(void *usr) {
         (!waitForIocRunning || iocRunning.load(std::memory_order_acquire))) {
       startup.waitSeconds += mcuPeriod / 1.0e9;
       const bool timingReady = (!ioActive || io.timingReady()) && additionalIoReady;
-      if (ecStat && timingReady) {
+      if (ecStat && timingReady && ec->startupSdosReady()) {
         startup.stableSeconds += mcuPeriod / 1.0e9;
       } else {
         startup.stableSeconds = 0;
@@ -608,7 +649,11 @@ void cyclic_task(void *usr) {
         ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization.\n");
       } else if (startup.waitSeconds >= ecTimeoutSeconds) {
         startup.timedOut = true;
-        ecmcRtLoggerLogError("Startup: EtherCAT did not stabilize after IOC running; axes and PLCs remain held. Restart runtime after resolving the bus fault.\n");
+        ecmcRtLoggerLogError("Startup readiness: bus=%d, timing=%d, SDO=%d, stable=%.3fs, elapsed=%.3fs.\n",
+                              ecStat,timingReady,ec->startupSdosReady(),
+                              startup.stableSeconds,startup.waitSeconds);
+        ec->reportStartupSdoStatus();
+        ecmcRtLoggerLogError("Startup: EtherCAT/SDO verification did not become ready after IOC running; axes and PLCs remain held. Restart runtime after resolving the fault.\n");
       }
     }
 
@@ -796,6 +841,11 @@ void cyclic_task(void *usr) {
     for (auto *driver : additionalIo)
       if (driver->isActive()) driver->writeOutputs(masterActivationTimeOffset);
     clock_gettime(CLOCK_MONOTONIC, &endTime);
+    if (!startup.timingFirstLogged ||
+        (!startup.axisInitializationReleased && !startup.timedOut)) {
+      startup.recordTiming(masterId,masterActivationTimeMonotonic,wakeupTime,
+                            startTime,sendTime,endTime);
+    }
   }  // enc of RT-loop
 
   clearControllerErrorObjectsRT();

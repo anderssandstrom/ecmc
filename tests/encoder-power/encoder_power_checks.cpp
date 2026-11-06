@@ -828,6 +828,54 @@ int main() {
       CHECK(r.axis->validate()==ERROR_ENC_POWER_CONFIG);
       CHECK(!r.axis->getEnable()); ++count;
     }
+
+    {
+      scenario="ordinary encoder motion bypasses unused power coordination";
+      Rig r(true,false,true,false,false);
+      auto *enc=r.axis->getPrimEnc();
+      CHECK(enc->setPowerEnable(false)==0);
+      CHECK(r.axis->setRealTimeStarted(true)==0);
+      auto tick=[&]() {
+        r.ready=1; r.alarm=0;
+        r.raw=uint32_t(std::llround(r.physical*1000));
+        r.axis->execute(true);
+        r.physical+=r.axis->getAxisStatusDataPtr()->currentVelocitySetpoint*.001;
+      };
+      for(int i=0;i<100;++i) tick();
+      CHECK(!r.axis->getInStartupPhase()); CHECK(!r.axis->getErrorID());
+      CHECK(enc->getPowerState()==0); CHECK(!enc->powerPositionSyncPending());
+      CHECK(r.axis->moveAbsolutePosition(10.05,.2,1,1)==0);
+      for(int i=0;i<1500;++i) tick();
+      CHECK(!r.axis->getBusy()); CHECK(!r.axis->getErrorID());
+      CHECK(std::abs(r.axis->getAxisStatusDataPtr()->currentPositionSetpoint-10.05)<1e-8);
+      CHECK(std::abs(enc->getActPos()-10.05)<.002);
+      ++count;
+    }
+    {
+      scenario="pending power position sync survives disabling power control";
+      Rig r(true,false,true,false,false);
+      auto *enc=r.axis->getPrimEnc();
+      r.ready=1; r.alarm=0; r.raw=12000;
+      enc->requestPower(true);
+      for(int i=0;i<100;++i) enc->readEntries(true);
+      CHECK(enc->getPowerReady()); CHECK(enc->powerPositionSyncPending());
+      enc->requestPower(false);
+      enc->readEntries(true);
+      CHECK(enc->getPowerOff()); CHECK(enc->powerPositionSyncPending());
+      CHECK(enc->setPowerEnable(false)==0);
+      CHECK(r.axis->setRealTimeStarted(true)==0);
+      for(int i=0;i<100;++i) r.axis->execute(true);
+      CHECK(!enc->powerPositionSyncPending()); CHECK(!r.axis->getErrorID());
+      CHECK(!r.axis->getInStartupPhase()); CHECK(std::abs(enc->getActPos()-12)<1e-8);
+      // Re-enable power control after ordinary operation: the next motion must
+      // still wake and wait for feedback, with no stale cached membership.
+      CHECK(enc->setPowerEnable(true)==0);
+      r.physical=12;
+      CHECK(r.axis->moveAbsolutePosition(12.05,.2,1,1)==0);
+      r.waitMotion(); r.finishMove();
+      CHECK(!r.axis->getErrorID()); CHECK(enc->getPowerReady());
+      ++count;
+    }
     std::cout<<"Encoder relay power: "<<count<<" production axis/encoder scenarios passed.\n";
   } catch(const std::exception &error) { std::cerr<<error.what()<<'\n'; return 1; }
 }
