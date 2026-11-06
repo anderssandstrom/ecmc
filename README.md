@@ -1,5 +1,7 @@
 # ecmc
 
+[![Hardware-free tests (master)](https://github.com/anderssandstrom/ecmc/actions/workflows/hardware-free-tests.yml/badge.svg?branch=master)](https://github.com/anderssandstrom/ecmc/actions/workflows/hardware-free-tests.yml?query=branch%3Amaster)
+
 `ecmc` is an EPICS-based motion control and data acquisition module for EtherCAT systems.
 It combines axis control, realtime PLC logic, data acquisition, and runtime extensions in one IOC-oriented package.
 
@@ -106,6 +108,9 @@ This builds the support library, example IOC application, and boot files through
 
 Hardware-free regression tests can be run with `python3 tests/run_tests.py`.
 See [tests/README.md](tests/README.md) for requirements and coverage.
+The badge above shows the GitHub Actions result for `master` in
+`anderssandstrom/ecmc`, covering the GCC and Clang jobs. Click it for individual
+test output. Live IOC simulation and hardware test results are separate.
 
 For a real system, start with `ecmccfg` examples rather than building a full configuration manually.
 
