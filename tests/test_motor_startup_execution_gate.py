@@ -66,11 +66,12 @@ stubs = r'''
 #include <atomic>
 #include <vector>
 #include <cstring>
+#include <ctime>
 constexpr int ERROR_AXIS_BUSY = 1, ECMC_MODE_CONFIG = 0;
 std::atomic<bool> startupCommandsHeld {true};
 std::atomic<int> startupSharedBlockingAxis {-1};
 bool ecmcStartupCommandsHeld() { return startupCommandsHeld.load(); }
-void ecmcRtLoggerLogInfo(const char *) {}
+void ecmcRtLoggerLogInfo(const char *, ...) {}
 int waitWarnings = 0;
 void ecmcRtLoggerLogError(const char *, ...) { ++waitWarnings; }
 struct ecmcAxisBase {
