@@ -269,16 +269,18 @@ static void startupPolicies() {
   CHECK(b.controller.values.at(Controller::motorHighLimit_) == 6);
   b.checkEcmc(-10, 10);
   context = "restore requested while sync disabled stays pending";
-  Bench b; b.ecmcLimits(-10, 10); b.motorFields(-4, 6);
-  b.motor.updateFirstPollDone_ = false;
-  b.motor.drvlocal.restoreMotorSoftlimits = true;
-  b.motor.captureRestoredSoftLimits(-4, 6, 1);
-  CHECK(b.motor.initializeSoftLimits() == asynError);
-  CHECK(!b.motor.updateFirstPollDone_);
-  b.checkEcmc(-10, 10); b.checkMotor(-4, 6);
-  b.controller.values[Controller::motorFlagsRwSoftLimits_] = 1;
-  CHECK(b.motor.initializeSoftLimits() == asynSuccess);
-  b.checkEcmc(-4, 6);
+  {
+    Bench b; b.ecmcLimits(-10, 10); b.motorFields(-4, 6);
+    b.motor.updateFirstPollDone_ = false;
+    b.motor.drvlocal.restoreMotorSoftlimits = true;
+    b.motor.captureRestoredSoftLimits(-4, 6, 1);
+    CHECK(b.motor.initializeSoftLimits() == asynError);
+    CHECK(!b.motor.updateFirstPollDone_);
+    b.checkEcmc(-10, 10); b.checkMotor(-4, 6);
+    b.controller.values[Controller::motorFlagsRwSoftLimits_] = 1;
+    CHECK(b.motor.initializeSoftLimits() == asynSuccess);
+    b.checkEcmc(-4, 6);
+  }
 }
 
 #include "coordinate_checks.h"
