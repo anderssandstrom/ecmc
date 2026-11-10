@@ -760,6 +760,16 @@ asynStatus ecmcMotorRecordAxis::updateSoftLimitSyncState(bool updateParams,
     }
     return syncSoftLimitInterfaces(updateParams);
   }
+  if (syncWasEnabled && !syncIsEnabled) {
+    // Release the read-only dial range latched by the motor record while
+    // synchronization was enabled; it would otherwise keep clamping dial
+    // limit edits, including the zero pair, after synchronization turns off.
+    asynMotorAxis::setDoubleParam(pC_->motorLowLimitRO_,  0);
+    asynMotorAxis::setDoubleParam(pC_->motorHighLimitRO_, 0);
+    if (updateParams) {
+      callParamCallbacks();
+    }
+  }
 #endif //motorFlagsRwSoftLimitsString
   return asynSuccess;
 }
@@ -809,7 +819,8 @@ asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool force, bool updateParam
     return asynSuccess;
   }
 
-  if(!isSoftLimitSyncEnabled() && !force) {
+  const bool syncEnabled = isSoftLimitSyncEnabled();
+  if(!syncEnabled && !force) {
     return asynSuccess;
   }
 
@@ -823,22 +834,32 @@ asynStatus ecmcMotorRecordAxis::syncMotorSoftLimits(bool force, bool updateParam
   enabledFwd = drvlocal.ecmcAxis->getMon()->getEnableSoftLimitFwd();
   if (ecmcRTMutex)epicsMutexUnlock(ecmcRTMutex);
 
-  if((enabledBwd == 0 && enabledFwd == 0) || (fValueBwd == 0 && fValueFwd == 0)) {
+  const bool ecmcLimitsDefined =
+    (enabledBwd != 0 || enabledFwd != 0) && (fValueBwd != 0 || fValueFwd != 0);
+
+  if (syncEnabled && ecmcLimitsDefined) {
+    asynMotorAxis::setDoubleParam(pC_->motorLowLimitRO_,  fValueBwd);
+    asynMotorAxis::setDoubleParam(pC_->motorHighLimitRO_, fValueFwd);
+  } else {
+    // Without synchronization the motor dial limits are record-local.
+    // Publishing the ECMC limits as a read-only driver range makes the
+    // motor record clamp dial limit edits, including the zero pair that
+    // disables the motor limits.
     asynMotorAxis::setDoubleParam(pC_->motorLowLimitRO_,  0);
     asynMotorAxis::setDoubleParam(pC_->motorHighLimitRO_, 0);
-    if (force) {
+  }
+
+  if (force) {
+    // Legacy initial seed: the writable motor limits follow the ECMC pair once.
+    if (ecmcLimitsDefined) {
+      asynMotorAxis::setDoubleParam(pC_->motorLowLimit_,  fValueBwd);
+      asynMotorAxis::setDoubleParam(pC_->motorHighLimit_, fValueFwd);
+    } else {
       asynMotorAxis::setDoubleParam(pC_->motorLowLimit_,  0);
       asynMotorAxis::setDoubleParam(pC_->motorHighLimit_, 0);
     }
-  } else {
-    asynMotorAxis::setDoubleParam(pC_->motorLowLimitRO_,  fValueBwd);
-    asynMotorAxis::setDoubleParam(pC_->motorHighLimitRO_, fValueFwd);
-    if (force) {
-      asynMotorAxis::setDoubleParam(pC_->motorLowLimit_,  fValueBwd);
-      asynMotorAxis::setDoubleParam(pC_->motorHighLimit_, fValueFwd);
-    }
   }
-  
+
   if(updateParams) {
     pC_->callParamCallbacks();
   }

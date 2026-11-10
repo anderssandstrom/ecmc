@@ -165,6 +165,20 @@ contracts, not verification of an EtherCAT master or encoder.
 These entries separate functional expectations from implementation-preservation
 checks. They do not claim that every branch or integration path was reviewed.
 
+`test_motor_softlimit_propagation.py`: **USER / INFERRED** four independent/synced
+limit configurations; **DOC** coordinate conversion and EGU magnitude from the
+motor record documentation and startup restore contract; **COMPAT / REVIEW**
+one-time forced startup seeding with sync off and cached read-only-limit state.
+Actual ESS motor helpers are used when their sources are available (provided
+by the pinned CI checkout), with independently calculated OFF/DIR vectors.
+Field storage and transaction routing are adapters; no full IOC, LVIO processing
+or mechanical motion is asserted by that fixture. The live ecmccfg simulator and
+hardware groups test the same requested modes with CA polling and restoration;
+they fail visibly if an independent zero pair cannot be established. Hardware
+limit-reconfiguration cases keep drives disabled. See
+[motor_softlimits/README.md](motor_softlimits/README.md) for exact coverage,
+source requirements and known startup/readback caveats.
+
 | Script | Basis of expectations and source |
 | --- | --- |
 | [test_async_sdo_array.py](test_async_sdo_array.py) | **DOC**: staging, busy ownership, upload bounds, previous good data, scalar/array distinction and error clearing in [runtime-sdo-arrays.md](../documentation/runtime-sdo-arrays.md). **COMPAT**: exact call counts and numeric error encodings. |

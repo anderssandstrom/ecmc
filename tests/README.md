@@ -21,6 +21,10 @@ Stepper/DS402 brake logic, including timing, feedback loss, interlocks and fault
 The [axis monitor tests](monitor/README.md) step the real monitor with controlled
 feedback to check following error, overspeed, at-target timing and limit latching.
 
+The [motor soft-limit propagation tests](motor_softlimits/README.md) exercise
+independent/synchronized motor and native limits. Optional ESS motor sources
+also exercise actual OFF/DIR conversion; CI provides a pinned checkout.
+
 From the repository root, run:
 
 ```sh
@@ -49,7 +53,7 @@ python3 tests/test_motor_record_dmov.py
 
 - Python 3.6 or newer; no third-party Python packages.
 - C and C++ compilers supporting C99 and C++17, respectively.
-- CMake 3.16 or newer for the standalone PLC, drive and monitor tests (POSIX/Linux).
+- CMake 3.16 or newer for the standalone PLC, drive, monitor and motor-limit tests (POSIX/Linux).
 - AddressSanitizer and UndefinedBehaviorSanitizer support and runtime libraries
   for the async SDO, buffer-boundary, path/thread/lookup, LUT/SoE and
   filter/memory-map/object-path, storage-creation/diagnostic-I/O and
@@ -119,6 +123,7 @@ Python, initializes only `exprtkSupport`, and does not build the full IOC.
 | `test_master_slave_start.py` | Production state-machine preparation and source acknowledgement coupled to a real trajectory; delayed brakes, negative control for missed motion, timeout, reset and disabled-state-machine behavior |
 | `test_monitor.py` | Real monitor following-error/overspeed thresholds and delays, latching, reset, enable loss, at-target and directional limits |
 | `test_motor_softlimit_restore.py` | IOC restore hooks, limit precedence, MRES, retries and position-load sample acknowledgement |
+| `test_motor_softlimit_propagation.py` | Independent/synced limit layers, startup seeding, enable flags and optional actual ESS motor OFF/DIR/native-coordinate processing |
 | `test_softlimit_pair.py` | Production monitor pair transfer, enable flags, positive/negative ranges, zero sentinel and invalid-input preservation |
 | `test_startup_diagnostics.py` | Per-axis/shared hold diagnostics, reason and blocker IDs, independent readiness, full status text and axis-addressed callbacks |
 | `test_motor_error_publication.py` | Production error callback publishes the current problem bit on fault entry/recovery, local errors and soft-limit interlocks; removing the fix fails the callback check |
