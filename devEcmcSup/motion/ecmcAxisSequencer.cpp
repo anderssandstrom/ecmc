@@ -254,7 +254,9 @@ void ecmcAxisSequencer::execute() {
   traj_->setStartPos(status.currentPositionSetpoint);
 
 
-  if (control.command == ECMC_CMD_MOVEVEL || pvtmode_ || !internalTrajSource) {
+  if (control.command == ECMC_CMD_MOVEVEL ||
+      control.command == ECMC_CMD_JOG ||
+      pvtmode_ || !internalTrajSource) {
     status.currentTargetPosition = status.currentPositionSetpoint;
   }
 }
