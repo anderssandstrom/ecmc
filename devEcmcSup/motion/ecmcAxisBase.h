@@ -284,6 +284,9 @@ public:
   int        setAllowMotionFunctions(bool enablePos,
                                      bool enableConstVel,
                                      bool enableHome);
+  bool ignoreDisabledMotionCmds_ = false;
+  int setIgnoreDisabledMotionCommands(int enable) { ignoreDisabledMotionCmds_ = enable != 0; return 0; }
+  bool ignoreMotionCommand(motionCommandTypes command);
   int        getAllowPos();
   int        getAllowConstVelo();
   int        getAllowHome();

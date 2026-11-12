@@ -87,6 +87,7 @@ const char* mcLibCmdList[] = { "mc_move_abs(",
                                "mc_get_busy(",
                                "mc_get_homed(",
                                "mc_get_axis_err(",
+                               "mc_set_ignore_disabled_motion_cmds(",
                                "mc_set_enable_motion_funcs(",
                                "mc_move_ext_pos(",
                                "mc_home_pos(",
@@ -183,7 +184,7 @@ static int statLastAxesExecuteHome_[ECMC_MAX_AXES]={};
 static int statLastSeqExecuteArm_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int statLastSeqExecuteSetStep_[ECMC_MAX_MOTION_SEQUENCES]={};
 static int mc_errorCode = 0;
-static int mc_cmd_count = 94;
+static int mc_cmd_count = 95;
 
 // Note cannot use ecmcAxisBase::move* since the execution in plc with execute needs to be correct
 inline double mc_move_abs(double axIndex,double execute,double pos, double vel, double acc,double dec)
@@ -200,6 +201,7 @@ inline double mc_move_abs(double axIndex,double execute,double pos, double vel, 
 
   int trigg=!statLastAxesExecuteAbs_[index] && (bool)execute;
   statLastAxesExecuteAbs_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
 
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -248,6 +250,7 @@ inline double mc_move_rel(double axIndex,double execute,double pos, double vel, 
 
   int trigg=!statLastAxesExecuteRel_[index] && (bool)execute;
   statLastAxesExecuteRel_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEREL)) return 0;
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -296,6 +299,7 @@ inline double mc_move_vel(double axIndex,double execute, double vel, double acc,
 
   int trigg=!statLastAxesExecuteVel_[index] && (bool)execute;
   statLastAxesExecuteVel_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEVEL)) return 0;
 
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -343,6 +347,7 @@ inline double mc_home(double axIndex,double execute,double seqId, double velTwoa
 
   int trigg=!statLastAxesExecuteHome_[index] && (bool)execute;
   statLastAxesExecuteHome_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -393,6 +398,7 @@ inline double mc_home_pos(double axIndex,double execute,double seqId, double vel
 
   int trigg=!statLastAxesExecuteHome_[index] && (bool)execute;
   statLastAxesExecuteHome_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -960,6 +966,14 @@ inline double mc_get_axis_err(double axIndex)
   return (double) axes[index]->getErrorID();
 }
 
+inline double mc_set_ignore_disabled_motion_cmds(double axIndex, double enable)
+{
+  int index = (int)axIndex;
+  CHECK_PLC_AXIS_RETURN_IF_ERROR(index);
+  CHECK_PLC_AXIS_COM_ALLOWED_RETURN_IF_ERROR(index);
+  return axes[index]->setIgnoreDisabledMotionCommands((int)enable);
+}
+
 inline double mc_set_enable_motion_funcs(double axIndex, 
                                          double enablePos,
                                          double enableVel,
@@ -992,6 +1006,7 @@ inline double mc_move_ext_pos(double axIndex,double execute, double vel, double 
 
   int trigg=!statLastAxesExecuteAbs_[index] && (bool)execute;
   statLastAxesExecuteAbs_[index]=execute;
+  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
 
   if (!(bool)execute){
     mc_errorCode=(double)axis->setExecute((bool)execute);

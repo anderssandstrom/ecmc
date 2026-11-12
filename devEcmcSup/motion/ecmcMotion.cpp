@@ -607,6 +607,11 @@ int getAxisEnable(int axisIndex, int *value) {
   return 0;
 }
 
+int setAxisIgnoreDisabledMotionCommands(int axisIndex, int enable) {
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  return axes[axisIndex]->setIgnoreDisabledMotionCommands(enable);
+}
+
 int setAxisEnableMotionFunctions(int axisIndex,
                                  int enablePos,
                                  int enableConstVel,

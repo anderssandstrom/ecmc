@@ -1391,6 +1391,8 @@ int setAxisAutoDisableAtTgtLtch(int axisIndex, int enable);
  * \note Example: Only allow positioning for axis 3.\n
  * "Cfg.SetAxisEnableMotionFunctions(3,1,0,0)" //Command string to ecmcCmdParser.c.\n
  */
+int setAxisIgnoreDisabledMotionCommands(int axisIndex, int enable);
+
 int setAxisEnableMotionFunctions(int axisIndex,
                                  int enablePos,
                                  int enableConstVel,
