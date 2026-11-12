@@ -8,6 +8,7 @@
 \*************************************************************************/
 
 #include "ecmcMotionDiag.h"
+#include "ecmcMotionDiagSnapshot.h"
 #include "ecmcAxisReal.h"
 #include "ecmcGeneral.h"
 #include "ecmcGlobalsExtern.h"
@@ -15,9 +16,8 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <fstream>
-#include <iomanip>
-#include <sstream>
 #include <unistd.h>
 
 namespace {
@@ -977,12 +977,14 @@ int writeDumpFile(const DiagRequest &request) {
 /*
  * Raw motion-object dump.  This intentionally lives outside the anonymous
  * namespace: the motion classes declare this writer as a friend so every
- * private/protected data member can be included without adding diagnostic
- * getters to the realtime API.
+ * private/protected data member can be captured without adding diagnostic
+ * getters to the realtime API. This traversal only copies owned values into
+ * preallocated storage; YAML serialization happens after releasing the mutex.
  */
 class ecmcMotionStateYamlWriter {
 public:
-  explicit ecmcMotionStateYamlWriter(std::ostream& out) : out_(out) {}
+  explicit ecmcMotionStateYamlWriter(ecmcMotionDiagSnapshot& snapshot)
+    : snapshot_(snapshot) {}
 
   void dumpAll() {
     value("format", "ecmc-motion-object-state-v1");
@@ -994,19 +996,19 @@ public:
 
     for (int i = 0; i < ECMC_MAX_AXES; ++i) {
       if (axes[i]) {
-        std::ostringstream prefix;
+        ecmcDiagPath prefix;
         prefix << "axes[" << i << "]";
         dumpAxis(*axes[i], prefix.str());
       }
       if (axisGroups[i]) {
-        std::ostringstream prefix;
+        ecmcDiagPath prefix;
         prefix << "axisGroups[" << i << "]";
         dumpAxisGroup(*axisGroups[i], prefix.str());
       }
     }
     for (int i = 0; i < ECMC_MAX_MST_SLVS_SMS; ++i) {
       if (masterSlaveSMs[i]) {
-        std::ostringstream prefix;
+        ecmcDiagPath prefix;
         prefix << "masterSlaveSMs[" << i << "]";
         dumpMasterSlave(*masterSlaveSMs[i], prefix.str());
       }
@@ -1019,7 +1021,7 @@ public:
       for (int i = 0; i < ECMC_MAX_AXES; ++i) {
         ecmcMotorRecordAxis *mrAxis = asynPortMotorRecord->getAxis(i);
         if (mrAxis) {
-          std::ostringstream prefix;
+          ecmcDiagPath prefix;
           prefix << "motorRecordAxes[" << i << "]";
           dumpMotorRecordAxis(*mrAxis, prefix.str());
         }
@@ -1028,54 +1030,23 @@ public:
   }
 
 private:
-  std::ostream& out_;
+  ecmcMotionDiagSnapshot& snapshot_;
 
-  void key(const std::string& name) { out_ << name << ": "; }
-  void value(const std::string& name, bool v) {
-    key(name); out_ << (v ? "true" : "false") << '\n';
-  }
-  void value(const std::string& name, const char *v) {
-    key(name); out_ << '"';
-    if (v) {
-      for (const char *p = v; *p; ++p) {
-        if (*p == '\\' || *p == '"') out_ << '\\';
-        if (*p == '\n') out_ << "\\n";
-        else if (*p == '\r') out_ << "\\r";
-        else out_ << *p;
-      }
-    }
-    out_ << "\"\n";
-  }
-  void value(const std::string& name, const std::string& v) {
-    value(name, v.c_str());
-  }
-  template<size_t N>
-  void value(const std::string& name, const char (&v)[N]) {
-    key(name); out_ << '"';
-    for (size_t i = 0; i < N && v[i]; ++i) {
-      if (v[i] == '\\' || v[i] == '"') out_ << '\\';
-      if (v[i] == '\n') out_ << "\\n";
-      else if (v[i] == '\r') out_ << "\\r";
-      else out_ << v[i];
-    }
-    out_ << "\"\n";
+  template<typename T>
+  void value(const ecmcDiagPath& name, const T& v) {
+    snapshot_.value(name, v);
   }
   template<typename T>
-  void value(const std::string& name, const T& v) {
-    key(name); out_ << v << '\n';
+  void pointer(const ecmcDiagPath& name, T *v) {
+    snapshot_.pointer(name, v);
   }
-  template<typename T>
-  void pointer(const std::string& name, T *v) {
-    key(name);
-    if (!v) out_ << "null\n";
-    else out_ << "\"0x" << std::hex << reinterpret_cast<uintptr_t>(v)
-              << std::dec << "\"\n";
-  }
-  static std::string child(const std::string& prefix, const char *name) {
-    return prefix + "." + name;
+  static ecmcDiagPath child(const ecmcDiagPath& prefix, const char *name) {
+    ecmcDiagPath path = prefix;
+    path << "." << name;
+    return path;
   }
 
-  void dumpErrorBase(const ecmcError& o, const std::string& p) {
+  void dumpErrorBase(const ecmcError& o, const ecmcDiagPath& p) {
     value(child(p, "errorPath_"), o.errorPath_);
     value(child(p, "errorPathValid_"), o.errorPathValid_);
     value(child(p, "error_"), o.error_); value(child(p, "errorId_"), o.errorId_);
@@ -1085,15 +1056,15 @@ private:
     value(child(p, "errorsInBuffer_"), o.errorsInBuffer_);
     value(child(p, "bufferIndex_"), o.bufferIndex_);
     for (size_t i = 0; i < o.buffer_.size(); ++i) {
-      std::ostringstream n; n << p << ".buffer_[" << i << "]";
+      ecmcDiagPath n; n << p << ".buffer_[" << i << "]";
       value(n.str(), o.buffer_[i]);
     }
   }
 
-  void dumpEcEntryLink(const ecmcDataLink& o, const std::string& p) {
+  void dumpEcEntryLink(const ecmcDataLink& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
     for (int i = 0; i < ECMC_EC_ENTRY_LINKS_MAX; ++i) {
-      std::ostringstream ep, bp;
+      ecmcDiagPath ep, bp;
       ep << p << ".entryInfoArray_[" << i << "].entry";
       bp << p << ".entryInfoArray_[" << i << "].bitNumber";
       pointer(ep.str(), o.entryInfoArray_[i].entry ? o.entryInfoArray_[i].entry->identity : nullptr);
@@ -1101,7 +1072,7 @@ private:
     }
   }
 
-  void dumpCommand(const ecmcAxisDataCommand& o, const std::string& p) {
+  void dumpCommand(const ecmcAxisDataCommand& o, const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1111,7 +1082,7 @@ private:
     D(accelerationTarget); D(decelerationTarget); D(allowSourceChangeWhenEnabled);
     D(enableAtStartup); E(drvMode); P(asynDataItemCtrlWord);
     const ecmcAsynAxisControlType& w = o.controlWord_;
-    const std::string wp = child(p, "controlWord_");
+    const ecmcDiagPath wp = child(p, "controlWord_");
     value(child(wp, "enableCmd"), static_cast<bool>(w.enableCmd));
     value(child(wp, "executeCmd"), static_cast<bool>(w.executeCmd));
     value(child(wp, "stopCmd"), static_cast<bool>(w.stopCmd));
@@ -1132,7 +1103,7 @@ private:
 #undef D
   }
 
-  void dumpStatus(const ecmcAxisDataStatus& o, const std::string& p) {
+  void dumpStatus(const ecmcAxisDataStatus& o, const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
     D(externalTrajectoryPosition); D(externalTrajectoryVelocity);
@@ -1149,7 +1120,7 @@ private:
     D(homeSwitchFiltered); D(startupFinsished); D(distToStop); D(errorCode);
     D(warningCode); D(axisId); D(cycleCounter); E(axisType); D(sampleTime);
     const ecmcAxisStatusWordType& w = o.statusWord_;
-    const std::string wp = child(p, "statusWord_");
+    const ecmcDiagPath wp = child(p, "statusWord_");
 #define B(name) value(child(wp, #name), static_cast<bool>(w.name))
     B(enable); B(enabled); B(execute); B(busy); B(attarget); B(moving);
     B(limitfwd); B(limitbwd); B(homeswitch); B(homed); B(inrealtime);
@@ -1157,7 +1128,7 @@ private:
     B(softlimbwdena); B(instartup); B(sumilockfwd); B(sumilockbwd);
     B(softlimilockfwd); B(softlimilockbwd); B(localBusy); B(globalBusy);
     B(blocked); B(autoExecuteOnTargetPos);
-    const std::string wp2 = child(p, "statusWord2_");
+    const ecmcDiagPath wp2 = child(p, "statusWord2_");
     value(child(wp2, "seqstate"), static_cast<long long>(o.statusWord2_.seqstate));
     value(child(wp2, "lastilock"), static_cast<long long>(o.statusWord2_.lastilock));
 #undef B
@@ -1165,7 +1136,7 @@ private:
 #undef D
   }
 
-  void dumpInterlocks(const ecmcAxisDataInterlocks& o, const std::string& p) {
+  void dumpInterlocks(const ecmcAxisDataInterlocks& o, const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
     D(hardwareInterlock); D(bwdLimitInterlock); D(fwdLimitInterlock);
@@ -1185,7 +1156,7 @@ private:
 #undef D
   }
 
-  void dumpAxisData(const ecmcAxisData& o, const std::string& p) {
+  void dumpAxisData(const ecmcAxisData& o, const ecmcDiagPath& p) {
     dumpCommand(o.control_, child(p, "control_"));
     dumpCommand(o.controlOld_, child(p, "controlOld_"));
     dumpStatus(o.status_, child(p, "status_"));
@@ -1194,12 +1165,12 @@ private:
     dumpInterlocks(o.interlocksOld_, child(p, "interlocksOld_"));
     value(child(p, "encoderDiffConfigChanged_"), o.encoderDiffConfigChanged_);
     for (int i = 0; i < ECMC_ASYN_AX_PAR_COUNT; ++i) {
-      std::ostringstream n; n << p << ".axAsynParams_[" << i << "]";
+      ecmcDiagPath n; n << p << ".axAsynParams_[" << i << "]";
       pointer(n.str(), o.axAsynParams_[i]);
     }
   }
 
-  void dumpFilter(const ecmcFilter& o, const std::string& p) {
+  void dumpFilter(const ecmcFilter& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
     pointer(child(p, "bufferVel_"), o.bufferVel_);
     value(child(p, "my_"), o.my_); value(child(p, "last_"), o.last_);
@@ -1214,13 +1185,13 @@ private:
     value(child(p, "posStateValid_"), o.posStateValid_);
     if (o.bufferVel_) {
       for (size_t i = 0; i < o.filterSize_; ++i) {
-        std::ostringstream n; n << p << ".bufferVel_[" << i << "]";
+        ecmcDiagPath n; n << p << ".bufferVel_[" << i << "]";
         value(n.str(), o.bufferVel_[i]);
       }
     }
   }
 
-  void dumpEncoder(const ecmcEncoder& o, const std::string& p) {
+  void dumpEncoder(const ecmcEncoder& o, const ecmcDiagPath& p) {
     dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1279,7 +1250,7 @@ private:
 #undef D
   }
 
-  void dumpMonitor(const ecmcMonitor& o, const std::string& p) {
+  void dumpMonitor(const ecmcMonitor& o, const ecmcDiagPath& p) {
     dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1294,7 +1265,7 @@ private:
     D(enableAlarmAtHardlimitFwd_); P(data_); D(switchFilterCounter_);
     D(limitFwdFilterSum_); D(limitBwdFilterSum_); D(homeFilterSum_);
     for (int i = 0; i < ECMC_MON_SWITCHES_FILTER_CYCLES; ++i) {
-      std::ostringstream a, b, c;
+      ecmcDiagPath a, b, c;
       a << p << ".limitFwdFilterBuffer_[" << i << "]";
       b << p << ".limitBwdFilterBuffer_[" << i << "]";
       c << p << ".homeFilterBuffer_[" << i << "]";
@@ -1305,7 +1276,7 @@ private:
     D(latchOnLimit_); D(enableAlarmOnSofLimits_); E(hardwareInterlockPolarity_);
     E(lowLimPolarity_); E(highLimPolarity_); E(homePolarity_); P(encArray_);
     for (int i = 0; i < ECMC_MAX_ENCODERS; ++i) {
-      std::ostringstream n; n << p << ".diffEncArray_[" << i << "]";
+      ecmcDiagPath n; n << p << ".diffEncArray_[" << i << "]";
       pointer(n.str(), o.diffEncArray_[i]);
     }
     D(diffEncCount_); D(diffEncPrimaryIndex_); D(diffEncConfiguredCount_);
@@ -1325,7 +1296,7 @@ private:
 #undef D
   }
 
-  void dumpTrajectory(const ecmcTrajectoryBase& o, const std::string& p) {
+  void dumpTrajectory(const ecmcTrajectoryBase& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1340,7 +1311,7 @@ private:
     D(externalVeloLimitActive_);
     const ecmcTrajectoryTrapetz *trap = dynamic_cast<const ecmcTrajectoryTrapetz *>(&o);
     if (trap) {
-      const std::string q = child(p, "trapetz");
+      const ecmcDiagPath q = child(p, "trapetz");
       value(child(q, "stepACC_"), trap->stepACC_);
       value(child(q, "stepDEC_"), trap->stepDEC_);
       value(child(q, "stepNOM_"), trap->stepNOM_);
@@ -1354,7 +1325,7 @@ private:
     }
     const ecmcTrajectoryS *s = dynamic_cast<const ecmcTrajectoryS *>(&o);
     if (s) {
-      const std::string q = child(p, "s_curve");
+      const ecmcDiagPath q = child(p, "s_curve");
       pointer(child(q, "otg_"), s->otg_); pointer(child(q, "input_"), s->input_);
       pointer(child(q, "output_"), s->output_); value(child(q, "stepNOM_"), s->stepNOM_);
       value(child(q, "localCurrentPositionSetpoint_"), s->localCurrentPositionSetpoint_);
@@ -1368,7 +1339,7 @@ private:
 #undef D
   }
 
-  void dumpPid(const ecmcPIDController& o, const std::string& p) {
+  void dumpPid(const ecmcPIDController& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
 #define D(name) value(child(p, #name), o.name)
 #define P(name) pointer(child(p, #name), o.name)
@@ -1383,7 +1354,7 @@ private:
 #undef D
   }
 
-  void dumpSequencer(const ecmcAxisSequencer& o, const std::string& p) {
+  void dumpSequencer(const ecmcAxisSequencer& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1409,7 +1380,7 @@ private:
 #undef D
   }
 
-  void dumpPvtSequence(const ecmcAxisPVTSequence& o, const std::string& p) {
+  void dumpPvtSequence(const ecmcAxisPVTSequence& o, const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
@@ -1418,7 +1389,7 @@ private:
     D(firstSegTime_); D(nextTime_); D(busy_); D(positionOffset_); D(execute_);
     D(executeOld_); P(data_); D(relativeMode_); E(trgMode_);
     for (size_t i = 0; i < o.points_.size(); ++i) {
-      std::ostringstream q; q << p << ".points_[" << i << "]";
+      ecmcDiagPath q; q << p << ".points_[" << i << "]";
       pointer(q.str(), o.points_[i]);
       if (o.points_[i]) {
         value(child(q.str(), "position_"), o.points_[i]->position_);
@@ -1427,7 +1398,7 @@ private:
       }
     }
     for (size_t i = 0; i < o.segments_.size(); ++i) {
-      std::ostringstream q; q << p << ".segments_[" << i << "]";
+      ecmcDiagPath q; q << p << ".segments_[" << i << "]";
       ecmcPvtSegment *s = o.segments_[i]; pointer(q.str(), s);
       if (s) {
         pointer(child(q.str(), "startPnt_"), s->startPnt_);
@@ -1441,11 +1412,11 @@ private:
       }
     }
     for (size_t i = 0; i < o.resultPosActArray_.size(); ++i) {
-      std::ostringstream n; n << p << ".resultPosActArray_[" << i << "]";
+      ecmcDiagPath n; n << p << ".resultPosActArray_[" << i << "]";
       value(n.str(), o.resultPosActArray_[i]);
     }
     for (size_t i = 0; i < o.resultPosErrArray_.size(); ++i) {
-      std::ostringstream n; n << p << ".resultPosErrArray_[" << i << "]";
+      ecmcDiagPath n; n << p << ".resultPosErrArray_[" << i << "]";
       value(n.str(), o.resultPosErrArray_[i]);
     }
 #undef P
@@ -1453,7 +1424,7 @@ private:
 #undef D
   }
 
-  void dumpPvtController(const ecmcPVTController& o, const std::string& p) {
+  void dumpPvtController(const ecmcPVTController& o, const ecmcDiagPath& p) {
     dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1466,15 +1437,15 @@ private:
     D(axesBusyStateValid_); D(halfSampleTime_); P(asynPortDriver_);
     P(asynSoftTrigger_); D(softTrigger_);
     for (size_t i = 0; i < o.startPositions_.size(); ++i) {
-      std::ostringstream n; n << p << ".startPositions_[" << i << "]";
+      ecmcDiagPath n; n << p << ".startPositions_[" << i << "]";
       value(n.str(), o.startPositions_[i]);
     }
     for (size_t i = 0; i < o.axes_.size(); ++i) {
-      std::ostringstream n; n << p << ".axes_[" << i << "]";
+      ecmcDiagPath n; n << p << ".axes_[" << i << "]";
       pointer(n.str(), o.axes_[i]);
     }
     for (size_t i = 0; i < o.pvtObjs_.size(); ++i) {
-      std::ostringstream n; n << p << ".pvtObjs_[" << i << "]";
+      ecmcDiagPath n; n << p << ".pvtObjs_[" << i << "]";
       pointer(n.str(), o.pvtObjs_[i]);
       if (o.pvtObjs_[i]) dumpPvtSequence(*o.pvtObjs_[i], n.str());
     }
@@ -1483,7 +1454,7 @@ private:
 #undef D
   }
 
-  void dumpDrive(const ecmcDriveBase& o, const std::string& p) {
+  void dumpDrive(const ecmcDriveBase& o, const ecmcDiagPath& p) {
     dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1504,7 +1475,7 @@ private:
     D(maxVeloOutput_); D(veloPosOutput_); D(veloRawOffset_); P(cspEnc_);
     const ecmcDriveDS402 *ds402 = dynamic_cast<const ecmcDriveDS402 *>(&o);
     if (ds402) {
-      const std::string q = child(p, "ds402");
+      const ecmcDiagPath q = child(p, "ds402");
       value(child(q, "enableStateMachine_"),
             static_cast<long long>(ds402->enableStateMachine_));
       value(child(q, "enableStateMachineOld_"),
@@ -1524,7 +1495,7 @@ private:
 #undef D
   }
 
-  void dumpPositionCompare(const ecmcPositionCompare& o, const std::string& p) {
+  void dumpPositionCompare(const ecmcPositionCompare& o, const ecmcDiagPath& p) {
     dumpEcEntryLink(static_cast<const ecmcDataLink&>(o), child(p, "ecEntryLinkBase"));
 #define D(name) value(child(p, #name), o.name)
 #define P(name) pointer(child(p, #name), o.name)
@@ -1540,7 +1511,7 @@ private:
     P(asynLastOutputParam_); P(asynTargetCmdParam_); P(asynDirectionCmdParam_);
     P(asynOutputCmdParam_); P(asynArmCmdParam_); P(asynCancelCmdParam_);
     const ecmcPositionCompareStatus& s = o.status_;
-    const std::string sp = child(p, "status_");
+    const ecmcDiagPath sp = child(p, "status_");
     value(child(sp, "state"), static_cast<long long>(s.state));
     value(child(sp, "reason"), static_cast<long long>(s.reason));
     value(child(sp, "sequence"), s.sequence); value(child(sp, "target"), s.target);
@@ -1559,14 +1530,14 @@ private:
 #undef D
   }
 
-  void dumpAxis(const ecmcAxisBase& o, const std::string& p) {
+  void dumpAxis(const ecmcAxisBase& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
 #define P(name) pointer(child(p, #name), o.name)
     P(traj_); P(mon_);
     for (int i = 0; i < ECMC_MAX_ENCODERS; ++i) {
-      std::ostringstream n; n << p << ".encArray_[" << i << "]";
+      ecmcDiagPath n; n << p << ".encArray_[" << i << "]";
       pointer(n.str(), o.encArray_[i]);
     }
     E(axisState_); P(asynPortDriver_); pointer(child(p, "statusOutputEntry_"), o.statusOutputEntry_ ? o.statusOutputEntry_->identity : nullptr);
@@ -1608,7 +1579,7 @@ private:
       dumpFilter(*o.extEncVeloFilter_, child(p, "extEncVeloFilter"));
     for (int i = 0; i < ECMC_MAX_ENCODERS; ++i) {
       if (o.encArray_[i]) {
-        std::ostringstream n; n << p << ".encoders[" << i << "]";
+        ecmcDiagPath n; n << p << ".encoders[" << i << "]";
         dumpEncoder(*o.encArray_[i], n.str());
       }
     }
@@ -1626,26 +1597,26 @@ private:
 #undef D
   }
 
-  void dumpAxisGroup(const ecmcAxisGroup& o, const std::string& p) {
+  void dumpAxisGroup(const ecmcAxisGroup& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
     value(child(p, "name_"), o.name_); value(child(p, "index_"), o.index_);
     value(child(p, "axesCounter_"), static_cast<unsigned long long>(o.axesCounter_));
     value(child(p, "blocked_"), o.blocked_);
     for (size_t i = 0; i < o.axes_.size(); ++i) {
-      std::ostringstream n; n << p << ".axes_[" << i << "]";
+      ecmcDiagPath n; n << p << ".axes_[" << i << "]";
       pointer(n.str(), o.axes_[i]);
     }
     for (size_t i = 0; i < o.axesIds_.size(); ++i) {
-      std::ostringstream n; n << p << ".axesIds_[" << i << "]";
+      ecmcDiagPath n; n << p << ".axesIds_[" << i << "]";
       value(n.str(), o.axesIds_[i]);
     }
     for (size_t i = 0; i < o.axisInGroup_.size(); ++i) {
-      std::ostringstream n; n << p << ".axisInGroup_[" << i << "]";
+      ecmcDiagPath n; n << p << ".axisInGroup_[" << i << "]";
       value(n.str(), static_cast<bool>(o.axisInGroup_[i]));
     }
   }
 
-  void dumpMotorRecordAxis(const ecmcMotorRecordAxis& o, const std::string& p) {
+  void dumpMotorRecordAxis(const ecmcMotorRecordAxis& o, const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define P(name) pointer(child(p, #name), o.name)
     P(pC_);
@@ -1712,7 +1683,7 @@ private:
   }
 
   void dumpMotorRecordController(const ecmcMotorRecordController& o,
-                                 const std::string& p) {
+                                 const ecmcDiagPath& p) {
 #define D(name) value(child(p, #name), o.name)
 #define P(name) pointer(child(p, #name), o.name)
     P(pAxes_); D(features_); value(child(p, "ctrlLocal.oldStatus"),
@@ -1760,7 +1731,7 @@ private:
 #undef D
   }
 
-  void dumpMasterSlave(const ecmcMasterSlaveStateMachine& o, const std::string& p) {
+  void dumpMasterSlave(const ecmcMasterSlaveStateMachine& o, const ecmcDiagPath& p) {
     dumpErrorBase(static_cast<const ecmcError&>(o), child(p, "errorBase"));
 #define D(name) value(child(p, #name), o.name)
 #define E(name) value(child(p, #name), static_cast<long long>(o.name))
@@ -1796,61 +1767,81 @@ void ecmcMotionDiagMakeDumpFileName(char *buffer, size_t bufferSize) {
   makeDumpFileName(buffer, bufferSize);
 }
 
+namespace {
+// The mutex protects the same state as before. Allocation, formatting and file
+// I/O must remain outside this scope, including on failed/retried captures.
+class MotionSnapshotLock {
+public:
+  MotionSnapshotLock() : mutex_(ecmcRTMutex), acquired_(true) {
+    if (mutex_ && epicsMutexLock(mutex_) != epicsMutexLockOK) {
+      mutex_ = nullptr;
+      acquired_ = false;
+    }
+  }
+  ~MotionSnapshotLock() { if (mutex_) epicsMutexUnlock(mutex_); }
+  bool acquired() const { return acquired_; }
+private:
+  epicsMutexId mutex_;
+  bool acquired_;
+  MotionSnapshotLock(const MotionSnapshotLock&) = delete;
+  MotionSnapshotLock& operator=(const MotionSnapshotLock&) = delete;
+};
+
+bool captureMotionSnapshot(ecmcMotionDiagSnapshot& snapshot) {
+  // Dynamic PVT/filter sizes may change between attempts. Each successful
+  // snapshot is one complete locked traversal, never a mix of captures.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    snapshot.reset();
+    {
+      MotionSnapshotLock lock;
+      if (!lock.acquired()) return false;
+      ecmcMotionStateYamlWriter writer(snapshot);
+      writer.dumpAll();
+    }
+    if (snapshot.complete()) return true;
+    if (!snapshot.valid()) return false;
+    if (attempt < 2) snapshot.resize(snapshot.required());
+  }
+  return false;
+}
+}  // namespace
+
 int ecmcMotionStateWriteYaml(const char *fileName) {
-  if (!fileName || fileName[0] == '\0') {
+  if (!fileName || fileName[0] == '\0') return -1;
+  try {
+    ecmcMotionDiagSnapshot snapshot;
+    if (!captureMotionSnapshot(snapshot)) return -1;
+    std::ofstream file(fileName, std::ios::out | std::ios::trunc);
+    if (!file.is_open()) return -1;
+    const bool written = snapshot.write(file);
+    file.close();
+    return written && file.good() ? 0 : -1;
+  } catch (const std::exception&) {
     return -1;
   }
-
-  std::ostringstream snapshot;
-  if (ecmcRTMutex) {
-    epicsMutexLock(ecmcRTMutex);
-  }
-  ecmcMotionStateYamlWriter writer(snapshot);
-  writer.dumpAll();
-  if (ecmcRTMutex) {
-    epicsMutexUnlock(ecmcRTMutex);
-  }
-
-  std::ofstream file(fileName, std::ios::out | std::ios::trunc);
-  if (!file.is_open()) {
-    return -1;
-  }
-  file << snapshot.str();
-  file.close();
-  return file.good() ? 0 : -1;
 }
 
 int ecmcMotionDiagWriteDumpFile(const char *fileName, int level) {
-  if (!fileName || fileName[0] == '\0') {
-    return -1;
-  }
+  if (!fileName || fileName[0] == '\0') return -1;
   DiagRequest request = {};
   request.level = level;
   snprintf(request.file, sizeof(request.file), "%s", fileName);
   const int status = writeDumpFile(request);
-  if (status || level < 2) {
-    return status;
-  }
+  if (status || level < 2) return status;
 
-  std::ostringstream snapshot;
-  if (ecmcRTMutex) {
-    epicsMutexLock(ecmcRTMutex);
-  }
-  ecmcMotionStateYamlWriter writer(snapshot);
-  writer.dumpAll();
-  if (ecmcRTMutex) {
-    epicsMutexUnlock(ecmcRTMutex);
-  }
-
-  std::ofstream file(fileName, std::ios::out | std::ios::app);
-  if (!file.is_open()) {
+  try {
+    ecmcMotionDiagSnapshot snapshot;
+    if (!captureMotionSnapshot(snapshot)) return -1;
+    std::ofstream file(fileName, std::ios::out | std::ios::app);
+    if (!file.is_open()) return -1;
+    file << "---\n";
+    file << "# Complete raw motion-object state (diagnostic level 2)\n";
+    const bool written = snapshot.write(file);
+    file.close();
+    return written && file.good() ? 0 : -1;
+  } catch (const std::exception&) {
     return -1;
   }
-  file << "---\n";
-  file << "# Complete raw motion-object state (diagnostic level 2)\n";
-  file << snapshot.str();
-  file.close();
-  return file.good() ? 0 : -1;
 }
 
 void ecmcMotionDiagBuildAxisReport(int axisIndex, char *buffer, size_t bufferSize) {

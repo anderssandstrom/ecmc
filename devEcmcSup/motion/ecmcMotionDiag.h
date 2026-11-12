@@ -13,6 +13,11 @@
 #include <stddef.h>
 
 void ecmcMotionDiagMakeDumpFileName(char *buffer, size_t bufferSize);
+// Raw YAML state is captured under the RT mutex, then formatted/written without
+// it. Capture remains proportional to the configured state (including PVT and
+// filter arrays). Allocation/capture/output failure returns nonzero; incomplete
+// raw snapshots are never serialized. Level-2 JSON and YAML retain their
+// existing separate capture times.
 int  ecmcMotionDiagWriteDumpFile(const char *fileName, int level);
 int  ecmcMotionStateWriteYaml(const char *fileName);
 void ecmcMotionDiagBuildAxisReport(int axisIndex, char *buffer, size_t bufferSize);

@@ -762,3 +762,16 @@ before any put. Boundary tests accept 39 and reject 40 without writing.
 The Python model and live-harness checks referenced above moved to ecmccfg.
 Run `python3 tests/run_simulation_checks.py` from that repository; C++ tests
 remain here. See ecmccfg `tests/simulation/README.md` for the relocated coverage.
+
+**REGRESSION — diagnostic dump contention with cyclic motion:**
+`test_motion_diag_snapshot.py` requires raw motion-state capture to own scalar,
+string and pointer values without heap allocation/deallocation under the RT
+mutex. Formatting and file I/O happen after capture. A too-small buffer is
+resized unlocked and the entire state recaptured; changing sizes cannot cause
+unbounded retries or a silently truncated successful dump. Failed acquisition,
+allocation and exceptional capture must leave the mutex released. Output tests
+preserve scalar precision, string escaping, pointer notation and the level-2
+YAML delimiter. The full production field traversal is also syntax-checked
+against current motion/motor declarations with external asyn base stubs. This
+does not establish hardware WCET or change the synchronization contract of
+non-RT writers; copying large PVT/filter arrays still scales with their size.
