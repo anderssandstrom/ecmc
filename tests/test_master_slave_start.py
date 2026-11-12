@@ -72,6 +72,7 @@ public:
   const bool *motionStartPermissive_ = nullptr;
   double autoEnableTimeCounter_ = 0, autoEnableTimoutS_ = 5;
   int executed = 0;
+  motionCommandTypes ignoredMotionMessage_ = ECMC_CMD_NOCMD;
   ecmcAxisBase(ecmcAxisData &data, ecmcTrajectoryBase &t) : data_(data), trajectory(t), seq_(data,t) {
     setExternalPtrs(&data.status_.errorCode, &data.status_.warningCode);
     data.axAsynParams_[ECMC_ASYN_AX_CONTROL_BIN_ID] = &publication;
@@ -382,13 +383,16 @@ int main() {
   manualData.status_.statusWord_.enable = manualData.status_.statusWord_.enabled = true;
   manualTraj.setEnable(true); manualTraj.setAcc(1); manualTraj.setDec(1);
   manualTraj.setTargetVel(.4); manualTraj.setTargetPos(.15);
+  manual.ignoredMotionMessage_ = ECMC_CMD_MOVEABS;
   manual.setExecute(true);
   for (int i = 0; i < 250; ++i) assert(manual.tick() == 0);
   assert(manual.getBusy() && manual.executed == 0);
+  assert(manual.ignoredMotionMessage_ == ECMC_CMD_MOVEABS);
   manualReady = true;
   for (int i = 0; i < 2000; ++i) manual.tick();
   assert(std::abs(manualTraj.ecmcTrajectoryBase::getCurrentPosSet() - .15) < 1e-9);
   assert(manual.executed == 1);
+  assert(manual.ignoredMotionMessage_ == ECMC_CMD_NOCMD);
   std::cout << "Master/slave startup: real state transitions wait for drive/brake/source acknowledgement; no missed motion, reset/disabled behavior and timeout verified.\n";
 }
 '''
