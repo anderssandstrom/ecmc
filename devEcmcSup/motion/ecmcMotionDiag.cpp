@@ -404,7 +404,7 @@ void buildAxisReport(int axisIndex, char *buffer, size_t bufferSize) {
   const int blockerCount = collectAxisBlockers(axis, status, blockers, 32);
   const int written = snprintf(buffer,
                                bufferSize,
-                               "Axis %d id=%d cmd=%s mrreqcnt=%u reqcnt=%u execcnt=%u exec=%d enable=%d enabled=%d busy=%d error=0x%x: ",
+                               "Axis %d id=%d cmd=%s mrreqcnt=%u reqcnt=%u execcnt=%u exec=%d enable=%d enabled=%d busy=%d error=0x%x ignored_count=%u last_ignored=%s: ",
                                axisIndex,
                                axis->getAxisID(),
                                commandText(axis->getCommand()),
@@ -415,7 +415,9 @@ void buildAxisReport(int axisIndex, char *buffer, size_t bufferSize) {
                                axis->getEnable() ? 1 : 0,
                                axis->getEnabledOnly() ? 1 : 0,
                                axis->getBusy() ? 1 : 0,
-                               axis->getErrorID());
+                               axis->getErrorID(),
+                               axis->ignoredMotionCommandCount_,
+                               commandText(axis->lastIgnoredMotionCommand_));
   size_t offset = written > 0 ? static_cast<size_t>(written) : 0;
   if (offset >= bufferSize) {
     buffer[bufferSize - 1] = '\0';
@@ -528,6 +530,8 @@ void writeAxis(FILE *fp, int axisIndex, ecmcAxisBase *axis, bool comma) {
   writeJsonInt(fp, 6, "command", axis->getCommand());
   writeJsonInt(fp, 6, "cmd_data", axis->getCmdData());
   writeJsonInt(fp, 6, "motion_command_motor_record_request_counter", axis->getMotionCommandMotorRecordRequestCounter());
+  writeJsonInt(fp, 6, "ignored_command_count", axis->ignoredMotionCommandCount_);
+  writeJsonString(fp, 6, "last_ignored_command", commandText(axis->lastIgnoredMotionCommand_));
   writeJsonInt(fp, 6, "motion_command_request_counter", axis->getMotionCommandRequestCounter());
   writeJsonInt(fp, 6, "motion_command_execute_counter", axis->getMotionCommandExecuteCounter());
   writeJsonBool(fp, 6, "execute", axis->getExecute());

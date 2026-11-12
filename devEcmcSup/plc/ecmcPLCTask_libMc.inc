@@ -201,7 +201,10 @@ inline double mc_move_abs(double axIndex,double execute,double pos, double vel, 
 
   int trigg=!statLastAxesExecuteAbs_[index] && (bool)execute;
   statLastAxesExecuteAbs_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_MOVEABS)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS);
+    return 0;
+  }
 
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -250,7 +253,10 @@ inline double mc_move_rel(double axIndex,double execute,double pos, double vel, 
 
   int trigg=!statLastAxesExecuteRel_[index] && (bool)execute;
   statLastAxesExecuteRel_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEREL)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_MOVEREL)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEREL);
+    return 0;
+  }
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -299,7 +305,10 @@ inline double mc_move_vel(double axIndex,double execute, double vel, double acc,
 
   int trigg=!statLastAxesExecuteVel_[index] && (bool)execute;
   statLastAxesExecuteVel_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEVEL)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_MOVEVEL)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEVEL);
+    return 0;
+  }
 
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -347,7 +356,10 @@ inline double mc_home(double axIndex,double execute,double seqId, double velTwoa
 
   int trigg=!statLastAxesExecuteHome_[index] && (bool)execute;
   statLastAxesExecuteHome_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_HOMING)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING);
+    return 0;
+  }
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -398,7 +410,10 @@ inline double mc_home_pos(double axIndex,double execute,double seqId, double vel
 
   int trigg=!statLastAxesExecuteHome_[index] && (bool)execute;
   statLastAxesExecuteHome_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_HOMING)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_HOMING);
+    return 0;
+  }
   
   if (!(bool)execute){
     mc_errorCode=(double)axes[index]->setExecute((bool)execute);
@@ -1006,7 +1021,10 @@ inline double mc_move_ext_pos(double axIndex,double execute, double vel, double 
 
   int trigg=!statLastAxesExecuteAbs_[index] && (bool)execute;
   statLastAxesExecuteAbs_[index]=execute;
-  if (axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
+  if (axes[index]->motionCommandDisabled(ECMC_CMD_MOVEABS)) {
+    if (trigg) axes[index]->ignoreMotionCommand(ECMC_CMD_MOVEABS);
+    return 0;
+  }
 
   if (!(bool)execute){
     mc_errorCode=(double)axis->setExecute((bool)execute);

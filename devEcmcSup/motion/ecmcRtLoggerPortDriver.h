@@ -30,6 +30,8 @@ struct ecmcEcTimingDiag {
   int64_t timestampCorrectionNs;
 };
 
+void ecmcRtLoggerPortDriverSetAxisStatusText(int axis, int error, int warning, int interlock, int ignored);
+void ecmcRtLoggerPortDriverSetAxisMotorMessage(int axis, const char *message);
 int         ecmcRtLoggerPortDriverStart();
 void        ecmcRtLoggerPortDriverPublishMessage(int level,
                                                  int sourceType,

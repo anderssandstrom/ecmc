@@ -284,9 +284,17 @@ public:
   int        setAllowMotionFunctions(bool enablePos,
                                      bool enableConstVel,
                                      bool enableHome);
+  // Accessed under the same serialization as axis status; never by logger.
+  bool diagnosticTextPublished_ = false;
+  int diagnosticTextError_ = 0, diagnosticTextWarning_ = 0;
+  int diagnosticTextInterlock_ = 0, diagnosticTextIgnored_ = 0;
   bool ignoreDisabledMotionCmds_ = false;
   int setIgnoreDisabledMotionCommands(int enable) { ignoreDisabledMotionCmds_ = enable != 0; return 0; }
   bool ignoreMotionCommand(motionCommandTypes command);
+  bool motionCommandDisabled(motionCommandTypes command);
+  unsigned int ignoredMotionCommandCount_ = 0;
+  motionCommandTypes lastIgnoredMotionCommand_ = ECMC_CMD_NOCMD;
+  motionCommandTypes ignoredMotionMessage_ = ECMC_CMD_NOCMD;
   int        getAllowPos();
   int        getAllowConstVelo();
   int        getAllowHome();

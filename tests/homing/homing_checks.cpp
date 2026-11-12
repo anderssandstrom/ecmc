@@ -94,8 +94,19 @@ int main() {
         CHECK(b.axis->getErrorID()==0);
         b.tick();
       }
+      CHECK(b.axis->ignoredMotionCommandCount_ == 300);
+      CHECK(b.axis->lastIgnoredMotionCommand_ == ECMC_CMD_MOVEVEL);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_MOVEVEL);
       b.finish();
+      b.axis->setAllowMotionFunctions(true, true, true);
+      b.tick();
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_NOCMD);
+      CHECK(b.axis->ignoredMotionCommandCount_ == 300);
+      b.axis->setAllowMotionFunctions(false, false, true);
+      CHECK(b.axis->moveVelocity(1, 1, 1) == 0);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_MOVEVEL);
       b.start(1);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_NOCMD);
       CHECK(b.axis->stopMotion(1)==0);
       CHECK(!b.axis->getEnable());
     }

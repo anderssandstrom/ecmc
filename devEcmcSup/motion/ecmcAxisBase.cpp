@@ -1472,6 +1472,7 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
   }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
     encoderPowerMoveCompleted_ = false;
+    ignoredMotionMessage_ = ECMC_CMD_NOCMD;
     bumpMotionCommandExecuteCounter();
   }
 
@@ -2047,6 +2048,22 @@ int ecmcAxisBase::getCntrlError(double *error) {
 }
 
 void ecmcAxisBase::refreshStatusWd() {
+  if (ignoredMotionMessage_ != ECMC_CMD_NOCMD &&
+      !motionCommandDisabled(ignoredMotionMessage_)) ignoredMotionMessage_ = ECMC_CMD_NOCMD;
+  // No atomics, formatting, or logger calls on the unchanged RT path.
+  if (!diagnosticTextPublished_ || diagnosticTextError_ != data_.status_.errorCode ||
+      diagnosticTextWarning_ != data_.status_.warningCode ||
+      diagnosticTextInterlock_ != data_.interlocks_.lastActiveInterlock ||
+      diagnosticTextIgnored_ != ignoredMotionMessage_) {
+    diagnosticTextError_ = data_.status_.errorCode;
+    diagnosticTextWarning_ = data_.status_.warningCode;
+    diagnosticTextInterlock_ = data_.interlocks_.lastActiveInterlock;
+    diagnosticTextIgnored_ = ignoredMotionMessage_;
+    ecmcRtLoggerPortDriverSetAxisStatusText(data_.status_.axisId,
+      diagnosticTextError_, diagnosticTextWarning_, diagnosticTextInterlock_, diagnosticTextIgnored_);
+    diagnosticTextPublished_ = true;
+  }
+
   // bit 0 enable
   data_.status_.statusWord_.enable = getEnable() > 0;
 
@@ -5312,7 +5329,7 @@ void ecmcAxisBase::invalidateDataSources() {
 }
 
 // Admission check: callers must use this before changing the active motion.
-bool ecmcAxisBase::ignoreMotionCommand(motionCommandTypes command) {
+bool ecmcAxisBase::motionCommandDisabled(motionCommandTypes command) {
   if (!ignoreDisabledMotionCmds_) return false;
   switch (command) {
   case ECMC_CMD_MOVEABS:
@@ -5323,4 +5340,11 @@ bool ecmcAxisBase::ignoreMotionCommand(motionCommandTypes command) {
   case ECMC_CMD_HOMING: return !getAllowHome();
   default: return false;
   }
+}
+
+bool ecmcAxisBase::ignoreMotionCommand(motionCommandTypes command) {
+  if (!motionCommandDisabled(command)) return false;
+  ++ignoredMotionCommandCount_;
+  lastIgnoredMotionCommand_ = ignoredMotionMessage_ = command;
+  return true;
 }
