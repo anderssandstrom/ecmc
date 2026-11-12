@@ -13,7 +13,7 @@ code=r'''
 #include <cassert>
 #include <chrono>
 #include <cstdio>
-constexpr int ECMC_CMD_NOCMD=0;
+constexpr int ECMC_CMD_NOCMD=-1;
 unsigned calls=0;
 std::atomic<int> output[4];
 void ecmcRtLoggerPortDriverSetAxisStatusText(int,int e,int w,int l,int i) {
@@ -24,13 +24,13 @@ void ecmcRtLoggerPortDriverSetAxisStatusText(int,int e,int w,int l,int i) {
 struct Axis {
  struct { struct { int axisId=1,errorCode=0,warningCode=0; } status_;
           struct { int lastActiveInterlock=0; } interlocks_; } data_;
- int ignoredMotionMessage_=0;
+ int ignoredMotionMessage_=ECMC_CMD_NOCMD;
  bool disabled=true;
  bool motionCommandDisabled(int) { return disabled; }
 ''' + fields + '\n __attribute__((noinline)) void refresh() {\n'+block+r'''
  }
  __attribute__((noinline)) void before() {
-  if (!motionCommandDisabled(ignoredMotionMessage_)) ignoredMotionMessage_=0;
+  if (!motionCommandDisabled(ignoredMotionMessage_)) ignoredMotionMessage_=ECMC_CMD_NOCMD;
   output[0].store(data_.status_.errorCode); output[1].store(data_.status_.warningCode);
   output[2].store(data_.interlocks_.lastActiveInterlock); output[3].store(ignoredMotionMessage_);
  }
@@ -43,7 +43,7 @@ int main() {
  a.data_.status_.warningCode=2; a.refresh(); assert(calls==3 && output[1]==2);
  a.data_.interlocks_.lastActiveInterlock=3; a.refresh(); assert(calls==4 && output[2]==3);
  a.ignoredMotionMessage_=4; a.refresh(); assert(calls==5 && output[3]==4);
- a.disabled=false; a.refresh(); assert(calls==6 && output[3]==0);
+ a.disabled=false; a.refresh(); assert(calls==6 && output[3]==ECMC_CMD_NOCMD);
  a.data_.status_.errorCode=0; a.refresh(); assert(calls==7 && output[0]==0);
  Axis replacement; replacement.refresh(); assert(calls==8 && output[2]==0);
  constexpr int count=5000000;

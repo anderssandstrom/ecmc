@@ -29,7 +29,7 @@
 
 namespace {
 struct AxisTextStatus {
-  std::atomic<int> error{0}, warning{0}, interlock{0}, ignored{0};
+  std::atomic<int> error{0}, warning{0}, interlock{0}, ignored{ECMC_CMD_NOCMD};
   std::atomic<unsigned int> motorVersion{0};
   std::atomic<char> motorMessage[40]{};
 };
@@ -237,6 +237,7 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS,
                         asynParamInt32,
                         &diagAxisParam_);
+    createRequiredParam("RTLOG_AXIS_ILOCK_TEXT", asynParamOctet, &axisIlockTextParam_);
     createRequiredParam("RTLOG_AXIS_ILOCK_SHORT_TEXT", asynParamOctet, &axisIlockShortTextParam_);
     createRequiredParam("RTLOG_AXIS_MESSAGE_TEXT", asynParamOctet, &axisMessageTextParam_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT,
@@ -778,19 +779,21 @@ public:
 
 private:
   int axisIlockShortTextParam_ = 0, axisMessageTextParam_ = 0;
+  int axisIlockTextParam_ = 0;
   void publishAxisText() {
     for (int axis = 0; axis < ECMC_MAX_AXES; ++axis) {
       auto &state = axisText[axis];
       const int error = state.error.load(std::memory_order_relaxed), warning = state.warning.load(std::memory_order_relaxed);
       const int interlock = state.interlock.load(std::memory_order_relaxed), ignored = state.ignored.load(std::memory_order_relaxed);
       const char *shortText = ecmcInterlockToShortString(interlock);
-      if (interlock == ECMC_INTERLOCK_NONE && ignored) {
+      const char *longText = ecmcInterlockToString(interlock);
+      if (interlock == ECMC_INTERLOCK_NONE && ignored != ECMC_CMD_NOCMD) {
         switch (ignored) {
-        case ECMC_CMD_MOVEABS: shortText = "Ignored ABS: positioning disabled"; break;
-        case ECMC_CMD_MOVEREL: shortText = "Ignored REL: positioning disabled"; break;
-        case ECMC_CMD_MOVEPVTABS: shortText = "Ignored PVT: positioning disabled"; break;
-        case ECMC_CMD_HOMING: shortText = "Ignored HOME: homing disabled"; break;
-        default: shortText = "Ignored VEL: velocity disabled"; break;
+        case ECMC_CMD_MOVEABS: shortText = "IgnAbs"; longText = "Ignored ABS: positioning disabled"; break;
+        case ECMC_CMD_MOVEREL: shortText = "IgnRel"; longText = "Ignored REL: positioning disabled"; break;
+        case ECMC_CMD_MOVEPVTABS: shortText = "IgnPVT"; longText = "Ignored PVT: positioning disabled"; break;
+        case ECMC_CMD_HOMING: shortText = "IgnHome"; longText = "Ignored HOME: homing disabled"; break;
+        default: shortText = "IgnVel"; longText = "Ignored VEL: velocity disabled"; break;
         }
       }
       char motor[40] = {};
@@ -805,6 +808,7 @@ private:
       else if (warning) snprintf(message, sizeof(message), "W: %s (0x%x)", ecmcError::convertWarningIdToString(warning), warning);
       else snprintf(message, sizeof(message), "%s", motor);
       setStringParam(axis, axisIlockShortTextParam_, shortText);
+      setStringParam(axis, axisIlockTextParam_, longText);
       setStringParam(axis, axisMessageTextParam_, message);
       callParamCallbacks(axis);
     }
