@@ -28,7 +28,6 @@ long dbReadDatabaseFP(DBBASE **, FILE *, const char *, const char *);
 fixture = r'''
 #include <cassert>
 #include <cstring>
-#include <regex>
 #include <set>
 #include <string>
 #include "ecmcIoConfig.h"
@@ -57,11 +56,22 @@ long dbReadDatabaseFP(DBBASE **, FILE *file, const char *, const char *) {
   while (const size_t n = fread(buffer,1,sizeof(buffer),file)) definitions.append(buffer,n);
   fclose(file); // Same ownership contract as EPICS dbReadDatabaseFP.
   if (failLoad) return 1;
-  const std::regex pattern("record\\([^,]+,\"([^\"]+)\"\\)");
-  for (auto i = std::sregex_iterator(definitions.begin(),definitions.end(),pattern);
-       i != std::sregex_iterator(); ++i) {
-    assert((*i)[1].str().find('.') == std::string::npos);
-    assert(records.insert((*i)[1]).second);
+  // The generator emits record(type,"name") declarations. Scan that fixed
+  // syntax directly instead of instantiating the standard regex machinery.
+  size_t offset = 0;
+  while ((offset = definitions.find("record(", offset)) != std::string::npos) {
+    const size_t typeStart = offset + 7;
+    const size_t comma = definitions.find(',', typeStart);
+    assert(comma != std::string::npos && comma > typeStart);
+    assert(definitions.compare(comma + 1, 1, "\"") == 0);
+    const size_t nameStart = comma + 2;
+    const size_t nameEnd = definitions.find('"', nameStart);
+    assert(nameEnd != std::string::npos && nameEnd > nameStart);
+    assert(definitions.compare(nameEnd + 1, 1, ")") == 0);
+    const std::string name = definitions.substr(nameStart, nameEnd - nameStart);
+    assert(name.find('.') == std::string::npos);
+    assert(records.insert(name).second);
+    offset = nameEnd + 2;
   }
   return 0;
 }
