@@ -49,6 +49,9 @@ void *operator new(size_t size) {
 void operator delete(void *p) noexcept { assert(!locked); std::free(p); }
 void *operator new[](size_t size) { return ::operator new(size); }
 void operator delete[](void *p) noexcept { ::operator delete(p); }
+// GCC can select sized deallocation; keep it on the same instrumented free path.
+void operator delete(void *p, size_t) noexcept { ::operator delete(p); }
+void operator delete[](void *p, size_t) noexcept { ::operator delete[](p); }
 using epicsMutexId = int *;
 static int mutex;
 static epicsMutexId ecmcRTMutex = &mutex;
