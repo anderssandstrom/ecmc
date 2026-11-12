@@ -31,6 +31,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      ECMC_TEST_MOTOR_SOURCE: ${{ github.workspace }}/.test-deps/ess-motor/motorApp/MotorSrc
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,6 +39,14 @@ jobs:
           submodules: false
       - name: Initialize PLC expression engine
         run: git submodule update --init -- exprtkSupport
+      - name: Check out ESS motor source for coordinate/limit tests
+        uses: actions/checkout@v7
+        with:
+          repository: EuropeanSpallationSource/motor
+          ref: 7da30b10b9ea160647e312b8ccef4b67fd32f82c
+          path: .test-deps/ess-motor
+          persist-credentials: false
+          submodules: false
       - name: Show toolchain versions
         run: |
           python3 --version

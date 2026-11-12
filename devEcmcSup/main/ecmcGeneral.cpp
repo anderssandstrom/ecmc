@@ -12,6 +12,7 @@
 
 #include "ecmcGeneral.h"
 #include "ecmcIoConfig.h"
+#include "ecmcRtLogger.h"
 
 
 // TODO: REMOVE GLOBALS
@@ -261,9 +262,20 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
   }
 
   const bool explicitMaster = strncmp(ecPath, "ec", 2) == 0 && strstr(ecPath, ".s");
-  if (explicitMaster && !ecmcFindSimulation(masterId) && ec->getMasterIndex() != masterId)
-    return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
-  ecmcIoConfigurationScope context(explicitMaster ? masterId : ecmcIoConfigurationId());
+  // Preserve the historical LinkEcEntryToObject behaviour for real EtherCAT:
+  // the master component in ecN.sM.entry is syntactic and the entry is resolved
+  // against the configured real master.  Existing IOC configurations rely on
+  // this when the same YAML is used with a non-zero master index.  A matching
+  // simulation ID remains explicit because simulations can coexist by ID.
+  const bool simulationPath = explicitMaster && ecmcFindSimulation(masterId);
+  if (explicitMaster && !simulationPath && ec &&
+      masterId != ec->getMasterIndex()) {
+    ecmcLogBufferLogWarning(
+      "LinkEcEntryToObject: path '%s' specifies master %d, but configured "
+      "master is %d; using configured master for backward compatibility.",
+      ecPath, masterId, ec->getMasterIndex());
+  }
+  ecmcIoConfigurationScope context(simulationPath ? masterId : ecmcIoConfigurationId());
 
   // Get object type
   mainObjectType objType;
