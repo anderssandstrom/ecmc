@@ -239,10 +239,6 @@ private:
   friend class ecmcMotorRecordController;
   uint32_t ecmcCycleCounterAtNewCmd_;
   bool waitingForStatusAfterCommand_;
-  void traceCompletionPublication(const char *source);
-  bool completionTraceValid_ = false;
-  unsigned completionTraceState_ = 0;
-  int completionTraceError_ = 0;
 };
 
 #endif // ifndef ECMC_MOTOR_RECORD_AXIS_H
