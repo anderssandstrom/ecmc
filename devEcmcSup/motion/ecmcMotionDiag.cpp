@@ -1478,7 +1478,7 @@ private:
     D(hwWarningDefined_); D(cycleCounterBase_); D(minVeloOutput_);
     D(maxVeloOutput_); D(veloPosOutput_); D(veloRawOffset_); P(cspEnc_);
     D(lookupTableEnable_); P(lookupTable_); D(lookupTableRange_);
-    D(lookupTableScale_);
+    D(lookupTableScale_); D(lookupTableValue_);
     const ecmcDriveDS402 *ds402 = dynamic_cast<const ecmcDriveDS402 *>(&o);
     if (ds402) {
       const ecmcDiagPath q = child(p, "ds402");

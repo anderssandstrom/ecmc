@@ -2587,6 +2587,9 @@ int setAxisDrvLookupTableRange(int axisIndex, double range);
 int getAxisDrvLookupTableRange(int axisIndex, double *range);
 int setAxisDrvLookupTableScale(int axisIndex, double scale);
 int getAxisDrvLookupTableScale(int axisIndex, double *scale);
+/** Return the LUT contribution applied in the last drive cycle, in CSV
+ * drive-command engineering units. Zero means no compensation was applied. */
+int getAxisDrvLookupTableValue(int axisIndex, double *value);
 
 /** \brief Set PID-controller proportional gain.\n
  *

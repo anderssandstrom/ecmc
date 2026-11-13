@@ -91,6 +91,7 @@ public:
   double       getLookupTableRange() const;
   int          setLookupTableScale(double scale);
   double       getLookupTableScale() const;
+  double       getLookupTableValue() const;
   
   // CSP
   int          setCspPosSet(double posEng);
@@ -168,6 +169,7 @@ private:
   ecmcLookupTable<double, double> *lookupTable_;
   double lookupTableRange_;
   double lookupTableScale_;
+  double lookupTableValue_;
 };
 
 #endif  // ifndef ECMCDRIVEBASE_H_

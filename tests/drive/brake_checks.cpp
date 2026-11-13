@@ -122,6 +122,7 @@ static void driveLookupCompensation() {
   CHECK(b.drive->setVelSet(1) == 0);
   b.tick(false);
   CHECK(static_cast<int64_t>(b.velocity.value) == 35); // (1 + 2*3) / 0.2
+  CHECK(b.drive->getLookupTableValue() == 6);
 
   CHECK(b.drive->setLookupTableRange(10) == 0);
   b.data.status_.currentPositionActual = -5; // wraps to 5
@@ -131,8 +132,10 @@ static void driveLookupCompensation() {
   b.data.interlocks_.driveSummaryInterlock = true;
   b.tick(false);
   CHECK(static_cast<int64_t>(b.velocity.value) == 5); // controller only; no LUT
+  CHECK(b.drive->getLookupTableValue() == 0);
   CHECK(b.drive->setLookupTableEnable(false) == 0);
   CHECK(!b.drive->getLookupTableEnable());
+  CHECK(b.drive->getLookupTableValue() == 0);
   std::remove(path);
 }
 

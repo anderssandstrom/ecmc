@@ -6277,6 +6277,12 @@ parse_getaxisdrv:
                                                                         &fValue));
     }
 
+    nvals = sscanf(myarg_1, "GetAxisDrvLookupTableValue(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisDrvLookupTableValue(motor_axis_no,
+                                                                        &fValue));
+    }
+
     /*int GetAxisDrvMode(int axis_no);*/
     nvals = sscanf(myarg_1, "GetAxisDrvMode(%d)", &motor_axis_no);
 

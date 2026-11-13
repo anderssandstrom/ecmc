@@ -1688,6 +1688,12 @@ int getAxisDrvLookupTableScale(int axisIndex, double *scale) {
   return 0;
 }
 
+int getAxisDrvLookupTableValue(int axisIndex, double *value) {
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  *value = axes[axisIndex]->getDrv()->getLookupTableValue();
+  return 0;
+}
+
 int appendAxisPLCExpr(int axisIndex, char *expr) {
   LOGINFO4("%s/%s:%d axisIndex=%d value=%s\n",
            __FILE__,

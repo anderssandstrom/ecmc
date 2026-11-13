@@ -106,6 +106,7 @@ void ecmcDriveBase::initVars() {
   lookupTable_               = NULL;
   lookupTableRange_          = 0;
   lookupTableScale_          = 1;
+  lookupTableValue_          = 0;
   masterOK_                  = 0;
 }
 
@@ -385,6 +386,7 @@ void ecmcDriveBase::writeEntries() {
                ECMC_SEVERITY_EMERGENCY);
   }
 
+  lookupTableValue_ = 0;
   if (data_->control_.drvMode == ECMC_DRV_MODE_CSV) {
     // CSV:    Check so not outside allowable range
     double csvSetpoint = velSet_;
@@ -396,7 +398,8 @@ void ecmcDriveBase::writeEntries() {
           position += lookupTableRange_;
         }
       }
-      csvSetpoint += lookupTableScale_ * lookupTable_->getValue(position);
+      lookupTableValue_ = lookupTableScale_ * lookupTable_->getValue(position);
+      csvSetpoint += lookupTableValue_;
     }
     const double csvOutput = csvSetpoint * invScale_ + veloRawOffset_;
     veloPosOutput_ = static_cast<int64_t>(std::llround(csvOutput));
@@ -1170,6 +1173,9 @@ int ecmcDriveBase::setLookupTableEnable(bool enable) {
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, error);
   }
   lookupTableEnable_ = enable;
+  if (!enable) {
+    lookupTableValue_ = 0;
+  }
   return 0;
 }
 
@@ -1196,6 +1202,10 @@ int ecmcDriveBase::setLookupTableScale(double scale) {
 
 double ecmcDriveBase::getLookupTableScale() const {
   return lookupTableScale_;
+}
+
+double ecmcDriveBase::getLookupTableValue() const {
+  return lookupTableValue_;
 }
 
 void ecmcDriveBase::setCspEnc(ecmcEncoder * enc) {
