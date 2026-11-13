@@ -23,6 +23,8 @@
 
 #include "asynPortDriver.h"
 #include "ecmcDefinitions.h"
+#include "ecmcGlobalsExtern.h"
+#include "ecmcMotion.h"
 #include "ecmcOctetIF.h"
 #include "ecmcMotionDiag.h"
 #include "ecmcRtLogger.h"
@@ -135,9 +137,9 @@ public:
   explicit ecmcRtLoggerPortDriver(const char *portName)
     : asynPortDriver(portName,
                      std::max(ECMC_MAX_AXES, EC_MAX_SLAVES),
-                     asynInt32Mask | asynInt64Mask | asynOctetMask |
+                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask |
                        asynDrvUserMask,
-                     asynInt32Mask | asynInt64Mask | asynOctetMask,
+                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask,
                      0,
                      1,
                      0,
@@ -240,6 +242,8 @@ public:
     createRequiredParam("RTLOG_AXIS_ILOCK_TEXT", asynParamOctet, &axisIlockTextParam_);
     createRequiredParam("RTLOG_AXIS_ILOCK_SHORT_TEXT", asynParamOctet, &axisIlockShortTextParam_);
     createRequiredParam("RTLOG_AXIS_MESSAGE_TEXT", asynParamOctet, &axisMessageTextParam_);
+    createRequiredParam("RTLOG_AXIS_CFG_DLLM", asynParamFloat64, &axisCfgDllmParam_);
+    createRequiredParam("RTLOG_AXIS_CFG_DHLM", asynParamFloat64, &axisCfgDhlmParam_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT,
                         asynParamOctet,
                         &diagAxisReportParam_);
@@ -725,6 +729,34 @@ public:
     return asynPortDriver::writeInt32(pasynUser, value);
   }
 
+  asynStatus writeFloat64(asynUser *pasynUser, epicsFloat64 value) override {
+    if (!pasynUser) {
+      return asynError;
+    }
+
+    int axis = 0;
+    if (getAddress(pasynUser, &axis) || axis < 0 || axis >= ECMC_MAX_AXES ||
+        !axes[axis]) {
+      return asynError;
+    }
+
+    int error = 0;
+    if (pasynUser->reason == axisCfgDllmParam_) {
+      error = setAxisSoftLimitPosBwd(axis, value);
+    } else if (pasynUser->reason == axisCfgDhlmParam_) {
+      error = setAxisSoftLimitPosFwd(axis, value);
+    } else {
+      return asynPortDriver::writeFloat64(pasynUser, value);
+    }
+
+    if (error) {
+      return asynError;
+    }
+    setDoubleParam(axis, pasynUser->reason, value);
+    callParamCallbacks(axis);
+    return asynSuccess;
+  }
+
   void publishMessage(int level,
                       int sourceType,
                       int sourceIndex,
@@ -758,6 +790,7 @@ public:
 
   void service() {
     publishAxisText();
+    publishAxisSoftLimits();
     publishEcTiming();
     publishAxisCommandCounters();
 
@@ -780,6 +813,7 @@ public:
 private:
   int axisIlockShortTextParam_ = 0, axisMessageTextParam_ = 0;
   int axisIlockTextParam_ = 0;
+  int axisCfgDllmParam_ = 0, axisCfgDhlmParam_ = 0;
   void publishAxisText() {
     for (int axis = 0; axis < ECMC_MAX_AXES; ++axis) {
       auto &state = axisText[axis];
@@ -811,6 +845,20 @@ private:
       setStringParam(axis, axisIlockTextParam_, longText);
       setStringParam(axis, axisMessageTextParam_, message);
       callParamCallbacks(axis);
+    }
+  }
+  void publishAxisSoftLimits() {
+    for (int axis = 0; axis < ECMC_MAX_AXES; ++axis) {
+      if (!axes[axis]) {
+        continue;
+      }
+      double low = 0.0, high = 0.0;
+      if (!getAxisSoftLimitPosBwd(axis, &low) &&
+          !getAxisSoftLimitPosFwd(axis, &high)) {
+        setDoubleParam(axis, axisCfgDllmParam_, low);
+        setDoubleParam(axis, axisCfgDhlmParam_, high);
+        callParamCallbacks(axis);
+      }
     }
   }
   void publishEcTiming() {

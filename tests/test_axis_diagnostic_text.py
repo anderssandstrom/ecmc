@@ -9,7 +9,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 src = (root/'devEcmcSup/motion/ecmcRtLoggerPortDriver.cpp').read_text()
 state = src[src.index('struct AxisTextStatus {'):src.index('const char *ECMC_RT_LOGGER_PORT_NAME')]
-publisher = src[src.index('  int axisIlockShortTextParam_'):src.index('  void publishEcTiming()')]
+publisher = src[src.index('  int axisIlockShortTextParam_'):src.index('  void publishAxisSoftLimits()')]
 setters = src[src.index('void ecmcRtLoggerPortDriverSetAxisStatusText('):]
 program = r'''
 #include <atomic>
