@@ -1817,6 +1817,7 @@ bool ecmcMotorRecordAxis::pollPowerIsOn(void) {
     asynMotorAxis::setIntegerParam(pC_->motorStop_, triggstop_);  // Stop also triggered in ecmc, try to sync motor record and ecmc    
     asynMotorAxis::setIntegerParam(pC_->ecmcMotorRecordTRIGG_STOPP_,triggstop_);  // Stop also triggered in ecmc, try to sync motor record and ecmc
     asynMotorAxis::setIntegerParam(pC_->motorStatusDone_, 1);    
+    traceCompletionPublication("pollPowerIsOn/interlock");
     callParamCallbacks();
   }
 
@@ -2411,6 +2412,7 @@ asynStatus ecmcMotorRecordAxis::poll(bool *moving) {
 
 
   updateError();
+  traceCompletionPublication("poll");
   setIntegerParam(pC_->motorStatusProblem_,
                   (drvlocal.eeAxisError != eeAxisErrorNoError) ||
                   drvlocal.ecmcSoftLimitInterlock);
@@ -3716,6 +3718,40 @@ void ecmcMotorRecordAxis::updateError() {
 }
 
 // Make sure new data is polled after new command is received (for setting DMOV)
+void ecmcMotorRecordAxis::traceCompletionPublication(const char *source) {
+  int done = -1, moving = -1;
+  pC_->getIntegerParam(axisNo_, pC_->motorStatusDone_, &done);
+  pC_->getIntegerParam(axisNo_, pC_->motorStatusMoving_, &moving);
+  if (ecmcRTMutex) epicsMutexLock(ecmcRTMutex);
+  const bool busy = drvlocal.ecmcAxis->getBusy();
+  const bool execute = drvlocal.ecmcAxis->getExecute();
+  const bool enable = drvlocal.ecmcAxis->getEnable();
+  const bool enabled = drvlocal.ecmcAxis->getEnabled();
+  const bool interlock = drvlocal.ecmcAxis->getMon()->getSumInterlock();
+  const int error = drvlocal.ecmcAxis->getErrorID();
+  const uint32_t cycle = drvlocal.ecmcAxis->getCycleCounter();
+  if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
+  const unsigned state = (unsigned(bool(drvlocal.moveReady)) << 0) |
+    (unsigned(bool(done)) << 1) | (unsigned(bool(moving)) << 2) |
+    (unsigned(busy) << 3) | (unsigned(execute) << 4) |
+    (unsigned(enable) << 5) | (unsigned(enabled) << 6) |
+    (unsigned(interlock) << 7) | (unsigned(waitingForStatusAfterCommand_) << 8);
+  if (completionTraceValid_ && state == completionTraceState_ &&
+      error == completionTraceError_) return;
+  completionTraceValid_ = true;
+  completionTraceState_ = state;
+  completionTraceError_ = error;
+  LOGINFO("Axis[%d] DMOV publication source=%s time=%.6f cycle=%u "
+          "sampleCycle=%u ready=%d done=%d moving=%d busy=%d sampledBusy=%d "
+          "execute=%d enable=%d enabled=%d error=0x%x interlock=%d "
+          "waitingSample=%d commandCycle=%u\n",
+          axisNo_, source, ecmcMotorRecordgetNowTimeSecs(), unsigned(cycle),
+          unsigned(drvlocal.status_.cycleCounter), int(drvlocal.moveReady),
+          done, moving, int(busy), int(drvlocal.ecmcBusy), int(execute),
+          int(enable), int(enabled), error, int(interlock),
+          int(waitingForStatusAfterCommand_), unsigned(ecmcCycleCounterAtNewCmd_));
+}
+
 void ecmcMotorRecordAxis::newCmd() {
 
   if (ecmcRTMutex)epicsMutexLock(ecmcRTMutex);
