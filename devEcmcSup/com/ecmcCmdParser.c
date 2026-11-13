@@ -3479,6 +3479,9 @@ parse_cfg_setaxiscntrl:
     return setAxisEnableAlarmAtSoftLimit(iValue, iValue2);
   }
 
+  nvals = sscanf(myarg_1, "SetAxisIgnoreDisabledMotionCommands(%d,%d)", &iValue, &iValue2);
+  if (nvals == 2) return setAxisIgnoreDisabledMotionCommands(iValue, iValue2);
+
   /*int Cfg.SetAxisEnableMotionFunctions(int axis_no,
                                          int enablePos,
                                          int enableConstVelo,

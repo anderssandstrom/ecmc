@@ -14,7 +14,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SUP = ROOT / 'devEcmcSup'
 source = (SUP / 'motion/ecmcMotionDiag.cpp').read_text()
-start = source.index('  void dumpEncoder(const ecmcEncoder& o, const std::string& p) {')
+start = source.index('  void dumpEncoder(const ecmcEncoder& o, const ecmcDiagPath& p) {')
 brace = source.index('{', start)
 depth, end = 1, brace + 1
 while depth:
@@ -22,14 +22,14 @@ while depth:
     end += 1
 method = source[start:end]
 code = r'''
-#include <string>
+#include "ecmcMotionDiagSnapshot.h"
 #include "ecmcEncoder.h"
 class ecmcMotionStateYamlWriter {
-  std::string child(const std::string&, const char*) { return {}; }
-  template<class T> void value(const std::string&, const T&) {}
-  template<class T> void pointer(const std::string&, T*) {}
-  void dumpEcEntryLink(const ecmcDataLink&, const std::string&) {}
-  void dumpFilter(const ecmcFilter&, const std::string&) {}
+  ecmcDiagPath child(const ecmcDiagPath&, const char*) { return {}; }
+  template<class T> void value(const ecmcDiagPath&, const T&) {}
+  template<class T> void pointer(const ecmcDiagPath&, T*) {}
+  void dumpEcEntryLink(const ecmcDataLink&, const ecmcDiagPath&) {}
+  void dumpFilter(const ecmcFilter&, const ecmcDiagPath&) {}
 ''' + method + '\n};\n'
 with tempfile.TemporaryDirectory(prefix='ecmc-encoder-diagnostics-') as tmp:
     cpp = Path(tmp) / 'checks.cpp'

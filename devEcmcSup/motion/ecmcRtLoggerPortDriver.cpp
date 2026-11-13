@@ -10,6 +10,8 @@
 \*************************************************************************/
 
 #include "ecmcRtLoggerPortDriver.h"
+#include "ecmcAxisDiagnosticText.h"
+#include "ecmcError.h"
 
 #include <algorithm>
 #include <atomic>
@@ -26,6 +28,13 @@
 #include "ecmcRtLogger.h"
 
 namespace {
+struct AxisTextStatus {
+  std::atomic<int> error{0}, warning{0}, interlock{0}, ignored{ECMC_CMD_NOCMD};
+  std::atomic<unsigned int> motorVersion{0};
+  std::atomic<char> motorMessage[40]{};
+};
+AxisTextStatus axisText[ECMC_MAX_AXES];
+
 
 const char *ECMC_RT_LOGGER_PORT_NAME = "ecmcRTLog";
 
@@ -228,6 +237,9 @@ public:
     createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS,
                         asynParamInt32,
                         &diagAxisParam_);
+    createRequiredParam("RTLOG_AXIS_ILOCK_TEXT", asynParamOctet, &axisIlockTextParam_);
+    createRequiredParam("RTLOG_AXIS_ILOCK_SHORT_TEXT", asynParamOctet, &axisIlockShortTextParam_);
+    createRequiredParam("RTLOG_AXIS_MESSAGE_TEXT", asynParamOctet, &axisMessageTextParam_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_DIAG_AXIS_REPORT,
                         asynParamOctet,
                         &diagAxisReportParam_);
@@ -745,6 +757,7 @@ public:
   }
 
   void service() {
+    publishAxisText();
     publishEcTiming();
     publishAxisCommandCounters();
 
@@ -765,6 +778,41 @@ public:
   }
 
 private:
+  int axisIlockShortTextParam_ = 0, axisMessageTextParam_ = 0;
+  int axisIlockTextParam_ = 0;
+  void publishAxisText() {
+    for (int axis = 0; axis < ECMC_MAX_AXES; ++axis) {
+      auto &state = axisText[axis];
+      const int error = state.error.load(std::memory_order_relaxed), warning = state.warning.load(std::memory_order_relaxed);
+      const int interlock = state.interlock.load(std::memory_order_relaxed), ignored = state.ignored.load(std::memory_order_relaxed);
+      const char *shortText = ecmcInterlockToShortString(interlock);
+      const char *longText = ecmcInterlockToString(interlock);
+      if (interlock == ECMC_INTERLOCK_NONE && ignored != ECMC_CMD_NOCMD) {
+        switch (ignored) {
+        case ECMC_CMD_MOVEABS: shortText = "IgnAbs"; longText = "Ignored ABS: positioning disabled"; break;
+        case ECMC_CMD_MOVEREL: shortText = "IgnRel"; longText = "Ignored REL: positioning disabled"; break;
+        case ECMC_CMD_MOVEPVTABS: shortText = "IgnPVT"; longText = "Ignored PVT: positioning disabled"; break;
+        case ECMC_CMD_HOMING: shortText = "IgnHome"; longText = "Ignored HOME: homing disabled"; break;
+        default: shortText = "IgnVel"; longText = "Ignored VEL: velocity disabled"; break;
+        }
+      }
+      char motor[40] = {};
+      const unsigned int version = state.motorVersion.load();
+      if (!(version & 1u)) {
+        for (size_t i = 0; i < sizeof(motor); ++i) motor[i] = state.motorMessage[i].load();
+        if (state.motorVersion.load() != version) motor[0] = 0;
+      }
+      motor[39] = 0;
+      char message[256] = {};
+      if (error) snprintf(message, sizeof(message), "E: %s (0x%x)", ecmcError::convertErrorIdToString(error), error);
+      else if (warning) snprintf(message, sizeof(message), "W: %s (0x%x)", ecmcError::convertWarningIdToString(warning), warning);
+      else snprintf(message, sizeof(message), "%s", motor);
+      setStringParam(axis, axisIlockShortTextParam_, shortText);
+      setStringParam(axis, axisIlockTextParam_, longText);
+      setStringParam(axis, axisMessageTextParam_, message);
+      callParamCallbacks(axis);
+    }
+  }
   void publishEcTiming() {
     for (int slave = 0; slave < EC_MAX_SLAVES; ++slave) {
       for (int direction = 0; direction < ECMC_EC_TIMING_DIRECTIONS;
@@ -1405,4 +1453,22 @@ bool ecmcRtLoggerPortDriverEcTimingPublished(int slavePosition) {
 
 const char *ecmcRtLoggerPortDriverGetPortName() {
   return ECMC_RT_LOGGER_PORT_NAME;
+}
+
+void ecmcRtLoggerPortDriverSetAxisStatusText(int axis, int error, int warning, int interlock, int ignored) {
+  if (axis < 0 || axis >= ECMC_MAX_AXES) return;
+  // Independent diagnostic scalars, not a coherent control snapshot. There
+  // is no dependent payload to publish; each value is race-free on its own.
+  axisText[axis].error.store(error, std::memory_order_relaxed);
+  axisText[axis].warning.store(warning, std::memory_order_relaxed);
+  axisText[axis].interlock.store(interlock, std::memory_order_relaxed);
+  axisText[axis].ignored.store(ignored, std::memory_order_relaxed);
+}
+void ecmcRtLoggerPortDriverSetAxisMotorMessage(int axis, const char *message) {
+  if (axis < 0 || axis >= ECMC_MAX_AXES) return;
+  auto &state = axisText[axis];
+  state.motorVersion.fetch_add(1);
+  const size_t length = strlen(message);
+  for (size_t i = 0; i < 40; ++i) state.motorMessage[i].store(i < length && i < 39 ? message[i] : 0);
+  state.motorVersion.fetch_add(1);
 }

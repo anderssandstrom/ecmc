@@ -23,6 +23,8 @@ def method(text, signature):
 word = header[header.index('typedef struct {\n  unsigned char enable '):
               header.index('typedef struct {\n  double  externalTrajectoryPosition;')]
 methods = ''.join(method(source, name) for name in (
+    'bool ecmcAxisBase::motionCommandDisabled(',
+    'bool ecmcAxisBase::ignoreMotionCommand(',
     'void ecmcAxisBase::setAutoExecuteOnTargetPos(',
     'bool ecmcAxisBase::getAutoExecuteOnTargetPos(',
     'int ecmcAxisBase::moveOnTargetPosWrite(',
@@ -43,12 +45,13 @@ stub = r'''
 #include <cstring>
 #include <cstdio>
 #include <limits>
+#include <initializer_list>
 #include "ecmcErrorsList.h"
 #define ecmcRtLoggerLogInfo(...) ((void)0)
 #define ecmcRtLoggerLogError(...) ((void)0)
 #define ecmcRtLoggerLogDebug(...) ((void)0)
 #define LOGINFO4(...) ((void)0)
-enum motionCommandTypes { ECMC_CMD_MOVEREL=2, ECMC_CMD_MOVEABS=3, ECMC_CMD_HOMING=10 };
+enum motionCommandTypes { ECMC_CMD_NOCMD=-1, ECMC_CMD_MOVEVEL=1, ECMC_CMD_MOVEREL=2, ECMC_CMD_MOVEABS=3, ECMC_CMD_JOG=0, ECMC_CMD_HOMING=10, ECMC_CMD_MOVEPVTABS=9 };
 enum { ECMC_DATA_SOURCE_INTERNAL=0, ECMC_SEQ_HOME_SET_POS=15, ECMC_ASYN_AX_STATUS_ID=0 };
 using asynStatus = int;
 enum asynParamType { asynParamInt32, asynParamFloat64 };
@@ -75,6 +78,14 @@ class ecmcAxisBase {
   double applied=0;
   motionCommandTypes active=ECMC_CMD_MOVEABS;
   ecmcAxisBase() { data_.axAsynParams_[0]=&param; data_.status_.statusWord_.enable=1; }
+  bool ignoreDisabledMotionCmds_=false, allowPos=true, allowVel=true, allowHome=true;
+  unsigned int ignoredMotionCommandCount_=0;
+  motionCommandTypes lastIgnoredMotionCommand_=ECMC_CMD_NOCMD, ignoredMotionMessage_=ECMC_CMD_NOCMD;
+  bool getAllowPos() { return allowPos; }
+  bool getAllowConstVelo() { return allowVel; }
+  bool getAllowHome() { return allowHome; }
+  bool motionCommandDisabled(motionCommandTypes);
+  bool ignoreMotionCommand(motionCommandTypes);
   bool getBlockCom() { return blockCom; }
   bool getBlocked() { return blocked; }
   bool getStartupCommandsHeld() { return startup; }
@@ -160,6 +171,35 @@ int main() {
   assert(setAxisTargetPos(1,.6)==ERROR_AXIS_BUSY); a.busy=false;
   assert(setAxisTargetPos(1,std::numeric_limits<double>::infinity())==ERROR_SEQ_TARGET_POS_OUT_OF_RANGE);
   assert(a.targetWrites==writes && a.starts==3 && !a.autoEnableRequest_);
+  // Use production permission checks: an ignored target request must not
+  // stop homing, overwrite its targets, or arm a deferred move.
+  {
+    ecmcAxisBase ignored; axes[1]=&ignored;
+    ignored.setAutoExecuteOnTargetPos(true);
+    ignored.ignoreDisabledMotionCmds_=true; ignored.allowPos=false;
+    ignored.active=ECMC_CMD_HOMING;
+    ignored.setExecute(true,false);
+    for (auto command : {ECMC_CMD_MOVEABS, ECMC_CMD_MOVEREL}) {
+      ignored.data_.control_.command=command;
+      assert(setAxisTargetPos(1,.8)==0);
+      assert(ignored.axisAsynWriteTargetPos(&pos,8,asynParamFloat64)==0);
+    }
+    assert(ignored.moveAbsolutePosition(.8,1,2,3)==0);
+    assert(ignored.moveRelativePosition(.8,1,2,3)==0);
+    assert(ignored.active==ECMC_CMD_HOMING && ignored.getExecute() && ignored.getBusy());
+    assert(ignored.starts==1 && ignored.requests==0 && ignored.targetWrites==0 && ignored.staged==0);
+    assert(ignored.data_.control_.positionTarget==0 && ignored.data_.control_.velocityTarget==.4);
+    assert(ignored.error==0 && !ignored.autoEnableRequest_ && !ignored.motionStartPending_);
+    assert(ignored.ignoredMotionCommandCount_==6);
+    assert(ignored.lastIgnoredMotionCommand_==ECMC_CMD_MOVEREL);
+    ignored.ignoreDisabledMotionCmds_=false;
+    assert(ignored.moveOnTargetPosWrite(.8)==ERROR_AXIS_BUSY);
+    ignored.ignoreDisabledMotionCmds_=true;
+    ignored.allowPos=true;
+    assert(ignored.moveOnTargetPosWrite(.8)==ERROR_AXIS_BUSY);
+    assert(ignored.ignoredMotionCommandCount_==6);
+    axes[1]=&a;
+  }
   // Normal auto-enable: request is staged, no motion before stable feedback.
   a.setEnable(false);
   assert(setAxisTargetPos(1,.5)==0 && a.autoEnableRequest_ && a.seq.global);
@@ -233,4 +273,4 @@ with tempfile.TemporaryDirectory(prefix='ecmc-target-write-') as temp:
     subprocess.run([os.environ.get('CXX','c++'), '-std=c++11', '-Wall', '-Wextra',
                     '-I'+str(ROOT/'devEcmcSup/main'), str(src), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('Native target writes: default staging, ABS/REL, retarget, rejection, normal auto-enable and packed status layout pass.')
+print('Native target writes: default staging, ABS/REL, retarget, rejection, ignored moves preserve homing, normal auto-enable and packed status layout pass.')

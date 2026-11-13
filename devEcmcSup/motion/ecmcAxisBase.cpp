@@ -1472,6 +1472,7 @@ int ecmcAxisBase::setExecute(bool execute, bool ignoreBusy) {
   }
   if (execute && data_.control_.command != ECMC_CMD_NOCMD) {
     encoderPowerMoveCompleted_ = false;
+    ignoredMotionMessage_ = ECMC_CMD_NOCMD;
     bumpMotionCommandExecuteCounter();
   }
 
@@ -2047,6 +2048,22 @@ int ecmcAxisBase::getCntrlError(double *error) {
 }
 
 void ecmcAxisBase::refreshStatusWd() {
+  if (ignoredMotionMessage_ != ECMC_CMD_NOCMD &&
+      !motionCommandDisabled(ignoredMotionMessage_)) ignoredMotionMessage_ = ECMC_CMD_NOCMD;
+  // No atomics, formatting, or logger calls on the unchanged RT path.
+  if (!diagnosticTextPublished_ || diagnosticTextError_ != data_.status_.errorCode ||
+      diagnosticTextWarning_ != data_.status_.warningCode ||
+      diagnosticTextInterlock_ != data_.interlocks_.lastActiveInterlock ||
+      diagnosticTextIgnored_ != ignoredMotionMessage_) {
+    diagnosticTextError_ = data_.status_.errorCode;
+    diagnosticTextWarning_ = data_.status_.warningCode;
+    diagnosticTextInterlock_ = data_.interlocks_.lastActiveInterlock;
+    diagnosticTextIgnored_ = ignoredMotionMessage_;
+    ecmcRtLoggerPortDriverSetAxisStatusText(data_.status_.axisId,
+      diagnosticTextError_, diagnosticTextWarning_, diagnosticTextInterlock_, diagnosticTextIgnored_);
+    diagnosticTextPublished_ = true;
+  }
+
   // bit 0 enable
   data_.status_.statusWord_.enable = getEnable() > 0;
 
@@ -2335,11 +2352,13 @@ int ecmcAxisBase::createAsynParam(const char        *nameFormat,
   return 0;
 }
 
-int ecmcAxisBase::movePVTAbs() { 
+int ecmcAxisBase::movePVTAbs() {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEPVTABS)) return 0;
   return movePVTAbs(false);
 }
 
 int ecmcAxisBase::movePVTAbs(bool ignoreBusy) {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEPVTABS)) return 0;
   bumpMotionCommandRequestCounter();
 
   if(data_.control_.controlWord_.enableDbgPrintout) {
@@ -2398,6 +2417,7 @@ int ecmcAxisBase::movePVTAbs(bool ignoreBusy) {
 
 // just a wrapper to the below
 int ecmcAxisBase::moveAbsolutePosition(double positionSet) {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
   return  moveAbsolutePosition(positionSet,data_.control_.velocityTarget, data_.status_.currentAccelerationSetpoint,data_.status_.currentDecelerationSetpoint);
 }
 
@@ -2406,6 +2426,7 @@ int ecmcAxisBase::moveAbsolutePosition(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEABS)) return 0;
   bumpMotionCommandRequestCounter();
 
   if(data_.control_.controlWord_.enableDbgPrintout) {
@@ -2490,6 +2511,7 @@ int ecmcAxisBase::moveRelativePosition(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEREL)) return 0;
   bumpMotionCommandRequestCounter();
   
   if(data_.control_.controlWord_.enableDbgPrintout) {
@@ -2574,6 +2596,7 @@ int ecmcAxisBase::moveVelocity(
   double velocitySet,
   double accelerationSet,
   double decelerationSet) {
+  if (ignoreMotionCommand(ECMC_CMD_MOVEVEL)) return 0;
   bumpMotionCommandRequestCounter();
   
   if(getBlocked()) {
@@ -2651,6 +2674,7 @@ int ecmcAxisBase::moveHome(int    nCmdData,
                            double accelerationSet,
                            double decelerationSet
                            ) {
+  if (ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
   bumpMotionCommandRequestCounter();
 
   if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
@@ -2743,6 +2767,7 @@ int ecmcAxisBase::moveHome(int    nCmdData,
 
 // Homing with configs from encoder object
 int ecmcAxisBase::moveHome() {
+  if (ignoreMotionCommand(ECMC_CMD_HOMING)) return 0;
   bumpMotionCommandRequestCounter();
 
   if (getTrajDataSourceType() != ECMC_DATA_SOURCE_INTERNAL) {
@@ -2886,6 +2911,10 @@ asynStatus ecmcAxisBase::axisAsynWriteCmd(void         *data,
   // These are momentary commands that are auto-reset after this callback.
   // Each callback with a command bit set is a new request; the stored control
   // word is also used as state/readback and is not reliable edge history.
+  if (controlWordNew.enableCmd && !controlWordNew.stopCmd &&
+      ((controlWordNew.executeCmd && ignoreMotionCommand(data_.control_.command)) ||
+       ((controlWordNew.tweakBwdCmd || controlWordNew.tweakFwdCmd) &&
+        ignoreMotionCommand(ECMC_CMD_MOVEREL)))) return asynSuccess;
   const bool executeRequest = controlWordNew.executeCmd;
   const bool tweakBwdRequest = controlWordNew.tweakBwdCmd;
   const bool tweakFwdRequest = controlWordNew.tweakFwdCmd;
@@ -4011,6 +4040,7 @@ bool ecmcAxisBase::getAutoExecuteOnTargetPos() const {
 }
 
 int ecmcAxisBase::moveOnTargetPosWrite(double posTarget) {
+  if (ignoreMotionCommand(data_.control_.command)) return 0;
   // Only external native target writes enter here. Internal setpoint updates
   // must not retrigger moves (in particular relative moves) every RT scan.
   if (getBlockCom()) return setExternalCommandBlockedError();
@@ -5296,4 +5326,25 @@ void ecmcAxisBase::invalidateDataSources() {
     view->numberReader = nullptr;
   }
   dataSources_.clear();
+}
+
+// Admission check: callers must use this before changing the active motion.
+bool ecmcAxisBase::motionCommandDisabled(motionCommandTypes command) {
+  if (!ignoreDisabledMotionCmds_) return false;
+  switch (command) {
+  case ECMC_CMD_MOVEABS:
+  case ECMC_CMD_MOVEREL:
+  case ECMC_CMD_MOVEPVTABS: return !getAllowPos();
+  case ECMC_CMD_MOVEVEL:
+  case ECMC_CMD_JOG: return !getAllowConstVelo();
+  case ECMC_CMD_HOMING: return !getAllowHome();
+  default: return false;
+  }
+}
+
+bool ecmcAxisBase::ignoreMotionCommand(motionCommandTypes command) {
+  if (!motionCommandDisabled(command)) return false;
+  ++ignoredMotionCommandCount_;
+  lastIgnoredMotionCommand_ = ignoredMotionMessage_ = command;
+  return true;
 }

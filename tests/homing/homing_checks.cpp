@@ -78,6 +78,39 @@ struct Bench {
 int main() {
   try {
     int scenarios=0;
+    context="ignored moves preserve homing";
+    {
+      Bench b(false, 0);
+      CHECK(!b.axis->ignoreMotionCommand(ECMC_CMD_MOVEABS));
+      b.axis->setAllowMotionFunctions(false, false, true);
+      b.axis->setIgnoreDisabledMotionCommands(1);
+      b.start(1);
+      for (int i=0; i<100; ++i) {
+        CHECK(b.axis->moveAbsolutePosition(100, 1, 1, 1)==0);
+        CHECK(b.axis->moveRelativePosition(100, 1, 1, 1)==0);
+        CHECK(b.axis->moveVelocity(1, 1, 1)==0);
+        CHECK(b.axis->getCommand()==ECMC_CMD_HOMING);
+        CHECK(b.axis->getExecute());
+        CHECK(b.axis->getErrorID()==0);
+        b.tick();
+      }
+      CHECK(b.axis->ignoredMotionCommandCount_ == 300);
+      CHECK(b.axis->lastIgnoredMotionCommand_ == ECMC_CMD_MOVEVEL);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_MOVEVEL);
+      b.finish();
+      b.axis->setAllowMotionFunctions(true, true, true);
+      b.tick();
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_NOCMD);
+      CHECK(b.axis->ignoredMotionCommandCount_ == 300);
+      b.axis->setAllowMotionFunctions(false, false, true);
+      CHECK(b.axis->moveVelocity(1, 1, 1) == 0);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_MOVEVEL);
+      b.start(1);
+      CHECK(b.axis->ignoredMotionMessage_ == ECMC_CMD_NOCMD);
+      CHECK(b.axis->stopMotion(1)==0);
+      CHECK(!b.axis->getEnable());
+    }
+
     for(bool absolute : {false,true}) for(int seq : {1,2,3,4,5,6,7,8,9,10,14,15,21,22}) {
       if(!absolute && (seq==21 || seq==22)) continue;
       context="home="+std::to_string(seq)+" abs="+std::to_string(absolute);
