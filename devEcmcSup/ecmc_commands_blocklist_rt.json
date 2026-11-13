@@ -135,6 +135,7 @@
     "Cfg.LinkEcEntryToObject(,<ecPath>)",
     "Cfg.LinkEcEntryToObject(<ecPath>,<axPath>)",
     "Cfg.LoadAxisEncLookupTable(<axisIndex>,<filename>)",
+    "Cfg.LoadAxisDrvLookupTable(<axisIndex>,<filename>)",
     "Cfg.LoadAxisPLCFile(<int>,<str>)",
     "Cfg.LoadLUTFile(<index>,<fileName>)",
     "Cfg.LoadPLCFile(<index>,<expr>)",

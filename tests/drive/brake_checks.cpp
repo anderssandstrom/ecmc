@@ -5,6 +5,8 @@
 #include "ecmcDriveDS402.h"
 #include "ecmcAxisData.h"
 #include <cassert>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -100,6 +102,38 @@ static void reducedTorque() {
   CHECK(b.drive->setEnableReduceTorque(false) == 0);
   b.tick(true);
   CHECK((b.control.value & 4) == 0 && (b.control.value & 1) == 1);
+}
+
+static void driveLookupCompensation() {
+  context = "CSV drive lookup compensation in engineering units";
+  const char *path = "/tmp/ecmc-drive-lookup-test.lut";
+  {
+    std::ofstream table(path);
+    table << "0 2\n5 3\n10 4\n";
+  }
+
+  Bench<> b;
+  b.drive->setScaleNum(2);
+  CHECK(b.drive->setScaleDenom(10) == 0); // 0.2 engineering units/raw count
+  CHECK(b.drive->loadLookupTable(path) == 0);
+  CHECK(b.drive->getLookupTableEnable());
+  CHECK(b.drive->setLookupTableScale(2) == 0);
+  b.data.status_.currentPositionActual = 5; // interpolated LUT value is 3
+  CHECK(b.drive->setVelSet(1) == 0);
+  b.tick(false);
+  CHECK(static_cast<int64_t>(b.velocity.value) == 35); // (1 + 2*3) / 0.2
+
+  CHECK(b.drive->setLookupTableRange(10) == 0);
+  b.data.status_.currentPositionActual = -5; // wraps to 5
+  b.tick(false);
+  CHECK(static_cast<int64_t>(b.velocity.value) == 35);
+
+  b.data.interlocks_.driveSummaryInterlock = true;
+  b.tick(false);
+  CHECK(static_cast<int64_t>(b.velocity.value) == 5); // controller only; no LUT
+  CHECK(b.drive->setLookupTableEnable(false) == 0);
+  CHECK(!b.drive->getLookupTableEnable());
+  std::remove(path);
 }
 
 static void timing() {
@@ -551,7 +585,7 @@ static void ds402Integration() {
 
 int main() {
   try {
-    reducedTorque(); timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
+    driveLookupCompensation(); reducedTorque(); timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
     interlocksAndTimeout(); delayedDisableAcknowledgement(); configurationAndFaults();
     boundedSignalTraces(); ds402Integration();
     std::cout << "Drive brake: " << scenarios << " scenarios, " << cycles

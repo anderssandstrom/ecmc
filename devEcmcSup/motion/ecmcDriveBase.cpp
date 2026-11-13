@@ -102,10 +102,16 @@ void ecmcDriveBase::initVars() {
   veloPosOutput_             = 0;
   veloRawOffset_             = 0;
   cspEnc_                    = NULL;
+  lookupTableEnable_         = false;
+  lookupTable_               = NULL;
+  lookupTableRange_          = 0;
+  lookupTableScale_          = 1;
   masterOK_                  = 0;
 }
 
-ecmcDriveBase::~ecmcDriveBase() {}
+ecmcDriveBase::~ecmcDriveBase() {
+  delete lookupTable_;
+}
 
 bool ecmcDriveBase::entryTypeIsFloat(ecmcEcDataType type) const {
   return type == ECMC_EC_F32 || type == ECMC_EC_F64;
@@ -381,7 +387,18 @@ void ecmcDriveBase::writeEntries() {
 
   if (data_->control_.drvMode == ECMC_DRV_MODE_CSV) {
     // CSV:    Check so not outside allowable range
-    const double csvOutput = velSet_ * invScale_ + veloRawOffset_;
+    double csvSetpoint = velSet_;
+    if (lookupTableEnable_ && driveInterlocksOK()) {
+      double position = data_->status_.currentPositionActual;
+      if (lookupTableRange_ > 0) {
+        position = fmod(position, lookupTableRange_);
+        if (position < 0) {
+          position += lookupTableRange_;
+        }
+      }
+      csvSetpoint += lookupTableScale_ * lookupTable_->getValue(position);
+    }
+    const double csvOutput = csvSetpoint * invScale_ + veloRawOffset_;
     veloPosOutput_ = static_cast<int64_t>(std::llround(csvOutput));
 
     if (csvUsesFloatingPoint()) {
@@ -1123,6 +1140,62 @@ int ecmcDriveBase::setStateMachineTimeout(double seconds) {
 int ecmcDriveBase::setVelSetOffsetRaw(double offset) {
   veloRawOffset_ = offset;
   return 0;
+}
+
+int ecmcDriveBase::loadLookupTable(const std::string& filename) {
+  try {
+    ecmcLookupTable<double, double> *replacement =
+      new ecmcLookupTable<double, double>(filename);
+    lookupTableEnable_ = false;
+    delete lookupTable_;
+    lookupTable_ = replacement;
+  }
+  catch (int error) {
+    lookupTableEnable_ = false;
+    return error;
+  }
+  lookupTableEnable_ = lookupTable_->getValidatedOK();
+  return 0;
+}
+
+int ecmcDriveBase::setLookupTableEnable(bool enable) {
+  if (enable && (!lookupTable_ || !lookupTable_->getValidatedOK())) {
+    lookupTableEnable_ = false;
+    const int error = lookupTable_ ? ERROR_DRV_LOOKUP_TABLE_NOT_VALID :
+                                     ERROR_DRV_LOOKUP_TABLE_NOT_LOADED;
+    ecmcRtLoggerLogError(
+      "%s/%s:%d: ERROR: Axis[%d]: Drive lookup table is %s (0x%x).\n",
+      __FILE__, __FUNCTION__, __LINE__, data_->status_.axisId,
+      lookupTable_ ? "not valid" : "not loaded", error);
+    return setErrorID(__FILE__, __FUNCTION__, __LINE__, error);
+  }
+  lookupTableEnable_ = enable;
+  return 0;
+}
+
+int ecmcDriveBase::getLookupTableEnable() const {
+  return lookupTableEnable_;
+}
+
+int ecmcDriveBase::setLookupTableRange(double range) {
+  if (range < 0) {
+    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+  }
+  lookupTableRange_ = range;
+  return 0;
+}
+
+double ecmcDriveBase::getLookupTableRange() const {
+  return lookupTableRange_;
+}
+
+int ecmcDriveBase::setLookupTableScale(double scale) {
+  lookupTableScale_ = scale;
+  return 0;
+}
+
+double ecmcDriveBase::getLookupTableScale() const {
+  return lookupTableScale_;
 }
 
 void ecmcDriveBase::setCspEnc(ecmcEncoder * enc) {

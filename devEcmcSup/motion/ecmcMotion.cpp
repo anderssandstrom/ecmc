@@ -1633,6 +1633,56 @@ int getAxisEncLookupTableScale(int axisIndex, double *scale) {
   return 0;
 }
 
+int loadAxisDrvLookupTable(int axisIndex, const char *filename) {
+  LOGINFO4("%s/%s:%d axisIndex=%d value=%s\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, filename);
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  return axes[axisIndex]->getDrv()->loadLookupTable(filename);
+}
+
+int setAxisDrvLookupTableEnable(int axisIndex, int enable) {
+  LOGINFO4("%s/%s:%d axisIndex=%d enable=%d\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, enable);
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  return axes[axisIndex]->getDrv()->setLookupTableEnable(enable);
+}
+
+int getAxisDrvLookupTableEnable(int axisIndex, int *enable) {
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  *enable = axes[axisIndex]->getDrv()->getLookupTableEnable();
+  return 0;
+}
+
+int setAxisDrvLookupTableRange(int axisIndex, double range) {
+  LOGINFO4("%s/%s:%d axisIndex=%d range=%lf\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, range);
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  return axes[axisIndex]->getDrv()->setLookupTableRange(range);
+}
+
+int getAxisDrvLookupTableRange(int axisIndex, double *range) {
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  *range = axes[axisIndex]->getDrv()->getLookupTableRange();
+  return 0;
+}
+
+int setAxisDrvLookupTableScale(int axisIndex, double scale) {
+  LOGINFO4("%s/%s:%d axisIndex=%d scale=%lf\n",
+           __FILE__, __FUNCTION__, __LINE__, axisIndex, scale);
+  CHECK_AXIS_RETURN_IF_ERROR_AND_BLOCK_COM(axisIndex)
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  return axes[axisIndex]->getDrv()->setLookupTableScale(scale);
+}
+
+int getAxisDrvLookupTableScale(int axisIndex, double *scale) {
+  CHECK_AXIS_DRIVE_RETURN_IF_ERROR(axisIndex)
+  *scale = axes[axisIndex]->getDrv()->getLookupTableScale();
+  return 0;
+}
+
 int appendAxisPLCExpr(int axisIndex, char *expr) {
   LOGINFO4("%s/%s:%d axisIndex=%d value=%s\n",
            __FILE__,

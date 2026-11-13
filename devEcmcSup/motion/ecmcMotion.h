@@ -2571,6 +2571,21 @@ int getAxisEncLookupTableRange(int axisIndex, double *range);
 int setAxisEncLookupTableScale(int axisIndex, double scale);
 int getAxisEncLookupTableScale(int axisIndex, double *scale);
 
+/** \brief Configure CSV drive-output spring/feed-forward compensation.
+ *
+ * The first LUT column is actual axis position in engineering units. The
+ * second column is an offset in CSV drive-command engineering units. At each
+ * cycle ecmc calculates controller output + scale * LUT(actual position), then
+ * applies the normal drive scaling. This feature does not affect CSP output.
+ */
+int loadAxisDrvLookupTable(int axisIndex, const char *filename);
+int setAxisDrvLookupTableEnable(int axisIndex, int enable);
+int getAxisDrvLookupTableEnable(int axisIndex, int *enable);
+int setAxisDrvLookupTableRange(int axisIndex, double range);
+int getAxisDrvLookupTableRange(int axisIndex, double *range);
+int setAxisDrvLookupTableScale(int axisIndex, double scale);
+int getAxisDrvLookupTableScale(int axisIndex, double *scale);
+
 /** \brief Set PID-controller proportional gain.\n
  *
  * \param[in] axisIndex  Axis index.\n

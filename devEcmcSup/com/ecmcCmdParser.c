@@ -801,6 +801,7 @@ static int cfgCommandRequiresLocalAccess(const char *command) {
     "IocshCmd=", "LoadPlugin(", "LoadSafetyPlugin(", "LoadCppLogic(",
     "AppendCppLogicMacros(", "LoadPLCFile(", "LoadAxisPLCFile(",
     "LoadPLCLibFile(", "LoadLUTFile(", "LoadAxisEncLookupTable(",
+    "LoadAxisDrvLookupTable(",
     "SetPLCExpr(", "AppendPLCExpr(", "AppendAxisPLCExpr(",
     "ClearPLCExpr(", "CompilePLC(", "CompileAxisPLC(", "SimLoadRecords("
   };
@@ -846,7 +847,8 @@ static int handleCfgCommand(const char *myarg_1, int fromNetwork) {
 
   cfgFastSetAxisCntrl = !strncmp(myarg_1, "SetAxisCntrl", 12);
   cfgFastSetAxisMon   = !strncmp(myarg_1, "SetAxisMon", 10);
-  cfgFastSetAxisDrv   = !strncmp(myarg_1, "SetAxisDrv", 10);
+  cfgFastSetAxisDrv   = !strncmp(myarg_1, "SetAxisDrv", 10) ||
+                        !strncmp(myarg_1, "LoadAxisDrvLookupTable", 22);
   cfgFastSetAxisEnc   = !strncmp(myarg_1, "SetAxisEnc", 10) ||
                         !strncmp(myarg_1, "AddAxisEnc", 10) ||
                         !strncmp(myarg_1, "SelectAxisEnc", 13) ||
@@ -3298,6 +3300,7 @@ parse_cfg_setaxisenc:
     if (nvals == 2) {
       return setAxisEncLookupTableScale(iValue, dValue);
     }
+
   }
 
 parse_cfg_setaxiscntrl:
@@ -3869,7 +3872,30 @@ parse_cfg_setaxismon:
   }
   
 parse_cfg_setaxisdrv:
-  if (!strncmp(myarg_1, "SetAxisDrv", 10)) {
+  if (!strncmp(myarg_1, "SetAxisDrv", 10) ||
+      !strncmp(myarg_1, "LoadAxisDrvLookupTable", 22)) {
+    cExprBuffer[0] = '\0';
+    nvals = sscanf(myarg_1, "LoadAxisDrvLookupTable(%d,%[^)])", &iValue, cExprBuffer);
+    if (nvals == 2) {
+      RETURN_ERROR_IF_RUNTIME_CFG_CMD("LoadAxisDrvLookupTable");
+      return loadAxisDrvLookupTable(iValue, cExprBuffer);
+    }
+
+    nvals = sscanf(myarg_1, "SetAxisDrvLookupTableEnable(%d,%d)", &iValue, &iValue2);
+    if (nvals == 2) {
+      return setAxisDrvLookupTableEnable(iValue, iValue2);
+    }
+
+    nvals = sscanf(myarg_1, "SetAxisDrvLookupTableRange(%d,%lf)", &iValue, &dValue);
+    if (nvals == 2) {
+      return setAxisDrvLookupTableRange(iValue, dValue);
+    }
+
+    nvals = sscanf(myarg_1, "SetAxisDrvLookupTableScale(%d,%lf)", &iValue, &dValue);
+    if (nvals == 2) {
+      return setAxisDrvLookupTableScale(iValue, dValue);
+    }
+
     /*int Cfg.SetAxisDrvScaleNum(int axis_no, double value);*/
     nvals = sscanf(myarg_1, "SetAxisDrvScaleNum(%d,%lf)", &iValue, &dValue);
 
@@ -6230,6 +6256,24 @@ parse_getaxisenc:
 
 parse_getaxisdrv:
   if (!strncmp(myarg_1, "GetAxisDrv", 10)) {
+    nvals = sscanf(myarg_1, "GetAxisDrvLookupTableEnable(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_INT(getAxisDrvLookupTableEnable(motor_axis_no,
+                                                                      &iValue));
+    }
+
+    nvals = sscanf(myarg_1, "GetAxisDrvLookupTableRange(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisDrvLookupTableRange(motor_axis_no,
+                                                                        &fValue));
+    }
+
+    nvals = sscanf(myarg_1, "GetAxisDrvLookupTableScale(%d)", &motor_axis_no);
+    if (nvals == 1) {
+      SEND_RESULT_OR_ERROR_AND_RETURN_DOUBLE(getAxisDrvLookupTableScale(motor_axis_no,
+                                                                        &fValue));
+    }
+
     /*int GetAxisDrvMode(int axis_no);*/
     nvals = sscanf(myarg_1, "GetAxisDrvMode(%d)", &motor_axis_no);
 

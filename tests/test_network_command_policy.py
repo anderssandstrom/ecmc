@@ -95,6 +95,7 @@ int main(void) {
     "Cfg.AppendCppLogicMacros(0)=FILE=/tmp/a", "Cfg.LoadPLCFile(0,/tmp/a)",
     "Cfg.LoadAxisPLCFile(0,/tmp/a)", "Cfg.LoadPLCLibFile(0,/tmp/a)",
     "Cfg.LoadLUTFile(0,/tmp/a)", "Cfg.LoadAxisEncLookupTable(0,/tmp/a)",
+    "Cfg.LoadAxisDrvLookupTable(0,/tmp/a)",
     "Cfg.SetPLCExpr(0)=open('/tmp/a','w')", "Cfg.AppendPLCExpr(0)=x:=1#",
     "Cfg.AppendAxisPLCExpr(0)=x:=1#", "Cfg.ClearPLCExpr(0)",
     "Cfg.CompilePLC(0)", "Cfg.CompileAxisPLC(0)", "Cfg.SimLoadRecords(TEST:)"

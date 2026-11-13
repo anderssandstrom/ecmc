@@ -21,6 +21,7 @@
 #include "ecmcDataLink.h"
 #include "ecmcAxisData.h"
 #include "ecmcEncoder.h"
+#include "ecmcLookupTable.h"
 
 // Timeout in seconds (mostly for startup)
 #define ERROR_DRV_STATE_MACHINE_TIME_OUT_TIME 15
@@ -83,6 +84,13 @@ public:
   int          setBrakeCloseAheadTime(int aheadTime);
   int          setStateMachineTimeout(double seconds);
   int          setVelSetOffsetRaw(double offset);
+  int          loadLookupTable(const std::string& filename);
+  int          setLookupTableEnable(bool enable);
+  int          getLookupTableEnable() const;
+  int          setLookupTableRange(double range);
+  double       getLookupTableRange() const;
+  int          setLookupTableScale(double scale);
+  double       getLookupTableScale() const;
   
   // CSP
   int          setCspPosSet(double posEng);
@@ -156,6 +164,10 @@ private:
   int64_t veloPosOutput_;
   double veloRawOffset_;
   ecmcEncoder* cspEnc_;
+  bool lookupTableEnable_;
+  ecmcLookupTable<double, double> *lookupTable_;
+  double lookupTableRange_;
+  double lookupTableScale_;
 };
 
 #endif  // ifndef ECMCDRIVEBASE_H_

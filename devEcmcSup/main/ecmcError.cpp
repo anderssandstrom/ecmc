@@ -823,6 +823,12 @@ const char * ecmcError::convertErrorIdToString(int errorId) {
 
     break;
 
+  case 0x14616:
+    return "ERROR_DRV_LOOKUP_TABLE_NOT_LOADED";
+
+  case 0x14617:
+    return "ERROR_DRV_LOOKUP_TABLE_NOT_VALID";
+
   case 0x14C00:  // MONITOR
     return "ERROR_MON_ASSIGN_ENTRY_FAILED";
 
