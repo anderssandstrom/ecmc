@@ -794,7 +794,7 @@ int ecmcPLCDataIF::parseAndLinkEcDataSource(char *ecDataSource) {
   // Bit aliases are intentionally link-only. PLCs must not use either
   // an explicit entry.bit path or an alias which resolves to a bit.
   if (bitId >= 0) {
-    ecmcRtLoggerLogError("PLC EtherCAT bit paths are not supported: %s\\n", ecDataSource);
+    ecmcRtLoggerLogError("PLC EtherCAT bit paths are not supported: %s\n", ecDataSource);
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, ERROR_PLC_EC_VAR_NAME_INVALID);
   }
   if (slaveId >= 0 && ec_) {
