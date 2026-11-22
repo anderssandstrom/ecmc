@@ -172,7 +172,8 @@ public:
     unsigned int   entryPosition = 0);
   int addEntryAlias(uint16_t    position,
                     std::string entryId,
-                    std::string alias);
+                    std::string alias,
+                    int bitIndex = -1);
   int addCyclicEntryWrite(ecmcEcEntry *toEntry,
                           ecmcEcEntry *fromEntry,
                           bool force);
