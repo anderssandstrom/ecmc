@@ -483,6 +483,20 @@ int ecAddEntryAlias(
 
   std::string id = entryIDString;
   std::string alias = aliasIDString;
+  int bitIndex = -1;
+  const size_t dot = id.rfind('.');
+  if (dot != std::string::npos) {
+    const std::string suffix = id.substr(dot + 1);
+    if (suffix.empty() || suffix.find_first_not_of("0123456789") != std::string::npos)
+      return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    char *end = nullptr;
+    const long parsed = std::strtol(suffix.c_str(), &end, 10);
+    if (*end != '\\0' || parsed < 0 || parsed >= 64)
+      return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+    bitIndex = static_cast<int>(parsed);
+    id.erase(dot);
+  }
+
 
   LOGINFO4(
     "%s/%s:%d slave=%d id=%s alias=%s\n",
@@ -495,7 +509,7 @@ int ecAddEntryAlias(
 
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
 
-  return ec->addEntryAlias(slaveBusPosition, id, alias);
+  return ec->addEntryAlias(slaveBusPosition, id, alias, bitIndex);
 }
 
 int ecAddEntryAliasByPath(
@@ -539,17 +553,13 @@ int ecAddEntryAliasByPath(
     return ERROR_MAIN_EC_SLAVE_NULL;
   }
 
-  if (bitIndex >= 0) {
-    return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
-  }
-
   if (masterId != ec->getMasterIndex()) {
     return ERROR_MAIN_EC_INDEX_OUT_OF_RANGE;
   }
 
   std::string id = entryId;
   std::string alias = aliasIDString;
-  return ec->addEntryAlias(slaveIndex, id, alias);
+  return ec->addEntryAlias(slaveIndex, id, alias, bitIndex);
 }
 
 static int findEntryByPath(char *entryPath, ecmcEcEntry **entry) {
