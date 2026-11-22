@@ -276,6 +276,23 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
       ecPath, masterId, ec->getMasterIndex());
   }
   ecmcIoConfigurationScope context(simulationPath ? masterId : ecmcIoConfigurationId());
+  // Resolve a link-only bit alias before dispatching to the existing linker.
+  // A bit alias deliberately is not registered as an EtherCAT entry, so PLC
+  // and asyn access cannot accidentally treat it as a normal scalar entry.
+  if (!simulationPath && slaveIndex >= 0 && ec) {
+    ecmcEcSlave *slave = ec->findSlave(slaveIndex);
+    if (slave) {
+      std::string targetEntry;
+      int targetBit = -1;
+      if (slave->resolveBitAlias(alias, &targetEntry, &targetBit)) {
+        if (bitIndex >= 0) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+        if (targetEntry.size() >= sizeof(alias))
+          return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
+        std::strcpy(alias, targetEntry.c_str());
+        bitIndex = targetBit;
+      }
+    }
+  }
 
   // Get object type
   mainObjectType objType;
