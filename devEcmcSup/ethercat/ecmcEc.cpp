@@ -1217,7 +1217,8 @@ int ecmcEc::addEntry(
 
 int ecmcEc::addEntryAlias(uint16_t    position,
                           std::string entryId,
-                          std::string alias) {
+                          std::string alias,
+                          int bitIndex) {
   ecmcEcSlave *slave = findSlave(position);
 
   if (!slave) {
@@ -1245,11 +1246,14 @@ int ecmcEc::addEntryAlias(uint16_t    position,
     return setErrorID(__FILE__, __FUNCTION__, __LINE__, errorCode);
   }
 
-  errorCode = slave->addEntryAlias(entryId, alias);
+  errorCode = slave->addEntryAlias(entryId, alias, bitIndex);
 
   if (errorCode) {
     return errorCode;
   }
+
+  // A bit alias is only a link-time reference, never an asyn parameter alias.
+  if (bitIndex >= 0) return 0;
 
   if (asynPortDriver_) {
     char targetName[EC_MAX_OBJECT_PATH_CHAR_LENGTH];
