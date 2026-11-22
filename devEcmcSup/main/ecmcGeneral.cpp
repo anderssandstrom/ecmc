@@ -288,7 +288,7 @@ int linkEcEntryToObject(char *ecPath, char *objPath) {
         if (bitIndex >= 0) return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
         if (targetEntry.size() >= sizeof(alias))
           return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
-        std::strcpy(alias, targetEntry.c_str());
+        strcpy(alias, targetEntry.c_str());
         bitIndex = targetBit;
       }
     }
