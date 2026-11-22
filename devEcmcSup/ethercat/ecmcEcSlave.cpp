@@ -1478,7 +1478,8 @@ int ecmcEcSlave::findEntryIndex(std::string id) {
 }
 
 int ecmcEcSlave::addEntryAlias(std::string entryId,
-                               std::string alias) {
+                               std::string alias,
+                               int bitIndex) {
   ecmcEcEntry *entry = findEntry(entryId);
 
   if (!entry) {
@@ -1496,7 +1497,8 @@ int ecmcEcSlave::addEntryAlias(std::string entryId,
   }
 
   ecmcEcEntry *aliasEntry = findEntry(alias);
-  if (aliasEntry && (aliasEntry != entry)) {
+  if ((aliasEntry && (aliasEntry != entry || bitIndex >= 0)) ||
+      bitAliases_.count(alias)) {
     ecmcRtLoggerLogError(
       "%s/%s:%d: ERROR: Slave %d (0x%x,0x%x): Entry alias %s already maps to another entry (0x%x).\n",
       __FILE__,
@@ -1513,7 +1515,26 @@ int ecmcEcSlave::addEntryAlias(std::string entryId,
                       ERROR_EC_SLAVE_ENTRY_ALIAS_EXISTS);
   }
 
+  if (bitIndex >= 0) {
+    // This is a reference to a bit of the existing entry, not a new entry.
+    // Keep it out of findEntry() so PLCs cannot use it as an ordinary variable.
+    if (bitIndex >= entry->getBits() || bitIndex >= 64) {
+      return setErrorID(__FILE__, __FUNCTION__, __LINE__,
+                        ERROR_EC_SLAVE_ENTRY_INFO_STRUCT_NULL);
+    }
+    bitAliases_.emplace(alias, BitAliasTarget{entry->getIdentificationName(), bitIndex});
+    return 0;
+  }
   return entry->addAlias(alias);
+}
+
+bool ecmcEcSlave::resolveBitAlias(const std::string& alias,
+                                  std::string *entryId, int *bitIndex) const {
+  const auto it = bitAliases_.find(alias);
+  if (it == bitAliases_.end()) return false;
+  if (entryId) *entryId = it->second.entryId;
+  if (bitIndex) *bitIndex = it->second.bitIndex;
+  return true;
 }
 
 int ecmcEcSlave::selectAsReferenceDC() {
