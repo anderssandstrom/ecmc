@@ -17,6 +17,7 @@
 #include <string>
 #include <atomic>
 #include <vector>
+#include <map>
 #include <utility>
 #include "stdio.h"
 #include "ecrt.h"
@@ -166,7 +167,11 @@ public:
   ecmcEcEntry* findEntry(std::string id);
   int          findEntryIndex(std::string id);
   int          addEntryAlias(std::string entryId,
-                             std::string alias);
+                             std::string alias,
+                             int bitIndex = -1);
+  // Bit aliases are link-only: they must not be exposed as ordinary entries/PLC variables.
+  bool         resolveBitAlias(const std::string& alias,
+                               std::string *entryId, int *bitIndex) const;
   int          selectAsReferenceDC();
   int          setWatchDogConfig(
 
@@ -230,6 +235,11 @@ public:
   bool getPortWiringCheckEnable() const;
 
 private:
+  struct BitAliasTarget {
+    std::string entryId;
+    int bitIndex;
+  };
+  std::map<std::string, BitAliasTarget> bitAliases_;
   void               initVars();
   int                initAsyn();
   int                appendEntryToList(ecmcEcEntry *entry,
