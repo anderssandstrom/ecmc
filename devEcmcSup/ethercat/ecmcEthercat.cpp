@@ -491,7 +491,7 @@ int ecAddEntryAlias(
       return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
     char *end = nullptr;
     const long parsed = std::strtol(suffix.c_str(), &end, 10);
-    if (*end != '\\0' || parsed < 0 || parsed >= 64)
+    if (*end != '\0' || parsed < 0 || parsed >= 64)
       return ERROR_MAIN_ECMC_COMMAND_FORMAT_ERROR;
     bitIndex = static_cast<int>(parsed);
     id.erase(dot);
