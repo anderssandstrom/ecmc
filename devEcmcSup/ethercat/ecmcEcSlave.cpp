@@ -880,6 +880,23 @@ void ecmcEcSlave::discoverSmTiming() {
     return;
   }
   prepareDcScheduleDiscovery();
+
+  // The SyncManager timing objects below are CoE SDOs. EtherLab's public API
+  // does not expose the SII mailbox-protocol flags, so use its discovered SDO
+  // count as a conservative startup guard. Direct ESC DC register discovery
+  // above is independent of CoE and remains enabled.
+  ec_slave_info_t slaveInfo;
+  memset(&slaveInfo, 0, sizeof(slaveInfo));
+  if (ecrt_master_get_slave(master_, slavePosition_, &slaveInfo) == 0 &&
+      slaveInfo.sdo_count == 0) {
+    resolveEndpointTiming(outputSmTiming_, outputTimingOverride_,
+                          outputTimestampConfig_, EC_DIR_OUTPUT,
+                          &outputTiming_);
+    resolveEndpointTiming(inputSmTiming_, inputTimingOverride_,
+                          inputTimestampConfig_, EC_DIR_INPUT, &inputTiming_);
+    timingAsynDirty_ = true;
+    return;
+  }
   // Only request timing objects for process-data directions actually used by
   // this slave. For example, an EL5042 has no output SyncManager timing.
   if (hasProcessDataOutput_) {

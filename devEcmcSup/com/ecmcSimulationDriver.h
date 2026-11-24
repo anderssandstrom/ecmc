@@ -10,6 +10,7 @@
 
 class ecmcAsynPortDriver;
 class ecmcAsynDataItem;
+class ecmcSimulationAsyncSDO;
 
 // Memory-backed I/O only. Device behaviour belongs in external models.
 class ecmcSimulationDriver final : public ecmcIoDriver {
@@ -35,6 +36,7 @@ public:
     std::map<std::string, std::unique_ptr<Entry>> entries;
     std::vector<Entry *> entryOrder;
     std::map<unsigned, std::vector<uint8_t>> objects;
+    std::vector<std::unique_ptr<ecmcSimulationAsyncSDO>> asyncSdos;
     std::map<std::string, std::vector<int64_t>> settings;
   };
 
@@ -57,6 +59,8 @@ public:
   int setObjectHex(int position, int index, int subIndex, const char *text, size_t size);
   int setObjectTyped(int position, int index, int subIndex, ecmcEcDataType type, const char *value);
   int getObject(int position, int index, int subIndex, void *data, size_t size);
+  int addSDOAsync(int position, int index, int subIndex, ecmcEcDataType type,
+                  const char *name, size_t arrayBytes = 0);
   int setSetting(int position, const std::string &name, std::vector<int64_t> values);
   int setValue(int position, const char *name, const char *value);
   int prepareSimulationParameter(int position, const char *name);

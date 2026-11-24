@@ -5427,6 +5427,14 @@ static int motorHandleOneArgWithOrigin(const char *myarg_1,
                                                              &u32Value));
   }
 
+  /*EcGetSlaveSdoReadSupport(int nSlavePosition,int *nValue)*/
+  nvals = sscanf(myarg_1, "EcGetSlaveSdoReadSupport(%d)", &iValue2);
+
+  if (nvals == 1) {
+    SEND_RESULT_OR_ERROR_AND_RETURN_UINT(ecGetSlaveSdoReadSupport(0, iValue2,
+                                                                 &u32Value));
+  }
+
   nvals = sscanf(myarg_1, "EcGetSdoRTObjectIndex(%d,%255[^)])", &iValue2, cIdBuffer);
   if (nvals == 2) {
     SEND_RESULT_OR_ERROR_AND_RETURN_INT(ecGetSdoRTObjectIndex(iValue2, cIdBuffer, &iValue));

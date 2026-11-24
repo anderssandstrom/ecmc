@@ -815,8 +815,9 @@ int ecAddSdoAsync(
   uint8_t  subIndex,
   char    *datatype,
   char    *idString) {
-  if (ecmcSelectedSimulation()) {
-    return 0; // No asynchronous SDO transport in simulation.
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addSDOAsync(slaveBusPosition, index, subIndex,
+                                   getEcDataTypeFromStr(datatype), idString);
   }
 
   std::string id = idString;
@@ -845,8 +846,10 @@ int ecAddSdoAsync(
 
 int ecAddSdoAsyncArray(int slaveBusPosition, int index, int subIndex,
                        int byteSize, const char *idString) {
-  if (ecmcSelectedSimulation()) {
-    return 0; // No asynchronous SDO transport in simulation.
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    return simulation->addSDOAsync(slaveBusPosition, index, subIndex,
+                                   ECMC_EC_U8, idString,
+                                   static_cast<size_t>(byteSize));
   }
 
   if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
@@ -2017,6 +2020,20 @@ int ecGetSlaveSerialNum(uint16_t  alias, /**< Slave alias. */
 
   *result = ec->getSlaveSerialNum(alias, slavePos);
   return 0;
+}
+
+int ecGetSlaveSdoReadSupport(uint16_t alias,
+                             uint16_t slavePos,
+                             uint32_t *result) {
+  if (auto *simulation = ecmcSelectedSimulation()) {
+    if (!result || !simulation->findDevice(slavePos))
+      return ERROR_MAIN_EC_SLAVE_NULL;
+    *result = 1; // Simulation provides memory-backed SDO access.
+    return 0;
+  }
+  if (!result) return ERROR_EC_MAIN_GET_SLAVE_INFO_FAILED;
+  if (!ec->getInitDone()) return ERROR_MAIN_EC_NOT_INITIALIZED;
+  return ec->getSlaveSdoReadSupport(alias, slavePos, result);
 }
 
 int ecUseClockRealtime(int useClkRT) {

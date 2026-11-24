@@ -1472,6 +1472,23 @@ int ecGetSlaveSerialNum(uint16_t  alias, /**< Slave alias. */
                         uint16_t  slavePos,  /**< Slave position. */
                         uint32_t *result);
 
+/** \brief Check whether EtherLab discovered SDOs for a slave.
+ *
+ * Intended for conservatively gating optional startup SDO reads. A result of
+ * 1 means at least one SDO was discovered; 0 means none were discovered. This
+ * is not an authoritative CoE mailbox capability check: a CoE slave without
+ * SDO-info enumeration can also return 0.
+ *
+ * \param[in] alias Alias of slave. Set to zero to disable.
+ * \param[in] slavePos Position of the EtherCAT slave on the bus.
+ * \param[out] result 1 when SDO reads appear supported, otherwise 0.
+ * \return 0 on success or otherwise an error code.
+ * \note Command example: "Cfg.EcGetSlaveSdoReadSupport(3)"
+ */
+int ecGetSlaveSdoReadSupport(uint16_t alias,
+                             uint16_t slavePos,
+                             uint32_t *result);
+
 /** \brief Set bit that slave needs SDO settings
  *
  *  This slave needs SDO settings i.e. if a drive, then current must be set.\n

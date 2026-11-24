@@ -16,9 +16,10 @@ Release Notes
 
 ## EtherCAT, simulation, and startup
 
+* Add `Cfg.EcGetSlaveSdoReadSupport(slave)` for conservatively gating optional startup SDO reads. It reports whether EtherLab discovered any SDOs; it does not claim authoritative CoE capability. Skip CoE-based `0x1C32/0x1C33` timing discovery when none were discovered, while retaining direct ESC distributed-clock register discovery.
 * Add a memory-backed simulation I/O backend behind the same motion-link interface as EtherCAT. Expose typed simulation PVs for external device models and allow motion links to resolve data items configured later in startup. See [simulation I/O](documentation/simulation-io.md).
 * Support byte-aligned `Cfg.EcAddDataDT` views within one simulated PDO entry. Reads and writes share the parent entry's storage. Bit-offset and cross-entry mappings remain unsupported.
-* Accept scalar and array async SDO registration as no-ops in simulation. Simulation does not create async SDO objects or perform transfers.
+* Create scalar and array async SDO PV interfaces in simulation. Read and write commands complete immediately against zero-initialized, per-device object-dictionary memory.
 * Add queued scalar SDO transfers and startup autosave restore support, improve restore ordering and readiness checks, and allow startup to abort if configured SDO restore fails. Add startup SDO string reads.
 * Add encoder relay power control, readiness checks, selectable feedback modes, and handover to a backup encoder. See [encoder power](documentation/encoder-power.md).
 * Correct IOC realtime status publication when realtime startup is deferred until after EPICS initialization.

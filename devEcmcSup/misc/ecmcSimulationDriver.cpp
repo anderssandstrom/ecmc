@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 
 namespace {
 int bitsOf(ecmcEcDataType type) {
@@ -16,6 +17,100 @@ int bitsOf(ecmcEcDataType type) {
   return static_cast<int>(ecmcDataAccess::sizeOf(type) * 8);
 }
 }
+
+class ecmcSimulationAsyncSDO {
+public:
+  ecmcSimulationAsyncSDO(ecmcAsynPortDriver *port, int master, int slave,
+                         ecmcEcDataType type, const char *alias, size_t bytes,
+                         std::vector<uint8_t> *storage, bool array)
+    : port_(port), type_(type), bytes_(bytes), storage_(storage), array_(array),
+      read_(array ? bytes : sizeof(uint64_t), 0),
+      write_(array ? bytes : sizeof(uint64_t), 0) {
+    if (!port_) return;
+    const std::string base = "ec" + std::to_string(master) + ".s" +
+      std::to_string(slave) + ".sdo." + alias;
+    value_ = add(base + ".value", array ? asynParamInt8Array : asynParamInt32,
+                 read_.data(), array ? bytes : sizeof(uint64_t), !array);
+    error_ = add(base + ".error", asynParamInt32,
+                 reinterpret_cast<uint8_t *>(&errorValue_), sizeof(errorValue_), false);
+    readCmd_ = add(base + ".readcmd", asynParamInt32,
+                   reinterpret_cast<uint8_t *>(&readTrigger_), sizeof(readTrigger_), true);
+    writeCmd_ = add(base + ".writecmd", asynParamInt32,
+                    reinterpret_cast<uint8_t *>(&writeTrigger_), sizeof(writeTrigger_), true);
+    busy_ = add(base + ".busy", asynParamInt32,
+                reinterpret_cast<uint8_t *>(&busyValue_), sizeof(busyValue_), false);
+    if (array) {
+      writeValue_ = add(base + ".writevalue", asynParamInt8Array,
+                        write_.data(), bytes, true);
+      readBytes_ = static_cast<int32_t>(bytes);
+      bytesParam_ = add(base + ".bytes", asynParamInt32,
+                        reinterpret_cast<uint8_t *>(&readBytes_), sizeof(readBytes_), false);
+      writeValue_->setExeCmdFunctPtr(writeArray, this);
+    }
+    if (!value_ || !error_ || !readCmd_ || !writeCmd_ || !busy_ ||
+        (array && (!writeValue_ || !bytesParam_))) throw std::bad_alloc();
+    value_->setEcmcDataSize(array ? bytes : bytes_);
+    value_->setEcmcBitCount(bytes_ * 8);
+    if (!array) {
+      value_->addSupportedAsynType(asynParamFloat64);
+      if (type != ECMC_EC_F32 && type != ECMC_EC_F64)
+        value_->addSupportedAsynType(asynParamUInt32Digital);
+#ifdef ECMC_ASYN_ASYNPARAMINT64
+      if (bytes_ == sizeof(uint64_t)) value_->addSupportedAsynType(asynParamInt64);
+#endif
+    }
+    readCmd_->setExeCmdFunctPtr(readCommand, this);
+    writeCmd_->setExeCmdFunctPtr(writeCommand, this);
+  }
+  ~ecmcSimulationAsyncSDO() {
+    for (auto *item : {value_, error_, readCmd_, writeCmd_, busy_, writeValue_, bytesParam_})
+      if (item) item->setEcmcDataPointer(nullptr, 0);
+  }
+
+private:
+  ecmcAsynDataItem *add(const std::string &name, asynParamType asynType,
+                        uint8_t *data, size_t bytes, bool writable) {
+    auto *item = port_->addNewAvailParam(name.c_str(), asynType, data, bytes, type_, 0);
+    if (item) { item->setAllowWriteToEcmc(writable); item->refreshParam(1); }
+    return item;
+  }
+  static asynStatus readCommand(void *data, size_t bytes, asynParamType type, void *object) {
+    return static_cast<ecmcSimulationAsyncSDO *>(object)->command(data, bytes, type, false);
+  }
+  static asynStatus writeCommand(void *data, size_t bytes, asynParamType type, void *object) {
+    return static_cast<ecmcSimulationAsyncSDO *>(object)->command(data, bytes, type, true);
+  }
+  static asynStatus writeArray(void *data, size_t bytes, asynParamType type, void *object) {
+    auto *self = static_cast<ecmcSimulationAsyncSDO *>(object);
+    if (!data || type != asynParamInt8Array || bytes != self->bytes_) return asynError;
+    memcpy(self->write_.data(), data, bytes);
+    return asynSuccess;
+  }
+  asynStatus command(void *data, size_t bytes, asynParamType type, bool write) {
+    if (!data || bytes != sizeof(int32_t) || type != asynParamInt32) return asynError;
+    int32_t trigger = 0; memcpy(&trigger, data, sizeof(trigger));
+    int32_t &old = write ? writeTrigger_ : readTrigger_;
+    const bool rising = trigger && !old; old = trigger;
+    if (!rising) return asynSuccess;
+    if (write) {
+      if (array_) *storage_ = write_;
+      else storage_->assign(read_.begin(), read_.begin() + bytes_);
+    } else {
+      if (storage_->size() != bytes_) { errorValue_ = ERROR_MAIN_ECMC_LINK_INVALID; return asynError; }
+      memcpy(read_.data(), storage_->data(), bytes_);
+      value_->refreshParam(1);
+      if (bytesParam_) bytesParam_->refreshParam(1);
+    }
+    errorValue_ = 0; error_->refreshParam(1);
+    return asynSuccess;
+  }
+  ecmcAsynPortDriver *port_;
+  ecmcEcDataType type_; size_t bytes_; std::vector<uint8_t> *storage_; bool array_;
+  std::vector<uint8_t> read_, write_;
+  int32_t errorValue_ = 0, readTrigger_ = 0, writeTrigger_ = 0, busyValue_ = 0, readBytes_ = 0;
+  ecmcAsynDataItem *value_ = nullptr, *error_ = nullptr, *readCmd_ = nullptr,
+    *writeCmd_ = nullptr, *busy_ = nullptr, *writeValue_ = nullptr, *bytesParam_ = nullptr;
+};
 
 ecmcSimulationDriver::ecmcSimulationDriver(int id, ecmcAsynPortDriver *port)
   : id_(id), port_(port), healthy_(std::make_shared<int>(1)) {
@@ -249,6 +344,26 @@ int ecmcSimulationDriver::getObject(int position, int index, int subIndex, void 
   if (found == device->objects.end() || found->second.size() != size)
     return ERROR_MAIN_ECMC_LINK_INVALID;
   memcpy(data, found->second.data(), size);
+  return 0;
+}
+
+int ecmcSimulationDriver::addSDOAsync(int position, int index, int subIndex,
+                                     ecmcEcDataType type, const char *name,
+                                     size_t arrayBytes) {
+  auto *device = findDevice(position);
+  const size_t bytes = arrayBytes ? arrayBytes : ecmcDataAccess::sizeOf(type);
+  if (!device || index < 0 || index > 0xffff || subIndex < 0 || subIndex > 0xff ||
+      !name || !*name || !bytes || bytes > 1024 * 1024)
+    return ERROR_MAIN_ECMC_LINK_INVALID;
+  try {
+    auto &storage = device->objects[(static_cast<unsigned>(index) << 8) | subIndex];
+    if (storage.empty()) storage.resize(bytes, 0);
+    if (storage.size() != bytes) return ERROR_MAIN_ECMC_LINK_INVALID;
+    device->asyncSdos.emplace_back(std::make_unique<ecmcSimulationAsyncSDO>(
+      port_, id_, position, type, name, bytes, &storage, arrayBytes != 0));
+  } catch (const std::exception &) {
+    return ERROR_MAIN_ASYN_CREATE_PARAM_FAIL;
+  }
   return 0;
 }
 

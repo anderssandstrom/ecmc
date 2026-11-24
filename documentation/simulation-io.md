@@ -192,7 +192,14 @@ request for later readback; it does not erase configured signals or run a reset
 model.
 
 This is currently scalar buffer simulation, not a complete EtherLab emulator.
-Memory maps, derived process-image items, asynchronous SDO requests, SoE,
+Scalar and array asynchronous SDO declarations create the same asyn parameter
+names used by the EtherCAT backend. Their object storage starts at zero; read and
+write commands complete immediately against the per-device object dictionary,
+so existing SDO record templates can load and the IOC can execute without an
+EtherCAT mailbox. Busy remains clear and no mailbox timing or abort behavior is
+simulated.
+
+Memory maps, derived process-image items, SoE,
 entry-copy services and several specialized timing services return
 `ERROR_MAIN_IO_CONFIG_UNSUPPORTED` for a selected simulated instance. Some
 specialized axis status/sequencer/PVT link commands still require migration.

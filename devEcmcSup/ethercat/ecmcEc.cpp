@@ -2803,6 +2803,27 @@ uint32_t ecmcEc::getSlaveSerialNum(uint16_t alias,  /**< Slave alias. */
   return slaveInfo.serial_number;
 }
 
+int ecmcEc::getSlaveSdoReadSupport(uint16_t alias,
+                                   uint16_t slavePos,
+                                   uint32_t *result) {
+  (void)alias; // Ring-position lookup matches the existing slave-info getters.
+  if (!result) return ERROR_EC_MAIN_GET_SLAVE_INFO_FAILED;
+  *result = 0;
+  if (!master_) return ERROR_EC_MASTER_NULL;
+
+  ec_master_info_t masterInfo;
+  if (ecrt_master(master_, &masterInfo))
+    return ERROR_EC_MAIN_GET_SLAVE_INFO_FAILED;
+  if (slavePos >= masterInfo.slave_count)
+    return ERROR_EC_MAIN_INVALID_SLAVE_INDEX;
+
+  ec_slave_info_t slaveInfo;
+  if (ecrt_master_get_slave(master_, slavePos, &slaveInfo))
+    return ERROR_EC_MAIN_GET_SLAVE_INFO_FAILED;
+  *result = slaveInfo.sdo_count > 0 ? 1u : 0u;
+  return 0;
+}
+
 int ecmcEc::useClockRealtime(bool useClkRT) {
   useClockRealtime_ = useClkRT;
   return 0;

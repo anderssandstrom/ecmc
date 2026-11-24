@@ -241,6 +241,9 @@ public:
                                uint16_t slavePos /**< Slave position. */);
   uint32_t getSlaveSerialNum(uint16_t alias,       /**< Slave alias. */
                              uint16_t slavePos /**< Slave position. */);
+  int      getSlaveSdoReadSupport(uint16_t alias,  /**< Slave alias. */
+                                  uint16_t slavePos, /**< Slave position. */
+                                  uint32_t *result);
   int      useClockRealtime(bool useClkRT);
   bool     getScanBusyNotRT();
 

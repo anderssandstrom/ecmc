@@ -38,6 +38,7 @@ fixture = r'''
 #include <cstring>
 #include <set>
 #include "ecmcIoConfig.h"
+#include "ecmcAsynPortDriver.h"
 #include "ecmcErrorsList.h"
 #include "ecmcEthercat.h"
 #include "ecmcMotion.h"
@@ -210,6 +211,8 @@ void checkMotionBindings(Axis &axis, uint64_t &positionValue, uint64_t &controlV
   axis.blocked = false;
 }
 int main() {
+  ecmcAsynPortDriver simulationPort;
+  asynPort = &simulationPort;
   appModeStat = ECMC_MODE_CONFIG;
   assert(command("SimLoadRecords(TEST:SIM:)") == 0);
   assert(command("SimLoadRecords(TEST:SIM:)junk") == ERROR_MAIN_PARSER_INVALID_FORMAT);
@@ -217,6 +220,23 @@ int main() {
   assert(ecSetMaster(0) == 0 && hardware.requests == 0);
   assert(setIoBackend(0,0) == ERROR_MAIN_IO_BACKEND_LOCKED);
   assert(ecAddSlave(0,2,123,456) == 0);
+  uint32_t sdoReadSupport = 0;
+  assert(ecGetSlaveSdoReadSupport(0,2,&sdoReadSupport) == 0 && sdoReadSupport == 1);
+  assert(ecGetSlaveSdoReadSupport(0,99,&sdoReadSupport) == ERROR_MAIN_EC_SLAVE_NULL);
+  char asyncType[] = "U16", asyncName[] = "setting";
+  assert(ecAddSdoAsync(2,0x8010,1,asyncType,asyncName) == 0);
+  assert(ecAddSdoAsyncArray(2,0x8020,2,4,"payload") == 0);
+  assert(simulationPort.find("ec0.s2.sdo.setting.value"));
+  assert(simulationPort.find("ec0.s2.sdo.setting.readcmd"));
+  assert(simulationPort.find("ec0.s2.sdo.setting.writecmd"));
+  assert(simulationPort.find("ec0.s2.sdo.setting.error"));
+  assert(simulationPort.find("ec0.s2.sdo.setting.busy"));
+  assert(simulationPort.find("ec0.s2.sdo.payload.value"));
+  assert(simulationPort.find("ec0.s2.sdo.payload.writevalue"));
+  assert(simulationPort.find("ec0.s2.sdo.payload.bytes"));
+  uint16_t asyncInitial = 1;
+  assert(ecmcSelectedSimulation()->getObject(2,0x8010,1,&asyncInitial,sizeof(asyncInitial)) == 0);
+  assert(asyncInitial == 0);
   char s32[] = "S32", position[] = "positionActual01", u16[] = "U16", control[] = "controlWord01";
   assert(ecAddEntry(2,123,456,2,3,0x1a00,0x6000,1,s32,position,1) == 0);
   assert(ecAddEntry(2,123,456,1,2,0x1600,0x7000,1,u16,control,1) == 0);
