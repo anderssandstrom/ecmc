@@ -1,5 +1,15 @@
 Release Notes
 ===
+# 11.2.1_RC1
+
+## PLC and motor records
+
+* Add read-only PLC variables `axN.mr.off` for the motor record's `.OFF` in engineering units, `axN.mr.dir` for `.DIR` (0 = normal, 1 = inverted), and `axN.mr.loaded` (1 once the motor record is bound to the axis). All three default to 0 before binding and on axes without a motor record. PLC reads use a lock-free per-axis cache.
+
+## EPICS
+
+* Mitigate some PVXS warnings.
+
 # 11.2.0
 
 ## Motion and motor records
