@@ -110,6 +110,9 @@ struct ecmcAxisBase {
   bool getAllowCmdFromPLC() { return true; }
   double getExtSetPos() { return data_.status_.externalTrajectoryPosition; }
   double getExtActPos() { return data_.status_.externalEncoderPosition; }
+  double getMotorRecordOffset() const { return 0.0; }
+  int getMotorRecordDirection() const { return 0; }
+  bool getMotorRecordLoaded() const { return false; }
   std::vector<std::shared_ptr<ecmcDataAccess>> dataSources_;
   static ecmcAxisDataType parseDataSource(const char *, int * = nullptr);
   std::shared_ptr<ecmcDataAccess> getDataSource(const char *);

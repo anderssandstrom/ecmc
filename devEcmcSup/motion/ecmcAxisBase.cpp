@@ -18,6 +18,7 @@
 #include <new>
 #include <iostream>
 #include <cmath>
+#include <cstring>
 #include "ecmcMotion.h"
 #include "ecmcErrorsList.h"
 #include "ecmcGlobalsExtern.h"
@@ -365,6 +366,20 @@ ecmcAxisBase::~ecmcAxisBase() {
   extTrajVeloFilter_ = NULL;
   delete extEncVeloFilter_;
   extEncVeloFilter_ = NULL;
+}
+
+void ecmcAxisBase::setMotorRecordOffset(double value) {
+  unsigned long long bits;
+  std::memcpy(&bits, &value, sizeof(bits));
+  motorRecordOffsetBits_.store(bits, std::memory_order_relaxed);
+}
+
+double ecmcAxisBase::getMotorRecordOffset() const {
+  const unsigned long long bits =
+    motorRecordOffsetBits_.load(std::memory_order_relaxed);
+  double value;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
 }
 
 void ecmcAxisBase::initVars() {
@@ -5010,6 +5025,9 @@ ecmcAxisDataType ecmcAxisBase::parseDataSource(const char *path, int *isBoolean)
     {ECMC_AXIS_DATA_STR_CTRL_KI_CMD, ECMC_AXIS_DATA_CTRL_KI, 0},
     {ECMC_AXIS_DATA_STR_CTRL_KD_CMD, ECMC_AXIS_DATA_CTRL_KD, 0},
     {ECMC_AXIS_DATA_STR_CTRL_KFF_CMD, ECMC_AXIS_DATA_CTRL_KFF, 0},
+    {ECMC_AXIS_DATA_STR_MR_OFF, ECMC_AXIS_DATA_MR_OFF, 0},
+    {ECMC_AXIS_DATA_STR_MR_DIRECTION, ECMC_AXIS_DATA_MR_DIRECTION, 0},
+    {ECMC_AXIS_DATA_STR_MR_LOADED, ECMC_AXIS_DATA_MR_LOADED, 1},
   };
   for (const auto &entry : names) {
     if (strcmp(name, entry.name)) continue;
@@ -5265,6 +5283,18 @@ int ecmcAxisBase::readDataSource(ecmcAxisDataType source, double *value) {
     } else {
       *value = 0;
     }
+    break;
+
+  case ECMC_AXIS_DATA_MR_OFF:
+    *value = axis->getMotorRecordOffset();
+    break;
+
+  case ECMC_AXIS_DATA_MR_DIRECTION:
+    *value = static_cast<double>(axis->getMotorRecordDirection());
+    break;
+
+  case ECMC_AXIS_DATA_MR_LOADED:
+    *value = axis->getMotorRecordLoaded();
     break;
 
   default:

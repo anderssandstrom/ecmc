@@ -560,6 +560,9 @@ enum axisSubObjectType {
 #define ECMC_AXIS_DATA_STR_CTRL_KI_CMD "ctrl.ki"
 #define ECMC_AXIS_DATA_STR_CTRL_KD_CMD "ctrl.kd"
 #define ECMC_AXIS_DATA_STR_CTRL_KFF_CMD "ctrl.kff"
+#define ECMC_AXIS_DATA_STR_MR_OFF "mr.off"
+#define ECMC_AXIS_DATA_STR_MR_DIRECTION "mr.dir"
+#define ECMC_AXIS_DATA_STR_MR_LOADED "mr.loaded"
 
 enum ecmcAxisDataType {
   ECMC_AXIS_DATA_NONE                  = 0,
@@ -612,6 +615,9 @@ enum ecmcAxisDataType {
   ECMC_AXIS_DATA_CTRL_KI               = 47,
   ECMC_AXIS_DATA_CTRL_KD               = 48,
   ECMC_AXIS_DATA_CTRL_KFF              = 49,
+  ECMC_AXIS_DATA_MR_OFF                = 50,
+  ECMC_AXIS_DATA_MR_DIRECTION          = 51,
+  ECMC_AXIS_DATA_MR_LOADED             = 52,
 };
 
 enum ecmcDataStorageType {

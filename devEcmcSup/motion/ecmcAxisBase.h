@@ -110,6 +110,22 @@ public:
   unsigned int               getMotionCommandExecuteCounter() const;
   motionCommandTypes         getCommand();
   int                        getCmdData();
+  // Updated by the non-RT motor-record/asyn thread and read by RT PLCs.
+  // Relaxed atomics avoid taking the asyn controller lock in the RT path.
+  void setMotorRecordOffset(double value);
+  double getMotorRecordOffset() const;
+  void setMotorRecordDirection(int value) {
+    motorRecordDirection_.store(value, std::memory_order_relaxed);
+  }
+  int getMotorRecordDirection() const {
+    return motorRecordDirection_.load(std::memory_order_relaxed);
+  }
+  void setMotorRecordLoaded() {
+    motorRecordLoaded_.store(1, std::memory_order_release);
+  }
+  bool getMotorRecordLoaded() const {
+    return motorRecordLoaded_.load(std::memory_order_acquire) != 0;
+  }
   int                        slowExecute();
   ecmcAxisDataStatus*        getAxisStatusDataPtr();
   // Configuration-time lookup of the same readable names supported by PLCs.
@@ -366,6 +382,13 @@ public:
   bool       getHwReady();
 
 protected:
+  static_assert(sizeof(double) == sizeof(unsigned long long),
+                "motor-record offset cache requires a 64-bit double");
+  static_assert(ATOMIC_LLONG_LOCK_FREE == 2 && ATOMIC_INT_LOCK_FREE == 2,
+                "motor-record PLC cache requires lock-free atomics");
+  std::atomic<unsigned long long> motorRecordOffsetBits_ {0};
+  std::atomic<int> motorRecordDirection_ {0};
+  std::atomic<int> motorRecordLoaded_ {0};
   std::atomic<bool> motorRecordStartupReady_ {true};
   std::atomic<bool> startupCommandsReleased_ {false};
   std::atomic<const char *> startupHoldReason_ {"waiting for IOC/bus stabilization"};

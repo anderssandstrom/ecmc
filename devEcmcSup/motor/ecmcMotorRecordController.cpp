@@ -116,6 +116,7 @@ void motorRecordInitHook(initHookState state) {
             auto *axis = controller->getAxis(axisNo);
             if (axis) {
               controller->bindStartupMotorRecord(axisNo, record);
+              axis->bindMotorRecordCoordinates(record->off, record->dir);
               axis->captureRestoredSoftLimits(record->dllm, record->dhlm,
                                               record->mres);
             }
@@ -873,7 +874,11 @@ asynStatus ecmcMotorRecordController::writeFloat64(asynUser *pasynUser, epicsFlo
   // If axis is defined then all can be handled in asynMotorController (both axes and controller related)
   if (pAxis) {
     //printf("ecmcMotorRecordController::writeFloat64: pAxis is valid\n");
-    return asynMotorController::writeFloat64(pasynUser, value);
+    status = asynMotorController::writeFloat64(pasynUser, value);
+    if (status == asynSuccess && function == motorRecOffset_) {
+      pAxis->setMotorRecordOffset(value);
+    }
+    return status;
   }
 
   // can be controller related (axisNo == 0)
@@ -931,7 +936,11 @@ asynStatus ecmcMotorRecordController::writeInt32(asynUser *pasynUser, epicsInt32
 
   // If axis is defined then all can be handled in asynMotorController (both axes and controller related)
   if (pAxis) {
-    return asynMotorController::writeInt32(pasynUser, value);
+    status = asynMotorController::writeInt32(pasynUser, value);
+    if (status == asynSuccess && function == motorRecDirection_) {
+      pAxis->setMotorRecordDirection(value);
+    }
+    return status;
   }
 
   // can be controller related (axisNo == 0)

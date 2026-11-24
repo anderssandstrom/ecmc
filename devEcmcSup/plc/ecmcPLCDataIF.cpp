@@ -695,6 +695,11 @@ int ecmcPLCDataIF::writeAxis() {
 
     break;
 
+  case ECMC_AXIS_DATA_MR_OFF:
+  case ECMC_AXIS_DATA_MR_DIRECTION:
+  case ECMC_AXIS_DATA_MR_LOADED:
+    return 0;
+
   default:
     return setErrorID(__FILE__,
                       __FUNCTION__,

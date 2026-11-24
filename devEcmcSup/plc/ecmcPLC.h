@@ -173,6 +173,9 @@ int setPLCExpr(int   index,
  *                                    ax<id>.traj.dir<0: backward\n
  *                                    ax<id>.traj.dir=0: standstill\n
  *   24. ax<id>.cntrl.error           actual controller error          (ro)\n
+ *   24a.ax<id>.mr.off                motor record offset              (ro)\n
+ *   24b.ax<id>.mr.dir                motor record direction           (ro)\n
+ *   24c.ax<id>.mr.loaded             motor record bound (0 or 1)       (ro)\n
  *   25. ax<id>.cntrl.poserror        actual position error            (ro)\n
  *   26. ax<id>.cntrl.output          actual controller output         (ro)\n
  *   27. ax<id>.drv.setvelraw         actual raw velocity setpoint     (ro)\n

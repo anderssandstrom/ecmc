@@ -168,6 +168,7 @@ struct ecmcMotorRecordAxis : asynMotorAxis {
   asynStatus syncMotorSoftLimits(bool, bool);
   asynStatus syncRestoredMotorSoftLimitsToEcmc();
   void captureRestoredSoftLimits(double, double, double);
+  void bindMotorRecordCoordinates(double, int) {}
   asynStatus initializeSoftLimits();
   asynStatus syncSoftLimitInterfaces(bool update, bool seed = false);
   asynStatus readEcmcAxisStatusData();
@@ -188,6 +189,8 @@ struct motorRecord {
   DBLINK out;
   unsigned mflg = 0;
   double dllm = -100, dhlm = 150, mres = 0.10986328125;
+  double off = 0;
+  int dir = 0;
 };
 motorRecord records[2];
 struct DBENTRY { int index = 0; };

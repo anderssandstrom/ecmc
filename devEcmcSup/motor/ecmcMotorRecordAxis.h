@@ -77,6 +77,17 @@ public:
   bool getPVTEnabled();
   void setEnablePVTFunc(int enable);
   void invalidatePVTBuild();
+  void bindMotorRecordCoordinates(double offset, int direction) {
+    setMotorRecordOffset(offset);
+    setMotorRecordDirection(direction);
+    if (drvlocal.ecmcAxis) drvlocal.ecmcAxis->setMotorRecordLoaded();
+  }
+  void setMotorRecordOffset(double value) {
+    if (drvlocal.ecmcAxis) drvlocal.ecmcAxis->setMotorRecordOffset(value);
+  }
+  void setMotorRecordDirection(int value) {
+    if (drvlocal.ecmcAxis) drvlocal.ecmcAxis->setMotorRecordDirection(value);
+  }
 
 private:
   typedef enum
