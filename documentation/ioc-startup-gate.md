@@ -25,6 +25,16 @@ Normal axis startup and PLC execution wait for `initHookAfterIocRunning`.
 IOC initialization, and waits for bus readiness and internal timing discovery.
 The RTLogger port publishes timing PVs asynchronously. Startup scripts can
 proceed to `iocInit` as soon as the bus and internal discovery are ready.
+
+Optional DC timing reads begin after the required configured slaves are in
+OP and the required PDO domains have reported complete working counters for
+at least 100 ms. Domains configured to allow offline operation are excluded
+from this check. Slaves without active DC configuration do not issue DC or
+SyncManager timing reads. The cyclic bus and configured startup SDOs still
+run during the wait. On a startup timeout, check the log for the master,
+slave position and AL state, incomplete PDO working counters, or pending
+timing discovery. The pre-IOC timeout report includes the slave error flag
+when available. Consult the EtherLab kernel log for the exact AL status code.
 During this configuration-thread wait, the console always shows the startup
 counter (`Waiting for EtherCAT bus startup (N/timeout s).`) once per second,
 independent of the asyn trace mask. With `MASTER_ID=-1`, the message instead

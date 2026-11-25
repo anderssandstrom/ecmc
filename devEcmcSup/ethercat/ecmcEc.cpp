@@ -13,6 +13,7 @@
 #include "ecmcEc.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <cstdlib>
 #include <time.h>
 #include <string>
@@ -446,6 +447,7 @@ int ecmcEc::activate() {
   cycleTiming_.dcConfigured = false;
   cycleTiming_.nominalPeriodNs = mcuPeriod > 0.0 ?
                                   static_cast<uint64_t>(mcuPeriod) : 0u;
+  bool pendingTimingReads = false;
   for (int i = 0; i < slaveCounter_; ++i) {
     if (slaveArray_[i]) {
       slaveArray_[i]->setNominalTimingCycleNs(
@@ -454,6 +456,7 @@ int ecmcEc::activate() {
         cycleTiming_.dcConfigured = true;
       }
       slaveArray_[i]->discoverSmTiming();
+      pendingTimingReads |= slaveArray_[i]->hasPendingTimingReads();
     }
   }
 
@@ -469,6 +472,16 @@ int ecmcEc::activate() {
                       ERROR_EC_MAIN_MASTER_ACTIVATE_FAILED);
   }
   sdoQueue_.setRunning(true);
+
+  timingRequiredDomains_.clear();
+  for (int i = 0; i < domainCounter_; ++i) {
+    auto *domain = domains_[i];
+    if (!domain->getAllowOffline() && domain->getSize() > 0)
+      timingRequiredDomains_.push_back(i);
+  }
+  timingStableSinceNs_ = timingLastHealthyRxNs_ = timingNextOpCheckNs_ = 0;
+  timingAllRequiredOp_ = false;
+  timingReadsReleased_.store(!pendingTimingReads, std::memory_order_release);
 
   ECMC_RT_LOG_ETHERCAT_DEBUG(-1,
                              "%s/%s:%d: DEBUG: Writing process data offsets to entries.\n",
@@ -758,6 +771,9 @@ void ecmcEc::receive(timespec receiveTime, timespec timeOffset) {
     domains_[i]->process();
   }
 
+  if (!timingReadsReleased_.load(std::memory_order_relaxed)) {
+    updateTimingDiscoveryGate(TIMESPEC2NS(receiveTime));
+  }
   updateInputProcessImage();
   // Startup reads must follow EtherLab's startup list for the target slave.
   // The queue checks each target's configured slave, not the master's aggregate
@@ -1113,10 +1129,53 @@ int ecmcEc::writeSoE(uint16_t slavePosition,  /**< Slave position. */
   return errorCode;
 }
 
+void ecmcEc::updateTimingDiscoveryGate(uint64_t receiveTimeNs) {
+  constexpr uint64_t stableWindowNs = 100000000;
+  // Catch-up cycles must not bridge a long interval without a PDO sample.
+  const uint64_t maxGapNs = static_cast<uint64_t>(std::max(5000000.0, 3.0 * mcuPeriod));
+  constexpr uint64_t opCheckIntervalNs = 10000000;
+  bool ready = true;
+  // Reuse the raw working counters sampled by checkDomainsState() at the
+  // end of the preceding receive phase instead of polling the domains twice.
+  for (const int index : timingRequiredDomains_) {
+    if (!domains_[index]->hasCompleteWorkingCounter()) {
+      ready = false;
+      break;
+    }
+  }
+  const bool checkedOp = receiveTimeNs >= timingNextOpCheckNs_;
+  if (checkedOp) {
+    ec_master_state_t masterState = {};
+    ecrt_master_state(master_, &masterState);
+    timingAllRequiredOp_ = masterState.link_up;
+    for (int i = 0; timingAllRequiredOp_ && i < slaveCounter_; ++i) {
+      auto *slave = slaveArray_[i];
+      if (!slave || slave->getAllowOffline()) continue;
+      const auto state = slave->readStartupState();
+      timingAllRequiredOp_ = state.online && state.operational &&
+                             state.al_state == EC_AL_STATE_OP;
+    }
+    timingNextOpCheckNs_ = receiveTimeNs + opCheckIntervalNs;
+  }
+  ready &= timingAllRequiredOp_;
+  if (!ready) {
+    timingStableSinceNs_ = timingLastHealthyRxNs_ = 0;
+    return;
+  }
+  if (!timingStableSinceNs_ ||
+      receiveTimeNs - timingLastHealthyRxNs_ > maxGapNs) {
+    timingStableSinceNs_ = receiveTimeNs;
+  }
+  timingLastHealthyRxNs_ = receiveTimeNs;
+  if (checkedOp && receiveTimeNs - timingStableSinceNs_ >= stableWindowNs)
+    timingReadsReleased_.store(true, std::memory_order_release);
+}
+
 int ecmcEc::updateInputProcessImage() {
+  const bool allowTimingReads = timingReadsReleased_.load(std::memory_order_relaxed);
   const int slaveCount = slaveCounter_;
   for (int i = 0; i < slaveCount; i++) {
-    slaveArray_[i]->updateInputProcessImage();
+    slaveArray_[i]->updateInputProcessImage(allowTimingReads);
   }
 
   const int memMapCount = ecMemMapRtInputCounter_;
@@ -1520,18 +1579,89 @@ void ecmcEc::slowExecute() {
   }
 }
 
-bool ecmcEc::timingStartupReady(bool reportPending) const {
-  bool ready = true;
+bool ecmcEc::timingStartupReady() const {
   for (int i = 0; i < slaveCounter_; ++i) {
-    if (slaveArray_[i] && !slaveArray_[i]->timingStartupReady()) {
-      ready = false;
-      if (reportPending) {
-        LOGERR("EtherCAT slave %d: internal timing discovery still pending.\n",
-               slaveArray_[i]->getSlaveBusPosition());
+    auto *slave = slaveArray_[i];
+    if (slave && !slave->getAllowOffline() && !slave->timingStartupReady())
+      return false;
+  }
+  return true;
+}
+
+namespace {
+void startupDiagnostic(bool realtime, const char *format, ...) {
+  char message[192];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+  if (realtime) {
+    ecmcRtLoggerLogError("%s", message);
+  } else {
+    LOGERR("%s", message);
+  }
+}
+
+const char *startupAlState(unsigned int state) {
+  switch (state & 0xfu) {
+  case EC_AL_STATE_INIT: return "INIT";
+  case EC_AL_STATE_PREOP: return "PREOP";
+  case EC_AL_STATE_SAFEOP: return "SAFEOP";
+  case EC_AL_STATE_OP: return "OP";
+  default: return "unknown";
+  }
+}
+}  // namespace
+
+void ecmcEc::reportStartupBlockers(bool realtime) const {
+  if (!master_) return;
+
+  ec_master_state_t masterState = {};
+  ecrt_master_state(master_, &masterState);
+  const bool readsReleased = timingReadsReleased_.load(std::memory_order_acquire);
+  startupDiagnostic(realtime, "EtherCAT startup ec%d: link=%s, responding=%u, AL=0x%x, timing reads released=%d.\n",
+                    masterIndex_, masterState.link_up ? "up" : "down",
+                    masterState.slaves_responding, masterState.al_states, readsReleased);
+  if (!realtime) {
+    ec_master_info_t info = {};
+    if (ecrt_master(master_, &info) == 0 && info.scan_busy)
+      startupDiagnostic(false, "EtherCAT startup ec%d: master scan still busy.\n", masterIndex_);
+  }
+
+  for (int i = 0; i < slaveCounter_; ++i) {
+    auto *slave = slaveArray_[i];
+    if (!slave || slave->getAllowOffline()) continue;
+    const auto state = slave->readStartupState();
+    const bool operational = state.online && state.operational && state.al_state == EC_AL_STATE_OP;
+    const bool timingReady = slave->timingStartupReady();
+    if (operational && timingReady) continue;
+
+    const int position = slave->getSlaveBusPosition();
+    const char *waitingFor = !state.online ? "slave offline" :
+      !operational ? "configured slave not in OP" :
+      readsReleased ? "internal timing reads" : "required slaves OP and stable PDOs";
+    startupDiagnostic(realtime, "EtherCAT startup ec%d.s%d: %s, AL=0x%x (%s), online=%u, operational=%u.\n",
+                      masterIndex_, position, waitingFor, state.al_state,
+                      startupAlState(state.al_state), state.online, state.operational);
+    if (!realtime && state.online) {
+      ec_slave_info_t info = {};
+      if (ecrt_master_get_slave(master_, position, &info) == 0) {
+        startupDiagnostic(false, "EtherCAT startup ec%d.s%d: %.64s, slave AL=0x%x, error flag=%u.\n",
+                          masterIndex_, position, info.name,
+                          static_cast<unsigned int>(info.al_state),
+                          static_cast<unsigned int>(info.error_flag));
       }
     }
   }
-  return ready;
+  for (const int index : timingRequiredDomains_) {
+    ec_domain_state_t state = {};
+    ecrt_domain_state(domains_[index]->getDomain(), &state);
+    if (state.wc_state != EC_WC_COMPLETE) {
+      startupDiagnostic(realtime, "EtherCAT startup ec%d domain %d: PDO working counter=%u, state=%u (incomplete).\n",
+                        masterIndex_, index, state.working_counter,
+                        static_cast<unsigned int>(state.wc_state));
+    }
+  }
 }
 
 void ecmcEc::resetStartupCommunicationErrors() {

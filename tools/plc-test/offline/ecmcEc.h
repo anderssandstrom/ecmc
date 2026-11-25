@@ -35,6 +35,8 @@ class ecmcEcSlave {
   ecmcEcEndpointTiming timing;
   ecmcEcDcConfig dc;
   ecmcEcDcSchedule schedule;
+  bool timingReady = true;
+  bool timingStartupReady() const { return timingReady; }
   const ecmcEcEndpointTiming &getInputTiming() const { return timing; }
   const ecmcEcDcConfig &getDcConfig() const { return dc; }
   const ecmcEcDcSchedule &getDcSchedule() const { return schedule; }

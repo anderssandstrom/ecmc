@@ -253,6 +253,10 @@ inline double ec_get_slave_input_event_time(double slavePosition) {
     ec_errorCode = ERROR_MAIN_EC_SLAVE_NULL;
     return -(double)ec_errorCode;
   }
+  if (!slave->timingStartupReady()) {
+    ec_errorCode = ERROR_PLC_EC_LIB_TIMING_UNRESOLVED;
+    return -(double)ec_errorCode;
+  }
   const ecmcEcCycleTiming& cycle = ec->getCycleTiming();
   const ecmcEcEndpointTiming& timing = slave->getInputTiming();
   uint64_t eventTimeNs = 0;

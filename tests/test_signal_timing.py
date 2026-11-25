@@ -40,6 +40,9 @@ int main() {
   ecmcDataLink link;
   assert(link.setDataAtIndex(access, 0, -1) == 0);
   ecmcSignalTime time;
+  device.timingReady = false;
+  assert(!link.readDataTime(0, time) && time.sampleTimeNs == 0);
+  device.timingReady = true;
   assert(link.readDataTime(0, time));
   assert(time.sampleTimeNs == 9050 && time.controllerTimeNs == 11000);
   assert(time.quality == ecmcSignalTimeQuality::CYCLE_BOUNDED && time.uncertaintyNs == 100);

@@ -8,9 +8,10 @@ public:
   EthercatSignalTiming(ecmcEc &master, ecmcEcSlave &slave)
     : master_(master), slave_(slave) {}
   bool read(ecmcSignalTime &time) const override {
+    time = {};
+    if (!slave_.timingStartupReady()) return false;
     const auto &cycle = master_.getCycleTiming();
     const auto &timing = slave_.getInputTiming();
-    time = {};
     time.controllerTimeNs = master_.getLastSendTimeNs();
     time.uncertaintyNs = timing.uncertaintyNs;
     if (timing.source == ecmcEcTimingSource::SYNC0_DERIVED ||

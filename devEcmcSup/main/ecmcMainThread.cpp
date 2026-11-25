@@ -653,6 +653,7 @@ void cyclic_task(void *usr) {
         ecmcRtLoggerLogError("Startup readiness: bus=%d, timing=%d, SDO=%d, stable=%.3fs, elapsed=%.3fs.\n",
                               ecStat,timingReady,ec->startupSdosReady(),
                               startup.stableSeconds,startup.waitSeconds);
+        if (ioActive) ec->reportStartupBlockers(true);
         ec->reportStartupSdoStatus();
         ecmcRtLoggerLogError("Startup: EtherCAT/SDO verification did not become ready after IOC running; axes and PLCs remain held. Restart runtime after resolving the fault.\n");
       }
@@ -949,6 +950,7 @@ int waitForEcMasterScan(int timeoutSeconds) {
   }
   LOGERR("Timeout error: EtherCAT bus not ready with scan in %d s.\n",
          timeoutSeconds);
+  ec->reportStartupBlockers();
   printStartupTimeoutLogBuffers();
   setAppMode(0);
   return ERROR_MAIN_EC_SCAN_TIMEOUT;
@@ -992,12 +994,13 @@ int waitForThreadToStart(int timeoutSeconds) {
   }
   LOGERR("Timeout error: EtherCAT bus/timing startup did not finish in %ds.\n",
          timeoutSeconds);
+  ec->reportStartupBlockers();
   printStartupTimeoutLogBuffers();
-  const bool timingPending = !ec->timingStartupReady(true);
-  const int startupError = timingPending ?
-    ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT : ec->getErrorID();
+  const bool busReady = ec->statusOK();
+  const int startupError = busReady ? ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT :
+    (ec->getErrorID() ? ec->getErrorID() : ERROR_EC_STATUS_NOT_OK);
   setAppMode(0);
-  return startupError ? startupError : ERROR_MAIN_EC_TIMING_STARTUP_TIMEOUT;
+  return startupError;
 }
 
 int lockMem(int size) {

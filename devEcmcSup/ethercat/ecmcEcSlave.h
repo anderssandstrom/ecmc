@@ -96,7 +96,7 @@ public:
   ecmcEcEntry*       getEntry(int entryIndex);
   int                checkConfigState(void);
   void               setDomainBaseAdr(uint8_t *domainAdr);
-  int                updateInputProcessImage();
+  int                updateInputProcessImage(bool allowTimingReads);
   int                updateOutProcessImage();
   int                getSlaveBusPosition();
   int                addEntry(
@@ -162,6 +162,8 @@ public:
   const ecmcEcEndpointTiming& getOutputTiming() const;
   void refreshTimingAsyn();
   bool timingStartupReady() const;
+  bool hasPendingTimingReads() const;
+  ec_slave_config_state_t readStartupState() const;
   void printDcTiming() const;
   ecmcEcEntry* findEntry(std::string id);
   int          findEntryIndex(std::string id);

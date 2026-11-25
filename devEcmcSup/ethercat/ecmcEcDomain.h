@@ -41,6 +41,7 @@ public:
   void         slowExecute();
   uint8_t*     getDataPtr();
   int          getOK();
+  bool         hasCompleteWorkingCounter() const { return state_.wc_state == EC_WC_COMPLETE; }
   const int*   getValidityPointer() const { return &statusOk_; }
 
 private:

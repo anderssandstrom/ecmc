@@ -13,6 +13,7 @@
 #ifndef ECMCEC_H_
 #define ECMCEC_H_
 
+#include <atomic>
 #include <string>
 #include "stdio.h"
 #include "ecrt.h"
@@ -231,7 +232,8 @@ public:
   uint64_t getLastReceiveTimeNs();
   uint64_t getLastSendTimeNs();
   const ecmcEcCycleTiming& getCycleTiming() const;
-  bool timingStartupReady(bool reportPending = false) const;
+  bool timingStartupReady() const;
+  void reportStartupBlockers(bool realtime = false) const;
   void resetStartupCommunicationErrors();
   uint32_t getSlaveVendorId(uint16_t alias,       /**< Slave alias. */
                             uint16_t slavePos /**< Slave position. */);
@@ -266,6 +268,7 @@ private:
 
   void     initVars();
   int      updateInputProcessImage();
+  void     updateTimingDiscoveryGate(uint64_t receiveTimeNs);
   int      updateOutProcessImage();
   void     updateCyclicEntryWrites();
   timespec timespecAdd(timespec time1,
@@ -324,6 +327,12 @@ private:
   uint64_t lastReceiveTimeNs_;
   uint64_t lastSendTimeNs_;
   ecmcEcCycleTiming cycleTiming_;
+  std::atomic<bool> timingReadsReleased_{false};
+  uint64_t timingStableSinceNs_ = 0;
+  uint64_t timingLastHealthyRxNs_ = 0;
+  uint64_t timingNextOpCheckNs_ = 0;
+  bool timingAllRequiredOp_ = false;
+  std::vector<int> timingRequiredDomains_;
   int delayEcOKCycles_;
   int startupCounter_;
   ecmcEcDomain *currentDomain_;

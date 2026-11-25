@@ -57,6 +57,7 @@ void ecmcEcDomain::initVars() {
   asynParStat_       = NULL;
   asynParFailCount_  = NULL;
   domainPd_          = 0;
+  state_             = {};
   statusOk_          = 0;
   statusWordOld_     = 0;
   notOKCounter_      = 0;

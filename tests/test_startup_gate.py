@@ -135,6 +135,7 @@ struct Ethercat {
   bool sdosReady = true;
   bool startupSdosReady() const { return sdosReady; }
   void reportStartupSdoStatus() const {}
+  void reportStartupBlockers(bool) const {}
   int masterIndex = 0;
   int getMasterIndex() { return masterIndex; }
   bool available = true, healthy = true, timing = true;

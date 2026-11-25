@@ -586,7 +586,7 @@ ecmcEcEntry * ecmcEcSlave::getEntry(int entryIndex) {
   }
 }
 
-int ecmcEcSlave::updateInputProcessImage() {
+int ecmcEcSlave::updateInputProcessImage(bool allowTimingReads) {
   const uint entryCountInUse = entryCounterRtInput_;
   for (uint i = 0; i < entryCountInUse; i++) {
     entryListRtInput_[i]->updateInputProcessImage();
@@ -600,8 +600,10 @@ int ecmcEcSlave::updateInputProcessImage() {
   // Discovery is a one-shot startup operation. After discovery, leave only
   // the completion check in the cyclic path.
   if (!timingStartupReady_.load(std::memory_order_relaxed)) {
-    executeSmTimingDiscovery();
-    executeDcScheduleDiscovery();
+    if (allowTimingReads) {
+      executeSmTimingDiscovery();
+      executeDcScheduleDiscovery();
+    }
 
     // Queue the final diagnostic snapshot even if slow diagnostics are off.
     bool complete = !dcSchedule_.discoveryAttempted ||
@@ -782,7 +784,7 @@ int ecmcEcSlave::configDC(
                        sync0Shift,
                        sync1Cycle,
                        sync1Shift);
-  dcConfig_.configured = true;
+  dcConfig_.configured = assignActivate != 0;
   dcConfig_.assignActivate = assignActivate;
   dcConfig_.sync0CycleNs = sync0Cycle;
   dcConfig_.sync0ShiftNs = sync0Shift;
@@ -1725,6 +1727,20 @@ void ecmcEcSlave::refreshTimingAsyn() {
   ecmcRtLoggerPortDriverSetEcTiming(slavePosition_, 1,
                                     &outputTimingAsynData_);
   timingAsynDirty_ = false;
+}
+
+ec_slave_config_state_t ecmcEcSlave::readStartupState() const {
+  ec_slave_config_state_t state = {};
+  if (slaveConfig_) ecrt_slave_config_state(slaveConfig_, &state);
+  return state;
+}
+
+bool ecmcEcSlave::hasPendingTimingReads() const {
+  if (dcSchedule_.discoveryAttempted && !dcSchedule_.discoveryComplete) return true;
+  for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
+    if (!smTimingRequests_[i].finished) return true;
+  }
+  return false;
 }
 
 bool ecmcEcSlave::timingStartupReady() const {

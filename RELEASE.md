@@ -11,6 +11,9 @@ Release Notes
 * Mitigate some PVXS warnings.
 * Continue publishing EtherCAT timing PVs on the RTLogger port without making
   IOC startup or motion readiness wait for diagnostic publication.
+* Start DC timing reads after required slaves reach OP and PDO working
+  counters stabilize. Report blocking slave positions and incomplete PDO
+  domains when EtherCAT startup times out.
 
 # 11.2.0
 
