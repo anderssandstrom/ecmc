@@ -986,7 +986,7 @@ int waitForThreadToStart(int timeoutSeconds) {
     }
 
     if (ec->statusOK() && ec->timingStartupReady()) {
-      LOGINFO("EtherCAT bus started; timing discovery and publication complete.\n");
+      LOGINFO("EtherCAT bus started; internal timing discovery complete.\n");
       return 0;
     }
   }

@@ -9,6 +9,8 @@ Release Notes
 ## EPICS
 
 * Mitigate some PVXS warnings.
+* Continue publishing EtherCAT timing PVs on the RTLogger port without making
+  IOC startup or motion readiness wait for diagnostic publication.
 
 # 11.2.0
 

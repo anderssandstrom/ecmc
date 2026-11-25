@@ -76,7 +76,7 @@ int setStartupGate(int enable);
 
 /** \brief Set EtherCAT startup timeout time
  *
- * Includes bus readiness and timing discovery/publication. Default time is 45s.
+ * Includes bus readiness and internal timing discovery. Default time is 45s.
  *
  * \param[in] timeSeconds  Timeout in seconds (default 45s).\n
  *

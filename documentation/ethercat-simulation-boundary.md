@@ -283,8 +283,8 @@ Sources: [cyclic_task](../devEcmcSup/main/ecmcMainThread.cpp),
 [ecmcEc::receive/send and process-image updates](../devEcmcSup/ethercat/ecmcEc.cpp),
 [ecmcEcDomain::process/queue](../devEcmcSup/ethercat/ecmcEcDomain.cpp),
 [ecmcEcSlave::updateInputProcessImage/updateOutProcessImage](../devEcmcSup/ethercat/ecmcEcSlave.cpp).
-The slave input phase also executes async SDOs and timing discovery/publication;
-it is not just a PDO memory copy.
+The slave input phase also executes async SDOs and timing discovery. The
+RTLogger port publishes a copy of the timing diagnostics asynchronously.
 
 ## Dependency map
 

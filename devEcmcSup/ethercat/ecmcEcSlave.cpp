@@ -597,13 +597,13 @@ int ecmcEcSlave::updateInputProcessImage() {
   for (int i = 0; i < asyncSdoCount; i++) {
     asyncSDOvector_[i]->execute();
   }
-  // Discovery is a one-shot startup operation. Once the final snapshot has
-  // been published, leave only the completion check in the cyclic path.
+  // Discovery is a one-shot startup operation. After discovery, leave only
+  // the completion check in the cyclic path.
   if (!timingStartupReady_.load(std::memory_order_relaxed)) {
     executeSmTimingDiscovery();
     executeDcScheduleDiscovery();
 
-    // Publish the final snapshot even when slow diagnostics are disabled.
+    // Queue the final diagnostic snapshot even if slow diagnostics are off.
     bool complete = !dcSchedule_.discoveryAttempted ||
                     dcSchedule_.discoveryComplete;
     for (uint8_t i = 0; i < smTimingRequestCount_; ++i) {
@@ -1728,8 +1728,9 @@ void ecmcEcSlave::refreshTimingAsyn() {
 }
 
 bool ecmcEcSlave::timingStartupReady() const {
-  return timingStartupReady_.load(std::memory_order_acquire) &&
-         ecmcRtLoggerPortDriverEcTimingPublished(slavePosition_);
+  // Motion and startup consume the internal timing model. The RTLogger
+  // port can publish its diagnostic copy independently.
+  return timingStartupReady_.load(std::memory_order_acquire);
 }
 
 int ecmcEcSlave::validate() {

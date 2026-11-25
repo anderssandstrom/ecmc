@@ -57,7 +57,6 @@ void        ecmcRtLoggerPortDriverSetEcTiming(int slavePosition,
 int         ecmcRtLoggerPortDriverGetCountMotorRecordStopCommands(int axisIndex);
 int         ecmcRtLoggerPortDriverGetCountEnableCommands(int axisIndex);
 void        ecmcRtLoggerPortDriverService();
-bool        ecmcRtLoggerPortDriverEcTimingPublished(int slavePosition);
 const char *ecmcRtLoggerPortDriverGetPortName();
 
 #endif  /* ECMC_RT_LOGGER_PORT_DRIVER_H_ */

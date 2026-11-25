@@ -1526,7 +1526,7 @@ bool ecmcEc::timingStartupReady(bool reportPending) const {
     if (slaveArray_[i] && !slaveArray_[i]->timingStartupReady()) {
       ready = false;
       if (reportPending) {
-        LOGERR("EtherCAT slave %d: timing discovery/publication still pending.\n",
+        LOGERR("EtherCAT slave %d: internal timing discovery still pending.\n",
                slaveArray_[i]->getSlaveBusPosition());
       }
     }
