@@ -32,6 +32,12 @@ bus_status = between('    if (ioActive) {\n      io.readInputs(',
                      '    // Master to master coms')
 gate_and_dispatch = between('    if (!startup.axisInitializationReleased',
                             '  }  // enc of RT-loop')
+# The phase capture has its own test. Leave it disabled in the dispatch fixture.
+gate_and_dispatch = gate_and_dispatch.replace(
+    '      if (captureTiming) clock_gettime(CLOCK_MONOTONIC, &ethercatDoneTime);\n', '')
+phase_start = gate_and_dispatch.index('    if (captureTiming) {')
+phase_end = gate_and_dispatch.index('    if (!startup.timingFirstLogged', phase_start)
+gate_and_dispatch = gate_and_dispatch[:phase_start] + gate_and_dispatch[phase_end:]
 
 # Compile the real membership snapshot with fake endpoint types. Constants and
 # axis-to-PLC mapping come from production headers, not fixture duplicates.

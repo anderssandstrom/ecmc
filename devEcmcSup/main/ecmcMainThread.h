@@ -35,6 +35,8 @@
 extern "C" {
 
 void ecmcNotifyIocRunning(void);
+int ecmcRtTimingStart(int cycles);
+int ecmcRtTimingWrite(const char *path);
 int ecmcIocRunning(void);
 int ecmcStartupMotionHeld(void);
 int ecmcStartupCommandsHeld(void);

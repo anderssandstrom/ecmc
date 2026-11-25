@@ -3608,6 +3608,20 @@ static void rtLogBufferClearCallFunc(const iocshArgBuf *args) {
   ecmcRtLogBufferClear();
 }
 
+static const iocshArg rtTimingStartArg = { "number of cycles", iocshArgInt };
+static const iocshArg *const rtTimingStartArgs[] = { &rtTimingStartArg };
+static const iocshFuncDef rtTimingStartFuncDef = { "ecmcRtTimingStart", 1, rtTimingStartArgs };
+static void rtTimingStartCallFunc(const iocshArgBuf *args) {
+  iocshSetError(ecmcRtTimingStart(args[0].ival));
+}
+
+static const iocshArg rtTimingWriteArg = { "CSV filename", iocshArgString };
+static const iocshArg *const rtTimingWriteArgs[] = { &rtTimingWriteArg };
+static const iocshFuncDef rtTimingWriteFuncDef = { "ecmcRtTimingWrite", 1, rtTimingWriteArgs };
+static void rtTimingWriteCallFunc(const iocshArgBuf *args) {
+  iocshSetError(ecmcRtTimingWrite(args[0].sval));
+}
+
 /** EPICS iocsh shell command: ecmcDumpMotionState */
 static const iocshArg dumpMotionStateArg0 = { "fileName", iocshArgString };
 static const iocshArg * const dumpMotionStateArgs[] = { &dumpMotionStateArg0 };
@@ -3726,6 +3740,8 @@ void ecmcAsynPortDriverRegister(void) {
   iocshRegister(&logBufferPrintFuncDef, logBufferPrintCallFunc);
   iocshRegister(&logBufferClearFuncDef, logBufferClearCallFunc);
   iocshRegister(&rtLogBufferPrintFuncDef, rtLogBufferPrintCallFunc);
+  iocshRegister(&rtTimingStartFuncDef, rtTimingStartCallFunc);
+  iocshRegister(&rtTimingWriteFuncDef, rtTimingWriteCallFunc);
   iocshRegister(&rtLogBufferClearFuncDef, rtLogBufferClearCallFunc);
   iocshRegister(&dumpMotionStateFuncDef, dumpMotionStateCallFunc);
 }

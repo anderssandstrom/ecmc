@@ -32,6 +32,7 @@
 
 #include "epicsThread.h"
 #include "ecmcMainThread.h"
+#include "ecmcRtTimingCapture.h"
 #include "ecmcGeneral.h"
 #include "ecrt.h"
 #include "ecmcDefinitions.h"
@@ -457,6 +458,33 @@ struct StartupState {
 };
 }  // namespace
 
+static ecmcRtTimingCapture rtTimingCapture;
+
+int ecmcRtTimingStart(int cycles) {
+  if (rtTimingCapture.arm(cycles)) return 0;
+  fprintf(stderr, "RT timing: could not arm capture (1 to %d cycles, memory required, no active capture/export).\n",
+          ecmcRtTimingCapture::capacity);
+  return -1;
+}
+
+int ecmcRtTimingWrite(const char *path) {
+  const int rows = rtTimingCapture.writeCsv(path);
+  if (rows >= 0) {
+    printf("RT timing: wrote %d cycle(s).\n", rows);
+    return 0;
+  }
+  if (rows == -1) {
+    fprintf(stderr, "RT timing: no completed capture available.\n");
+  } else {
+    fprintf(stderr, "RT timing: could not write CSV.\n");
+  }
+  return -1;
+}
+
+static uint64_t monotonicNs(const timespec &t) {
+  return static_cast<uint64_t>(t.tv_sec) * 1000000000ULL + t.tv_nsec;
+}
+
 void cyclic_task(void *usr) {
   LOGINFO4("%s/%s:%d\n", __FILE__, __FUNCTION__, __LINE__);
   int i      = 0;
@@ -536,6 +564,11 @@ void cyclic_task(void *usr) {
     }
 
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &wakeupTime, NULL);
+    const bool captureTiming = rtTimingCapture.collecting();
+    timespec awakeTime;
+    timespec asynAcquiredTime;
+    timespec ethercatDoneTime;
+    if (captureTiming) clock_gettime(CLOCK_MONOTONIC, &awakeTime);
 
     // Startup may still hold the asyn port while waiting for the RT thread.
     if ((appModeStat == ECMC_MODE_RUNTIME) && localAsynPort) {
@@ -545,6 +578,14 @@ void cyclic_task(void *usr) {
         break;
       }
       heldAsynPort = localAsynPort;
+    }
+
+    if (captureTiming) {
+      if (heldAsynPort) {
+        clock_gettime(CLOCK_MONOTONIC, &asynAcquiredTime);
+      } else {
+        asynAcquiredTime = awakeTime;
+      }
     }
 
     // Mutex for motor record access
@@ -836,6 +877,7 @@ void cyclic_task(void *usr) {
 
     if (ioActive) {
       io.writeOutputs(masterActivationTimeOffset);
+      if (captureTiming) clock_gettime(CLOCK_MONOTONIC, &ethercatDoneTime);
     } else if (!hasRealMaster) {
       // Preserve PLC timing without EtherCAT transport in masterless mode.
       io.setTimeOffset(masterActivationTimeOffset);
@@ -843,6 +885,12 @@ void cyclic_task(void *usr) {
     for (auto *driver : additionalIo)
       if (driver->isActive()) driver->writeOutputs(masterActivationTimeOffset);
     clock_gettime(CLOCK_MONOTONIC, &endTime);
+    if (captureTiming) {
+      rtTimingCapture.record({monotonicNs(wakeupTime), monotonicNs(awakeTime),
+                              monotonicNs(asynAcquiredTime), monotonicNs(startTime),
+                              monotonicNs(sendTime), ioActive ? monotonicNs(ethercatDoneTime) : 0,
+                              monotonicNs(endTime)});
+    }
     if (!startup.timingFirstLogged ||
         (!startup.axisInitializationReleased && !startup.timedOut)) {
       startup.recordTiming(masterId,masterActivationTimeMonotonic,wakeupTime,
@@ -850,6 +898,7 @@ void cyclic_task(void *usr) {
     }
   }  // enc of RT-loop
 
+  rtTimingCapture.finish();
   ecmcLogBufferSetCyclicProducer(false);
   clearControllerErrorObjectsRT();
 
