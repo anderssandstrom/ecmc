@@ -1793,17 +1793,72 @@ private:
   MotionSnapshotLock& operator=(const MotionSnapshotLock&) = delete;
 };
 
-bool captureMotionSnapshot(ecmcMotionDiagSnapshot& snapshot) {
+// The live capture copies only fixed-size scalar state while holding the
+// motor-access mutex. It never follows PVT, filter or motor-record containers.
+struct LiveMotionSnapshot {
+  struct Axis {
+    bool configured;
+    bool enabled;
+    bool busy;
+    int error;
+    uint64_t cycle;
+    double setpoint;
+    double actual;
+  };
+  Axis axes[ECMC_MAX_AXES];
+  int controllerErrorCode;
+};
+
+void writeLiveMotionSnapshot(ecmcMotionDiagSnapshot &snapshot,
+                             const LiveMotionSnapshot &live) {
+  snapshot.value("format", "ecmc-motion-runtime-state-v1");
+  snapshot.value("globals.controllerError", live.controllerErrorCode);
+  for (size_t i = 0; i < ECMC_MAX_AXES; ++i) {
+    const auto &axis = live.axes[i];
+    if (!axis.configured) continue;
+    ecmcDiagPath path;
+    path << "axes[" << i << "]";
+    snapshot.value(ecmcDiagPath(path) << ".enabled", axis.enabled);
+    snapshot.value(ecmcDiagPath(path) << ".busy", axis.busy);
+    snapshot.value(ecmcDiagPath(path) << ".errorCode", axis.error);
+    snapshot.value(ecmcDiagPath(path) << ".cycleCounter", axis.cycle);
+    snapshot.value(ecmcDiagPath(path) << ".positionSetpoint", axis.setpoint);
+    snapshot.value(ecmcDiagPath(path) << ".positionActual", axis.actual);
+  }
+}
+
+bool captureMotionSnapshot(ecmcMotionDiagSnapshot& snapshot, bool *liveOnly = nullptr) {
+  LiveMotionSnapshot live = {};
   // Dynamic PVT/filter sizes may change between attempts. Each successful
   // snapshot is one complete locked traversal, never a mix of captures.
   for (int attempt = 0; attempt < 3; ++attempt) {
     snapshot.reset();
+    bool snapshotIsLive;
     {
       MotionSnapshotLock lock;
       if (!lock.acquired()) return false;
-      ecmcMotionStateYamlWriter writer(snapshot);
-      writer.dumpAll();
+      const bool runtime = appModeCmd != ECMC_MODE_CONFIG ||
+                           appModeStat != ECMC_MODE_CONFIG;
+      if (liveOnly) *liveOnly = runtime;
+      if (runtime) {
+        live.controllerErrorCode = controllerError;
+        for (int i = 0; i < ECMC_MAX_AXES; ++i) {
+          live.axes[i].configured = axes[i] != nullptr;
+          if (!axes[i]) continue;
+          const auto &status = *axes[i]->getAxisStatusDataPtr();
+          live.axes[i] = {true, bool(status.statusWord_.enabled),
+                         bool(status.statusWord_.busy), status.errorCode,
+                         static_cast<uint64_t>(status.cycleCounter),
+                         status.currentPositionSetpoint, status.currentPositionActual};
+        }
+      } else {
+        ecmcMotionStateYamlWriter writer(snapshot);
+        writer.dumpAll();
+      }
+      // Serialize the compact view after unlocking.
+      snapshotIsLive = runtime;
     }
+    if (snapshotIsLive) writeLiveMotionSnapshot(snapshot, live);
     if (snapshot.complete()) return true;
     if (!snapshot.valid()) return false;
     if (attempt < 2) snapshot.resize(snapshot.required());
@@ -1837,11 +1892,13 @@ int ecmcMotionDiagWriteDumpFile(const char *fileName, int level) {
 
   try {
     ecmcMotionDiagSnapshot snapshot;
-    if (!captureMotionSnapshot(snapshot)) return -1;
+    bool liveOnly = false;
+    if (!captureMotionSnapshot(snapshot, &liveOnly)) return -1;
     std::ofstream file(fileName, std::ios::out | std::ios::app);
     if (!file.is_open()) return -1;
     file << "---\n";
-    file << "# Complete raw motion-object state (diagnostic level 2)\n";
+    file << (liveOnly ? "# Compact runtime motion state\n" :
+                        "# Complete raw motion-object state (diagnostic level 2)\n");
     const bool written = snapshot.write(file);
     file.close();
     return written && file.good() ? 0 : -1;

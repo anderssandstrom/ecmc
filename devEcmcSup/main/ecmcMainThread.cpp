@@ -509,6 +509,7 @@ void cyclic_task(void *usr) {
   ecmcAsynPortDriver *heldAsynPort = nullptr;
   epicsMutexId heldRTMutex = nullptr;
 
+  ecmcLogBufferSetCyclicProducer(true);
   while (appModeCmd == ECMC_MODE_RUNTIME) {
     if (iocExitRequested.load(std::memory_order_acquire)) {
       appModeCmd = ECMC_MODE_CONFIG;
@@ -848,6 +849,7 @@ void cyclic_task(void *usr) {
     }
   }  // enc of RT-loop
 
+  ecmcLogBufferSetCyclicProducer(false);
   clearControllerErrorObjectsRT();
 
   // Normal configuration transitions and IOC-exit requests both release locks.

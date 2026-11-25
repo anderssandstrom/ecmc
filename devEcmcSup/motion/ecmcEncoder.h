@@ -127,6 +127,14 @@ public:
   ecmcEcTimedValue<double> getTouchProbeTimedValue(
     uint64_t nearbyDcTimeNs) const;
   int                   createTouchProbeAsynParams();
+  bool touchProbeNeedsNearbyTime() const {
+    if (touchProbeFunctEnabled_) {
+      return touchProbeSequence_ &&
+        (!touchProbeTimestampValid_ || touchProbeTimestampBits_ == 32);
+    }
+    return encLatchSequence_ &&
+      (!encLatchTimestampValid_ || encLatchTimestampBits_ == 32);
+  }
   bool                  hasTouchProbeAsynParams() const {
     return touchProbeAsynParamsCreated_;
   }

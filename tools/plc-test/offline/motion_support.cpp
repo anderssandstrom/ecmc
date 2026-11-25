@@ -61,3 +61,6 @@ int ecmcTrajectoryS::validate() { unavailableSCurve(); return 0; }
 double ecmcTrajectoryS::internalTraj(double *, double *, bool *) { unavailableSCurve(); return 0; }
 
 void ecmcRtLoggerPortDriverSetAxisStatusText(int, int, int, int, int) {}
+
+void ecmcLogAxisSetting(int, const char *, double) {}
+void ecmcLogAxisZeroGain(int, const char *, int) {}

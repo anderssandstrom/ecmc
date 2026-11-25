@@ -77,6 +77,7 @@ ecmcEncoder::ecmcEncoder(ecmcAsynPortDriver *asynPortDriver,
 }
 
 ecmcEncoder::~ecmcEncoder() {
+  if (powerEnabled_) --data_->powerEnabledEncoderCount_;
   delete velocityFilter_;
   velocityFilter_ = NULL;
 
@@ -1162,7 +1163,10 @@ int ecmcEncoder::setPowerEnable(bool enable) {
                  validateData(ECMC_ENCODER_ENTRY_INDEX_POWER)))
     return ERROR_ENC_POWER_CONFIG;
   if (!enable && powerControl_) return ERROR_AXIS_BUSY;
-  powerEnabled_ = enable;
+  if (enable != powerEnabled_) {
+    data_->powerEnabledEncoderCount_ += enable ? 1 : -1;
+    powerEnabled_ = enable;
+  }
   powerReleasePending_ = false;
   powerIdleOff_ = false;
   powerIdleElapsedS_ = 0;
@@ -1227,7 +1231,10 @@ void ecmcEncoder::updatePowerIdle(bool settled) {
 
 void ecmcEncoder::publishStatusWord() {
   updateControlWord();
-  if (encoderControlWordParam_) encoderControlWordParam_->refreshParamRT(0);
+  // Configured probes publish the same backing word after encoder outputs.
+  if (encoderControlWordParam_ && !touchProbeAsynParamsCreated_) {
+    encoderControlWordParam_->refreshParamRT(0);
+  }
   statusWord_ = (powerEnabled_ ? ECMC_ENC_STATUS_POWER_ENABLED : 0u) |
     (powerOn_ ? ECMC_ENC_STATUS_POWER_ON : 0u) |
     (!encLocalErrorId_ && domainOK_ && hwReady() ? ECMC_ENC_STATUS_READY : 0u) |

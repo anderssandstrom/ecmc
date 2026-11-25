@@ -89,11 +89,7 @@ void logRuntimeAxisDoubleChange(ecmcAxisBase *axis,
     return;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
-                       "Axis[%d]: runtime set %s=%.12g.",
-                       axis->getAxisID(),
-                       name,
-                       value);
+  ecmcLogAxisSetting(axis->getAxisID(), name, value);
 }
 
 bool axisUsesEcmcPositionController(ecmcAxisBase *axis) {
@@ -115,19 +111,7 @@ bool warnRuntimeControllerKpZero(ecmcAxisBase *axis,
     return false;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_WARNING,
-                     "Axis[%d]: runtime %s is 0.",
-                     axis->getAxisID(),
-                     name);
-
-  ECMC_RT_LOG_AXIS_BASE_WARNING(
-    axis->getAxisID(),
-    "%s/%s:%d: WARNING: Axis[%d]: runtime %s is 0.\n",
-    __FILE__,
-    __FUNCTION__,
-    __LINE__,
-    axis->getAxisID(),
-    name);
+  ecmcLogAxisZeroGain(axis->getAxisID(), name, ECMC_RT_LOG_SOURCE_AXIS_BASE);
   return true;
 }
 }
@@ -726,7 +710,7 @@ void ecmcAxisBase::postExecute(bool masterOK) {
       continue;
     }
     uint64_t encoderSampleTimeNs = 0;
-    const bool sampleTimeValid =
+    const bool sampleTimeValid = encoder->touchProbeNeedsNearbyTime() &&
       resolveAxisEncoderSampleTimeNs(encoder, &encoderSampleTimeNs);
     encoder->refreshTouchProbeAsyn(sampleTimeValid ?
                                         encoderSampleTimeNs : 0,
@@ -4599,15 +4583,7 @@ void ecmcAxisBase::encoderPowerIdleSM() {
     encoderPowerMoveCompleted_ = true;
   if (!word.enable && !word.enabled && encoderPowerBackupIndex_ < 0)
     encoderPowerMoveCompleted_ = false;
-  // The ordinary encoder path has no idle-power qualification to calculate.
-  // Reuse this scan as the start of the existing powered-encoder loop.
-  const int encoderCount = data_.status_.encoderCount;
-  int firstPoweredEncoder = 0;
-  while (firstPoweredEncoder < encoderCount &&
-         !encArray_[firstPoweredEncoder]->getPowerEnable()) {
-    ++firstPoweredEncoder;
-  }
-  if (firstPoweredEncoder == encoderCount) {
+  if (!data_.powerEnabledEncoderCount_) {
     if (encoderPowerBackupIndex_ >= 0) encoderPowerBackupSM();
     return;
   }
@@ -4618,7 +4594,7 @@ void ecmcAxisBase::encoderPowerIdleSM() {
     mon_->getAtTargetTol() > 0 &&
     (deadband <= 0 || deadband >= mon_->getAtTargetTol() || mon_->getCtrlInDeadband()) &&
     word.trajsource == ECMC_DATA_SOURCE_INTERNAL;
-  for (int i = firstPoweredEncoder; i < encoderCount; ++i) {
+  for (int i = 0; i < data_.status_.encoderCount; ++i) {
     if (!encArray_[i]->getPowerEnable()) continue;
     if (!mon_->getEnableAtTargetMon() || mon_->getAtTargetTol() <= 0) {
       setEnable(false);
@@ -4638,6 +4614,7 @@ bool ecmcAxisBase::encoderPowerReady() {
       encoder->hwReady() && encoder->checkAllDataValid() && !encoder->getErrorID();
   }
   if (encoderPowerBackupSelected()) return false;
+  if (!data_.powerEnabledEncoderCount_) return true;
   for (int i = 0; i < data_.status_.encoderCount; ++i) {
     if (encArray_[i]->getPowerEnable() && !encArray_[i]->getPowerReady()) return false;
   }

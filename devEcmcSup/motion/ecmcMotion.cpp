@@ -51,11 +51,7 @@ void logRuntimeAxisDoubleChange(int axisIndex,
     return;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
-                       "Axis[%d]: runtime set %s=%.12g.",
-                       axisIndex,
-                       name,
-                       value);
+  ecmcLogAxisSetting(axisIndex, name, value);
 }
 
 void logRuntimeAxisIntChange(int axisIndex,
@@ -66,11 +62,7 @@ void logRuntimeAxisIntChange(int axisIndex,
     return;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
-                       "Axis[%d]: runtime set %s=%d.",
-                       axisIndex,
-                       name,
-                       value);
+  ecmcLogAxisSetting(axisIndex, name, value);
 }
 
 }  // namespace
@@ -2572,13 +2564,7 @@ int setAxisCntrlInnerParams(int    axisIndex,
 
   axes[axisIndex]->getCntrl()->setInnerCtrlParams(kp, ki, kd, tol);
   if (axes[axisIndex]->getRealTimeStarted()) {
-    ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
-                         "Axis[%d]: runtime set controller.inner(kp=%.12g, ki=%.12g, kd=%.12g, tol=%.12g).",
-                         axisIndex,
-                         kp,
-                         ki,
-                         kd,
-                         tol);
+    ecmcLogAxisInnerGains(axisIndex, kp, ki, kd, tol);
   }
   return 0;
 }

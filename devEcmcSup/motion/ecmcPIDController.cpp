@@ -178,11 +178,7 @@ void ecmcPIDController::logRuntimeGainChange(const char *name,
     return;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_INFO,
-                     "Axis[%d]: runtime set %s=%.12g.",
-                     data_->status_.axisId,
-                     name,
-                     value);
+  ecmcLogAxisSetting(data_->status_.axisId, name, value);
 }
 
 bool ecmcPIDController::warnRuntimeKpZero(const char *name,
@@ -192,18 +188,7 @@ bool ecmcPIDController::warnRuntimeKpZero(const char *name,
     return false;
   }
 
-  ecmcLogBufferWrite(ECMC_LOG_BUFFER_WARNING,
-                     "Axis[%d]: runtime %s is 0.",
-                     data_->status_.axisId,
-                     name);
-
-  ecmcRtLoggerLogWarning(
-    "%s/%s:%d: WARNING: Axis[%d]: runtime %s is 0.\n",
-    __FILE__,
-    __FUNCTION__,
-    __LINE__,
-    data_->status_.axisId,
-    name);
+  ecmcLogAxisZeroGain(data_->status_.axisId, name, ECMC_RT_LOG_SOURCE_UNKNOWN);
   return true;
 }
 

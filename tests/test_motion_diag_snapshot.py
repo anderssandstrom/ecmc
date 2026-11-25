@@ -62,6 +62,20 @@ int epicsMutexLock(epicsMutexId) {
   locked = true; ++locks; return 0;
 }
 void epicsMutexUnlock(epicsMutexId) { assert(locked); locked = false; ++unlocks; }
+constexpr int ECMC_MODE_CONFIG = 0;
+constexpr int ECMC_MAX_AXES = 4;
+int appModeCmd, appModeStat, controllerError;
+struct TestAxis {
+  struct Status {
+    struct { bool enabled, busy; } statusWord_;
+    int errorCode;
+    unsigned cycleCounter;
+    double currentPositionSetpoint, currentPositionActual;
+  } status { {true, false}, 3, 42, 2.5, 2.25 };
+  const Status *getAxisStatusDataPtr() const { assert(locked); return &status; }
+};
+TestAxis axis;
+TestAxis *axes[ECMC_MAX_AXES] = {nullptr, &axis};
 struct DiagRequest { int level; char file[512]; };
 static int writeDumpFile(const DiagRequest&) { assert(!locked); return 0; }
 class ecmcMotionStateYamlWriter {
@@ -161,6 +175,19 @@ int main() {
   std::getline(file, line); assert(line == "---");
   std::getline(file, line); assert(line.find("Complete raw motion-object state") != std::string::npos);
   assert(!locked && locks == unlocks);
+  appModeCmd = 1;
+  throwCapture = true; // The live path must not invoke the raw traversal.
+  assert(ecmcMotionStateWriteYaml("live.yaml") == 0);
+  assert(ecmcMotionDiagWriteDumpFile("live-level2.yaml", 2) == 0);
+  std::ifstream liveFile("live-level2.yaml");
+  std::string live((std::istreambuf_iterator<char>(liveFile)), {});
+  assert(live.find("ecmc-motion-runtime-state-v1") != std::string::npos);
+  assert(live.find("axes[1].cycleCounter: 42") != std::string::npos);
+  assert(live.find("axes[1].positionActual: 2.25") != std::string::npos);
+  assert(live.find("generation") == std::string::npos);
+  assert(!locked && locks == unlocks);
+  appModeCmd = 0;
+  throwCapture = false;
   ecmcRTMutex = nullptr;
   assert(ecmcMotionStateWriteYaml("no-mutex.yaml") == 0);
 }

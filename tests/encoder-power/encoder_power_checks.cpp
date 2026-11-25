@@ -268,6 +268,54 @@ int main() {
       CHECK(r.axis->setTouchProbeArm(0,false)==0);
       CHECK(enc->writeEntries()==0); CHECK(control==0x8000); ++count;
     }
+    for (bool legacy : {false, true}) for (int timestampBits : {0, 32, 64}) {
+      scenario = "probe publication only resolves a nearby time when required";
+      Rig r;
+      r.idle();
+      auto *enc = r.axis->getPrimEnc();
+      // Keep feedback available after the rig switches the relay off.
+      CHECK(enc->setPowerEnable(false) == 0);
+      r.ready = 1;
+      r.alarm = 0;
+      uint32_t stored = 0, capture = 10000, control = 0, raw32 = 0xfffffff0u;
+      uint64_t raw64 = 0x612345678ULL;
+      ecmcDataItem statusItem{"probeStatus"}, captureItem{"probeCapture"};
+      ecmcDataItem controlItem{"probeControl"};
+      r.bind(controlItem, control, legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_CONTROL :
+                                           ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_CONTROL, true, 0);
+      r.bind(statusItem, stored, legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_STATUS :
+                                         ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_STATUS, false, 0);
+      r.bind(captureItem, capture, legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_VALUE :
+                                           ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_VALUE, false);
+      ecmcDataItem stamp{"probeTimestamp"};
+      const int timestampSlot = legacy ? ECMC_ENCODER_ENTRY_INDEX_LATCH_TIMESTAMP :
+                                        ECMC_ENCODER_ENTRY_INDEX_TOUCH_PROBE_TIMESTAMP;
+      if (timestampBits == 32) {
+        r.bind(stamp, raw32, timestampSlot, false);
+      } else if (timestampBits == 64) {
+        stamp.setEcmcDataPointer(reinterpret_cast<uint8_t*>(&raw64), sizeof(raw64));
+        stamp.setEcmcDataType(ECMC_EC_U64);
+        stamp.setAllowWriteToEcmc(false);
+        ecmcDataAccess access;
+        CHECK(ecmcDataAccess::bind(stamp, &r.healthy, 0, &access));
+        CHECK(enc->setDataAtIndex(access, timestampSlot, -1) == 0);
+      }
+      CHECK(enc->setTouchProbeArmControlWord(17, 5) == 0);
+      CHECK(enc->validate() == 0);
+      CHECK(!enc->touchProbeNeedsNearbyTime());
+      CHECK(!enc->getTouchProbeTimedValue(0x100000010ULL).valid);
+
+      stored = 1;
+      enc->readEntries(true);
+      CHECK(enc->touchProbeNeedsNearbyTime() == (timestampBits != 64));
+      const uint64_t nearby = 0x100000010ULL;
+      const auto value = enc->getTouchProbeTimedValue(enc->touchProbeNeedsNearbyTime() ? nearby : 0);
+      CHECK(value.valid);
+      const uint64_t expected = timestampBits == 64 ? raw64 :
+                                timestampBits == 32 ? raw32 : nearby;
+      CHECK(value.eventTimeNs == expected);
+      ++count;
+    }
     {
       scenario="probe control rejects an encoder without probe or latch links";
       Rig r; uint32_t request=3;

@@ -12,6 +12,7 @@
 #include "ecmcRtLogger.h"
 
 #include <atomic>
+#include <new>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -68,6 +69,21 @@ std::atomic<int> started_(0);
 std::atomic<int> logBufferRuntimeMode_(0);
 std::atomic<unsigned int> controlWord_(ECMC_RT_LOGGER_CONTROL_DEFAULT);
 ecmcRtLogEvent queue_[ECMC_RT_LOGGER_QUEUE_SIZE] = {};
+enum class AxisLogKind { Double, Integer, ZeroGain, InnerGains };
+
+struct AxisLogEvent {
+  AxisLogKind kind;
+  int axis;
+  int warningSource;
+  const char *name; // Callers supply a string literal.
+  double values[4];
+};
+
+thread_local bool cyclicLogProducer = false;
+std::atomic_flag axisLogProducerBusy = ATOMIC_FLAG_INIT;
+std::atomic<size_t> axisLogWrite{0};
+std::atomic<size_t> axisLogRead{0};
+AxisLogEvent axisLogQueue[ECMC_RT_LOGGER_QUEUE_SIZE] = {};
 ecmcLogBuffer configLogBuffer_ = {{}, 0, 0, 0, "ecmc configuration log buffer"};
 ecmcLogBuffer rtLogBuffer_ = {{}, 0, 0, 0, "ecmc runtime log buffer"};
 
@@ -176,41 +192,6 @@ int logBufferWriteV(ecmcLogBuffer &buffer,
   return logBufferWriteEntry(buffer, mutex, level, message);
 }
 
-void logBufferPrint(ecmcLogBuffer &buffer, epicsMutexId mutex) {
-  epicsMutexLock(mutex);
-
-  printf("%s\n", ECMC_LOG_BUFFER_FRAME);
-
-  if (buffer.count == 0) {
-    printf("%s is empty.\n", buffer.name);
-    printf("%s\n", ECMC_LOG_BUFFER_FRAME);
-    epicsMutexUnlock(mutex);
-    return;
-  }
-
-  printf("%s (%zu/%zu entries):\n",
-         buffer.name,
-         buffer.count,
-         ECMC_LOG_BUFFER_MAX_ROWS);
-
-  const size_t firstIndex =
-    (buffer.writeIndex + ECMC_LOG_BUFFER_MAX_ROWS - buffer.count) %
-    ECMC_LOG_BUFFER_MAX_ROWS;
-
-  for (size_t i = 0; i < buffer.count; ++i) {
-    const size_t index = (firstIndex + i) % ECMC_LOG_BUFFER_MAX_ROWS;
-    const ecmcLogBufferEntry &entry = buffer.entries[index];
-    printf("%u %s %s: %s\n",
-           entry.sequence,
-           entry.timestamp,
-           rtLogLevelText(entry.level),
-           entry.message);
-  }
-
-  printf("%s\n", ECMC_LOG_BUFFER_FRAME);
-  epicsMutexUnlock(mutex);
-}
-
 void logBufferClear(ecmcLogBuffer &buffer, epicsMutexId mutex) {
   epicsMutexLock(mutex);
 
@@ -231,19 +212,39 @@ struct ecmcLogBufferSnapshot {
 ecmcLogBufferSnapshot logBufferSnapshot(ecmcLogBuffer &buffer,
                                         epicsMutexId mutex) {
   ecmcLogBufferSnapshot snapshot;
+  snapshot.entries.resize(ECMC_LOG_BUFFER_MAX_ROWS);
   epicsMutexLock(mutex);
   snapshot.name = buffer.name;
   snapshot.sequence = buffer.sequence;
-  snapshot.entries.reserve(buffer.count);
   const size_t firstIndex =
     (buffer.writeIndex + ECMC_LOG_BUFFER_MAX_ROWS - buffer.count) %
     ECMC_LOG_BUFFER_MAX_ROWS;
-  for (size_t i = 0; i < buffer.count; ++i) {
-    snapshot.entries.push_back(
-      buffer.entries[(firstIndex + i) % ECMC_LOG_BUFFER_MAX_ROWS]);
+  const size_t count = buffer.count;
+  for (size_t i = 0; i < count; ++i) {
+    snapshot.entries[i] = buffer.entries[(firstIndex + i) % ECMC_LOG_BUFFER_MAX_ROWS];
   }
   epicsMutexUnlock(mutex);
+  snapshot.entries.resize(count);
   return snapshot;
+}
+
+void logBufferPrint(ecmcLogBuffer &buffer, epicsMutexId mutex) try {
+  const auto snapshot = logBufferSnapshot(buffer, mutex);
+
+  printf("%s\n", ECMC_LOG_BUFFER_FRAME);
+  if (snapshot.entries.empty()) {
+    printf("%s is empty.\n", snapshot.name);
+  } else {
+    printf("%s (%zu/%zu entries):\n", snapshot.name,
+           snapshot.entries.size(), ECMC_LOG_BUFFER_MAX_ROWS);
+    for (const auto &entry : snapshot.entries) {
+      printf("%u %s %s: %s\n", entry.sequence, entry.timestamp,
+             rtLogLevelText(entry.level), entry.message);
+    }
+  }
+  printf("%s\n", ECMC_LOG_BUFFER_FRAME);
+} catch (const std::bad_alloc &) {
+  fprintf(stderr, "Unable to allocate log buffer snapshot.\n");
 }
 
 void writeJsonEscaped(FILE *fp, const char *text) {
@@ -373,6 +374,89 @@ void printMessage(int level, const char *message) {
   }
 }
 
+void writeAxisLogV(bool deferred, int level, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  if (deferred) {
+    logBufferWriteV(rtLogBuffer_, getRtLogBufferMutex(), level, format, args);
+  } else {
+    activeLogBufferWriteV(level, format, args);
+  }
+  va_end(args);
+}
+
+void writeAxisLogEvent(const AxisLogEvent &event, bool deferred) {
+  const auto *v = event.values;
+  switch (event.kind) {
+  case AxisLogKind::Double:
+    writeAxisLogV(deferred, ECMC_LOG_BUFFER_INFO, "Axis[%d]: runtime set %s=%.12g.",
+                       event.axis, event.name, v[0]);
+    break;
+  case AxisLogKind::Integer:
+    writeAxisLogV(deferred, ECMC_LOG_BUFFER_INFO, "Axis[%d]: runtime set %s=%d.",
+                       event.axis, event.name, static_cast<int>(v[0]));
+    break;
+  case AxisLogKind::ZeroGain: {
+    const int sourceIndex = event.warningSource == ECMC_RT_LOG_SOURCE_UNKNOWN ? -1 : event.axis;
+    writeAxisLogV(deferred, ECMC_LOG_BUFFER_WARNING, "Axis[%d]: runtime %s is 0.",
+                       event.axis, event.name);
+    if (!deferred) {
+      ecmcRtLoggerLogWarningSource(event.warningSource,
+                                   sourceIndex,
+                                   "WARNING: Axis[%d]: runtime %s is 0.\n",
+                                   event.axis, event.name);
+    } else if (levelEnabled(ECMC_RT_LOG_LEVEL_WARNING)) {
+      char message[ECMC_RT_LOGGER_MSG_SIZE];
+      snprintf(message, sizeof(message), "WARNING: Axis[%d]: runtime %s is 0.\n",
+               event.axis, event.name);
+      ecmcRtLoggerPortDriverPublishMessage(ECMC_RT_LOG_LEVEL_WARNING,
+                                          event.warningSource, sourceIndex, message);
+      printMessage(ECMC_RT_LOG_LEVEL_WARNING, message);
+    }
+    break;
+  }
+  case AxisLogKind::InnerGains:
+    writeAxisLogV(deferred, ECMC_LOG_BUFFER_INFO,
+                       "Axis[%d]: runtime set controller.inner(kp=%.12g, ki=%.12g, kd=%.12g, tol=%.12g).",
+                       event.axis, v[0], v[1], v[2], v[3]);
+    break;
+  }
+}
+
+void submitAxisLogEvent(const AxisLogEvent &event) {
+  if (!cyclicLogProducer) {
+    writeAxisLogEvent(event, false);
+    return;
+  }
+
+  if (!started_.load(std::memory_order_acquire) ||
+      axisLogProducerBusy.test_and_set(std::memory_order_acquire)) {
+    droppedCount_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  const size_t write = axisLogWrite.load(std::memory_order_relaxed);
+  const size_t next = (write + 1) % ECMC_RT_LOGGER_QUEUE_SIZE;
+  if (next == axisLogRead.load(std::memory_order_acquire)) {
+    droppedCount_.fetch_add(1, std::memory_order_relaxed);
+  } else {
+    axisLogQueue[write] = event;
+    axisLogWrite.store(next, std::memory_order_release);
+  }
+  axisLogProducerBusy.clear(std::memory_order_release);
+}
+
+void drainAxisLogQueue() {
+  // Limit each drain to the entries already queued at the start.
+  const size_t end = axisLogWrite.load(std::memory_order_acquire);
+  size_t read = axisLogRead.load(std::memory_order_relaxed);
+  while (read != end) {
+    const auto event = axisLogQueue[read];
+    read = (read + 1) % ECMC_RT_LOGGER_QUEUE_SIZE;
+    axisLogRead.store(read, std::memory_order_release);
+    writeAxisLogEvent(event, true);
+  }
+}
+
 void reportDroppedEvents() {
   const unsigned int dropped =
     droppedCount_.exchange(0, std::memory_order_acq_rel);
@@ -423,6 +507,7 @@ void loggerTask(void *arg) {
 
   while (true) {
     drainQueue();
+    drainAxisLogQueue();
     ecmcRtLoggerPortDriverService();
     epicsThreadSleep(ECMC_RT_LOGGER_SLEEP_S);
   }
@@ -523,6 +608,26 @@ void ecmcRtLoggerSetControlWord(unsigned int controlWord) {
 
 unsigned int ecmcRtLoggerGetControlWord() {
   return controlWord_.load(std::memory_order_acquire);
+}
+
+void ecmcLogBufferSetCyclicProducer(bool cyclic) {
+  cyclicLogProducer = cyclic;
+}
+
+void ecmcLogAxisSetting(int axis, const char *name, double value) {
+  submitAxisLogEvent({AxisLogKind::Double, axis, 0, name, {value}});
+}
+
+void ecmcLogAxisSetting(int axis, const char *name, int value) {
+  submitAxisLogEvent({AxisLogKind::Integer, axis, 0, name, {static_cast<double>(value)}});
+}
+
+void ecmcLogAxisZeroGain(int axis, const char *name, int warningSource) {
+  submitAxisLogEvent({AxisLogKind::ZeroGain, axis, warningSource, name, {}});
+}
+
+void ecmcLogAxisInnerGains(int axis, double kp, double ki, double kd, double tol) {
+  submitAxisLogEvent({AxisLogKind::InnerGains, axis, 0, nullptr, {kp, ki, kd, tol}});
 }
 
 void ecmcLogBufferSetRuntimeMode(int runtime) {

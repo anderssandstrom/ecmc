@@ -73,6 +73,12 @@ unsigned int ecmcRtLoggerGetControlWord();
 void ecmcLogBufferSetRuntimeMode(int runtime);
 int  ecmcLogBufferGetRuntimeMode();
 int  ecmcLogBufferWrite(int level, const char *fmt, ...);
+void ecmcLogBufferSetCyclicProducer(bool cyclic);
+// Setting names must have static lifetime. The cyclic thread defers formatting.
+void ecmcLogAxisSetting(int axis, const char *name, double value);
+void ecmcLogAxisSetting(int axis, const char *name, int value);
+void ecmcLogAxisZeroGain(int axis, const char *name, int warningSource);
+void ecmcLogAxisInnerGains(int axis, double kp, double ki, double kd, double tol);
 int  ecmcLogBufferWriteText(const char *level, const char *message);
 void ecmcLogBufferLogInfo(const char *fmt, ...);
 void ecmcLogBufferLogWarning(const char *fmt, ...);

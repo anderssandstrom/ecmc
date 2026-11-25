@@ -1,7 +1,10 @@
 # Motion object state dump
 
 `ecmcDumpMotionState` writes a consistent snapshot of the configured motion
-objects to one flat YAML file:
+objects to one flat YAML file. In configuration mode it includes the full
+object graph. During startup and runtime it captures a fixed set of values
+per axis, including enable, busy, error, cycle and position. The YAML format
+field identifies which view was captured.
 
 ```text
 ecmcDumpMotionState("/tmp/ecmc-motion-state.yaml")
@@ -27,7 +30,7 @@ log buffer and the runtime/debug log buffer. Entries retain their sequence,
 timestamp, severity and message. Runtime entries additionally contain source
 type and source index. Taking a dump does not clear or consume either buffer.
 
-The dump contains all configured axes, their axis data, encoders, monitor,
+The full configuration-mode dump contains all configured axes, their axis data, encoders, monitor,
 trajectory, sequencer, controller and drive state.  It also contains all axis
 groups and all master/slave state machines, including private runtime members,
 old-value latches, counters and referenced-object addresses.  The motor-record
@@ -44,10 +47,9 @@ axes[1].encoders[0].scaleNum_: 10
 masterSlaveSMs[0].state_: 2
 ```
 
-The command takes the snapshot while holding `ecmcRTMutex`.  YAML formatting
-is done into memory under the lock to keep related values consistent.  The
-mutex is released before the file is opened and written, so filesystem I/O is
-never performed while the realtime state is locked.
+The command takes the snapshot while holding `ecmcRTMutex`. The live view
+copies only scalar values under the lock. Both views format YAML and write
+files after releasing the mutex.
 
 This command is intended for fault diagnostics.  The snapshot can be large,
 especially when filters contain long buffers, and should not be called
