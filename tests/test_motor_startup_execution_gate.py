@@ -185,7 +185,7 @@ int main() {
     assert(withoutRecord.setEnable(true) == 0);
     assert(withoutRecord.setExecute(true) == 0);
   }
-  assert(!strcmp(withRecord.getStartupHoldReason(),"waiting for motor-record restore"));
+  assert(!strcmp(withRecord.getStartupHoldReason(),"waiting for motor-record startup handshake"));
   assert(withRecord.getStartupBlockingAxis() == 0);
   assert(!strcmp(withoutRecord.getStartupHoldReason(),"released"));
   assert(withoutRecord.getStartupBlockingAxis() == -1);

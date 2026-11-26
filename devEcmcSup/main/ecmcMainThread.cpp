@@ -664,10 +664,10 @@ void cyclic_task(void *usr) {
     if (startup.axisInitializationReleased && !startup.commandsReleased) {
       startup.motorWaitSeconds += mcuPeriod / 1.0e9;
       if (startup.motorWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
-        ecmcRtLoggerLogError("Startup: motor/axis handshake still pending; waiting axes and shared command producers remain held. Check motor-controller report for soft-limit restore status.\n");
+        ecmcRtLoggerLogError("Startup: axis startup still pending; waiting axes and shared command producers remain held. See the per-axis reasons below and check the motor-controller report for motor-record startup details.\n");
         for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex) {
           if (runtime.activeAxes[axisIndex]->getStartupCommandsHeld()) {
-            ecmcRtLoggerLogError("Startup: axis %d waiting: axis initialization=%d, motor record=%d, reason=%s, blocking axis=%d, group=%d.\n",
+            ecmcRtLoggerLogError("Startup: axis %d waiting: axis initialization pending=%d, motor-record startup pending=%d, reason=%s, blocking axis=%d, group=%d.\n",
               runtime.activeAxes[axisIndex]->getAxisID(), runtime.activeAxes[axisIndex]->getInStartupPhase(),
               !runtime.activeAxes[axisIndex]->getMotorRecordStartupReady(),
               runtime.activeAxes[axisIndex]->getStartupHoldReason(),
@@ -702,7 +702,7 @@ void cyclic_task(void *usr) {
         else if (axis->getInStartupPhase())
           axis->setStartupHoldReason("waiting for axis initialization", axis->getAxisID());
         else if (!axis->getMotorRecordStartupReady())
-          axis->setStartupHoldReason("waiting for motor-record restore", axis->getAxisID());
+          axis->setStartupHoldReason("waiting for motor-record startup handshake", axis->getAxisID());
         else if (blockingGroup >= 0)
           axis->setStartupHoldReason("waiting for master/slave group startup", blockingAxis, blockingGroup);
         else
