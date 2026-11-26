@@ -10,6 +10,7 @@
 \*************************************************************************/
 
 #include "ecmcRtLoggerPortDriver.h"
+#include "ecmcPlcDiagnostic.h"
 #include "ecmcAxisDiagnosticText.h"
 #include "ecmcError.h"
 
@@ -134,10 +135,10 @@ class ecmcRtLoggerPortDriver : public asynPortDriver {
 public:
   explicit ecmcRtLoggerPortDriver(const char *portName)
     : asynPortDriver(portName,
-                     std::max(ECMC_MAX_AXES, EC_MAX_SLAVES),
-                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask |
+                     std::max(std::max(ECMC_MAX_AXES, EC_MAX_SLAVES), ecmcPlcDiagnostic::count),
+                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask | asynInt8ArrayMask |
                        asynDrvUserMask,
-                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask,
+                     asynInt32Mask | asynInt64Mask | asynFloat64Mask | asynOctetMask | asynInt8ArrayMask,
                      0,
                      1,
                      0,
@@ -186,6 +187,9 @@ public:
       filterMode_(ECMC_RT_LOG_FILTER_NONE),
       filterTypeMask_(INT_MAX),
       filterIndex_(-1) {
+    createRequiredParam("RTLOG_PLC_DIAG_CMD", asynParamInt32, &plcDiagCmd_);
+    createRequiredParam("RTLOG_PLC_DIAG_STAT", asynParamInt32, &plcDiagStat_);
+    createRequiredParam("RTLOG_PLC_DIAG_DATA", asynParamInt8Array, &plcDiagData_);
     createRequiredParam(ECMC_RT_LOGGER_PAR_LAST_MESSAGE,
                         asynParamOctet,
                         &lastMessageParam_);
@@ -403,7 +407,24 @@ public:
     callParamCallbacks();
   }
 
+  asynStatus readInt8Array(asynUser *user, epicsInt8 *value,
+                           size_t max, size_t *actual) override {
+    if (user && user->reason == plcDiagData_) {
+      int addr=0;
+      if (getAddress(user,&addr)) return asynError;
+      return ecmcPlcDiagnostic::read(addr,reinterpret_cast<char*>(value),max,actual)
+        ? asynSuccess : asynError;
+    }
+    return asynPortDriver::readInt8Array(user,value,max,actual);
+  }
+
   asynStatus readInt32(asynUser *pasynUser, epicsInt32 *value) override {
+    if (pasynUser && value && pasynUser->reason==plcDiagStat_) {
+      int addr=0;
+      if (getAddress(pasynUser,&addr) || !ecmcPlcDiagnostic::valid(addr)) return asynError;
+      *value=ecmcPlcDiagnostic::status(addr);
+      return asynSuccess;
+    }
     if (!pasynUser || !value) {
       return asynError;
     }
@@ -543,6 +564,12 @@ public:
   }
 
   asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value) override {
+    if (pasynUser && pasynUser->reason==plcDiagCmd_) {
+      int addr=0;
+      if (getAddress(pasynUser,&addr)) return asynError;
+      return ecmcPlcDiagnostic::request(addr,value) ? asynSuccess : asynError;
+    }
+    if (pasynUser && pasynUser->reason==plcDiagStat_) return asynError;
     if (!pasynUser) {
       return asynError;
     }
@@ -809,6 +836,7 @@ public:
   }
 
 private:
+  int plcDiagCmd_=0, plcDiagStat_=0, plcDiagData_=0;
   int axisIlockShortTextParam_ = 0, axisMessageTextParam_ = 0;
   int axisIlockTextParam_ = 0;
   int axisCfgDllmParam_ = 0, axisCfgDhlmParam_ = 0;

@@ -11,6 +11,7 @@
 \*************************************************************************/
 
 #include "ecmcPLCTask.h"
+#include "ecmcPlcDiagnostic.h"
 #include "ecmcErrorsList.h"
 #include "ecmcRtLogger.h"
 #include "ecmcPLCTask_libDs.inc"
@@ -57,6 +58,7 @@ ecmcPLCTask::ecmcPLCTask(int                 plcIndex,
 }
 
 ecmcPLCTask::~ecmcPLCTask() {
+  ecmcPlcDiagnostic::invalidate(plcIndex_);
   for (int i = 0; i < ECMC_MAX_PLC_VARIABLES; i++) {
     delete localArray_[i];
     localArray_[i] = NULL;
@@ -162,6 +164,7 @@ int ecmcPLCTask::addAndRegisterLocalVar(char *localVarStr) {
 }
 
 int ecmcPLCTask::compile() {
+  ecmcPlcDiagnostic::invalidate(plcIndex_);
   exprtk_->setExpression(exprStr_);
   std::vector<std::string> varList;
 
@@ -186,6 +189,22 @@ int ecmcPLCTask::compile() {
   rebuildVariableAccessLists();
   compiled_   = true;
   newExpr_    = false;
+  // Compile/configuration context only; do not touch this store in execute().
+  // Length framing preserves the complete processed source, including newlines.
+  try {
+    std::string metadata=std::to_string(exprStr_.size())+"\n";
+    if (exprStr_.size()+64<=ecmcPlcDiagnostic::capacity) {
+      metadata+=exprStr_;
+      metadata+="\n";
+      for (int i=0;i<localVariableCount_;++i)
+        if (localArray_[i]) metadata+=std::string("L\t")+localArray_[i]->getVarName()+"\n";
+      for (int i=0;i<globalVariableCount_;++i)
+        if (globalArray_[i]) metadata+=std::string("G\t")+globalArray_[i]->getVarName()+"\n";
+      ecmcPlcDiagnostic::publish(plcIndex_,std::move(metadata));
+    }
+  } catch (...) {
+    // Diagnostics must not prevent a successful PLC compilation.
+  }
   exprStrRaw_ = "";
   return 0;
 }
@@ -329,6 +348,7 @@ int ecmcPLCTask::clearRawExpr() {
 
 int ecmcPLCTask::clearExpr() {
   if (hasDataBindings()) return ERROR_PLC_DATA_SOURCE_BOUND;
+  ecmcPlcDiagnostic::invalidate(plcIndex_);
   exprStr_ = "";
   updateAsyn();
   compiled_ = false;
