@@ -81,8 +81,10 @@ motorECMC. Before dispatching the first healthy motor status, it locks the linke
 motor record and uses `recGblResetAlarms()` to discard the stale startup COMM
 state. Pending or existing non-COMM alarms are preserved. It requires IOC running,
 a valid finite position, successful asyn parameter status, no incoming motor
-communication/problem bit, and a live native axis which has started, left startup,
-is not communication-blocked and has no axis error. Live state is checked again
+communication error bit, and a live native axis which has started, left startup
+and is not communication-blocked. Operational axis errors and RA_PROBLEM do not
+prevent this startup handshake; otherwise PLC-generated limits can deadlock startup.
+The native error, interlocks and non-COMM alarms are not cleared. Live state is checked again
 after acquiring the record lock. Active record processing is not interrupted.
 
 Status and commands still use asyn. However, this is deliberately an exception to
@@ -95,7 +97,7 @@ private save/restore structures.
 ## Completion and motion release
 
 Clearing COMM or queuing a position load is **not** startup completion. For each
-loaded motor record ECMC waits for successful soft-limit initialization, healthy
+loaded motor record ECMC waits for successful soft-limit initialization, communication-valid
 status delivery, `MIP_DONE`, DMOV true, no motion, no remaining COMM state, and a
 post-command RT sample if position loading was requested. Position loading marks
 the driver's sample acknowledgement pending again. The native axis exposes an

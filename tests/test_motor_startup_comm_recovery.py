@@ -156,7 +156,8 @@ int main() {
   c.doCallbacksGenericPointer(&sample, c.motorStatus_, 1);
   assert(r.stat == COMM_ALARM && resets == 1 && c.queuedPositions == 1);
 
-  // No recovery for an invalid packet, faulting axis, or incomplete IOC startup.
+  // Communication faults and incomplete initialization still block startup.
+  // Operational axis errors and RA_PROBLEM must not block restoration.
   for (int fault = 0; fault < 12; ++fault) {
     ecmcMotorRecordController bad;
     motorRecord badRecord;
@@ -181,10 +182,40 @@ int main() {
     }
     int previousResets = resets;
     bad.doCallbacksGenericPointer(&badSample, bad.motorStatus_, 1);
-    assert(badRecord.stat == COMM_ALARM && resets == previousResets);
-    assert(!bad.startupCommRecoveryDone_[1] && !recordLocked);
+    if (fault == 3 || fault == 7 || fault == 9) {
+      assert(badRecord.stat != COMM_ALARM && resets == previousResets + 1);
+      assert(bad.startupCommRecoveryDone_[1] && native.getMotorRecordStartupReady());
+      assert(native.error == (fault == 3 ? 0 : 123));
+    } else {
+      assert(badRecord.stat == COMM_ALARM && resets == previousResets);
+      assert(!bad.startupCommRecoveryDone_[1] && !native.getMotorRecordStartupReady());
+    }
+    assert(!recordLocked);
   }
   faultOnLock = false; native = NativeAxis(); iocReady = true;
+
+  // A faulted axis with a pending restore remains held until the restore finishes.
+  ecmcMotorRecordController faulted;
+  motorRecord faultedRecord;
+  MotorStatus faultedSample;
+  faultedSample.status = 2; // RA_PROBLEM, e.g. both PLC limits active
+  native.error = 123;
+  faultedRecord.nsta = STATE_ALARM; faultedRecord.nsev = 2;
+  faulted.record = &faultedRecord;
+  faulted.deferPositionLoad = true;
+  faulted.bindStartupMotorRecord(1, &faultedRecord);
+  faulted.doCallbacksGenericPointer(&faultedSample, faulted.motorStatus_, 1);
+  assert(!native.getMotorRecordStartupReady() && native.error == 123);
+  assert(faultedRecord.stat == STATE_ALARM);
+  faultedRecord.mip = MIP_DONE; faultedRecord.dmov = true;
+  axis.waitingForStatusAfterCommand_ = true;
+  faulted.doCallbacksGenericPointer(&faultedSample, faulted.motorStatus_, 1);
+  assert(!native.getMotorRecordStartupReady());
+  axis.waitingForStatusAfterCommand_ = false;
+  faulted.doCallbacksGenericPointer(&faultedSample, faulted.motorStatus_, 1);
+  assert(native.getMotorRecordStartupReady() && native.error == 123);
+  assert(faultedRecord.stat == STATE_ALARM);
+  native = NativeAxis();
 
   // EPICS reset promotes pending unrelated alarms, rather than discarding them.
   for (bool pendingComm : {false, true}) {

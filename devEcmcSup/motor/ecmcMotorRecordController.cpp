@@ -702,7 +702,7 @@ asynStatus ecmcMotorRecordController::doCallbacksGenericPointer(void *pointer,
     return asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
   }
   if (!axis || !sample->positionWritten || !isfinite(sample->position) ||
-      status.Bits.CNTRL_COMM_ERR || status.Bits.RA_PROBLEM ||
+      status.Bits.CNTRL_COMM_ERR ||
       getParamStatus(addr, reason, &paramStatus) != asynSuccess ||
       paramStatus != asynSuccess) {
     return asynMotorController::doCallbacksGenericPointer(pointer, reason, addr);
@@ -713,15 +713,16 @@ asynStatus ecmcMotorRecordController::doCallbacksGenericPointer(void *pointer,
   // callback so record processing cannot intervene before the restore request.
   auto *record = startupMotorRecords_[addr];
   dbScanLock(reinterpret_cast<dbCommon *>(record));
-  // Recheck after acquiring the record lock: a hardware/communication fault
-  // may have arrived while that lock was held by another thread.
+  // Recheck communication and native initialization under the existing lock.
+  // Operational faults (including PLC-driven limits) must not prevent startup:
+  // the PLC needed to resolve them may itself be held by the startup gate.
   if (ecmcRTMutex) epicsMutexLock(ecmcRTMutex);
   auto *nativeAxis = axis->drvlocal.ecmcAxis;
-  const bool healthy = nativeAxis->getRealTimeStarted() &&
-                       !nativeAxis->getInStartupPhase() &&
-                       !nativeAxis->getBlockCom() && !nativeAxis->getErrorID();
+  const bool startupCommunicationReady = nativeAxis->getRealTimeStarted() &&
+                                         !nativeAxis->getInStartupPhase() &&
+                                         !nativeAxis->getBlockCom();
   if (ecmcRTMutex) epicsMutexUnlock(ecmcRTMutex);
-  if (healthy && !record->pact && !startupCommRecoveryDone_[addr]) {
+  if (startupCommunicationReady && !record->pact && !startupCommRecoveryDone_[addr]) {
     startupCommRecoveryDone_[addr] = true;
     clearStartupCommunicationAlarm(record);
   }
@@ -730,7 +731,7 @@ asynStatus ecmcMotorRecordController::doCallbacksGenericPointer(void *pointer,
   // The motor callback may only have queued LOAD_POS. Wait for its completion,
   // normal record processing and a post-command RT sample before releasing RT
   // motion producers. Never inspect motor's private save/restore structures.
-  if (healthy && result == asynSuccess && startupCommRecoveryDone_[addr] &&
+  if (startupCommunicationReady && result == asynSuccess && startupCommRecoveryDone_[addr] &&
       !record->pact && record->mip == MIP_DONE && record->dmov && !record->movn &&
       record->stat != COMM_ALARM && record->nsta != COMM_ALARM &&
       axis->updateFirstPollDone_ && !axis->waitingForStatusAfterCommand_) {

@@ -98,7 +98,9 @@ mask domain faults or suppress motor-record STOP requests from interlocks.
 If the bus fails to stabilize within the configured startup timeout after IOC
 running (45 seconds by default), execution remains held and an error is logged.
 Resolve the fault and restart runtime to retry. Axis hardware errors can still
-prevent that axis and dependent virtual masters from completing initialization.
+prevent native initialization if valid feedback or I/O is unavailable. A latched
+operational error on an otherwise initialized axis does not by itself block the
+motor-record handshake. Normal runtime fault and interlock handling remains active.
 
 For applications that never call `iocInit`/`iocRun`, set this before entering
 runtime:
