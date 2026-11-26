@@ -2,6 +2,7 @@
 #define ECMC_PLC_DIAGNOSTIC_H
 // Metadata is generated during compilation and synchronized by Store::mutex.
 #include <array>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -18,6 +19,7 @@ struct Entry {
 struct Store {
   std::mutex mutex;
   std::array<Entry,count> entries;
+  std::chrono::steady_clock::time_point nextRequest{};
 };
 inline Store& store() { static Store value; return value; }
 inline bool valid(int index) { return index>=0 && index<count; }
@@ -39,6 +41,10 @@ inline bool request(int index,int token) {
   if (!valid(index) || token<=0) return false;
   auto& s=store();
   std::lock_guard<std::mutex> lock(s.mutex);
+  // IOC-wide admission control; never called from cyclic PLC execution.
+  const auto now=std::chrono::steady_clock::now();
+  if (now<s.nextRequest) return false; // Preserve the accepted response.
+  s.nextRequest=now+std::chrono::seconds(1);
   auto& e=s.entries[index];
   e.response.clear();
   e.status=-token;

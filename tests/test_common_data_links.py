@@ -51,6 +51,7 @@ fixture = r'''
 #include "ecmcAxisData.h"
 #include "ecmcErrorsList.h"
 #include "ecmcPLCTaskErrors.h"
+#include "ecmcPlcDiagnostic.h"
 // Minimal provider for compiling the actual historical compatibility header.
 class ecmcEcEntry {
 public:
@@ -141,6 +142,7 @@ struct ecmcPLCDataIF {
   double getData() { return value; }
 };
 struct ecmcPLCTask {
+  int plcIndex_ = 0;
   unsigned dataBindingUsers_ = 0;
   bool compiled = true;
   std::string raw;
