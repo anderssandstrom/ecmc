@@ -1,6 +1,6 @@
 #ifndef ECMC_PLC_DIAGNOSTIC_H
 #define ECMC_PLC_DIAGNOSTIC_H
-// Configuration-side immutable metadata. Never called from PLC execution.
+// Metadata is generated during compilation and synchronized by Store::mutex.
 #include <array>
 #include <mutex>
 #include <string>
