@@ -49,7 +49,9 @@ compare execution held.
 
 Once the bus is stable, a single reset attempt clears latched slave-not-online/
 not-operational errors and axis hardware-not-ready/hardware-status-not-OK errors.
-Other errors are not automatically cleared. Axis initialization then proceeds
+Other errors are not automatically cleared. Both axis PLCs and general PLCs
+start at this point, independently of native axis initialization, axis errors,
+and motor-record restoration. Axis initialization then proceeds
 with drives disabled and motion/enable requests held. Native axes must leave
 startup, and every **loaded motor record** linked to ECMC must finish its startup
 handshake: soft-limit initialization, first healthy status delivery, any requested
@@ -58,7 +60,7 @@ load. An axis with no loaded motor record has no motor handshake to wait for;
 creating an asyn motor axis object alone does not add this wait.
 
 After common IOC/bus stabilization, each axis releases its own direct enable
-and motion commands, axis PLC and position compare when its native initialization
+and motion commands and position compare when its native initialization
 and motor-record handshake complete. Configured enable-at-startup is deferred
 until that axis releases. An unready physical motor does not hold another
 physical motor, including motors in the same mirror/slit slave group.
@@ -70,11 +72,14 @@ Physical/slave members retain independent direct startup release. Existing
 runtime ownership/command-blocking rules still apply after a coordinated group
 takes control.
 
-General PLCs, motion sequences, PVT, ordinary plugin cyclic callbacks and C++
-logic retain the aggregate startup gate, because their axis dependencies are
-not declared here. They wait for all configured axes. The per-axis and shared
-program holds have separate diagnostic PVs. This change does not infer arbitrary
-PLC, plugin or sequence dependencies.
+Motion sequences, PVT, ordinary plugin cyclic callbacks and C++ logic retain
+the aggregate startup gate. They wait for all configured axes. The per-axis and
+shared motion holds have separate diagnostic PVs. PLCs can establish feedback,
+limits and reset faults while these holds remain active. PLC authors must account
+for incomplete coordinate/soft-limit restoration: direct EtherCAT writes and
+parameter or coordinate changes are not covered by the axis enable/execute guards.
+Use normal motion command interfaces and do not issue motion via raw PDO writes.
+Do not depend on a rejected startup command being replayed.
 Execute/enable requests during the hold return `ERROR_AXIS_BUSY` without latching
 a new axis error or queuing the request for later. STOP, disable, position loading
 and status polling remain available. Plugin/logic enter-RT initialization hooks
@@ -112,16 +117,18 @@ epicsEnvSet("ECMC_WAIT_FOR_IOC_RUNNING", "0")
 This skips only the IOC-hook requirement, not bus stabilization or axis startup.
 If motor records are loaded, they still require IOC initialization and their
 startup handshake; this option is intended for applications without motor records.
-An axis PLC waits for its own axis. General startup PLCs/plugins remain behind
-the shared gate. Code required to establish readiness must initialize its signals
-before that gate, for example by configuration or external simulation injection.
+Axis and general PLCs run after common stabilization, including when an axis
+remains in native startup or has an error. Ordinary plugins remain behind the
+shared motion gate.
 
 For a hardware test, check the logs in order: bus/timing startup complete, IOC
-running, bus stable/axis initialization released, motor-record position restoration
-complete, then that axis's direct commands and PLC released. Confirm that one
+running, bus stable/axis initialization and PLCs released, motor-record position
+restoration complete, then that axis's direct commands released. Verify PLCs run
+while a DS402 fault or other error keeps an axis in native startup and that held
+axis enable/execute requests are rejected. Confirm that one
 unready physical axis does not prevent another physical axis from enabling, that
 a virtual master waits for its participating axes, and that a separate ready
 master/slave group runs while unrelated startup remains pending. Also test a native
 axis with no loaded motor record: it must not wait for a nonexistent motor record.
-Verify outputs stay disabled before release and that a later bus fault is still
+Verify ECMC-controlled drives stay disabled before their motion release and that a later bus fault is still
 reported without automatic clearing. The behavior has not yet been hardware tested.

@@ -219,10 +219,11 @@ struct Rig {
   int controllerError = 0, pluginsError = 0, cppLogicError = 0, appModeCmd = 1;
   // Binary-exact period makes the 2-second boundary deterministic.
   double mcuPeriod = 250000000, ecTimeoutSeconds = 5;
-  void expectDispatch(int count, int extraAxisCalls = 0) {
+  void expectDispatch(int count, int extraPlcCycles = 0) {
     assert(sequence.calls == count && pvt.calls == count);
     assert(masterSlave.calls == count && plugin.calls == count && cppLogic.calls == count);
-    assert(plc.globalCalls == count && plc.axisCalls == count * runtime.activeAxisCount + extraAxisCalls);
+    assert(plc.globalCalls == count + extraPlcCycles &&
+           plc.axisCalls == (count + extraPlcCycles) * runtime.activeAxisCount);
   }
   void readyAxes() { for (auto &axis : axes) axis.startup = false; }
   void run(int scenario) {
@@ -271,18 +272,18 @@ body = master_identity + initialization + r'''
       axes[0].startup = axes[1].startup = false;
       axes[1].motorReady = false;
       tick();
-      expectDispatch(0,1); // Ready axes run their own PLCs while the last axis waits.
+      expectDispatch(0,2); // All PLCs run, even while native/motor startup is pending.
       axes[2].startup = false;
       axes[1].motorReady = false;
       ticks(3);
-      expectDispatch(0,7); // Released axes stay released; the third axis releases independently.
+      expectDispatch(0,5); // PLCs continue while motion producers remain held.
       assert(startupCommandsHeld);
       axes[1].motorReady = true;
       tick();
-      expectDispatch(1,7);
+      expectDispatch(1,5);
       assert(!startupCommandsHeld);
       tick();
-      expectDispatch(2,7);
+      expectDispatch(2,5);
       assert(ethercat.resets == 1 && axes[0].resets == 1);
     } else if (scenario == 1) {
       iocRunning = true;
@@ -307,12 +308,12 @@ body = master_identity + initialization + r'''
       assert(!startup.axisInitializationReleased);
       tick();
       assert(startup.axisInitializationReleased && !startup.commandsReleased);
-      expectDispatch(0);
-      expectTrace({"axis-2", "axis-7", "axis-11", "safety", "publish", "time-offset"});
+      expectDispatch(0,1);
+      expectTrace({"axis-plc-18", "axis-2", "axis-plc-23", "axis-7", "axis-plc-27", "axis-11", "global-plc", "safety", "publish", "time-offset"});
       readyAxes();
       diagnosticsUpdateFreqHz = 1;
       tick();
-      expectDispatch(1);
+      expectDispatch(1,1);
       // COMPAT: masterless dispatch and slow diagnostics retain their order;
       // receive/send and bus diagnostics are skipped, timing offset still updates.
       expectTrace({"sequence", "axis-plc-18", "axis-2", "axis-plc-23", "axis-7",

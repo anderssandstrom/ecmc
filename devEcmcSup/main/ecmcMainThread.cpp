@@ -647,7 +647,7 @@ void cyclic_task(void *usr) {
         }
         startup.axisInitializationReleased = true;
         startupMotionHeld.store(false, std::memory_order_release);
-        ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization.\n");
+        ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization and PLCs.\n");
       } else if (startup.waitSeconds >= ecTimeoutSeconds) {
         startup.timedOut = true;
         ecmcRtLoggerLogError("Startup readiness: bus=%d, timing=%d, SDO=%d, stable=%.3fs, elapsed=%.3fs.\n",
@@ -664,7 +664,7 @@ void cyclic_task(void *usr) {
     if (startup.axisInitializationReleased && !startup.commandsReleased) {
       startup.motorWaitSeconds += mcuPeriod / 1.0e9;
       if (startup.motorWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
-        ecmcRtLoggerLogError("Startup: axis startup still pending; waiting axes and shared command producers remain held. See the per-axis reasons below and check the motor-controller report for motor-record startup details.\n");
+        ecmcRtLoggerLogError("Startup: axis startup still pending; waiting axes and shared motion producers remain held; PLCs can run. See the per-axis reasons below and check the motor-controller report for motor-record startup details.\n");
         for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex) {
           if (runtime.activeAxes[axisIndex]->getStartupCommandsHeld()) {
             ecmcRtLoggerLogError("Startup: axis %d waiting: axis initialization pending=%d, motor-record startup pending=%d, reason=%s, blocking axis=%d, group=%d.\n",
@@ -746,7 +746,9 @@ void cyclic_task(void *usr) {
     // would change which commands and feedback are visible in this cycle.
     for (i = 0; i < runtime.activeAxisCount; i++) {
       auto * const axis = runtime.activeAxes[i];
-      if ((startup.commandsReleased || !axis->getStartupCommandsHeld()) && plcs) {
+      // PLCs may establish feedback, limits or reset faults needed for axis
+      // initialization. Keep motion guards independent of PLC dispatch.
+      if (startup.axisInitializationReleased && plcs) {
         plcs->execute(runtime.activeAxisPlcId[i], ecStat);
       }
       if (dataInputsConfigured) {
@@ -779,8 +781,8 @@ void cyclic_task(void *usr) {
       appModeCmd = ECMC_MODE_CONFIG;
     }
 
-    // PLCs
-    if (startup.commandsReleased && plcs) {
+    // General PLCs can also resolve faults in axes still waiting for startup.
+    if (startup.axisInitializationReleased && plcs) {
       plcs->execute(ecStat);
     }
 
