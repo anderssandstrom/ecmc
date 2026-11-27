@@ -221,7 +221,8 @@ struct Rig {
   double mcuPeriod = 250000000, ecTimeoutSeconds = 5;
   void expectDispatch(int count, int extraPlcCycles = 0) {
     assert(sequence.calls == count && pvt.calls == count);
-    assert(masterSlave.calls == count && plugin.calls == count && cppLogic.calls == count);
+    assert(masterSlave.calls == count);
+    assert(plugin.calls == count + extraPlcCycles && cppLogic.calls == count + extraPlcCycles);
     assert(plc.globalCalls == count + extraPlcCycles &&
            plc.axisCalls == (count + extraPlcCycles) * runtime.activeAxisCount);
   }
@@ -309,7 +310,7 @@ body = master_identity + initialization + r'''
       tick();
       assert(startup.axisInitializationReleased && !startup.commandsReleased);
       expectDispatch(0,1);
-      expectTrace({"axis-plc-18", "axis-2", "axis-plc-23", "axis-7", "axis-plc-27", "axis-11", "global-plc", "safety", "publish", "time-offset"});
+      expectTrace({"axis-plc-18", "axis-2", "axis-plc-23", "axis-7", "axis-plc-27", "axis-11", "plugin", "cpp-logic", "global-plc", "safety", "publish", "time-offset"});
       readyAxes();
       diagnosticsUpdateFreqHz = 1;
       tick();

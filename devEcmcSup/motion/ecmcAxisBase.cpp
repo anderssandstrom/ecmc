@@ -526,7 +526,7 @@ void ecmcAxisBase::preExecute(bool masterOK) {
   }
   
   if (powerCoordinationNeeded) syncEncoderPowerPosition();
-  hwReady_ = getHwReady(axisState_ == ECMC_AXIS_STATE_STARTUP);
+  hwReady_ = getHwReady();
 
   // Axis state machine
   switch (axisState_) {
@@ -545,13 +545,11 @@ void ecmcAxisBase::preExecute(bool masterOK) {
         powerStartupPending |= encArray_[i]->getPowerEnable() &&
           !encArray_[i]->getPowerReady();
     }
-    auto * const startupDrive = getDrv();
-    const bool driveOperational = !startupDrive || startupDrive->hwReady();
     if (masterOK && !ecmcStartupMotionHeld()) {
       
-      if ((!hwReady_ || !driveOperational) && !powerStartupPending) {
+      if (!hwReady_ && !powerStartupPending) {
         setErrorID(ERROR_AXIS_HW_NOT_READY);
-      } else if (hwReady_ && driveOperational) {  // auto reset error if ok
+      } else if (hwReady_) {  // auto reset error if ok
         if (getErrorID() == ERROR_AXIS_HW_NOT_READY && hwReadyOld_) {
           errorReset();
         }
@@ -560,13 +558,12 @@ void ecmcAxisBase::preExecute(bool masterOK) {
 
     if (!ecmcStartupMotionHeld() && masterOK && hwReady_ && hwReadyOld_) {
       // Auto reset hardware error if starting up
-      if (driveOperational && (getErrorID() == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) &&
+      if ((getErrorID() == ERROR_AXIS_HARDWARE_STATUS_NOT_OK) &&
           data_.status_.statusWord_.instartup) {
         errorReset();
       }
 
-      // Communication and encoder readiness are sufficient for coordinate
-      // initialization. Do not clear an active operational drive fault.
+      // bus ok and hw ok, startup finished
       setInStartupPhase(false);
 
       // only init encoders after first startup
@@ -2130,14 +2127,6 @@ void ecmcAxisBase::refreshStatusWd() {
 int ecmcAxisBase::setEnable(bool enable) {
   if (enable && getStartupCommandsHeld()) {
     return ERROR_AXIS_BUSY;
-  }
-  // Native startup may have completed with a faulted drive. Never issue an
-  // enable request while its strict operational readiness check fails.
-  if (enable) {
-    auto * const drive = getDrv();
-    if (drive && !drive->hwReady()) {
-      return setErrorID(ERROR_AXIS_HW_NOT_READY);
-    }
   }
   if (!enable && encoderPowerEnablePending_) {
     encoderPowerEnablePending_ = false;
@@ -4001,7 +3990,7 @@ int ecmcAxisBase::getCSPDriveEncoderIndex() {
   return data_.control_.cspDrvEncIndex;
 }
 
-bool ecmcAxisBase::getHwReady(bool forStartup) {
+bool ecmcAxisBase::getHwReady() {
 
   // Initial startup must verify every managed encoder, even if the tracking
   // counter is currently primary. Subsequent intentional idle power-off is OK.
@@ -4026,7 +4015,7 @@ bool ecmcAxisBase::getHwReady(bool forStartup) {
   // Check drive if REAL axis
   auto * const drv = getDrv();
   if(drv) {
-    ready = ready && (forStartup ? drv->startupReady() : drv->hwReady());
+    ready = ready && drv->hwReady();
   }
   return ready;
 }

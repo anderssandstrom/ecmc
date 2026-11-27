@@ -647,7 +647,7 @@ void cyclic_task(void *usr) {
         }
         startup.axisInitializationReleased = true;
         startupMotionHeld.store(false, std::memory_order_release);
-        ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization and PLCs.\n");
+        ecmcRtLoggerLogInfo("Startup: IOC ready and EtherCAT stable for 2s; releasing axis initialization, PLCs, plugins and C++ logic.\n");
       } else if (startup.waitSeconds >= ecTimeoutSeconds) {
         startup.timedOut = true;
         ecmcRtLoggerLogError("Startup readiness: bus=%d, timing=%d, SDO=%d, stable=%.3fs, elapsed=%.3fs.\n",
@@ -664,7 +664,7 @@ void cyclic_task(void *usr) {
     if (startup.axisInitializationReleased && !startup.commandsReleased) {
       startup.motorWaitSeconds += mcuPeriod / 1.0e9;
       if (startup.motorWaitSeconds >= (ecTimeoutSeconds > 0 ? ecTimeoutSeconds : 30.0)) {
-        ecmcRtLoggerLogError("Startup: axis startup still pending; waiting axes and shared motion producers remain held; PLCs can run. See the per-axis reasons below and check the motor-controller report for motor-record startup details.\n");
+        ecmcRtLoggerLogError("Startup: axis startup still pending; waiting axes and shared motion producers remain held; PLCs, plugins and C++ logic can run. See the per-axis reasons below and check the motor-controller report for motor-record startup details.\n");
         for (int axisIndex = 0; axisIndex < runtime.activeAxisCount; ++axisIndex) {
           if (runtime.activeAxes[axisIndex]->getStartupCommandsHeld()) {
             ecmcRtLoggerLogError("Startup: axis %d waiting: axis initialization pending=%d, motor-record startup pending=%d, reason=%s, blocking axis=%d, group=%d.\n",
@@ -718,7 +718,7 @@ void cyclic_task(void *usr) {
       if (axesReady) {
         startup.commandsReleased = true;
         startupCommandsHeld.store(false, std::memory_order_release);
-        ecmcRtLoggerLogInfo("Startup: all axes and motor-record restoration complete; releasing shared command producers.\n");
+        ecmcRtLoggerLogInfo("Startup: all axes and motor-record restoration complete; releasing shared motion producers.\n");
       }
     }
 
@@ -769,11 +769,11 @@ void cyclic_task(void *usr) {
     }
 
     // Plugins
-    for (i = 0; startup.commandsReleased && i < runtime.activePluginCount; i++) {
+    for (i = 0; startup.axisInitializationReleased && i < runtime.activePluginCount; i++) {
       pluginsError = runtime.activePlugins[i]->exeRTFunc(controllerError);
     }
 
-    for (i = 0; startup.commandsReleased && i < runtime.activeCppLogicCount; i++) {
+    for (i = 0; startup.axisInitializationReleased && i < runtime.activeCppLogicCount; i++) {
       cppLogicError = runtime.activeCppLogics[i]->exeRTFunc(controllerError);
     }
 

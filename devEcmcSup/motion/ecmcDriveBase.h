@@ -57,8 +57,6 @@ public:
   virtual void errorReset();
   virtual bool getEnabledLocal() = 0;
   virtual int  hwReady();
-  // Coordinate initialization may be possible even with an operational fault.
-  virtual int  startupReady() { return hwReady(); }
   bool         getEnable();
   bool         getEnabled();
   double       getScaleNum(void);

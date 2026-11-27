@@ -49,7 +49,7 @@ compare execution held.
 
 Once the bus is stable, a single reset attempt clears latched slave-not-online/
 not-operational errors and axis hardware-not-ready/hardware-status-not-OK errors.
-Other errors are not automatically cleared. Both axis PLCs and general PLCs
+Other errors are not automatically cleared. Axis PLCs, general PLCs, ordinary plugin cyclic callbacks and C++ logic
 start at this point, independently of native axis initialization, axis errors,
 and motor-record restoration. Axis initialization then proceeds
 with drives disabled and motion/enable requests held. Native axes must leave
@@ -72,10 +72,9 @@ Physical/slave members retain independent direct startup release. Existing
 runtime ownership/command-blocking rules still apply after a coordinated group
 takes control.
 
-Motion sequences, PVT, ordinary plugin cyclic callbacks and C++ logic retain
-the aggregate startup gate. They wait for all configured axes. The per-axis and
-shared motion holds have separate diagnostic PVs. PLCs can establish feedback,
-limits and reset faults while these holds remain active. PLC authors must account
+Motion sequences and PVT retain the aggregate startup gate. They wait for all configured axes. The per-axis and
+shared motion holds have separate diagnostic PVs. PLCs, plugins and C++ logic can establish feedback,
+limits and reset faults while these holds remain active. Their authors must account
 for incomplete coordinate/soft-limit restoration: direct EtherCAT writes and
 parameter or coordinate changes are not covered by the axis enable/execute guards.
 Use normal motion command interfaces and do not issue motion via raw PDO writes.
@@ -103,12 +102,7 @@ mask domain faults or suppress motor-record STOP requests from interlocks.
 If the bus fails to stabilize within the configured startup timeout after IOC
 running (45 seconds by default), execution remains held and an error is logged.
 Resolve the fault and restart runtime to retry. Axis hardware errors can still
-prevent native initialization if valid feedback or I/O is unavailable. A DS402
-fault alone does not prevent native initialization when the master and drive
-status PDO are valid and encoder readiness checks pass. Strict drive readiness
-is still required for enable requests. A persistent initial fault transitions
-to the normal drive fault state after native startup and requires normal fault
-recovery. A latched
+prevent native initialization if valid feedback or I/O is unavailable. A latched
 operational error on an otherwise initialized axis does not by itself block the
 motor-record handshake. Normal runtime fault and interlock handling remains active.
 
@@ -122,13 +116,13 @@ epicsEnvSet("ECMC_WAIT_FOR_IOC_RUNNING", "0")
 This skips only the IOC-hook requirement, not bus stabilization or axis startup.
 If motor records are loaded, they still require IOC initialization and their
 startup handshake; this option is intended for applications without motor records.
-Axis and general PLCs run after common stabilization, including when an axis
-remains in native startup or has an error. Ordinary plugins remain behind the
-shared motion gate.
+Axis and general PLCs, ordinary plugins and C++ logic run after common
+stabilization, including when an axis remains in native startup or has an error.
+The existing DS402 fault readiness check and drive reset behavior are retained.
 
 For a hardware test, check the logs in order: bus/timing startup complete, IOC
-running, bus stable/axis initialization and PLCs released, motor-record position
-restoration complete, then that axis's direct commands released. Verify PLCs run
+running, bus stable/axis initialization, PLCs, plugins and C++ logic released, motor-record position
+restoration complete, then that axis's direct commands released. Verify PLCs, plugins and C++ logic run
 while a DS402 fault or other error keeps an axis in native startup and that held
 axis enable/execute requests are rejected. Confirm that one
 unready physical axis does not prevent another physical axis from enabling, that

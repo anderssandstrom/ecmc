@@ -160,12 +160,13 @@ int controllerError = 0, pluginsError = 0, cppLogicError = 0;
 '''
 tests = r'''
 int totalProducerCalls() {
-  return sequence.calls + pvt.calls + slave.calls + plugin.calls + cpp.calls;
+  return sequence.calls + pvt.calls + slave.calls;
 }
 int main() {
   // PLCs remain held until common IOC/bus stabilization.
   tick();
   assert(plc.globalCalls == 0 && plc.axisCalls[0] == 0 && plc.axisCalls[1] == 0);
+  assert(plugin.calls == 0 && cpp.calls == 0);
   startup.axisInitializationReleased = true;
   // Only a loaded motor record registers a pending handshake. A native axis or
   // a driver axis with no loaded record starts ready and cannot deadlock startup.
@@ -193,6 +194,7 @@ int main() {
   assert(!strcmp(withoutRecord.getStartupHoldReason(),"released"));
   assert(withoutRecord.getStartupBlockingAxis() == -1);
   assert(plc.axisCalls[0] == 3 && plc.axisCalls[1] == 3 && plc.globalCalls == 3);
+  assert(plugin.calls == 3 && cpp.calls == 3);
   assert(waitWarnings >= 2); // Timeout reports hold and blocking slot without release.
   assert(withRecord.samples == 4 && withRecord.motionRequests == 0);
   assert(withRecord.startupEnablePending_); // Preserve configured startup enable.
@@ -207,7 +209,7 @@ int main() {
   tick();
   assert(startup.commandsReleased && !ecmcStartupCommandsHeld());
   assert(sequence.calls == 1 && plc.globalCalls == 6 && pvt.calls == 1);
-  assert(slave.calls == 1 && plugin.calls == 1 && cpp.calls == 1);
+  assert(slave.calls == 1 && plugin.calls == 6 && cpp.calls == 6);
   assert(withRecord.enabled && !withRecord.startupEnablePending_);
   assert(withRecord.motionRequests == 0); // No rejected motion was replayed.
   assert(withRecord.setExecute(true) == 0 && withRecord.motionRequests == 1);
@@ -240,10 +242,12 @@ int main() {
   startup.axisInitializationReleased = true; ecStat = true;
   withRecord.inStartup = true;
   const int oldShared = totalProducerCalls(), oldGroup = slave.calls;
+  const int oldPlugin = plugin.calls, oldCpp = cpp.calls;
   const int oldGlobalPlc = plc.globalCalls, oldAxisPlc = plc.axisCalls[0];
   tick();
   assert(!startup.commandsReleased && totalProducerCalls() == oldShared);
   assert(plc.globalCalls == oldGlobalPlc + 1 && plc.axisCalls[0] == oldAxisPlc + 1);
+  assert(plugin.calls == oldPlugin + 1 && cpp.calls == oldCpp + 1);
   assert(plc.axisCalls[2] == 1); // Virtual axis PLC also runs before group release.
   assert(!withoutRecord.getStartupCommandsHeld() && withoutRecord.setEnable(true) == 0);
   assert(!withRecord.enabled && withRecord.getStartupCommandsHeld());
