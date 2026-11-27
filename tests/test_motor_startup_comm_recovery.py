@@ -163,8 +163,9 @@ int main() {
     motorRecord badRecord;
     MotorStatus badSample;
     bad.record = &badRecord;
-    bad.bindStartupMotorRecord(1, &badRecord);
     native = NativeAxis();
+    bad.bindStartupMotorRecord(1, &badRecord);
+    assert(!native.getMotorRecordStartupReady());
     iocReady = true; faultOnLock = false;
     switch (fault) {
       case 0: badSample.positionWritten = false; break;
