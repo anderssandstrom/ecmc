@@ -586,11 +586,39 @@ static void ds402Integration() {
   CHECK(restart.drive->getErrorID() == 0 && restart.brake.value == 1);
 }
 
+static void ds402StartupReadiness() {
+  context = "DS402 startup readiness independent of persistent drive fault";
+  Bench<ecmcDriveDS402> b;
+  b.data.status_.statusWord_.instartup = true;
+  b.tickWord(0x08);
+  CHECK(b.drive->startupReady());
+  CHECK(!b.drive->hwReady());
+  CHECK(!b.drive->getEnabled() && b.brake.value == 0);
+  b.tickWord(0x08, false);
+  CHECK(!b.drive->startupReady());
+  b.status.readError = ERROR_EC_ENTRY_EC_DOMAIN_ERROR;
+  b.tickWord(0x08);
+  CHECK(!b.drive->startupReady());
+  b.status.readError = 0;
+  b.tickWord(0x08);
+  CHECK(b.drive->startupReady() && !b.drive->hwReady());
+  b.data.status_.statusWord_.instartup = false;
+  b.tickWord(0x08);
+  CHECK(b.drive->getErrorID() == ERROR_DRV_DS402_FAULT_STATE);
+  CHECK(!b.drive->getEnabled() && b.brake.value == 0);
+  CHECK(b.control.value == 0);
+  b.drive->errorReset();
+  b.tickWord(0x08);
+  CHECK(b.control.value == 128);
+  b.tickWord(0x40);
+  CHECK(b.drive->startupReady() && b.drive->hwReady());
+}
+
 int main() {
   try {
     driveLookupCompensation(); reducedTorque(); timing(); feedbackLoss(); feedbackLossWithoutBrake(); cancellationAndReenable();
     interlocksAndTimeout(); delayedDisableAcknowledgement(); configurationAndFaults();
-    boundedSignalTraces(); ds402Integration();
+    boundedSignalTraces(); ds402Integration(); ds402StartupReadiness();
     std::cout << "Drive brake: " << scenarios << " scenarios, " << cycles
               << " production cycles passed.\n";
   } catch (const std::exception &error) {

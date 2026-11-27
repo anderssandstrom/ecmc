@@ -379,7 +379,7 @@ public:
   ecmcAxisPVTSequence* getPVTObject();
   double     getCurrentPositionSetpoint();
   ecmcAxisDataStatus* getAxisStatusStruct();
-  bool       getHwReady();
+  bool       getHwReady(bool forStartup = false);
 
 protected:
   static_assert(sizeof(double) == sizeof(unsigned long long),

@@ -81,6 +81,7 @@ public:
   void errorReset();
   bool getEnabledLocal();
   int  hwReady();
+  int  startupReady() override;
 
 private:
   void initVars();

@@ -129,7 +129,12 @@ void ecmcDriveDS402::readEntries(bool masterOK) {
   bool ds402Warning = BIT_CHECK(statusWord_, ECMC_DS402_SWITCH_ON_WARNING_BIT);
 
   if(!startupFaultCleared_) {
-    if(masterOK) {
+    if (masterOK && ds402Fault && !data_->status_.statusWord_.instartup) {
+      // Native startup can now complete with a persistent fault. Hand off to
+      // normal explicit fault recovery instead of repeatedly resetting it.
+      startupFaultCleared_ = 1;
+      enableStateMachine_ = ECMC_DS402_FAULT_STATE;
+    } else if(masterOK) {
       //if(ds402Fault) {
         errorReset(); // Reset the DS402 fault at startup
       //}
@@ -266,6 +271,10 @@ void ecmcDriveDS402::errorReset() {
 
 bool ecmcDriveDS402::getEnabledLocal() {
   return localEnabled_;
+}
+
+int ecmcDriveDS402::startupReady() {
+  return masterOK_ && checkDataValid(ECMC_DRIVEBASE_ENTRY_INDEX_STATUS_WORD);
 }
 
 int ecmcDriveDS402::hwReady() {

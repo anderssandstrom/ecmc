@@ -103,7 +103,12 @@ mask domain faults or suppress motor-record STOP requests from interlocks.
 If the bus fails to stabilize within the configured startup timeout after IOC
 running (45 seconds by default), execution remains held and an error is logged.
 Resolve the fault and restart runtime to retry. Axis hardware errors can still
-prevent native initialization if valid feedback or I/O is unavailable. A latched
+prevent native initialization if valid feedback or I/O is unavailable. A DS402
+fault alone does not prevent native initialization when the master and drive
+status PDO are valid and encoder readiness checks pass. Strict drive readiness
+is still required for enable requests. A persistent initial fault transitions
+to the normal drive fault state after native startup and requires normal fault
+recovery. A latched
 operational error on an otherwise initialized axis does not by itself block the
 motor-record handshake. Normal runtime fault and interlock handling remains active.
 
