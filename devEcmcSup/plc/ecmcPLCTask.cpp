@@ -200,7 +200,7 @@ int ecmcPLCTask::compile() {
         if (localArray_[i]) metadata+=std::string("L\t")+localArray_[i]->getVarName()+"\n";
       for (int i=0;i<globalVariableCount_;++i)
         if (globalArray_[i]) metadata+=std::string("G\t")+globalArray_[i]->getVarName()+"\n";
-      ecmcPlcDiagnostic::publish(plcIndex_,std::move(metadata));
+      ecmcPlcDiagnostic::publish(plcIndex_,std::move(metadata),localVariableCount_+globalVariableCount_);
     }
   } catch (...) {
     // Diagnostics must not prevent a successful PLC compilation.
@@ -282,6 +282,10 @@ int ecmcPLCTask::execute(bool ecOK) {
     }
   }
 
+  ecmcPlcDiagnostic::capture(plcIndex_, [this](unsigned i) {
+    return i < static_cast<unsigned>(localVariableCount_)
+      ? localArray_[i]->getData() : globalArray_[i-localVariableCount_]->getData();
+  });
   firstScanDone_ = 1;
 
   return 0;
